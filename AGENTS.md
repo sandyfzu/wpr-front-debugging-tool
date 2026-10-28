@@ -73,6 +73,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   │                          #   four transforms, one pipeline (+ PHP parity table and fixtures)
 │   ├── exclusion-session/     # backend-agnostic interception session: controller, state machines,
 │   │                          #   charset round trip, budgeted document step, CDP + stream backends
+│   ├── wp-rocket-simulation/  # WP Rocket simulation (P21): the simulation data file's format + reader, the plugin-oracle
+│   │                          #   table (`simulation-parity.fixtures.json`, dev/test only)
 │   ├── page-commands/         # the on-page command vocabulary (labels the menu + palette share), the
 │   │                          #   palette's executor contract and the view↔module bridge
 │   └── <domain>/              # one folder per feature; its data files colocated
@@ -117,8 +119,10 @@ pnpm test:e2e        # browser-test tier (tests/e2e/): Playwright, headless Chro
 pnpm bench:detection # checks-phase speed gate: port vs reference engine over the fixture corpus (local only, never CI)
 pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build, on the
                      #   .nvmrc Node (gzip sizes depend on its zlib: another major is refused)
-pnpm parity:wp-rocket # WP Rocket parity table (lib/exclusion-builder/wp-rocket-parity.fixtures.json): re-derives its
-                     #   expected outputs with the real plugin under `php -n` (needs PHP >= 8.1 + ext-dom/mbstring,
+pnpm parity:wp-rocket # WP Rocket parity tables (lib/exclusion-builder/wp-rocket-parity.fixtures.json + lib/wp-rocket-
+                     #   simulation/simulation-parity.fixtures.json) + the generated simulation data file (public/wp-rocket-
+                     #   simulation/simulation-data.json): re-derives their
+                     #   expected outputs with the real plugin under `php -n -d pcre.jit=1` (needs PHP >= 8.1 + ext-dom/mbstring,
                      #   compiled in or shared, `unzip`, docker/wpr/wpr-rocket.zip; network on the first run only — the
                      #   pinned WordPress zip is then cached in .cache/) — fails when stale; --write regenerates;
                      #   --ci / --compare [--zip <zip>] are the parity workflow's modes (see its header)
@@ -126,7 +130,7 @@ docker/scripts/up.sh # local WordPress debugging site lifecycle — up / down.sh
                      #   location, reset semantics, scenario flags, apvm build path: docs/local-site-runbook.md
 ```
 
-CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `build:firefox` + `check:budgets` on every PR and push to `main`/`develop`, and on demand via `workflow_dispatch` (Actions tab, or `gh workflow run ci.yml --ref <branch>`; `-f ref=<branch|tag|sha>` tests a different ref). `test:e2e` is deliberately **never wired into CI** (it needs this machine's real Chrome build and the docker site — the owner's environment contract; see `tests/e2e/README.md`); `bench:detection` stays local too. A separate, informational workflow (`.github/workflows/wp-rocket-parity.yml`, not a required check) builds WP Rocket with a pinned APVM and runs `parity:wp-rocket --ci` against the table's reference tag (fails on a stale table or reference drift) and `--compare` against the latest stable tag (warnings only) — on PRs and pushes to `main`/`develop`/`feat/**` touching the parity files, weekly, and on dispatch (`gh workflow run wp-rocket-parity.yml --ref <branch>`; cron and dispatch work only once the file is on `develop`, GitHub's default branch).
+CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `build:firefox` + `check:budgets` on every PR and push to `main`/`develop`, and on demand via `workflow_dispatch` (Actions tab, or `gh workflow run ci.yml --ref <branch>`; `-f ref=<branch|tag|sha>` tests a different ref). `test:e2e` is deliberately **never wired into CI** (it needs this machine's real Chrome build and the docker site — the owner's environment contract; see `tests/e2e/README.md`); `bench:detection` stays local too. A separate, informational workflow (`.github/workflows/wp-rocket-parity.yml`, not a required check) builds WP Rocket with a pinned APVM and runs `parity:wp-rocket --ci` against the tables' reference tag (fails on a stale table or data file, or reference drift) and `--compare` against the latest stable tag (warnings only) — on PRs and pushes to `main`/`develop`/`feat/**` touching the parity files, weekly, and on dispatch (`gh workflow run wp-rocket-parity.yml --ref <branch>`; cron and dispatch work only once the file is on `develop`, GitHub's default branch).
 
 ## Non-negotiable rules
 

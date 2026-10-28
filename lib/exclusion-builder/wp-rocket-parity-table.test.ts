@@ -7,6 +7,7 @@ import {
   parseParityInputs,
   parseParityTable,
   comparedFields,
+  parseHeaderFields,
   pendingOwner,
   typedLineBytes
 } from './wp-rocket-parity-table';
@@ -24,6 +25,7 @@ function validTable(): { header: Json; rows: Json[] } {
       wpZipSha1: 'bb',
       php: '8.1',
       pcre2: '10.49',
+      pcreJit: 'on',
       libxml: '2.9',
       generatedBy: 'test'
     },
@@ -144,6 +146,17 @@ describe('parseParityTable', () => {
     rejects((table) => delete table.header.php, '"php" must be a string');
     rejects((table) => (table.header.php = ''), 'header "php" must not be empty');
     rejects((table) => (table.header.extra = 'x'), 'unknown key "extra"');
+  });
+
+  it('reads pcreJit as "on" or "off" only', () => {
+    const table = validTable();
+    table.header.pcreJit = 'off';
+    expect(parseParityTable(table).header.pcreJit).toBe('off');
+    rejects((table) => delete table.header.pcreJit, '"pcreJit" must be a string');
+    rejects(
+      (table) => (table.header.pcreJit = '1'),
+      'header "pcreJit" must be "on" or "off", got "1"'
+    );
   });
 
   it('parses pluginPackages as a non-empty map of non-empty version strings', () => {
@@ -516,5 +529,22 @@ describe('typedLineBytes', () => {
   it('encodes text as UTF-8 and decodes base64 lines to their bytes', () => {
     expect([...typedLineBytes('é')]).toEqual([0xc3, 0xa9]);
     expect([...typedLineBytes({ b64: '/2Jh' })]).toEqual([0xff, 0x62, 0x61]);
+  });
+});
+
+describe('parseHeaderFields', () => {
+  it('reads the reference fields and leaves other keys to the caller', () => {
+    const header = { ...validTable().header, simulation: {} };
+    expect(Object.keys(parseHeaderFields(header))).toEqual(Object.keys(validTable().header));
+  });
+
+  it("names the caller's table in errors", () => {
+    const header = { ...validTable().header, wp: '' };
+    expect(() => parseHeaderFields(header, 'other fixtures')).toThrow(
+      'other fixtures: header "wp" must not be empty'
+    );
+    expect(() => parseHeaderFields({ ...header, pluginPackages: [] }, 'other fixtures')).toThrow(
+      'other fixtures: header "pluginPackages" must be a non-empty {name: version} object'
+    );
   });
 });

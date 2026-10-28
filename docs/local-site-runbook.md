@@ -50,8 +50,8 @@ mkdir -p docker/wpr && cp /tmp/wpr-out/wp-rocket-*.zip docker/wpr/wpr-rocket.zip
 `v3.23.5.1` @ `8e89a59` → version 3.23.5.1 (update `WPR_FDT_EXPECTED_WPR_VERSION`, in
 both the `.env` and `.env.example`, when you re-pin a newer tag).
 
-A re-pin also re-derives the parity table from the new zip (`pnpm parity:wp-rocket --write`,
-then review the row changes): its `header.plugin` is the tag the parity workflow
+A re-pin also re-derives the parity tables and the simulation data file from the new zip
+(`pnpm parity:wp-rocket --write`, then review the row changes): their `header.plugin` is the tag the parity workflow
 (`.github/workflows/wp-rocket-parity.yml`) builds (`tag:v<plugin>`), and `header.pluginPackages`
 the vendored package versions it expects — no workflow edit needed. The workflow's own APVM
 release is pinned there (`APVM_VERSION`).

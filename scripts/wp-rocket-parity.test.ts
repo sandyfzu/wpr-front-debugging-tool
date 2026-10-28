@@ -2,22 +2,40 @@
  * The parity script's pure helpers: CLI options, preflight probes, package
  * versions, harness case building, the form-survival rule for match rows, row
  * assembly in file key order, the staleness report, the `--ci` and
- * `--compare` verdicts and their GitHub Actions output. The PHP run itself is
+ * `--compare` verdicts and their GitHub Actions output, and the simulation
+ * table's cases, rows, pins, data file and verdicts. The PHP run itself is
  * exercised by `pnpm parity:wp-rocket` and the WP Rocket parity workflow.
  */
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { ParityInput } from '../lib/exclusion-builder/wp-rocket-parity-table.ts';
+import type { SimulateInput } from '../lib/wp-rocket-simulation/simulation-parity-table.ts';
 import {
   PHP_EXTENSIONS,
+  SIMULATION_DATA_FILE,
+  SIMULATION_TABLE,
   annotation,
   assembleRow,
+  assembleSimulateRow,
+  committedSentinels,
+  dataFindings,
+  pinFindings,
+  simulationArtifacts,
+  simulationCases,
   checkPhpProbe,
   checkSurvival,
   ciFindings,
   compareFindings,
   describeStaleness,
+  SHOWN_VALUE_MAX,
+  differenceLine,
   differingRowIds,
   extensionArgs,
+  firstDifference,
+  longestBacktickRun,
+  otherVersionFindings,
+  phpCommand,
+  shownValue,
   formatTable,
   headerDifferences,
   matchCases,
@@ -414,6 +432,7 @@ function table(): {
       wpZipSha1: 'bb',
       php: '8.1.34',
       pcre2: '10.49',
+      pcreJit: 'on',
       libxml: '2.9.13',
       generatedBy: 'test'
     },
@@ -575,5 +594,420 @@ describe('GitHub Actions output', () => {
         { level: 'notice', title: 'ok', details: [] }
       ])
     ).toBe('### Heading\n\n❌ **table stale**\n\n````\nrun `x`\na ``` b\n````\n\nℹ️ **ok**\n\n');
+  });
+});
+
+/** Simulation inputs covering each case-building branch. */
+const SIMULATE_INPUTS: SimulateInput[] = [
+  {
+    id: 'simulate-a',
+    kind: 'simulate',
+    feature: 'delay_js',
+    note: 'n',
+    rows: ['a', 'é'],
+    listRows: ['l'],
+    html: '<p>'
+  },
+  {
+    id: 'simulate-b',
+    kind: 'simulate',
+    feature: 'delay_js',
+    rows: [],
+    filterOnly: true,
+    list: 'bundled',
+    html: '<q>'
+  }
+];
+
+/** Base64 of a string's UTF-8 bytes. */
+function b64(text: string): string {
+  return Buffer.from(text, 'utf8').toString('base64');
+}
+
+describe('simulationCases', () => {
+  it('sends every row as a simulate case and a survival save case, rows base64-encoded', () => {
+    expect(simulationCases(SIMULATE_INPUTS)).toEqual({
+      saves: [
+        {
+          id: 'survival:simulate-a',
+          kind: 'save',
+          feature: 'delay_js',
+          typed: [b64('a'), b64('é')],
+          safeMode: false
+        },
+        { id: 'survival:simulate-b', kind: 'save', feature: 'delay_js', typed: [], safeMode: false }
+      ],
+      simulates: [
+        {
+          id: 'simulate-a',
+          kind: 'simulate',
+          feature: 'delay_js',
+          rows: [b64('a'), b64('é')],
+          listRows: [b64('l')],
+          html: '<p>'
+        },
+        {
+          id: 'simulate-b',
+          kind: 'simulate',
+          feature: 'delay_js',
+          rows: [],
+          list: 'bundled',
+          html: '<q>'
+        }
+      ]
+    });
+  });
+
+  it('feeds the survival rule: filterOnly rows must change on save', () => {
+    const saved = [
+      { id: 'survival:simulate-a', stored: ['a', 'é'], dropped: [] },
+      { id: 'survival:simulate-b', stored: [], dropped: [] }
+    ];
+    expect(() => {
+      checkSurvival(SIMULATE_INPUTS, saved);
+    }).toThrow('simulate-b: marked filterOnly, but the settings form stores these rows unchanged');
+  });
+});
+
+describe('assembleSimulateRow', () => {
+  it('orders a row: authored inputs in file order, then served', () => {
+    const shuffled = { html: '<q>', ...SIMULATE_INPUTS[1] } as SimulateInput;
+    expect(Object.keys(assembleSimulateRow(shuffled, '<x>'))).toEqual([
+      'id',
+      'kind',
+      'feature',
+      'rows',
+      'filterOnly',
+      'list',
+      'html',
+      'served'
+    ]);
+    expect(assembleSimulateRow(SIMULATE_INPUTS[0] as SimulateInput, '<y>').served).toBe('<y>');
+  });
+});
+
+describe('committedSentinels', () => {
+  it('reads the authored sentinels from a committed table', () => {
+    const value = { header: { simulation: { sentinels: { runtime: 'R', ieFallback: 'F' } } } };
+    expect(committedSentinels(value)).toEqual({ runtime: 'R', ieFallback: 'F' });
+  });
+
+  it('fails fast when they are missing', () => {
+    for (const value of [null, {}, { header: { simulation: { sentinels: { runtime: 'R' } } } }]) {
+      expect(() => committedSentinels(value)).toThrow(
+        'header.simulation.sentinels must hold the runtime and ieFallback texts'
+      );
+    }
+  });
+});
+
+describe('simulationArtifacts', () => {
+  const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
+  const sha = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
+  const sentinels = { runtime: 'R.run()', ieFallback: 'F' };
+  const runtime = 'class X{constructor(){this.v="2.0.5"}}';
+  const rows = ['a', 'b\\.js'];
+  const sources = {
+    version: '3.0',
+    runtime: encode(runtime),
+    dynamicLists: encode(JSON.stringify({ other: [], delay_js_exclusions: rows })),
+    ieFallback: 'fallback é'
+  };
+
+  it('derives the pins and a content-keyed data file from the plugin files', () => {
+    const { pins, data } = simulationArtifacts(sources, sentinels);
+    expect(pins).toEqual({
+      runtime: {
+        path: 'assets/js/lazyload-scripts.min.js',
+        version: '2.0.5',
+        bytes: runtime.length,
+        sha256: sha(runtime)
+      },
+      ieFallback: { bytes: 11, sha256: sha('fallback é') },
+      dynamicLists: { sha256: createHash('sha256').update(sources.dynamicLists).digest('hex') },
+      delayJsExclusions: { count: 2, sha256: sha(JSON.stringify(rows)) },
+      sentinels
+    });
+    expect(data).toEqual({
+      format: 1,
+      versions: {
+        '3.0': {
+          runtime: { sha256: sha(runtime), version: '2.0.5' },
+          ieFallback: { sha256: sha('fallback é') },
+          delayJsExclusions: { sha256: sha(JSON.stringify(rows)), count: 2 }
+        }
+      },
+      texts: { [sha(runtime)]: runtime, [sha('fallback é')]: 'fallback é' },
+      rowLists: { [sha(JSON.stringify(rows))]: rows }
+    });
+  });
+
+  it('keeps a leading BOM, so the text hashes as the file bytes do', () => {
+    const bom = `﻿${runtime}`;
+    const { pins, data } = simulationArtifacts({ ...sources, runtime: encode(bom) }, sentinels);
+    expect(pins.runtime.sha256).toBe(sha(bom));
+    expect(data.texts[pins.runtime.sha256]).toBe(bom);
+  });
+
+  it('fails fast on a malformed runtime or lists file', () => {
+    const bad = (patch: Partial<typeof sources>): (() => unknown) => {
+      return () => simulationArtifacts({ ...sources, ...patch }, sentinels);
+    };
+    expect(bad({ runtime: Uint8Array.of(0xff) })).toThrow('lazyload-scripts.min.js is not UTF-8');
+    expect(bad({ runtime: encode('no version') })).toThrow('names no version (this.v="…")');
+    expect(bad({ dynamicLists: encode('{') })).toThrow('dynamic-lists.json is not UTF-8 JSON');
+    expect(bad({ dynamicLists: encode('null') })).toThrow('has no delay_js_exclusions string list');
+    expect(bad({ dynamicLists: encode('{"delay_js_exclusions":[1]}') })).toThrow(
+      'has no delay_js_exclusions string list'
+    );
+    // An empty fallback is no text the data file can hold.
+    expect(bad({ ieFallback: '' })).toThrow(`derived ${SIMULATION_DATA_FILE}: texts.`);
+  });
+});
+
+describe('dataFindings', () => {
+  it('is empty when the committed file is the derived one', () => {
+    expect(dataFindings('{}\n', '{}\n')).toEqual([]);
+  });
+
+  it('fails as stale on any difference or a missing file', () => {
+    const [changed] = dataFindings('{"a":1}\n', '{}\n');
+    expect(changed?.level).toBe('error');
+    expect(changed?.title).toBe('simulation data file stale');
+    expect(changed?.details[0]).toBe(
+      `${SIMULATION_DATA_FILE} differs from the one derived from the plugin zip`
+    );
+    expect(dataFindings(null, '{}\n')[0]?.details[0]).toBe(`${SIMULATION_DATA_FILE} is missing`);
+  });
+});
+
+describe('pinFindings', () => {
+  const pins = {
+    runtime: { version: '2.0.5' },
+    ieFallback: { bytes: 1 },
+    dynamicLists: { sha256: 'a' },
+    delayJsExclusions: { count: 75 },
+    sentinels: { runtime: 'R' }
+  };
+
+  it('is empty when the other build ships the same inputs (sentinels ignored)', () => {
+    const fresh = { plugin: '3.1', simulation: { ...pins, sentinels: { runtime: 'S' } } };
+    expect(pinFindings({ plugin: '3.0', simulation: pins }, fresh)).toEqual([]);
+  });
+
+  it('warns (never errors), naming each differing pin', () => {
+    const fresh = { plugin: '3.1', simulation: { ...pins, runtime: { version: '2.0.6' } } };
+    const [finding] = pinFindings({ plugin: '3.0', simulation: pins }, fresh);
+    expect(finding?.level).toBe('warning');
+    expect(finding?.title).toBe(
+      'WP Rocket 3.1 ships other simulation inputs than the simulation table (WP Rocket 3.0)'
+    );
+    expect(finding?.details[0]).toBe(
+      'header.simulation.runtime: {"version":"2.0.5"} → {"version":"2.0.6"}'
+    );
+    expect(pinFindings({ plugin: '3.0' }, fresh)[0]?.details).toHaveLength(5);
+  });
+});
+
+describe('the simulation table in the shared verdicts', () => {
+  /** A valid committed simulation table: one row. */
+  function simulationTable(): TableObject & { header: Record<string, unknown> } {
+    return {
+      header: {
+        ...table().header,
+        simulation: {
+          runtime: { path: 'r.js', version: '2.0.5', bytes: 3, sha256: '1'.repeat(64) },
+          ieFallback: { bytes: 2, sha256: '2'.repeat(64) },
+          dynamicLists: { sha256: '3'.repeat(64) },
+          delayJsExclusions: { count: 0, sha256: '4'.repeat(64) },
+          sentinels: { runtime: 'R.run()', ieFallback: 'F' }
+        }
+      },
+      rows: [
+        {
+          id: 'simulate-a',
+          kind: 'simulate',
+          feature: 'delay_js',
+          rows: [],
+          listRows: [],
+          html: '<p>',
+          served: '<p>'
+        }
+      ]
+    };
+  }
+
+  it('reproduces with its own label when only the zip bytes differ', async () => {
+    const committed = await formatTable(simulationTable(), SIMULATION_TABLE.path);
+    const fresh = simulationTable();
+    fresh.header.pluginZipSha256 = 'cc';
+    expect(await ciFindings(committed, fresh, SIMULATION_TABLE)).toEqual([
+      {
+        level: 'notice',
+        title: 'the simulation table reproduces with a fresh build of WP Rocket 3.0',
+        details: []
+      }
+    ]);
+  });
+
+  it('fails as "simulation table stale" on a pin or served difference', async () => {
+    const committed = await formatTable(simulationTable(), SIMULATION_TABLE.path);
+    const fresh = simulationTable();
+    (fresh.header.simulation as { runtime: { bytes: number } }).runtime.bytes = 4;
+    (fresh.rows[0] as { served: string }).served = '<q>';
+    const [finding] = await ciFindings(committed, fresh, SIMULATION_TABLE);
+    expect(finding?.title).toBe('simulation table stale');
+    expect(finding?.details[0]).toMatch(/^header\.simulation: .*"bytes":3.* → .*"bytes":4/);
+    expect(finding?.details[1]).toBe('simulate-a.served: "<p>" → "<q>"');
+  });
+
+  it('parses the committed simulation table strictly', async () => {
+    await expect(ciFindings('{"rows": []}', simulationTable(), SIMULATION_TABLE)).rejects.toThrow(
+      'simulation-parity fixtures: "header" must be an object'
+    );
+  });
+
+  it('names the simulation table in a comparison', () => {
+    const before = simulationTable();
+    const fresh = { ...simulationTable(), header: { ...before.header, plugin: '3.1' } };
+    expect(compareFindings(before, fresh, SIMULATION_TABLE.label)[0]?.title).toBe(
+      'WP Rocket 3.1 matches the simulation table (WP Rocket 3.0) on all 1 rows'
+    );
+  });
+
+  it('compares the given header keys only', () => {
+    const before = JSON.stringify(simulationTable());
+    const after = simulationTable();
+    (after.header.simulation as { sentinels: { runtime: string } }).sentinels.runtime = 'S.run()';
+    expect(describeStaleness(before, JSON.stringify(after))).toEqual([
+      'formatting differs (run with --write)'
+    ]);
+    expect(
+      describeStaleness(before, JSON.stringify(after), SIMULATION_TABLE.headerKeys)
+    ).toHaveLength(1);
+  });
+});
+
+describe('phpCommand', () => {
+  it('runs without php.ini, forces the PCRE JIT on, then extension and call arguments', () => {
+    expect(phpCommand(['-d', 'extension=dom'], ['-r', 'echo 1;'])).toEqual([
+      '-n',
+      '-d',
+      'pcre.jit=1',
+      '-d',
+      'extension=dom',
+      '-r',
+      'echo 1;'
+    ]);
+    expect(phpCommand([], ['h.php'])).toEqual(['-n', '-d', 'pcre.jit=1', 'h.php']);
+  });
+});
+
+describe('bounded difference lines', () => {
+  /** sha256 hex of a text's UTF-8 bytes. */
+  const sha = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
+
+  it('finds the first differing offset (the shorter length on a prefix)', () => {
+    expect(firstDifference('abc', 'abd')).toBe(2);
+    expect(firstDifference('abc', 'abc')).toBe(3);
+    expect(firstDifference('ab', 'abc')).toBe(2);
+    expect(firstDifference('', 'x')).toBe(0);
+  });
+
+  it('prints values up to the cap whole', () => {
+    const value = 'x'.repeat(SHOWN_VALUE_MAX);
+    expect(shownValue(value, 5)).toBe(value);
+    expect(differenceLine('r.k', '"a"', '"b"')).toBe('r.k: "a" → "b"');
+  });
+
+  it('summarizes a longer value: length, sha256 and a window around the offset', () => {
+    const value = `${'a'.repeat(1000)}Z${'b'.repeat(1000)}`;
+    expect(shownValue(value, 1000)).toBe(
+      `<2001 chars, sha256 ${sha(value)}, at 1000: …${'a'.repeat(20)}Z${'b'.repeat(59)}…>`
+    );
+    // Window clipped at both ends: no leading/trailing ellipsis there.
+    const short = 'c'.repeat(SHOWN_VALUE_MAX + 1);
+    expect(shownValue(short, 0)).toBe(
+      `<${String(short.length)} chars, sha256 ${sha(short)}, at 0: ${'c'.repeat(60)}…>`
+    );
+    expect(shownValue(short, short.length)).toBe(
+      `<${String(short.length)} chars, sha256 ${sha(short)}, at ${String(short.length)}: …${'c'.repeat(20)}>`
+    );
+  });
+
+  it('keeps a stale multi-megabyte row to short lines, a short side whole', () => {
+    const page = 'p'.repeat(4 * 1024 * 1024);
+    const [difference] = rowDifferences(
+      [{ id: 'r', served: page }],
+      [{ id: 'r', served: `${page}!` }]
+    );
+    expect(difference?.line.length).toBeLessThan(500);
+    expect(difference?.line).toContain(`at ${String(page.length + 1)}:`);
+    expect(differenceLine('r.k', '"a"', JSON.stringify(page))).toMatch(/^r\.k: "a" → <\d+ chars, /);
+    const [header] = headerDifferences({ k: page }, { k: 'x' }, ['k']);
+    expect(header?.length).toBeLessThan(500);
+  });
+
+  it('fences the summary past the LONGEST backtick run, not the first', () => {
+    expect(longestBacktickRun('a ` b ```` c `` d')).toBe(4);
+    expect(longestBacktickRun('none')).toBe(0);
+    expect(
+      summaryMarkdown('H', [{ level: 'warning', title: 't', details: ['a ` b ```` c'] }])
+    ).toBe('### H\n\n⚠️ **t**\n\n`````\na ` b ```` c\n`````\n\n');
+  });
+});
+
+describe('otherVersionFindings', () => {
+  /** A one-row table of `plugin` whose row field `k` is `value`. */
+  const tableOf = (plugin: string, value: string): TableObject => ({
+    header: { plugin, pluginPackages: { 'a/b': 'v1' }, simulation: { runtime: { v: 1 } } },
+    rows: [{ id: 'r', k: value }]
+  });
+
+  it('reports the parity comparison and the simulation failure as its own named warning', () => {
+    const findings = otherVersionFindings(tableOf('3.0', 'x'), tableOf('3.1', 'y'), {
+      ok: false,
+      problem: "the plugin's dynamic-lists.json has no delay_js_exclusions string list"
+    });
+    expect(findings.map((finding) => finding.level)).toEqual(['warning', 'warning']);
+    expect(findings[0]?.title).toBe(
+      'WP Rocket 3.1 differs from the table (WP Rocket 3.0) on 1 rows: r'
+    );
+    expect(findings[1]).toEqual({
+      level: 'warning',
+      title: 'could not derive the simulation table from WP Rocket 3.1',
+      details: [
+        "the plugin's dynamic-lists.json has no delay_js_exclusions string list",
+        'Informational: the exclusion parity comparison above is unaffected.'
+      ]
+    });
+  });
+
+  it('adds the simulation comparison and pin differences when it derived', () => {
+    const fresh = tableOf('3.1', 'x');
+    const findings = otherVersionFindings(tableOf('3.0', 'x'), tableOf('3.1', 'x'), {
+      ok: true,
+      before: tableOf('3.0', 'x'),
+      fresh: { ...fresh, header: { ...fresh.header, simulation: { runtime: { v: 2 } } } }
+    });
+    expect(findings.map((finding) => finding.title)).toEqual([
+      'WP Rocket 3.1 matches the table (WP Rocket 3.0) on all 1 rows',
+      'WP Rocket 3.1 matches the simulation table (WP Rocket 3.0) on all 1 rows',
+      'WP Rocket 3.1 ships other simulation inputs than the simulation table (WP Rocket 3.0)'
+    ]);
+    expect(findings.every((finding) => finding.level !== 'error')).toBe(true);
+  });
+});
+
+describe('ciFindings on the PCRE JIT', () => {
+  it('reports a JIT difference as a PHP-build notice, rows still deciding', async () => {
+    const fresh = table();
+    fresh.header.pcreJit = 'off';
+    const findings = await ciFindings(await formatTable(table()), fresh);
+    expect(findings[0]).toEqual({
+      level: 'notice',
+      title: 'another PHP build than the table header',
+      details: ['header.pcreJit: "on" → "off"', 'Rows are still compared; this alone never fails.']
+    });
   });
 });

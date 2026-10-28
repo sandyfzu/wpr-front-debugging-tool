@@ -1,11 +1,16 @@
 name: WP Rocket parity
 
-# Re-derives lib/exclusion-builder/wp-rocket-parity.fixtures.json with the real
-# plugin (`pnpm parity:wp-rocket`, see its header) on a fresh WP Rocket build:
+# Re-derives, with the real plugin (`pnpm parity:wp-rocket`, see its header) on
+# a fresh WP Rocket build, both parity tables and the simulation data file:
+# lib/exclusion-builder/wp-rocket-parity.fixtures.json,
+# lib/wp-rocket-simulation/simulation-parity.fixtures.json and
+# public/wp-rocket-simulation/simulation-data.json — one run checks all three:
 #
-# - the table's reference tag (`v` + header.plugin) — fails as "table stale"
-#   on any row difference and as "reference drift" when the build vendored
-#   other package versions than header.pluginPackages (`--ci`);
+# - the tables' reference tag (`v` + header.plugin, the same in both headers)
+#   — fails as "table stale" / "simulation table stale" / "simulation data
+#   file stale" on any row, pin or data difference and as "reference drift"
+#   when the build vendored other package versions than header.pluginPackages
+#   (`--ci`);
 # - the latest stable tag — warnings only, never a failure (`--compare`).
 #
 # Informational: a separate workflow (the `gates` job in ci.yml is untouched),
@@ -21,6 +26,11 @@ on:
       - lib/exclusion-builder/wp-rocket-parity*
       - lib/exclusion-builder/pcre/problems.ts
       - lib/exclusion-builder/stored-row-drops.ts
+      - lib/wp-rocket-simulation/simulation-parity*
+      - lib/wp-rocket-simulation/simulation-data.ts
+      - lib/wp-rocket/constants.ts
+      - utils/is-record.ts
+      - public/wp-rocket-simulation/**
       - scripts/wp-rocket-parity.*
       - .github/workflows/wp-rocket-parity.yml
   push:
@@ -61,7 +71,11 @@ jobs:
       # (ext-dom/mbstring compiled in), which reproduces every row of the table. The
       # distro PHPs of the runners do not: PCRE2 10.42 (ubuntu-24.04) predates the
       # 10.43 option letters, libxml 2.15 (ubuntu-26.04) re-serializes attributes.
+      # The driver passes `-d pcre.jit=1` on every php call (the JIT moves where the
+      # backtrack limit stops a long match; the headers record `pcreJit`).
       PHP_IMAGE: php@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05
+      # The reference tag is read here; the simulation table's header names the
+      # same one (both are derived from one zip, so a mismatch fails as stale).
       TABLE: lib/exclusion-builder/wp-rocket-parity.fixtures.json
     steps:
       - name: Checkout
@@ -179,10 +193,10 @@ jobs:
           echo "$shim" >> "$GITHUB_PATH"
           echo "TMPDIR=$RUNNER_TEMP/parity-tmp" >> "$GITHUB_ENV"
 
-      - name: Check the table against the reference build
+      - name: Check the tables and the data file against the reference build
         run: pnpm parity:wp-rocket --ci
 
-      - name: Compare the latest stable WP Rocket with the table (warnings only)
+      - name: Compare the latest stable WP Rocket with the tables (warnings only)
         if: ${{ !cancelled() && steps.latest.outcome == 'success' }}
         continue-on-error: true
         env:

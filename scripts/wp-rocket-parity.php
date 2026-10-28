@@ -4,7 +4,9 @@
  * fixture inputs and prints the observed outputs as JSON. Driven by
  * `scripts/wp-rocket-parity.ts` (`pnpm parity:wp-rocket`), never by hand.
  *
- * Usage: php -n wp-rocket-parity.php <plugin-root> <wp-root> < cases.json > results.json
+ * Usage: php -n -d pcre.jit=1 wp-rocket-parity.php <plugin-root> <wp-root> < cases.json > results.json
+ * (`pcre.jit=1` is PHP's default, which `-n` would not otherwise guarantee:
+ * the JIT changes where `pcre.backtrack_limit` stops a long match.)
  *
  * Only I/O is stubbed (options, transients, translations, cron, notices, the
  * service container). Every save/match decision comes from the plugin's own
@@ -13,10 +15,15 @@
  *
  * Input (stdin): {"cases":[…]} — strings that may be invalid UTF-8 (typed and
  * stored rows) arrive base64-encoded:
- *   save:  {id, kind:"save", feature, typed:[b64…], safeMode:bool}
- *   match: {id, kind:"match", feature, rows:[b64…], html}
- * Output (stdout): {"env":{…}, "results":[…]} (see save_case / match_case);
- * `env.vendorPackages` names the composer packages whose `vendor/` code ran.
+ *   save:     {id, kind:"save", feature, typed:[b64…], safeMode:bool}
+ *   match:    {id, kind:"match", feature, rows:[b64…], html}
+ *   simulate: {id, kind:"simulate", feature:"delay_js", rows:[b64…],
+ *              listRows:[b64…] | list:"bundled", html}
+ * A run with simulate cases also sends `sentinels: {runtime, ieFallback}`.
+ * Output (stdout): {"env":{…}, "results":[…]} (see save_case / match_case /
+ * simulate_case); `env.vendorPackages` names the composer packages whose
+ * `vendor/` code ran, `env.pcreJit` whether PCRE's JIT ran (`on`/`off`); a run given `sentinels` adds `ieFallback` (the plugin's
+ * own IE fallback text, which the simulate cases replace by the sentinel).
  */
 
 declare(strict_types=1);
@@ -147,6 +154,7 @@ use WP_Rocket\Engine\Media\Lazyload\Subscriber as LazyloadSubscriber;
 use WP_Rocket\Engine\Optimization\DeferJS\DeferJS;
 use WP_Rocket\Engine\Optimization\DelayJS\Admin\Settings as DelaySettings;
 use WP_Rocket\Engine\Optimization\DelayJS\HTML as DelayHtml;
+use WP_Rocket\Engine\Optimization\DelayJS\Subscriber as DelaySubscriber;
 use WP_Rocket\Engine\Optimization\DynamicLists\DefaultLists\DataManager;
 use WP_Rocket\Engine\Optimization\IEConditionalSubscriber;
 use WP_Rocket\Engine\Optimization\LazyRenderContent\Frontend\Controller as LazyRenderController;
@@ -352,6 +360,16 @@ function buffer_pass(callable $pass, string $html): string {
 function delay_pass(array $rows, string $html): string {
 	$options = new Options_Data(['delay_js' => 1, 'delay_js_exclusions' => $rows]);
 	$pass    = new DelayHtml($options, lists(['delay_js_exclusions' => []]), new Logger());
+	return tolerating_delay_row_warnings(static fn(): string => buffer_pass([$pass, 'delay_js'], $html));
+}
+
+/**
+ * Run Delay JS code tolerating only the warning a row PCRE rejects raises in
+ * DelayJS/HTML.php's own preg_match (once per script, as live).
+ *
+ * @param callable():string $run
+ */
+function tolerating_delay_row_warnings(callable $run): string {
 	set_error_handler(static function (int $no, string $message, string $file, int $line): bool {
 		if ($no === E_WARNING && str_starts_with($message, 'preg_match(): ') && str_ends_with($file, '/DelayJS/HTML.php')) {
 			return true;
@@ -359,7 +377,7 @@ function delay_pass(array $rows, string $html): string {
 		throw new ErrorException("$message ($file:$line)", 0, $no, $file, $line);
 	});
 	try {
-		return buffer_pass([$pass, 'delay_js'], $html);
+		return $run();
 	} finally {
 		restore_error_handler();
 	}
@@ -580,11 +598,109 @@ function match_case(array $case): array {
 }
 
 // ---------------------------------------------------------------------------
+// Simulate: the page WP Rocket serves with Delay JS on, from a page without it.
+// ---------------------------------------------------------------------------
 
-$input   = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-$results = [];
+/**
+ * The plugin's `delay_js_exclusions` list as shipped (plugin-root
+ * `dynamic-lists.json`, the file a fresh install reads before any update).
+ *
+ * @return string[]
+ */
+function bundled_delay_list(string $plugin): array {
+	static $rows = null;
+	if ($rows === null) {
+		$lists = json_decode((string) file_get_contents($plugin . '/dynamic-lists.json'), true, 512, JSON_THROW_ON_ERROR);
+		if (!isset($lists['delay_js_exclusions']) || !is_array($lists['delay_js_exclusions'])) {
+			throw new RuntimeException("$plugin/dynamic-lists.json has no delay_js_exclusions list");
+		}
+		$rows = $lists['delay_js_exclusions'];
+	}
+	return $rows;
+}
+
+/**
+ * The full Delay JS buffer work of a served page: the real
+ * DelayJS\Subscriber's `delay_js` then `add_delay_js_script` (both priority
+ * 26), inside the IE extract/inject — with the list rows as the dynamic list,
+ * the rows as the stored option, a filesystem double whose runtime file is the
+ * runtime sentinel and an HTML whose IE fallback is the fallback sentinel.
+ *
+ * @param string[] $rows      Stored `delay_js_exclusions` rows.
+ * @param string[] $listRows  The dynamic list's `delay_js_exclusions` rows.
+ * @param array{runtime:string,ieFallback:string} $sentinels
+ */
+function simulate_pass(array $rows, array $listRows, array $sentinels, string $html): string {
+	$options = new Options_Data(['delay_js' => 1, 'delay_js_exclusions' => $rows]);
+	$pass    = new class($options, lists(['delay_js_exclusions' => $listRows]), new Logger(), $sentinels['ieFallback']) extends DelayHtml {
+		private string $fallback;
+		public function __construct(Options_Data $options, DataManager $lists, Logger $logger, string $fallback) {
+			parent::__construct($options, $lists, $logger);
+			$this->fallback = $fallback;
+		}
+		public function get_ie_fallback(): string { return $this->fallback; }
+	};
+	$filesystem = new class($sentinels['runtime']) {
+		private string $runtime;
+		public function __construct(string $runtime) { $this->runtime = $runtime; }
+		public function exists($path) { return true; }
+		public function get_contents($path) { return $this->runtime; }
+	};
+	$subscriber = new DelaySubscriber($pass, $filesystem);
+	return tolerating_delay_row_warnings(static fn(): string => buffer_pass(
+		static fn(string $page): string => $subscriber->add_delay_js_script($subscriber->delay_js($page)),
+		$html
+	));
+}
+
+/** The keys a simulate case may carry (anything else is a driver defect). */
+const SIMULATE_KEYS = ['id', 'kind', 'feature', 'rows', 'listRows', 'list', 'html'];
+
+/**
+ * One simulate case: `served` = the page WP Rocket serves with Delay JS on
+ * for `html`. `rocket_disable_meta_generator` is on for the case, so the pass
+ * writes no `wpr_*` comment (the extension never writes one); match cases
+ * keep theirs.
+ *
+ * @return array{id:string,served:string}
+ * @throws RuntimeException on an unknown key (e.g. a Defer JS pre-pass, which
+ *   needs the zip's real Defer lists inside the same buffer — not simulated yet).
+ */
+function simulate_case(array $case, ?array $sentinels, string $plugin): array {
+	if ($sentinels === null) {
+		throw new RuntimeException("simulate {$case['id']}: the input has no sentinels");
+	}
+	if ($case['feature'] !== 'delay_js') {
+		throw new RuntimeException("simulate {$case['id']}: unknown feature {$case['feature']}");
+	}
+	$unknown = array_diff(array_keys($case), SIMULATE_KEYS);
+	if ($unknown !== []) {
+		throw new RuntimeException("simulate {$case['id']}: unknown key(s) " . implode(', ', $unknown) . ' (allowed: ' . implode(', ', SIMULATE_KEYS) . ')');
+	}
+	$rows     = array_map('base64_decode', $case['rows']);
+	$listRows = ($case['list'] ?? null) === 'bundled'
+		? bundled_delay_list($plugin)
+		: array_map('base64_decode', $case['listRows']);
+	$noMeta   = static fn(): bool => true;
+	add_filter('rocket_disable_meta_generator', $noMeta);
+	try {
+		return ['id' => $case['id'], 'served' => simulate_pass($rows, $listRows, $sentinels, $case['html'])];
+	} finally {
+		remove_filter('rocket_disable_meta_generator', $noMeta);
+	}
+}
+
+// ---------------------------------------------------------------------------
+
+$input     = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+$sentinels = $input['sentinels'] ?? null;
+$results   = [];
 foreach ($input['cases'] as $case) {
-	$results[] = $case['kind'] === 'save' ? save_case($case) : match_case($case);
+	$results[] = match ($case['kind']) {
+		'save'     => save_case($case),
+		'match'    => match_case($case),
+		'simulate' => simulate_case($case, $sentinels, $PLUGIN),
+	};
 }
 /**
  * The composer packages (`vendor/<vendor>/<name>/`) whose files were loaded:
@@ -616,10 +732,14 @@ echo json_encode(
 		'env'     => [
 			'php'            => PHP_VERSION,
 			'pcre2'          => explode(' ', PCRE_VERSION)[0],
+			// Effective JIT: enabled by the ini AND compiled into this PCRE build.
+			'pcreJit'        => PCRE_JIT_SUPPORT && (bool) ini_get('pcre.jit') ? 'on' : 'off',
 			'libxml'         => LIBXML_DOTTED_VERSION,
 			'vendorPackages' => loaded_vendor_packages($PLUGIN),
 		],
 		'results' => $results,
-	],
+	] + ($sentinels === null ? [] : [
+		'ieFallback' => (new DelayHtml(new Options_Data([]), lists([]), new Logger()))->get_ie_fallback(),
+	]),
 	JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
 );

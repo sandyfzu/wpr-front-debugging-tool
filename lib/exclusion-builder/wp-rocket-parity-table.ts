@@ -121,6 +121,11 @@ export interface ParityHeader {
   readonly wpZipSha1: string;
   readonly php: string;
   readonly pcre2: string;
+  /**
+   * Whether PCRE's JIT ran (`on`/`off`): it moves where `pcre.backtrack_limit`
+   * stops a long match, so outputs near that limit depend on it.
+   */
+  readonly pcreJit: string;
   readonly libxml: string;
   readonly generatedBy: string;
 }
@@ -233,6 +238,7 @@ export const HEADER_KEYS: readonly (keyof ParityHeader)[] = [
   'wpZipSha1',
   'php',
   'pcre2',
+  'pcreJit',
   'libxml',
   'generatedBy'
 ];
@@ -326,10 +332,13 @@ export function comparedFields(row: {
   return ['candidates', 'excluded', ...warned];
 }
 
+/** This table's name in parse errors. */
+const TABLE_LABEL = 'wp-rocket-parity fixtures';
+
 /** A parse failure naming the table and, when known, the offending row. */
-function fail(id: string | null, problem: string): never {
+function fail(id: string | null, problem: string, table = TABLE_LABEL): never {
   const where = id === null ? '' : ` row "${id}":`;
-  throw new Error(`wp-rocket-parity fixtures:${where} ${problem}`);
+  throw new Error(`${table}:${where} ${problem}`);
 }
 
 /** Narrow to a plain JSON object. */
@@ -629,33 +638,54 @@ export function parseParityInputs(value: unknown): ParityInput[] {
 }
 
 /** Parse `pluginPackages`: a non-empty `{name: version}` map of non-empty strings. */
-function packageVersions(value: unknown): Record<string, string> {
+function packageVersions(value: unknown, table: string): Record<string, string> {
   if (!isRecord(value) || Object.keys(value).length === 0) {
-    return fail(null, 'header "pluginPackages" must be a non-empty {name: version} object');
+    return fail(null, 'header "pluginPackages" must be a non-empty {name: version} object', table);
   }
   for (const [name, version] of Object.entries(value)) {
     if (typeof version !== 'string' || version === '') {
-      fail(null, `header "pluginPackages" "${name}" must be a non-empty version string`);
+      fail(null, `header "pluginPackages" "${name}" must be a non-empty version string`, table);
     }
   }
   return value as Record<string, string>;
+}
+
+/**
+ * The reference fields ({@link HEADER_KEYS}) of a table header, each required
+ * and non-empty; other keys are the caller's to check. Shared by every table
+ * the parity script derives from the same plugin zip.
+ *
+ * @param value The header object.
+ * @param table The table's name in error messages.
+ * @returns The fields, in {@link HEADER_KEYS} order.
+ * @throws {@link Error} naming the table and the offending field.
+ */
+export function parseHeaderFields(
+  value: Record<string, unknown>,
+  table: string = TABLE_LABEL
+): ParityHeader {
+  const header: Partial<Record<keyof ParityHeader, unknown>> = {};
+  for (const key of HEADER_KEYS) {
+    if (key === 'pluginPackages') {
+      header[key] = packageVersions(value[key], table);
+      continue;
+    }
+    const field = value[key];
+    if (typeof field !== 'string') fail(null, `"${key}" must be a string`, table);
+    if (field === '') fail(null, `header "${key}" must not be empty`, table);
+    if (key === 'pcreJit' && field !== 'on' && field !== 'off') {
+      fail(null, `header "pcreJit" must be "on" or "off", got "${field}"`, table);
+    }
+    header[key] = field;
+  }
+  return header as ParityHeader;
 }
 
 /** Parse the header strictly. */
 function parseHeader(value: unknown): ParityHeader {
   if (!isRecord(value)) return fail(null, '"header" must be an object');
   checkKeys(null, value, HEADER_KEYS);
-  const header: Partial<Record<keyof ParityHeader, unknown>> = {};
-  for (const key of HEADER_KEYS) {
-    if (key === 'pluginPackages') {
-      header[key] = packageVersions(value[key]);
-      continue;
-    }
-    const field = stringField(null, value, key);
-    if (field === '') fail(null, `header "${key}" must not be empty`);
-    header[key] = field;
-  }
-  return header as ParityHeader;
+  return parseHeaderFields(value);
 }
 
 /** Same JSON value (typed lines are strings or {b64}). */
