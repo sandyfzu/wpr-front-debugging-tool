@@ -708,10 +708,18 @@ describe('simulationArtifacts', () => {
   const sentinels = { runtime: 'R.run()', ieFallback: 'F' };
   const runtime = 'class X{constructor(){this.v="2.0.5"}}';
   const rows = ['a', 'b\\.js'];
+  const external = ['gist.github.com'];
+  const inline = ['a/b'];
+  const lists = {
+    other: [],
+    delay_js_exclusions: rows,
+    defer_js_external_exclusions: external,
+    defer_js_inline_exclusions: inline
+  };
   const sources = {
     version: '3.0',
     runtime: encode(runtime),
-    dynamicLists: encode(JSON.stringify({ other: [], delay_js_exclusions: rows })),
+    dynamicLists: encode(JSON.stringify(lists)),
     ieFallback: 'fallback é'
   };
 
@@ -727,6 +735,8 @@ describe('simulationArtifacts', () => {
       ieFallback: { bytes: 11, sha256: sha('fallback é') },
       dynamicLists: { sha256: createHash('sha256').update(sources.dynamicLists).digest('hex') },
       delayJsExclusions: { count: 2, sha256: sha(JSON.stringify(rows)) },
+      deferJsExternalExclusions: { count: 1, sha256: sha(JSON.stringify(external)) },
+      deferJsInlineExclusions: { count: 1, sha256: sha(JSON.stringify(inline)) },
       sentinels
     });
     expect(data).toEqual({
@@ -735,11 +745,17 @@ describe('simulationArtifacts', () => {
         '3.0': {
           runtime: { sha256: sha(runtime), version: '2.0.5' },
           ieFallback: { sha256: sha('fallback é') },
-          delayJsExclusions: { sha256: sha(JSON.stringify(rows)), count: 2 }
+          delayJsExclusions: { sha256: sha(JSON.stringify(rows)), count: 2 },
+          deferJsExternalExclusions: { sha256: sha(JSON.stringify(external)), count: 1 },
+          deferJsInlineExclusions: { sha256: sha(JSON.stringify(inline)), count: 1 }
         }
       },
       texts: { [sha(runtime)]: runtime, [sha('fallback é')]: 'fallback é' },
-      rowLists: { [sha(JSON.stringify(rows))]: rows }
+      rowLists: {
+        [sha(JSON.stringify(rows))]: rows,
+        [sha(JSON.stringify(external))]: external,
+        [sha(JSON.stringify(inline))]: inline
+      }
     });
   });
 
@@ -761,6 +777,12 @@ describe('simulationArtifacts', () => {
     expect(bad({ dynamicLists: encode('{"delay_js_exclusions":[1]}') })).toThrow(
       'has no delay_js_exclusions string list'
     );
+    // Each Defer JS list is required too.
+    const without = (name: string): Uint8Array =>
+      encode(JSON.stringify(Object.fromEntries(Object.entries(lists).filter(([k]) => k !== name))));
+    for (const name of ['defer_js_external_exclusions', 'defer_js_inline_exclusions']) {
+      expect(bad({ dynamicLists: without(name) })).toThrow(`has no ${name} string list`);
+    }
     // An empty fallback is no text the data file can hold.
     expect(bad({ ieFallback: '' })).toThrow(`derived ${SIMULATION_DATA_FILE}: texts.`);
   });
@@ -821,6 +843,8 @@ describe('the simulation table in the shared verdicts', () => {
           ieFallback: { bytes: 2, sha256: '2'.repeat(64) },
           dynamicLists: { sha256: '3'.repeat(64) },
           delayJsExclusions: { count: 0, sha256: '4'.repeat(64) },
+          deferJsExternalExclusions: { count: 0, sha256: '5'.repeat(64) },
+          deferJsInlineExclusions: { count: 0, sha256: '6'.repeat(64) },
           sentinels: { runtime: 'R.run()', ieFallback: 'F' }
         }
       },

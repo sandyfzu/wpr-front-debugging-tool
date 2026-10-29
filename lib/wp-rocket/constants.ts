@@ -40,6 +40,12 @@ export const SIMULATION_MARKER_META_NAME = 'wpr-fdt-simulation';
 export const WPR_DEFER_ATTRIBUTE = 'data-rocket-defer';
 
 /**
+ * What WP Rocket's Defer JS writes in place of every `>` of a script tag it
+ * defers (a `>` inside a quoted value included).
+ */
+export const WPR_DEFER_STAMP = ` ${WPR_DEFER_ATTRIBUTE} defer>`;
+
+/**
  * What WP Rocket's Defer JS puts before the body of an inline jQuery script
  * (its inline pass); {@link INLINE_WRAP_CLOSE} goes after it.
  */

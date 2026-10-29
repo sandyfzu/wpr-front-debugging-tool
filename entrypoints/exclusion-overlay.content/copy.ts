@@ -1054,7 +1054,11 @@ const UNREPRODUCED_REGEX_NAMES: Readonly<Record<UnreproducedRegex, string>> = {
   'ie-conditional-script': 'IE conditional scripts',
   'xmp-mask': '<xmp> masking',
   'svg-mask': '<svg> masking',
-  'meta-charset': 'meta charset'
+  'meta-charset': 'meta charset',
+  'html-comments': 'Defer JS comment stripping',
+  'defer-script-src': 'Defer JS script matching',
+  'defer-inline-scripts': 'Defer JS inline script matching',
+  'defer-replacements': 'Defer JS script rewriting'
 };
 
 /** What to do when a page could not be simulated: the forward actions. */

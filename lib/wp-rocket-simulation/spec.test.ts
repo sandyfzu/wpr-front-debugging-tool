@@ -46,7 +46,11 @@ describe('simulation vocabulary', () => {
       'ie-conditional-script',
       'xmp-mask',
       'svg-mask',
-      'meta-charset'
+      'meta-charset',
+      'html-comments',
+      'defer-script-src',
+      'defer-inline-scripts',
+      'defer-replacements'
     ]);
     expect(SIMULATION_CAVEATS).toEqual(['combined-js']);
     expect(SIMULATION_CSP_LIMITS).toEqual([

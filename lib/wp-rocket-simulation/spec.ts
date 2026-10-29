@@ -86,13 +86,21 @@ export const SIMULATION_NOT_APPLICABLE_REASONS = [
 /** One not-applicable reason (see {@link SIMULATION_NOT_APPLICABLE_REASONS}). */
 export type SimulationNotApplicableReason = (typeof SIMULATION_NOT_APPLICABLE_REASONS)[number];
 
-/** The WP Rocket regexes whose backtrack-limit failure is not reproduced. */
+/**
+ * The WP Rocket regexes whose backtrack-limit failure is not reproduced —
+ * and `defer-replacements`: Defer JS's `str_replace` rescans of a page past
+ * a bounded amount of work (WP Rocket's own run would take seconds there).
+ */
 export const UNREPRODUCED_REGEXES = [
   'ie-conditionals',
   'ie-conditional-script',
   'xmp-mask',
   'svg-mask',
-  'meta-charset'
+  'meta-charset',
+  'html-comments',
+  'defer-script-src',
+  'defer-inline-scripts',
+  'defer-replacements'
 ] as const;
 
 /** One unreproduced regex (see {@link UNREPRODUCED_REGEXES}). */

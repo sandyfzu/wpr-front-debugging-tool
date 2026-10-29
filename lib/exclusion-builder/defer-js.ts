@@ -8,7 +8,7 @@
  * set certainly turns WP Rocket's inline-jQuery pass off, its wrapping of
  * inline scripts is undone too (`./defer-inline-js`).
  */
-import { WPR_DEFER_ATTRIBUTE } from '../wp-rocket/constants';
+import { WPR_DEFER_ATTRIBUTE, WPR_DEFER_STAMP } from '../wp-rocket/constants';
 import { scanTags, parseTagAt } from './html-scan';
 import { PCRE_SPACE_CHARS } from './pcre/byte-set';
 import { deferRowSet, type DeferRowSet } from './defer-js-rows';
@@ -45,12 +45,6 @@ const SRC_CAPTURE = new RegExp(
 );
 
 /**
- * What WP Rocket's Defer JS writes into a script it defers: every `>` of the
- * tag it matched becomes this — a `>` inside a quoted value included.
- */
-const DEFER_STAMP = ' data-rocket-defer defer>';
-
-/**
  * The tag texts WP Rocket's Defer JS may have captured from, rebuilt from
  * the served tag by undoing the two later rewrites by their text, not by
  * attribute (neither is bound to where an HTML parser sees attributes):
@@ -68,7 +62,7 @@ const DEFER_STAMP = ' data-rocket-defer defer>';
 function deferTimeTags(tagText: string): readonly string[] {
   const reading = undoDelayRenames(tagText);
   const texts = reading.kind === 'rebuilt' ? reading.texts : [tagText];
-  return texts.map((text) => text.replaceAll(DEFER_STAMP, '>'));
+  return texts.map((text) => text.replaceAll(WPR_DEFER_STAMP, '>'));
 }
 
 /**
@@ -84,8 +78,8 @@ function deferTimeTags(tagText: string): readonly string[] {
 function stampedLead(body: string): string {
   let end = 0;
   for (let gt = body.indexOf('>'); gt !== -1; gt = body.indexOf('>', gt + 1)) {
-    const stampStart = gt + 1 - DEFER_STAMP.length;
-    if (stampStart < end || body.slice(stampStart, gt + 1) !== DEFER_STAMP) break;
+    const stampStart = gt + 1 - WPR_DEFER_STAMP.length;
+    if (stampStart < end || body.slice(stampStart, gt + 1) !== WPR_DEFER_STAMP) break;
     end = gt + 1;
   }
   return body.slice(0, end);

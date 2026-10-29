@@ -72,6 +72,7 @@ import {
   MATCH_OUTPUT_KEYS,
   SAVE_INPUT_KEYS,
   SAVE_OUTPUT_KEYS,
+  overridableKeys,
   parseParityInputs,
   parseParityTable,
   typedLineBytes,
@@ -82,6 +83,11 @@ import {
   type SaveInput,
   type TypedLine
 } from '../lib/exclusion-builder/wp-rocket-parity-table.ts';
+import {
+  expectationsFor,
+  withVersionExpectations,
+  type VersionedRow
+} from '../lib/exclusion-builder/parity-version-expectations.ts';
 import { DELAY_JS_VERSION_PATTERN } from '../lib/wp-rocket/constants.ts';
 import {
   SUPPORTED_WPR_VERSIONS,
@@ -90,10 +96,13 @@ import {
   type SupportedWprVersion
 } from '../lib/wp-rocket/versions.ts';
 import {
+  LIST_PIN_KEYS,
   SIMULATE_INPUT_KEYS,
+  SIMULATE_OUTPUT_KEYS,
   SIMULATION_HEADER_KEYS,
   parseSimulationInputs,
   parseSimulationTable,
+  type DeferSimulateInput,
   type SimulateInput,
   type SimulationPins,
   type SimulationSentinels
@@ -101,6 +110,7 @@ import {
 import {
   SIMULATION_DATA_FORMAT,
   SIMULATION_DATA_PATH,
+  SIMULATION_LIST_FIELDS,
   readSimulationData,
   rowListKeyText,
   type SimulationData
@@ -1369,10 +1379,69 @@ interface SimulateCase {
   readonly id: string;
   readonly kind: 'simulate';
   readonly feature: SimulateInput['feature'];
-  readonly rows: readonly string[];
+  readonly rows?: readonly string[];
   readonly listRows?: readonly string[];
   readonly list?: 'bundled';
+  readonly defer?: {
+    readonly rows: readonly string[];
+    readonly lists: 'bundled' | { readonly external: string[]; readonly inline: string[] };
+  };
   readonly html: string;
+}
+
+/** The survival-case id suffix of a row's Defer JS rows (its Delay JS rows take the bare id). */
+const DEFER_SURVIVAL_SUFFIX = '#defer';
+
+/**
+ * Every authored row set of the simulation inputs that the settings form must
+ * store unchanged (unless `filterOnly`): a row's Delay JS rows under its id,
+ * its Defer JS rows under the id + {@link DEFER_SURVIVAL_SUFFIX}.
+ *
+ * @param inputs The table's inputs.
+ */
+export function simulationSurvivalSources(
+  inputs: readonly SimulateInput[]
+): (SurvivalSource & { readonly feature: 'delay_js' | 'defer_all_js' })[] {
+  return inputs.flatMap((input) => [
+    ...(input.rows === undefined
+      ? []
+      : [
+          {
+            id: input.id,
+            feature: 'delay_js' as const,
+            rows: input.rows,
+            ...(input.filterOnly === true ? { filterOnly: true as const } : {})
+          }
+        ]),
+    ...(input.defer === undefined
+      ? []
+      : [
+          {
+            id: `${input.id}${DEFER_SURVIVAL_SUFFIX}`,
+            feature: 'defer_all_js' as const,
+            rows: input.defer.rows,
+            ...(input.defer.filterOnly === true ? { filterOnly: true as const } : {})
+          }
+        ])
+  ]);
+}
+
+/**
+ * A row's `defer` as a harness case field (rows and given lists base64-encoded).
+ *
+ * @param defer The authored Defer JS inputs.
+ */
+function deferCase(defer: DeferSimulateInput): NonNullable<SimulateCase['defer']> {
+  return {
+    rows: defer.rows.map(lineBase64),
+    lists:
+      defer.lists === 'bundled'
+        ? 'bundled'
+        : {
+            external: defer.lists.external.map(lineBase64),
+            inline: defer.lists.inline.map(lineBase64)
+          }
+  };
 }
 
 /** The harness's simulate result. */
@@ -1383,9 +1452,10 @@ interface SimulateResult {
 
 /**
  * The harness cases for the simulation table: every row as a simulate case
- * (rows and list rows base64-encoded), plus one survival save case per row —
- * rows the case stores directly must be what the settings form stores (else
- * the row is `filterOnly`, and then must NOT survive the form).
+ * (rows and list rows base64-encoded), plus one survival save case per
+ * authored row set ({@link simulationSurvivalSources}) — rows the case stores
+ * directly must be what the settings form stores (else the set is
+ * `filterOnly`, and then must NOT survive the form).
  *
  * @param inputs The table's inputs.
  * @returns The save (survival) cases and the simulate cases.
@@ -1395,21 +1465,24 @@ export function simulationCases(inputs: readonly SimulateInput[]): {
   simulates: SimulateCase[];
 } {
   return {
-    saves: inputs.map((input) => ({
-      id: `${SURVIVAL_PREFIX}${input.id}`,
+    saves: simulationSurvivalSources(inputs).map((source) => ({
+      id: `${SURVIVAL_PREFIX}${source.id}`,
       kind: 'save',
-      feature: input.feature,
-      typed: input.rows.map(lineBase64),
+      feature: source.feature,
+      typed: (source.rows ?? []).map(lineBase64),
       safeMode: false
     })),
     simulates: inputs.map((input) => ({
       id: input.id,
       kind: 'simulate',
       feature: input.feature,
-      rows: input.rows.map(lineBase64),
-      ...(input.listRows === undefined
-        ? { list: 'bundled' as const }
-        : { listRows: input.listRows.map(lineBase64) }),
+      ...(input.rows === undefined ? {} : { rows: input.rows.map(lineBase64) }),
+      ...(input.rows === undefined
+        ? {}
+        : input.listRows === undefined
+          ? { list: 'bundled' as const }
+          : { listRows: input.listRows.map(lineBase64) }),
+      ...(input.defer === undefined ? {} : { defer: deferCase(input.defer) }),
       html: input.html
     }))
   };
@@ -1444,6 +1517,13 @@ export function committedSentinels(value: unknown): SimulationSentinels {
   // The full rules (no `$`/`\`, …) are the table parser's; the derived table is parsed before use.
   return { runtime, ieFallback };
 }
+
+/** The `dynamic-lists.json` list behind each data-file list field. */
+const DYNAMIC_LIST_NAMES: Readonly<Record<(typeof SIMULATION_LIST_FIELDS)[number], string>> = {
+  delayJsExclusions: 'delay_js_exclusions',
+  deferJsExternalExclusions: 'defer_js_external_exclusions',
+  deferJsInlineExclusions: 'defer_js_inline_exclusions'
+};
 
 /** The plugin files the simulation pins and data file are derived from. */
 export interface SimulationSources {
@@ -1494,13 +1574,20 @@ export function simulationArtifacts(
   } catch {
     throw new Error(`the plugin's ${DYNAMIC_LISTS_PATH} is not UTF-8 JSON`);
   }
-  const rows = (lists as { delay_js_exclusions?: unknown } | null)?.delay_js_exclusions;
-  if (!Array.isArray(rows) || !rows.every((row): row is string => typeof row === 'string')) {
-    throw new Error(`the plugin's ${DYNAMIC_LISTS_PATH} has no delay_js_exclusions string list`);
-  }
+  const listed = SIMULATION_LIST_FIELDS.map((field) => {
+    const name = DYNAMIC_LIST_NAMES[field];
+    const rows = (lists as Record<string, unknown> | null)?.[name];
+    if (!Array.isArray(rows) || !rows.every((row): row is string => typeof row === 'string')) {
+      throw new Error(`the plugin's ${DYNAMIC_LISTS_PATH} has no ${name} string list`);
+    }
+    return { field, rows, entry: { count: rows.length, sha256: textSha256(rowListKeyText(rows)) } };
+  });
+  const listPins = Object.fromEntries(listed.map(({ field, entry }) => [field, entry])) as Record<
+    (typeof SIMULATION_LIST_FIELDS)[number],
+    { count: number; sha256: string }
+  >;
   const runtimeSha = digest('sha256', sources.runtime);
   const fallbackSha = textSha256(sources.ieFallback);
-  const listSha = textSha256(rowListKeyText(rows));
   const pins: SimulationPins = {
     runtime: {
       path: RUNTIME_PATH,
@@ -1513,7 +1600,7 @@ export function simulationArtifacts(
       sha256: fallbackSha
     },
     dynamicLists: { sha256: digest('sha256', sources.dynamicLists) },
-    delayJsExclusions: { count: rows.length, sha256: listSha },
+    ...listPins,
     sentinels
   };
   const data: SimulationData = {
@@ -1522,11 +1609,13 @@ export function simulationArtifacts(
       [sources.version]: {
         runtime: { sha256: runtimeSha, version: runtimeVersion },
         ieFallback: { sha256: fallbackSha },
-        delayJsExclusions: { sha256: listSha, count: rows.length }
+        ...(Object.fromEntries(
+          listed.map(({ field, entry }) => [field, { sha256: entry.sha256, count: entry.count }])
+        ) as typeof listPins)
       }
     },
     texts: { [runtimeSha]: runtime, [fallbackSha]: sources.ieFallback },
-    rowLists: { [listSha]: rows }
+    rowLists: Object.fromEntries(listed.map(({ rows, entry }) => [entry.sha256, rows]))
   };
   const read = readSimulationData(data); // The derived file must satisfy its own reader.
   if (!read.ok) throw new Error(`derived ${SIMULATION_DATA_FILE}: ${read.problem}`);
@@ -1574,7 +1663,7 @@ export function pinFindings(
     'runtime',
     'ieFallback',
     'dynamicLists',
-    'delayJsExclusions'
+    ...LIST_PIN_KEYS
   ]).map((line) => line.replace(/^header\./, 'header.simulation.'));
   if (lines.length === 0) return [];
   return [
@@ -1587,6 +1676,53 @@ export function pinFindings(
       ]
     }
   ];
+}
+
+/**
+ * The supported version whose expectations an unpinned build is compared
+ * against: the newest pinned version of its own minor (a newer patch of a
+ * supported minor), else the reference.
+ *
+ * @param version The other build's version.
+ * @param supported The supported versions.
+ * @param reference The tables' reference version.
+ */
+export function expectationBasis(
+  version: string,
+  supported: readonly string[],
+  reference: string
+): string {
+  const parsed = parseReleaseVersion(version);
+  if (parsed === null) return reference;
+  const sameMinorPins = supported
+    .map((pin) => ({ pin, release: parseReleaseVersion(pin) }))
+    .filter(
+      (entry): entry is { pin: string; release: ReleaseVersion } =>
+        entry.release !== null && sameMinor(entry.release, parsed)
+    )
+    .sort((a, b) => compareReleaseVersions(b.release, a.release));
+  return sameMinorPins[0]?.pin ?? reference;
+}
+
+/**
+ * A committed table as one supported version expects it: rows resolved with
+ * that version's overrides (no `byVersion`), header `plugin` and
+ * `pluginPackages` that version's (from `plugins`).
+ *
+ * @param table The committed table.
+ * @param version A supported version the table pins.
+ */
+export function tableForVersion(table: TableObject, version: string): TableObject {
+  const plugins = (table.header.plugins ?? []) as readonly PinnedPlugin[];
+  const pinned = plugins.find((plugin) => plugin.version === version);
+  return {
+    header: {
+      ...table.header,
+      plugin: version,
+      ...(pinned === undefined ? {} : { pluginPackages: pinned.packages })
+    },
+    rows: table.rows.map((row) => expectationsFor(row as VersionedRow, version))
+  };
 }
 
 /** The simulation half of a `--compare` run: both tables, or why it could not be derived. */
@@ -1686,36 +1822,16 @@ export function mergeSimulationData(files: readonly SimulationData[]): Simulatio
 }
 
 /**
- * Row differences between the reference build and another, each line
- * prefixed with the other build's version.
- *
- * @param label The table's name.
- * @param reference The reference build's rows.
- * @param other The other build's rows.
- * @param version The other build's version.
- */
-function buildRowDifferences(
-  label: string,
-  reference: readonly Readonly<Record<string, unknown>>[],
-  other: readonly Readonly<Record<string, unknown>>[],
-  version: string
-): string[] {
-  return rowDifferences(reference, other).map(
-    (difference) => `${label}, WP Rocket ${version}: ${difference.line}`
-  );
-}
-
-/**
  * Both tables and the data file from every supported version's build: the
- * rows (each build must derive them all identically), the reference build's
- * header fields and simulation pins, `plugins` listing every build in the
- * given order, and every version's data-file entry.
+ * reference build's rows with each other build's differing outputs as
+ * version-keyed expectations (`byVersion`), the reference build's header
+ * fields and simulation pins, `plugins` listing every build in the given
+ * order, and every version's data-file entry.
  *
  * @param builds One result per supported version, in registry order.
  * @param reference The reference version (the latest stable).
  * @throws {@link Error} when no build is the reference, or another build
- *   derives other outputs (named per row: a version-specific expectation
- *   would be needed for that row).
+ *   derives another row set or differs on an authored field.
  */
 export function mergeBuilds(
   builds: readonly BuildResult[],
@@ -1723,29 +1839,24 @@ export function mergeBuilds(
 ): { parity: TableObject; simulation: TableObject; data: SimulationData } {
   const base = builds.find((build) => build.header.plugin === reference);
   if (base === undefined) throw new Error(`no build of the reference WP Rocket ${reference}`);
-  const differences = builds
-    .filter((build) => build !== base)
-    .flatMap((build) => [
-      ...buildRowDifferences('table', base.parityRows, build.parityRows, build.header.plugin),
-      ...buildRowDifferences(
-        'simulation table',
-        base.simulationRows,
-        build.simulationRows,
-        build.header.plugin
-      )
-    ]);
-  if (differences.length > 0) {
-    throw new Error(
-      `the supported WP Rocket versions derive other outputs than the reference (${reference}); each row's expectation must hold for every version:\n  ${differences.join('\n  ')}`
-    );
-  }
+  const others = builds.filter((build) => build !== base);
   const header = pick(
     { ...base.header, plugins: builds.map((build) => pinnedPluginOf(build.header)) },
     HEADER_KEYS
   );
+  const parityRows = withVersionExpectations(
+    base.parityRows,
+    others.map((build) => ({ version: build.header.plugin, rows: build.parityRows })),
+    (row) => overridableKeys(row as { kind: string; from?: string })
+  );
+  const simulationRows = withVersionExpectations(
+    base.simulationRows,
+    others.map((build) => ({ version: build.header.plugin, rows: build.simulationRows })),
+    () => SIMULATE_OUTPUT_KEYS
+  );
   return {
-    parity: { header, rows: base.parityRows },
-    simulation: { header: { ...header, simulation: base.pins }, rows: base.simulationRows },
+    parity: { header, rows: parityRows },
+    simulation: { header: { ...header, simulation: base.pins }, rows: simulationRows },
     data: mergeSimulationData(builds.map((build) => build.data))
   };
 }
@@ -1940,7 +2051,7 @@ function deriveSimulationRows(
   const { php, pluginRoot, wpRoot } = tree;
   const cases = simulationCases(inputs);
   const saves = runHarness<SaveResult>(php, pluginRoot, wpRoot, cases.saves);
-  checkSurvival(inputs, saves.results);
+  checkSurvival(simulationSurvivalSources(inputs), saves.results);
   const run = runHarness<SimulateResult>(php, pluginRoot, wpRoot, cases.simulates, { sentinels });
   if (typeof run.ieFallback !== 'string') throw new Error('the harness returned no ieFallback');
   const served = new Map(run.results.map((result) => [result.id, result.served]));
@@ -2093,11 +2204,13 @@ async function deriveAll(
 function compareSimulation(
   committedText: string,
   tree: PluginTree,
-  header: BuildHeader
+  header: BuildHeader,
+  basis: string
 ): SimulationComparison {
   try {
-    const before = JSON.parse(committedText) as TableObject;
-    parseSimulationTable(before);
+    const committed = JSON.parse(committedText) as TableObject;
+    parseSimulationTable(committed);
+    const before = tableForVersion(committed, basis);
     const fresh = deriveSimulationRows(
       parseSimulationInputs(before),
       committedSentinels(before),
@@ -2133,14 +2246,19 @@ async function compare(committed: Committed, pluginZip: string): Promise<void> {
     } else if (supportedWprVersion(version) !== undefined) {
       findings = pinnedVersionFindings(version);
     } else {
+      const basis = expectationBasis(
+        version,
+        SUPPORTED_WPR_VERSIONS.map((row) => row.version),
+        String(parity.header.plugin)
+      );
       findings = await withPluginTree(pluginZip, phpArgs(), (tree) => {
         const rows = deriveParityRows(parityInputs, tree);
         const header = buildHeader(tree, rows.envs);
         return Promise.resolve(
           otherVersionFindings(
-            parity,
+            tableForVersion(parity, basis),
             { header, rows: rows.rows },
-            compareSimulation(committed.simulation, tree, header)
+            compareSimulation(committed.simulation, tree, header, basis)
           )
         );
       });

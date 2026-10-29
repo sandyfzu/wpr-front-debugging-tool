@@ -50,6 +50,8 @@ function validTable(): { header: Json & { simulation: Json }; rows: Json[] } {
         ieFallback: { bytes: 2, sha256: '2'.repeat(64) },
         dynamicLists: { sha256: '3'.repeat(64) },
         delayJsExclusions: { count: 0, sha256: '4'.repeat(64) },
+        deferJsExternalExclusions: { count: 0, sha256: '5'.repeat(64) },
+        deferJsInlineExclusions: { count: 0, sha256: '6'.repeat(64) },
         sentinels: { runtime: 'R.run()', ieFallback: 'F' }
       }
     },
@@ -241,13 +243,68 @@ describe('parseSimulationTable', () => {
       (table) => delete row(table, 1).list,
       'exactly one of "listRows" and "list" is required'
     );
-    for (const value of [true, false]) {
-      rejects((table) => (row(table, 1).defer = value), '"defer" is not supported');
+    for (const value of [true, false, 'bundled']) {
+      rejects((table) => (row(table, 1).defer = value), '"defer" must be an object');
     }
+    rejects(
+      (table) => (row(table, 1).defer = { rows: [], lists: 'latest' }),
+      '"defer.lists" must be an object'
+    );
+    rejects(
+      (table) => (row(table, 1).defer = { rows: [], lists: { external: [] } }),
+      '"inline" must be an array of strings'
+    );
+    rejects(
+      (table) => (row(table, 1).defer = { rows: [], lists: 'bundled', extra: 1 }),
+      'unknown key'
+    );
+    rejects(
+      (table) => (row(table, 1).defer = { rows: [], filterOnly: false, lists: 'bundled' }),
+      '"filterOnly" is either true or absent'
+    );
+    // A Defer JS row carries `defer` and none of the Delay JS inputs.
+    rejects(
+      (table) => (row(table, 1).feature = 'defer_all_js'),
+      'a Defer JS row has no Delay JS input ("rows")'
+    );
+    rejects((table) => {
+      const entry = row(table, 1);
+      entry.feature = 'defer_all_js';
+      for (const key of ['rows', 'filterOnly', 'list']) Reflect.deleteProperty(entry, key);
+    }, 'a Defer JS row needs "defer"');
     rejects((table) => (row(table, 0).html = ''), '"html" must not be empty');
     rejects((table) => delete row(table, 0).html, '"html" must be a string');
     rejects((table) => delete row(table, 0).served, 'row "simulate-a": "served" must be a string');
     rejects((table) => (row(table, 1).served = ''), 'row "simulate-b": "served" must not be empty');
+  });
+
+  it("reads a row's version-keyed served page and a Defer JS row", () => {
+    const table = validTable();
+    row(table, 1).byVersion = { '3.23.5.1': { served: '<r>' } };
+    table.rows.push({
+      id: 'simulate-c',
+      kind: 'simulate',
+      feature: 'defer_all_js',
+      defer: { rows: ['x'], filterOnly: true, lists: { external: ['e'], inline: ['i'] } },
+      html: '<p>',
+      served: '<p>'
+    });
+    const parsed = parseSimulationTable(table);
+    expect(parsed.rows[1]?.byVersion).toEqual({ '3.23.5.1': { served: '<r>' } });
+    expect(parsed.rows[2]).toEqual(table.rows[2]);
+    rejects(
+      (t) => (row(t, 1).byVersion = { '3.23.5.1': { served: '' } }),
+      '"byVersion" served must be a non-empty string'
+    );
+    // `served` is required: a version cannot lack it (null = absent).
+    rejects(
+      (t) => (row(t, 1).byVersion = { '3.23.5.1': { served: null } }),
+      '"byVersion" served must be a non-empty string'
+    );
+    rejects(
+      (t) => (row(t, 1).byVersion = { '3.23.5.1': { html: '<r>' } }),
+      'has "html", which is not an output of this row'
+    );
   });
 
   it('parses a header on its own', () => {
@@ -258,11 +315,17 @@ describe('parseSimulationTable', () => {
 describe('the committed simulation table', () => {
   const { sentinels } = TABLE.header.simulation;
 
-  it('has a served page for every row and exactly one list source per row', () => {
+  it('has a served page for every row and exactly one list source per Delay JS row', () => {
     expect(TABLE.rows.length).toBeGreaterThan(0);
     for (const entry of TABLE.rows) {
       expect(entry.served, entry.id).not.toBe('');
-      expect((entry.listRows === undefined) !== (entry.list === undefined), entry.id).toBe(true);
+      if (entry.feature === 'defer_all_js') {
+        // Defer JS alone: its lists live in `defer`, and no Delay JS list source.
+        expect(entry.defer, entry.id).toBeDefined();
+        expect(entry.listRows ?? entry.list ?? entry.rows, entry.id).toBeUndefined();
+      } else {
+        expect((entry.listRows === undefined) !== (entry.list === undefined), entry.id).toBe(true);
+      }
     }
   });
 
@@ -278,7 +341,15 @@ describe('the committed simulation table', () => {
     const injected = `<script>${sentinels.ieFallback}</script><script>${sentinels.runtime}</script>`;
     const withHead = TABLE.rows.filter((entry) => /<head[^>]*>/i.test(entry.html));
     expect(withHead.length).toBeGreaterThan(0);
-    for (const entry of withHead) expect(entry.served, entry.id).toContain(injected);
+    for (const entry of withHead) {
+      // Defer JS alone injects no runtime at all.
+      if (entry.feature === 'defer_all_js') {
+        expect(entry.served, entry.id).not.toContain(sentinels.runtime);
+        expect(entry.served, entry.id).not.toContain(sentinels.ieFallback);
+      } else {
+        expect(entry.served, entry.id).toContain(injected);
+      }
+    }
   });
 
   it('has sentinels the Delay JS disable step removes like the real scripts', () => {
@@ -317,7 +388,9 @@ describe('the committed data file', () => {
     expect(entry).toEqual({
       runtime: { sha256: pins.runtime.sha256, version: pins.runtime.version },
       ieFallback: { sha256: pins.ieFallback.sha256 },
-      delayJsExclusions: pins.delayJsExclusions
+      delayJsExclusions: pins.delayJsExclusions,
+      deferJsExternalExclusions: pins.deferJsExternalExclusions,
+      deferJsInlineExclusions: pins.deferJsInlineExclusions
     });
     const bytes = (key: string): number => new TextEncoder().encode(data.texts[key]).byteLength;
     expect(bytes(pins.runtime.sha256)).toBe(pins.runtime.bytes);

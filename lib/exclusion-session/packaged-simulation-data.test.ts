@@ -45,7 +45,9 @@ function dataFile(version = '3.24'): Record<string, unknown> {
       [version]: {
         runtime: { sha256: textKey(RUNTIME), version: '2.0.5' },
         ieFallback: { sha256: textKey(FALLBACK) },
-        delayJsExclusions: { sha256: listKey(ROWS), count: ROWS.length }
+        delayJsExclusions: { sha256: listKey(ROWS), count: ROWS.length },
+        deferJsExternalExclusions: { sha256: listKey(ROWS), count: ROWS.length },
+        deferJsInlineExclusions: { sha256: listKey(ROWS), count: ROWS.length }
       }
     },
     texts: { [textKey(RUNTIME)]: RUNTIME, [textKey(FALLBACK)]: FALLBACK },

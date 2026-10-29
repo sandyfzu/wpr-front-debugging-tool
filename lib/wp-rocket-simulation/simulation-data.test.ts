@@ -48,7 +48,9 @@ function valid(): File {
       '3.23.5.1': {
         runtime: { sha256: RUNTIME, version: '2.0.5' },
         ieFallback: { sha256: FALLBACK },
-        delayJsExclusions: { sha256: LIST, count: 2 }
+        delayJsExclusions: { sha256: LIST, count: 2 },
+        deferJsExternalExclusions: { sha256: LIST, count: 2 },
+        deferJsInlineExclusions: { sha256: LIST, count: 2 }
       }
     },
     texts: { [RUNTIME]: 'runtime', [FALLBACK]: 'fallback' },
@@ -159,6 +161,15 @@ describe('readSimulationData', () => {
       (file) => ((entry(file).delayJsExclusions as Json).count = '2'),
       'delayJsExclusions.count must be 2'
     );
+    // Every list field is read the same way (the Defer JS lists too).
+    rejects(
+      (file) => delete entry(file).deferJsExternalExclusions,
+      'deferJsExternalExclusions must be an object'
+    );
+    rejects(
+      (file) => ((entry(file).deferJsInlineExclusions as Json).count = 1),
+      'versions.3.23.5.1.deferJsInlineExclusions.count must be 2'
+    );
     // A list key is never looked up as a text (and the reverse).
     rejects((file) => {
       (entry(file).delayJsExclusions as Json).sha256 = RUNTIME;
@@ -232,7 +243,9 @@ describe('simulationDataHashProblem', () => {
         '3.24': {
           runtime: { sha256: textKey(runtime), version: '2.0.5' },
           ieFallback: { sha256: textKey(fallback) },
-          delayJsExclusions: { sha256: listKey(rows), count: 2 }
+          delayJsExclusions: { sha256: listKey(rows), count: 2 },
+          deferJsExternalExclusions: { sha256: listKey(rows), count: 2 },
+          deferJsInlineExclusions: { sha256: listKey(rows), count: 2 }
         }
       },
       texts: { [textKey(runtime)]: runtime, [textKey(fallback)]: fallback },
@@ -300,7 +313,9 @@ describe('the committed data file', () => {
     expect(reference).toEqual({
       runtime: { sha256: pins.runtime.sha256, version: pins.runtime.version },
       ieFallback: { sha256: pins.ieFallback.sha256 },
-      delayJsExclusions: pins.delayJsExclusions
+      delayJsExclusions: pins.delayJsExclusions,
+      deferJsExternalExclusions: pins.deferJsExternalExclusions,
+      deferJsInlineExclusions: pins.deferJsInlineExclusions
     });
     // The pinned byte sizes too: the texts are the plugin's own files.
     const encoder = new TextEncoder();

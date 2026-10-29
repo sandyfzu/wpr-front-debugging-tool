@@ -12,6 +12,7 @@ import {
   ciFindings,
   compareReleaseVersions,
   compareZip,
+  expectationBasis,
   formatTable,
   mergeBuilds,
   mergeSimulationData,
@@ -23,6 +24,7 @@ import {
   pluginZipPath,
   releaseCheckFindings,
   simulationArtifacts,
+  tableForVersion,
   zipPinProblem,
   type BuildHeader,
   type BuildResult
@@ -55,7 +57,9 @@ function build(version: string, options: { stored?: string; runtime?: string } =
     {
       version,
       runtime: new TextEncoder().encode(runtime),
-      dynamicLists: new TextEncoder().encode('{"delay_js_exclusions":["a"]}'),
+      dynamicLists: new TextEncoder().encode(
+        '{"delay_js_exclusions":["a"],"defer_js_external_exclusions":["b"],"defer_js_inline_exclusions":["c"]}'
+      ),
       ieFallback: 'F'
     },
     { runtime: 'R.run()', ieFallback: 'S' }
@@ -158,9 +162,9 @@ describe('mergeBuilds', () => {
       simulation: build('3.24').pins
     });
     expect(Object.keys(merged.data.versions)).toEqual(['3.24', '3.23.5.1']);
-    // Identical runtime, fallback and list: one text each, one list.
+    // Identical runtime, fallback and lists: one text each, one entry per list (three lists).
     expect(Object.keys(merged.data.texts)).toHaveLength(2);
-    expect(Object.keys(merged.data.rowLists)).toHaveLength(1);
+    expect(Object.keys(merged.data.rowLists)).toHaveLength(3);
   });
 
   it('stores a build-specific runtime as its own text', () => {
@@ -171,9 +175,24 @@ describe('mergeBuilds', () => {
     expect(merged.simulation.header.simulation).toEqual(build('3.24', { runtime: other }).pins);
   });
 
-  it('fails naming each row a non-reference build derives otherwise', () => {
-    expect(() => mergeBuilds([build('3.24'), build('3.23.5.1', { stored: 'b' })], '3.24')).toThrow(
-      'table, WP Rocket 3.23.5.1: save-a.stored: ["a"] → ["b"]'
+  it("writes a non-reference build's differing outputs as that version's expectations", () => {
+    const merged = mergeBuilds([build('3.24'), build('3.23.5.1', { stored: 'b' })], '3.24');
+    expect(merged.parity.rows).toEqual([
+      { ...build('3.24').parityRows[0], byVersion: { '3.23.5.1': { stored: ['b'] } } }
+    ]);
+    // Only the differing row carries them.
+    expect(merged.simulation.rows).toEqual(build('3.24').simulationRows);
+  });
+
+  it('fails when a build differs on an input or derives another row set', () => {
+    const other = build('3.23.5.1');
+    const typed = { ...other, parityRows: [{ ...other.parityRows[0], typed: ['z'] }] };
+    expect(() => mergeBuilds([build('3.24'), typed], '3.24')).toThrow(
+      'WP Rocket 3.23.5.1: save-a.typed differs but is not an output'
+    );
+    const fewer = { ...other, simulationRows: [] };
+    expect(() => mergeBuilds([build('3.24'), fewer], '3.24')).toThrow(
+      'WP Rocket 3.23.5.1 derives another row set (at "simulate-a")'
     );
   });
 
@@ -181,6 +200,59 @@ describe('mergeBuilds', () => {
     expect(() => mergeBuilds([build('3.23.5.1')], '3.24')).toThrow(
       'no build of the reference WP Rocket 3.24'
     );
+  });
+});
+
+describe('expectationBasis (which expectations --compare reads)', () => {
+  const supported = ['3.24', '3.23.5.1'];
+
+  it("compares a newer patch of a supported minor against that minor's expectations", () => {
+    expect(expectationBasis('3.23.6', supported, '3.24')).toBe('3.23.5.1');
+    expect(expectationBasis('3.24.1', supported, '3.24')).toBe('3.24');
+  });
+
+  it('compares a new minor, a pre-release elsewhere or an unparsable version against the reference', () => {
+    expect(expectationBasis('3.25', supported, '3.24')).toBe('3.24');
+    expect(expectationBasis('4.0-beta1', supported, '3.24')).toBe('3.24');
+    expect(expectationBasis('not a version', supported, '3.24')).toBe('3.24');
+  });
+
+  it('picks the newest pin of the minor when several are pinned', () => {
+    expect(expectationBasis('3.23.9', ['3.24', '3.23.5', '3.23.5.1'], '3.24')).toBe('3.23.5.1');
+  });
+});
+
+describe('tableForVersion', () => {
+  const committed = {
+    header: {
+      plugin: '3.24',
+      pluginPackages: { 'a/b': 'v2' },
+      plugins: [
+        { version: '3.24', zipSha256: 'a', packages: { 'a/b': 'v2' } },
+        { version: '3.23.5.1', zipSha256: 'b', packages: { 'a/b': 'v1' } }
+      ]
+    },
+    rows: [
+      { id: 'r', served: 'new', byVersion: { '3.23.5.1': { served: 'old' } } },
+      { id: 's', served: 'same' }
+    ]
+  };
+
+  it("resolves the rows and the header to one version's expectations", () => {
+    expect(tableForVersion(committed, '3.23.5.1')).toEqual({
+      header: { ...committed.header, plugin: '3.23.5.1', pluginPackages: { 'a/b': 'v1' } },
+      rows: [
+        { id: 'r', served: 'old' },
+        { id: 's', served: 'same' }
+      ]
+    });
+  });
+
+  it('gives the reference its own outputs, without byVersion', () => {
+    expect(tableForVersion(committed, '3.24').rows).toEqual([
+      { id: 'r', served: 'new' },
+      { id: 's', served: 'same' }
+    ]);
   });
 });
 

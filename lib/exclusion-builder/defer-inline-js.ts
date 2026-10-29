@@ -26,13 +26,13 @@ const JS_EXTENSION = /\.[jJ][sS]/;
  * WP Rocket's jQuery-code test on a body: its default pattern
  * `jQuery|\$\.\(|\$\(`, ASCII case-insensitive.
  */
-const JQUERY_CODE = new RegExp(`${JQUERY_WORD.source}|\\$\\.?\\(`);
+export const JQUERY_CODE = new RegExp(`${JQUERY_WORD.source}|\\$\\.?\\(`);
 
 /**
  * WP Rocket's structured-data test on the whole element (tag and body):
  * `application/ld+json`, ASCII case-insensitive. Such a script is never wrapped.
  */
-const LD_JSON = /[aA][pP][pP][lL][iI][cC][aA][tT][iI][oO][nN]\/[lL][dD]\+[jJ][sS][oO][nN]/;
+export const LD_JSON = /[aA][pP][pP][lL][iI][cC][aA][tT][iI][oO][nN]\/[lL][dD]\+[jJ][sS][oO][nN]/;
 
 /**
  * WP Rocket's script match (`<script[^>]*>` up to the first `</script>`, both

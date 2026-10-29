@@ -11,13 +11,16 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { simulateDelayJs } from './delay-js-forward';
 import { SIMULATION_DATA_PATH, readSimulationData } from './simulation-data';
-import { parseSimulationTable, type SimulateRow } from './simulation-parity-table';
+import { isDelayOnlyRow, parseSimulationTable, type DelayOnlyRow } from './simulation-parity-table';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 const TABLE = parseSimulationTable(
   JSON.parse(readFileSync(join(HERE, 'simulation-parity.fixtures.json'), 'utf8'))
 );
+
+/** The Delay JS rows without Defer JS (Defer JS rows have their own suite). */
+const DELAY_ROWS = TABLE.rows.filter(isDelayOnlyRow);
 
 const DATA = readSimulationData(
   JSON.parse(readFileSync(join(HERE, '../../public', SIMULATION_DATA_PATH), 'utf8'))
@@ -38,7 +41,7 @@ function bundledList(): readonly string[] {
  *
  * @param row The row.
  */
-function simulated(row: SimulateRow): string {
+function simulated(row: DelayOnlyRow): string {
   return simulateDelayJs({
     html: row.html,
     runtime: TABLE.header.simulation.sentinels.runtime,
@@ -66,15 +69,15 @@ function firstDifference(
 
 describe('simulateDelayJs — simulation parity table', () => {
   it('covers both list sources', () => {
-    expect(TABLE.rows.some((row) => row.list === 'bundled')).toBe(true);
-    expect(TABLE.rows.some((row) => row.listRows !== undefined)).toBe(true);
+    expect(DELAY_ROWS.some((row) => row.list === 'bundled')).toBe(true);
+    expect(DELAY_ROWS.some((row) => row.listRows !== undefined)).toBe(true);
   });
 
   it('pins the bundled list it reads to the table header', () => {
     expect(bundledList()).toHaveLength(TABLE.header.simulation.delayJsExclusions.count);
   });
 
-  it.each(TABLE.rows.map((row) => [row.id, row] as const))('%s', (_id, row) => {
+  it.each(DELAY_ROWS.map((row) => [row.id, row] as const))('%s', (_id, row) => {
     // Compared as strings, reported as the first difference (not a megabyte diff).
     const out = simulated(row);
     expect(firstDifference(out, row.served)).toBeNull();

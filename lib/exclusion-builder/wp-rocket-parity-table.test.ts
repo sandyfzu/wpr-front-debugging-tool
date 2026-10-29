@@ -449,6 +449,40 @@ describe('parseParityTable', () => {
       '"rows" must equal the stored rows of "save-a"'
     );
   });
+
+  it("reads a row's version-keyed expectations, each as consistent as the reference outputs", () => {
+    const table = validTable();
+    row(table, 'save-a').byVersion = { '3.23.5.1': { stored: ['b'] } };
+    row(table, 'match-a').byVersion = { '3.23.5.1': { rows: ['b'], excluded: [] } };
+    const parsed = parseParityTable(table);
+    expect(parsed.rows[0]?.byVersion).toEqual({ '3.23.5.1': { stored: ['b'] } });
+    expect(parsed.rows[1]?.byVersion).toEqual({ '3.23.5.1': { rows: ['b'], excluded: [] } });
+    // A derived row's rows follow its source row per version.
+    rejects((t) => {
+      row(t, 'save-a').byVersion = { '3.23.5.1': { stored: ['b'] } };
+    }, '"rows" must equal the stored rows of "save-a" (WP Rocket 3.23.5.1)');
+    // An override is checked like the reference outputs (here: excluded ⊆ candidates).
+    rejects((t) => {
+      row(t, 'match-c').byVersion = { '3.23.5.1': { excluded: ['z'] } };
+    }, 'match-c');
+    // Only outputs are overridable; `rows` only on a derived row.
+    rejects((t) => {
+      row(t, 'match-b').byVersion = { '3.23.5.1': { rows: ['x'] } };
+    }, 'has "rows", which is not an output of this row');
+    rejects((t) => {
+      row(t, 'save-a').byVersion = { '3.23.5.1': { typed: ['x'] } };
+    }, 'has "typed", which is not an output of this row');
+  });
+
+  it('checks a null override (that version derives no such output) against the row shape', () => {
+    // Every output here is bound to its row shape: a version cannot lack one.
+    rejects((t) => {
+      row(t, 'match-c').byVersion = { '3.23.5.1': { rekeyed: null } };
+    }, '"hashed"/"rekeyed" are present exactly on lazy rendering rows');
+    rejects((t) => {
+      row(t, 'match-b').byVersion = { '3.23.5.1': { inlineWrapped: null } };
+    }, '"inlineWrapped" is present exactly on Defer JS rows');
+  });
 });
 
 describe('parseParityInputs', () => {

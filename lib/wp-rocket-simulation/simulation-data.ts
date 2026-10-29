@@ -31,9 +31,29 @@ export interface SimulationVersionData {
   readonly runtime: { readonly sha256: string; readonly version: string };
   /** The IE fallback script text (`DelayJS\HTML::get_ie_fallback()`). */
   readonly ieFallback: { readonly sha256: string };
-  /** The bundled `delay_js_exclusions` list (plugin-root `dynamic-lists.json`). */
-  readonly delayJsExclusions: { readonly sha256: string; readonly count: number };
+  /** The bundled `delay_js_exclusions` list (plugin-root `dynamic-lists.json`, as every list). */
+  readonly delayJsExclusions: SimulationListEntry;
+  /** The bundled `defer_js_external_exclusions` list (script URLs Defer JS never defers). */
+  readonly deferJsExternalExclusions: SimulationListEntry;
+  /** The bundled `defer_js_inline_exclusions` list (inline texts Defer JS never wraps). */
+  readonly deferJsInlineExclusions: SimulationListEntry;
 }
+
+/** A bundled list by content key, with its row count. */
+export interface SimulationListEntry {
+  readonly sha256: string;
+  readonly count: number;
+}
+
+/** The list fields of a version entry, in file order. */
+export const SIMULATION_LIST_FIELDS = [
+  'delayJsExclusions',
+  'deferJsExternalExclusions',
+  'deferJsInlineExclusions'
+] as const;
+
+/** A list field of a version entry. */
+export type SimulationListField = (typeof SIMULATION_LIST_FIELDS)[number];
 
 /** The whole data file. */
 export interface SimulationData {
@@ -106,37 +126,46 @@ function versionEntry(
   texts: Readonly<Record<string, string>>,
   rowLists: Readonly<Record<string, readonly string[]>>
 ): SimulationVersionData {
-  const entry = record(value, ['runtime', 'ieFallback', 'delayJsExclusions'], where);
+  const entry = record(value, ['runtime', 'ieFallback', ...SIMULATION_LIST_FIELDS], where);
   const runtime = record(ownValue(entry, 'runtime'), ['sha256', 'version'], `${where}.runtime`);
   const version = ownValue(runtime, 'version');
   if (typeof version !== 'string' || !RUNTIME_VERSION.test(version)) {
     fail(`${where}.runtime.version must be a non-empty version string`);
   }
   const fallback = record(ownValue(entry, 'ieFallback'), ['sha256'], `${where}.ieFallback`);
-  const list = record(
-    ownValue(entry, 'delayJsExclusions'),
-    ['sha256', 'count'],
-    `${where}.delayJsExclusions`
-  );
   const runtimeKey = sha256Field(runtime, `${where}.runtime`);
   const fallbackKey = sha256Field(fallback, `${where}.ieFallback`);
-  const listKey = sha256Field(list, `${where}.delayJsExclusions`);
   for (const [key, field] of [
     [runtimeKey, 'runtime'],
     [fallbackKey, 'ieFallback']
   ] as const) {
     if (ownValue(texts, key) === undefined) fail(`${where}.${field}: no text ${key}`);
   }
-  const rows = ownValue(rowLists, listKey) as readonly string[] | undefined;
-  if (rows === undefined) fail(`${where}.delayJsExclusions: no row list ${listKey}`);
-  if (ownValue(list, 'count') !== rows.length) {
-    fail(`${where}.delayJsExclusions.count must be ${String(rows.length)} (its row list's length)`);
-  }
+  const list = (field: SimulationListField): SimulationListEntry =>
+    listEntry(ownValue(entry, field), `${where}.${field}`, rowLists);
   return {
     runtime: { sha256: runtimeKey, version },
     ieFallback: { sha256: fallbackKey },
-    delayJsExclusions: { sha256: listKey, count: rows.length }
+    delayJsExclusions: list('delayJsExclusions'),
+    deferJsExternalExclusions: list('deferJsExternalExclusions'),
+    deferJsInlineExclusions: list('deferJsInlineExclusions')
   };
+}
+
+/** One list field, resolved against the row lists (its count must be the list's length). */
+function listEntry(
+  value: unknown,
+  where: string,
+  rowLists: Readonly<Record<string, readonly string[]>>
+): SimulationListEntry {
+  const list = record(value, ['sha256', 'count'], where);
+  const key = sha256Field(list, where);
+  const rows = ownValue(rowLists, key) as readonly string[] | undefined;
+  if (rows === undefined) fail(`${where}: no row list ${key}`);
+  if (ownValue(list, 'count') !== rows.length) {
+    fail(`${where}.count must be ${String(rows.length)} (its row list's length)`);
+  }
+  return { sha256: key, count: rows.length };
 }
 
 /** The read itself; throws {@link DataProblem}. */
@@ -167,7 +196,7 @@ function readStrict(value: unknown): SimulationData {
     Object.values(versions).flatMap((entry) => [
       entry.runtime.sha256,
       entry.ieFallback.sha256,
-      entry.delayJsExclusions.sha256
+      ...SIMULATION_LIST_FIELDS.map((field) => entry[field].sha256)
     ])
   );
   for (const key of [...Object.keys(texts), ...Object.keys(rowLists)]) {

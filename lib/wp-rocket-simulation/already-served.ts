@@ -15,6 +15,7 @@ import { attributeValue, isGeneratorMeta } from './generator-meta';
 import {
   DELAY_JS_SRC,
   FEATURE_META_TOKENS,
+  WPR_DEFER_ATTRIBUTE,
   WPR_FEATURES_ATTRIBUTE,
   isDelayJSType
 } from '../wp-rocket/constants';
@@ -57,5 +58,25 @@ export function alreadyServesDelayJs(html: string, tags?: readonly ScannedTag[])
   };
   return (tags ?? scanTags(html)).some(
     (tag) => (declaresDelayJs(tag) || isDelayedScript(html, tag)) && !masked(tag)
+  );
+}
+
+/**
+ * Whether the served page already defers its scripts with WP Rocket: the
+ * generator meta declares `wpr_defer_js`, or a `<script>` element carries
+ * the `data-rocket-defer` attribute WP Rocket stamps on every script it
+ * defers. Only real elements count (never text in comments or values).
+ *
+ * @param tags The page's opening tags (`scanTags(html)`).
+ */
+export function alreadyServesDeferJs(tags: readonly ScannedTag[]): boolean {
+  return tags.some(
+    (tag) =>
+      (isGeneratorMeta(tag) &&
+        (attributeValue(tag, WPR_FEATURES_ATTRIBUTE)
+          ?.split(/\s+/)
+          .includes(FEATURE_META_TOKENS.defer_all_js) ??
+          false)) ||
+      (tag.name === 'script' && tag.attrs.some((attr) => attr.name === WPR_DEFER_ATTRIBUTE))
   );
 }

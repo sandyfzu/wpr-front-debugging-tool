@@ -602,21 +602,52 @@ function match_case(array $case): array {
 // ---------------------------------------------------------------------------
 
 /**
- * The plugin's `delay_js_exclusions` list as shipped (plugin-root
+ * One of the plugin's dynamic lists as shipped (plugin-root
  * `dynamic-lists.json`, the file a fresh install reads before any update).
  *
+ * @param string $name e.g. `delay_js_exclusions`, `defer_js_external_exclusions`.
  * @return string[]
  */
-function bundled_delay_list(string $plugin): array {
-	static $rows = null;
-	if ($rows === null) {
-		$lists = json_decode((string) file_get_contents($plugin . '/dynamic-lists.json'), true, 512, JSON_THROW_ON_ERROR);
-		if (!isset($lists['delay_js_exclusions']) || !is_array($lists['delay_js_exclusions'])) {
-			throw new RuntimeException("$plugin/dynamic-lists.json has no delay_js_exclusions list");
-		}
-		$rows = $lists['delay_js_exclusions'];
+function bundled_list(string $plugin, string $name): array {
+	static $files = [];
+	$lists = $files[$plugin] ??= json_decode((string) file_get_contents($plugin . '/dynamic-lists.json'), true, 512, JSON_THROW_ON_ERROR);
+	if (!isset($lists[$name]) || !is_array($lists[$name])) {
+		throw new RuntimeException("$plugin/dynamic-lists.json has no $name list");
 	}
-	return $rows;
+	return $lists[$name];
+}
+
+/**
+ * The Defer JS passes of a served page: the real DeferJS::defer_js then
+ * DeferJS::defer_inline_js (buffer priorities 24 and 25), with the rows as the
+ * stored option and the given dynamic lists. Runs inside the caller's buffer.
+ * A list row holding the `/` delimiter breaks the inline-exclusions pattern
+ * where the build quotes for `#` (its preg_match warns, as live, and fails):
+ * only that warning, raised in DeferJS.php, is tolerated.
+ *
+ * @param string[] $rows Stored `exclude_defer_js` rows.
+ * @param array{external:string[],inline:string[]} $lists
+ * @return callable(string):string
+ */
+function simulate_defer(array $rows, array $lists): callable {
+	$options = new Options_Data(['defer_all_js' => 1, 'exclude_defer_js' => $rows]);
+	$pass    = new DeferJS($options, lists(['defer_js_external_exclusions' => $lists['external'], 'defer_js_inline_exclusions' => $lists['inline']]));
+	return static function (string $page) use ($pass): string {
+		set_error_handler(static function (int $no, string $message, string $file, int $line): bool {
+			if (!(error_reporting() & $no)) {
+				return false; // @-silenced by the plugin itself (its joined-pattern pre-check).
+			}
+			if ($no === E_WARNING && str_starts_with($message, 'preg_match(): ') && str_ends_with($file, '/DeferJS/DeferJS.php')) {
+				return true;
+			}
+			throw new ErrorException("$message ($file:$line)", 0, $no, $file, $line);
+		});
+		try {
+			return $pass->defer_inline_js($pass->defer_js($page));
+		} finally {
+			restore_error_handler();
+		}
+	};
 }
 
 /**
@@ -630,7 +661,7 @@ function bundled_delay_list(string $plugin): array {
  * @param string[] $listRows  The dynamic list's `delay_js_exclusions` rows.
  * @param array{runtime:string,ieFallback:string} $sentinels
  */
-function simulate_pass(array $rows, array $listRows, array $sentinels, string $html): string {
+function simulate_pass(array $rows, array $listRows, array $sentinels, string $html, ?callable $defer = null): string {
 	$options = new Options_Data(['delay_js' => 1, 'delay_js_exclusions' => $rows]);
 	$pass    = new class($options, lists(['delay_js_exclusions' => $listRows]), new Logger(), $sentinels['ieFallback']) extends DelayHtml {
 		private string $fallback;
@@ -648,43 +679,73 @@ function simulate_pass(array $rows, array $listRows, array $sentinels, string $h
 	};
 	$subscriber = new DelaySubscriber($pass, $filesystem);
 	return tolerating_delay_row_warnings(static fn(): string => buffer_pass(
-		static fn(string $page): string => $subscriber->add_delay_js_script($subscriber->delay_js($page)),
+		static fn(string $page): string => $subscriber->add_delay_js_script($subscriber->delay_js($defer === null ? $page : $defer($page))),
 		$html
 	));
 }
 
 /** The keys a simulate case may carry (anything else is a driver defect). */
-const SIMULATE_KEYS = ['id', 'kind', 'feature', 'rows', 'listRows', 'list', 'html'];
+const SIMULATE_KEYS = ['id', 'kind', 'feature', 'rows', 'listRows', 'list', 'defer', 'html'];
+
+/** The keys a case's `defer` may carry. */
+const DEFER_KEYS = ['rows', 'lists'];
 
 /**
- * One simulate case: `served` = the page WP Rocket serves with Delay JS on
- * for `html`. `rocket_disable_meta_generator` is on for the case, so the pass
- * writes no `wpr_*` comment (the extension never writes one); match cases
- * keep theirs.
+ * A case's Defer JS pass, or null without `defer`: base64 rows, and the lists
+ * given or (`"bundled"`) the zip's own.
+ *
+ * @return callable(string):string|null
+ */
+function case_defer(array $case, string $plugin): ?callable {
+	if (!isset($case['defer'])) {
+		return null;
+	}
+	$unknown = array_diff(array_keys($case['defer']), DEFER_KEYS);
+	if ($unknown !== []) {
+		throw new RuntimeException("simulate {$case['id']}: unknown defer key(s) " . implode(', ', $unknown));
+	}
+	$lists = $case['defer']['lists'] === 'bundled'
+		? ['external' => bundled_list($plugin, 'defer_js_external_exclusions'), 'inline' => bundled_list($plugin, 'defer_js_inline_exclusions')]
+		: ['external' => array_map('base64_decode', $case['defer']['lists']['external']), 'inline' => array_map('base64_decode', $case['defer']['lists']['inline'])];
+	return simulate_defer(array_map('base64_decode', $case['defer']['rows']), $lists);
+}
+
+/**
+ * One simulate case: `served` = the page WP Rocket serves for `html` with
+ * Delay JS on (`delay_js`; plus Defer JS before it in the same buffer when the
+ * case has `defer`) or Defer JS alone (`defer_all_js`).
+ * `rocket_disable_meta_generator` is on for the case, so the passes write no
+ * `wpr_*` comment (the extension never writes one); match cases keep theirs.
  *
  * @return array{id:string,served:string}
- * @throws RuntimeException on an unknown key (e.g. a Defer JS pre-pass, which
- *   needs the zip's real Defer lists inside the same buffer — not simulated yet).
+ * @throws RuntimeException on an unknown feature or key.
  */
 function simulate_case(array $case, ?array $sentinels, string $plugin): array {
 	if ($sentinels === null) {
 		throw new RuntimeException("simulate {$case['id']}: the input has no sentinels");
 	}
-	if ($case['feature'] !== 'delay_js') {
+	if (!in_array($case['feature'], ['delay_js', 'defer_all_js'], true)) {
 		throw new RuntimeException("simulate {$case['id']}: unknown feature {$case['feature']}");
 	}
 	$unknown = array_diff(array_keys($case), SIMULATE_KEYS);
 	if ($unknown !== []) {
 		throw new RuntimeException("simulate {$case['id']}: unknown key(s) " . implode(', ', $unknown) . ' (allowed: ' . implode(', ', SIMULATE_KEYS) . ')');
 	}
-	$rows     = array_map('base64_decode', $case['rows']);
-	$listRows = ($case['list'] ?? null) === 'bundled'
-		? bundled_delay_list($plugin)
-		: array_map('base64_decode', $case['listRows']);
-	$noMeta   = static fn(): bool => true;
+	$defer  = case_defer($case, $plugin);
+	$noMeta = static fn(): bool => true;
 	add_filter('rocket_disable_meta_generator', $noMeta);
 	try {
-		return ['id' => $case['id'], 'served' => simulate_pass($rows, $listRows, $sentinels, $case['html'])];
+		if ($case['feature'] === 'defer_all_js') {
+			if ($defer === null || isset($case['rows']) || isset($case['listRows']) || isset($case['list'])) {
+				throw new RuntimeException("simulate {$case['id']}: a Defer JS case has defer and no Delay JS input");
+			}
+			return ['id' => $case['id'], 'served' => buffer_pass($defer, $case['html'])];
+		}
+		$rows     = array_map('base64_decode', $case['rows']);
+		$listRows = ($case['list'] ?? null) === 'bundled'
+			? bundled_list($plugin, 'delay_js_exclusions')
+			: array_map('base64_decode', $case['listRows']);
+		return ['id' => $case['id'], 'served' => simulate_pass($rows, $listRows, $sentinels, $case['html'], $defer)];
 	} finally {
 		remove_filter('rocket_disable_meta_generator', $noMeta);
 	}

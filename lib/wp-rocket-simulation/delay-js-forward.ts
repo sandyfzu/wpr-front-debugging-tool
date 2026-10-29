@@ -34,7 +34,8 @@ import { scriptProbeBudget } from '../exclusion-builder/pcre/id-probe';
 import { translateRegexRows, type TranslatedRow } from '../exclusion-builder/pcre/rows';
 import { runtimeParse } from '../exclusion-builder/pcre/translate';
 import { DELAY_JS_TYPE_CURRENT } from '../wp-rocket/constants';
-import { alreadyServesDelayJs } from './already-served';
+import { alreadyServesDeferJs, alreadyServesDelayJs } from './already-served';
+import { deferJsPasses, type DeferJsPassCounts, type DeferJsPassInput } from './defer-js-forward';
 import { isAmpDocument } from './amp';
 import { delayJsCaveats, type SimulationCaveat } from './caveats';
 import { delayScriptMatches, type DelayScriptMatch } from './delay-js-regex';
@@ -77,6 +78,16 @@ export interface DelayJsForwardInput {
    * in another charset passes that charset's measure.
    */
   readonly measure?: ByteMeasure;
+  /**
+   * Defer JS on too: its passes run first, in the same buffer (inside the
+   * same IE conditional extraction), as WP Rocket orders them.
+   */
+  readonly defer?: DeferJsPassInput;
+}
+
+/** What the Defer JS passes did ahead of Delay JS (`already-served`: the page already defers). */
+export interface DeferAheadReport extends DeferJsPassCounts {
+  readonly state: 'simulated' | 'already-served';
 }
 
 /**
@@ -114,6 +125,8 @@ export interface DelayJsForwardReport {
    * spelling those placeholders) — WP Rocket's own outcome varies per load.
    */
   readonly undetermined: number;
+  /** With {@link DelayJsForwardInput.defer} on a simulated page: the Defer JS passes. */
+  readonly defer?: DeferAheadReport;
 }
 
 /** The transform's result. */
@@ -533,15 +546,27 @@ export function simulateDelayJs(input: DelayJsForwardInput): DelayJsForwardResul
   const lookup = readForwardRows(input.listRows, input.rows);
   const conditionals = conditionalScan(input.html);
   const extracted = extractIeConditionals(input.html, conditionals);
-  const masks = delayMaskScan(extracted.html);
+  let page = extracted.html;
+  let defer: DeferAheadReport | undefined;
+  if (input.defer !== undefined) {
+    if (alreadyServesDeferJs(tags)) {
+      defer = { state: 'already-served', deferred: 0, wrapped: 0 };
+    } else {
+      const passes = deferJsPasses(page, input.defer, measure);
+      if ('beyond' in passes) return beyond(passes.beyond);
+      page = passes.html;
+      defer = { state: 'simulated', deferred: passes.deferred, wrapped: passes.wrapped };
+    }
+  }
+  const masks = delayMaskScan(page);
   const unreproduced = unreproducedBeforeMetaMove(
     extracted.conditionals,
     ieConditionalsSteps(input.html, conditionals, measure),
-    maskSteps(extracted.html, masks, measure),
+    maskSteps(page, masks, measure),
     measure
   );
   if (unreproduced !== null) return beyond(unreproduced);
-  const pass = delayPass(extracted.html, masks.regions, lookup, measure);
+  const pass = delayPass(page, masks.regions, lookup, measure);
   const injected = injectDelayScripts(pass.html, input.runtime, input.ieFallback);
   let added = injected.html;
   if (injected.movesMeta && metaCharsetSpans(added, measure).length > 0) {
@@ -557,7 +582,8 @@ export function simulateDelayJs(input: DelayJsForwardInput): DelayJsForwardResul
       runtimeInjected: injected.runtimeInjected,
       caveats: delayJsCaveats(tags),
       regexLimitHit: pass.regexLimitHit,
-      undetermined: pass.undetermined
+      undetermined: pass.undetermined,
+      ...(defer === undefined ? {} : { defer })
     }
   };
 }

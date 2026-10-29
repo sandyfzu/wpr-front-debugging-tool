@@ -3,7 +3,7 @@
     "surface": "background service worker",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 271.6
+      "raw": 278.8
     }
   },
   {
@@ -27,8 +27,8 @@
     "surface": "simulation data (packaged, background-loaded)",
     "globs": ["wp-rocket-simulation/simulation-data.json"],
     "maxKb": {
-      "raw": 19.0,
-      "gzip": 5.9
+      "raw": 21.6,
+      "gzip": 6.7
     },
     "required": true
   },
@@ -36,8 +36,8 @@
     "surface": "simulation data (packaged, background-loaded)",
     "globs": ["wp-rocket-simulation/simulation-data.json"],
     "maxKb": {
-      "raw": 19.0,
-      "gzip": 5.9
+      "raw": 21.6,
+      "gzip": 6.7
     },
     "build": "firefox-mv2",
     "required": true
@@ -68,8 +68,8 @@
     "surface": "exclusion builder overlay (runtime content script, loaded on open)",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 301.2,
-      "gzip": 101.1
+      "raw": 301.5,
+      "gzip": 101.2
     }
   },
   {
@@ -77,8 +77,8 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 301.2,
-      "gzip": 101.1
+      "raw": 301.5,
+      "gzip": 101.2
     }
   },
   {
@@ -152,7 +152,7 @@
     "build": "firefox-mv2",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 268.5
+      "raw": 275.6
     }
   },
   {
@@ -160,15 +160,15 @@
     "build": "firefox-mv2",
     "globs": ["exclusion-transform-worker.js"],
     "maxKb": {
-      "raw": 140.6,
-      "gzip": 49.6
+      "raw": 147.6,
+      "gzip": 51.9
     }
   },
   {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1737.8
+      "raw": 1745.2
     }
   }
 ]

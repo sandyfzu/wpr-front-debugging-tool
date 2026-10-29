@@ -5,13 +5,22 @@
  * outputs from the real plugin (`pnpm parity:wp-rocket`). Test/dev tooling
  * only: no product module imports it (or the table).
  *
- * One row kind, **simulate**: a page served without Delay JS (`html`), the
- * stored Delay JS rows (`rows`) and the dynamic list's `delay_js_exclusions`
- * (`listRows`, or `list: "bundled"` = the pinned zip's own list) → the page
- * WP Rocket serves with Delay JS on (`served`): its real Delay JS passes,
- * runtime and IE fallback injection, meta charset move — with the header's
- * sentinel texts standing in for the runtime and the IE fallback, and no
- * `wpr_*` comment (the extension never writes one).
+ * One row kind, **simulate**: a page served without the feature (`html`) →
+ * the page WP Rocket serves with it on (`served`), no `wpr_*` comment (the
+ * extension never writes one):
+ *
+ * - `feature: "delay_js"`: the stored Delay JS rows (`rows`) and the dynamic
+ *   list's `delay_js_exclusions` (`listRows`, or `list: "bundled"` = the
+ *   pinned zip's own list); its real Delay JS passes, runtime and IE fallback
+ *   injection, meta charset move — the header's sentinel texts standing in
+ *   for the runtime and the IE fallback. An optional `defer` also turns
+ *   Defer JS on, in the same buffer before Delay JS (as WP Rocket orders them).
+ * - `feature: "defer_all_js"`: Defer JS alone, from `defer`.
+ *
+ * `defer` = the stored Defer JS rows and the dynamic lists'
+ * `defer_js_external_exclusions` + `defer_js_inline_exclusions` (`lists`, or
+ * `"bundled"` = the pinned zip's own). Outputs are the reference build's;
+ * `byVersion` holds another supported version's differing `served`.
  *
  * The header carries the plugin reference fields shared with the exclusion
  * parity table plus `simulation`: the pins of the real runtime, IE fallback
@@ -28,13 +37,18 @@ import {
   parseHeaderFields,
   type ParityHeader
 } from '../exclusion-builder/wp-rocket-parity-table.ts';
+import {
+  VERSION_EXPECTATIONS_KEY,
+  parseVersionExpectations,
+  type VersionedRow
+} from '../exclusion-builder/parity-version-expectations.ts';
 import { SHA256_PATTERN } from './simulation-data.ts';
 
 /** This table's name in parse errors. */
 const TABLE_LABEL = 'simulation-parity fixtures';
 
-/** The features a simulate row may name (Delay JS only, until another feature is simulated). */
-export const SIMULATE_FEATURES = ['delay_js'] as const;
+/** The features a simulate row may name (its last pass in the buffer). */
+export const SIMULATE_FEATURES = ['delay_js', 'defer_all_js'] as const;
 
 /** A feature a simulate row may name. */
 export type SimulateFeature = (typeof SIMULATE_FEATURES)[number];
@@ -50,6 +64,12 @@ export interface SimulationSentinels {
   readonly ieFallback: string;
 }
 
+/** A dynamic list's pin: its row count and the sha256 of `JSON.stringify(rows)`. */
+export interface ListPin {
+  readonly count: number;
+  readonly sha256: string;
+}
+
 /** The derived pins and the authored sentinels (`header.simulation`). */
 export interface SimulationPins {
   /** The real runtime file in the plugin zip: path, its own version (`this.v`), size, sha256. */
@@ -63,8 +83,12 @@ export interface SimulationPins {
   readonly ieFallback: { readonly bytes: number; readonly sha256: string };
   /** The plugin-root `dynamic-lists.json` file. */
   readonly dynamicLists: { readonly sha256: string };
-  /** Its `delay_js_exclusions` rows (sha256 of `JSON.stringify(rows)`). */
-  readonly delayJsExclusions: { readonly count: number; readonly sha256: string };
+  /** Its `delay_js_exclusions` rows (sha256 of `JSON.stringify(rows)`, as every list pin). */
+  readonly delayJsExclusions: ListPin;
+  /** Its `defer_js_external_exclusions` rows. */
+  readonly deferJsExternalExclusions: ListPin;
+  /** Its `defer_js_inline_exclusions` rows. */
+  readonly deferJsInlineExclusions: ListPin;
   readonly sentinels: SimulationSentinels;
 }
 
@@ -73,27 +97,63 @@ export interface SimulationHeader extends ParityHeader {
   readonly simulation: SimulationPins;
 }
 
+/** The dynamic lists Defer JS reads. */
+export interface DeferLists {
+  /** `defer_js_external_exclusions`: joined with the stored rows into the script-URL pattern. */
+  readonly external: readonly string[];
+  /** `defer_js_inline_exclusions`: inline-script texts the jQuery wrapping skips. */
+  readonly inline: readonly string[];
+}
+
+/** A row's Defer JS inputs. */
+export interface DeferSimulateInput {
+  /** Stored Defer JS rows (`exclude_defer_js`). */
+  readonly rows: readonly string[];
+  /** The rows only reach WP Rocket through a PHP filter — the settings form would change them. */
+  readonly filterOnly?: true;
+  /** The dynamic lists, or `"bundled"` = the pinned zip's own. */
+  readonly lists: DeferLists | 'bundled';
+}
+
 /** The authored part of a simulate row. */
 export interface SimulateInput {
   readonly id: string;
   readonly kind: 'simulate';
   readonly feature: SimulateFeature;
   readonly note?: string;
-  /** Stored Delay JS rows (the settings field). */
-  readonly rows: readonly string[];
+  /** Stored Delay JS rows (the settings field); Delay JS rows only. */
+  readonly rows?: readonly string[];
   /** The rows only reach WP Rocket through a PHP filter — the settings form would change them. */
   readonly filterOnly?: true;
   /** The dynamic list's `delay_js_exclusions` rows (exclusive with `list`). */
   readonly listRows?: readonly string[];
   /** `"bundled"` = the pinned zip's own `delay_js_exclusions` (exclusive with `listRows`). */
   readonly list?: 'bundled';
+  /** Defer JS also on (Delay JS rows), or the feature itself (Defer JS rows). */
+  readonly defer?: DeferSimulateInput;
   readonly html: string;
 }
 
-/** A complete simulate row. */
-export interface SimulateRow extends SimulateInput {
+/** A complete simulate row (reference outputs; `byVersion` where another version differs). */
+export interface SimulateRow extends SimulateInput, VersionedRow {
   /** The page WP Rocket serves with Delay JS on (sentinels for the runtime + fallback). */
   readonly served: string;
+}
+
+/** A Delay JS row without Defer JS (its stored rows always present). */
+export type DelayOnlyRow = SimulateRow & {
+  readonly feature: 'delay_js';
+  readonly rows: readonly string[];
+  readonly defer?: undefined;
+};
+
+/**
+ * Whether a row simulates Delay JS alone.
+ *
+ * @param row A table row.
+ */
+export function isDelayOnlyRow(row: SimulateRow): row is DelayOnlyRow {
+  return row.feature === 'delay_js' && row.defer === undefined && row.rows !== undefined;
 }
 
 /** The whole table. */
@@ -106,7 +166,22 @@ export interface SimulationTable {
 export const SIMULATION_HEADER_KEYS: readonly string[] = [...HEADER_KEYS, 'simulation'];
 
 /** `header.simulation` keys, in file order. */
-const PIN_KEYS = ['runtime', 'ieFallback', 'dynamicLists', 'delayJsExclusions', 'sentinels'];
+const PIN_KEYS = [
+  'runtime',
+  'ieFallback',
+  'dynamicLists',
+  'delayJsExclusions',
+  'deferJsExternalExclusions',
+  'deferJsInlineExclusions',
+  'sentinels'
+];
+
+/** The list pins of `header.simulation`, in file order. */
+export const LIST_PIN_KEYS = [
+  'delayJsExclusions',
+  'deferJsExternalExclusions',
+  'deferJsInlineExclusions'
+] as const;
 
 /** Simulate-row input keys, in file order. */
 export const SIMULATE_INPUT_KEYS = [
@@ -118,6 +193,7 @@ export const SIMULATE_INPUT_KEYS = [
   'filterOnly',
   'listRows',
   'list',
+  'defer',
   'html'
 ] as const;
 
@@ -211,12 +287,10 @@ function parsePins(value: unknown): SimulationPins {
   );
   const fallback = record(null, pins.ieFallback, ['bytes', 'sha256'], where('ieFallback'));
   const lists = record(null, pins.dynamicLists, ['sha256'], where('dynamicLists'));
-  const list = record(
-    null,
-    pins.delayJsExclusions,
-    ['count', 'sha256'],
-    where('delayJsExclusions')
-  );
+  const listPin = (key: (typeof LIST_PIN_KEYS)[number]): ListPin => {
+    const list = record(null, pins[key], ['count', 'sha256'], where(key));
+    return { count: countField(list, 'count', where(key)), sha256: sha256Field(list, where(key)) };
+  };
   const sentinels = record(null, pins.sentinels, ['runtime', 'ieFallback'], where('sentinels'));
   const path = stringField(null, runtime, 'path');
   const version = stringField(null, runtime, 'version');
@@ -234,10 +308,9 @@ function parsePins(value: unknown): SimulationPins {
       sha256: sha256Field(fallback, where('ieFallback'))
     },
     dynamicLists: { sha256: sha256Field(lists, where('dynamicLists')) },
-    delayJsExclusions: {
-      count: countField(list, 'count', where('delayJsExclusions')),
-      sha256: sha256Field(list, where('delayJsExclusions'))
-    },
+    delayJsExclusions: listPin('delayJsExclusions'),
+    deferJsExternalExclusions: listPin('deferJsExternalExclusions'),
+    deferJsInlineExclusions: listPin('deferJsInlineExclusions'),
     sentinels: {
       runtime: sentinel(sentinels, 'runtime'),
       ieFallback: sentinel(sentinels, 'ieFallback')
@@ -262,14 +335,12 @@ function parseInput(value: unknown, index: number): SimulateInput {
   if (!isRecord(value)) return fail(null, `row #${String(index)} must be an object`);
   const id = stringField(null, value, 'id');
   if (!ROW_ID.test(id)) fail(id, 'ids are simulate-… in lowercase kebab case');
-  if ('defer' in value) {
-    // Named apart from the generic unknown-key error: the key looks plausible but is unsupported.
-    fail(
-      id,
-      '"defer" is not supported: a Defer JS pre-pass needs the plugin\'s real Defer JS lists in the same buffer as Delay JS, which simulate rows do not model yet — remove the key'
-    );
-  }
-  record(id, value, [...SIMULATE_INPUT_KEYS, ...SIMULATE_OUTPUT_KEYS], 'the row');
+  record(
+    id,
+    value,
+    [...SIMULATE_INPUT_KEYS, ...SIMULATE_OUTPUT_KEYS, VERSION_EXPECTATIONS_KEY],
+    'the row'
+  );
   if (value.kind !== 'simulate') fail(id, '"kind" must be "simulate"');
   const feature = SIMULATE_FEATURES.find((candidate) => candidate === value.feature);
   if (feature === undefined) fail(id, `"feature" must be one of ${SIMULATE_FEATURES.join(', ')}`);
@@ -277,10 +348,24 @@ function parseInput(value: unknown, index: number): SimulateInput {
   if (note !== undefined && (typeof note !== 'string' || note === '')) {
     fail(id, '"note" must be a non-empty string');
   }
-  const rows = stringList(id, value, 'rows');
-  if (value.filterOnly !== undefined && value.filterOnly !== true) {
-    fail(id, '"filterOnly" is either true or absent');
+  const defer = value.defer === undefined ? undefined : deferInput(id, value.defer);
+  const html = stringField(id, value, 'html');
+  if (html === '') fail(id, '"html" must not be empty');
+  const head = {
+    id,
+    kind: 'simulate' as const,
+    feature,
+    ...(note === undefined ? {} : { note })
+  };
+  const tail = { ...(defer === undefined ? {} : { defer }), html };
+  if (feature === 'defer_all_js') {
+    const stray = DELAY_INPUT_KEYS.find((key) => key in value);
+    if (stray !== undefined) fail(id, `a Defer JS row has no Delay JS input ("${stray}")`);
+    if (defer === undefined) fail(id, 'a Defer JS row needs "defer"');
+    return { ...head, ...tail };
   }
+  const rows = stringList(id, value, 'rows');
+  const filterOnly = filterOnlyField(id, value);
   const listRows = value.listRows === undefined ? undefined : stringList(id, value, 'listRows');
   if (value.list !== undefined && value.list !== 'bundled') {
     fail(id, '"list" is either "bundled" or absent');
@@ -288,18 +373,42 @@ function parseInput(value: unknown, index: number): SimulateInput {
   if ((listRows === undefined) === (value.list === undefined)) {
     fail(id, 'exactly one of "listRows" and "list" is required');
   }
-  const html = stringField(id, value, 'html');
-  if (html === '') fail(id, '"html" must not be empty');
   return {
-    id,
-    kind: 'simulate',
-    feature,
-    ...(note === undefined ? {} : { note }),
+    ...head,
     rows,
-    ...(value.filterOnly === true ? { filterOnly: true as const } : {}),
+    ...(filterOnly ? { filterOnly: true as const } : {}),
     ...(listRows === undefined ? { list: 'bundled' as const } : { listRows }),
-    html
+    ...tail
   };
+}
+
+/** The Delay JS input keys (a Defer JS row carries none). */
+const DELAY_INPUT_KEYS = ['rows', 'filterOnly', 'listRows', 'list'] as const;
+
+/** An optional `filterOnly` flag: `true` or absent. */
+function filterOnlyField(id: string, value: Record<string, unknown>): boolean {
+  if (value.filterOnly !== undefined && value.filterOnly !== true) {
+    fail(id, '"filterOnly" is either true or absent');
+  }
+  return value.filterOnly === true;
+}
+
+/** Parse a row's `defer` strictly. */
+function deferInput(id: string, value: unknown): DeferSimulateInput {
+  const defer = record(id, value, ['rows', 'filterOnly', 'lists'], '"defer"');
+  const rows = stringList(id, defer, 'rows');
+  const filterOnly = filterOnlyField(id, defer);
+  let lists: DeferSimulateInput['lists'];
+  if (defer.lists === 'bundled') {
+    lists = 'bundled';
+  } else {
+    const fields = record(id, defer.lists, ['external', 'inline'], '"defer.lists"');
+    lists = {
+      external: stringList(id, fields, 'external'),
+      inline: stringList(id, fields, 'inline')
+    };
+  }
+  return { rows, ...(filterOnly ? { filterOnly: true as const } : {}), lists };
 }
 
 /** The rows array of a table-shaped value. */
@@ -339,9 +448,21 @@ export function parseSimulationTable(value: unknown): SimulationTable {
   const header = parseSimulationHeader(table.header);
   const records = rowsOf(value) as Record<string, unknown>[];
   const rows = parseSimulationInputs(value).map((input, index): SimulateRow => {
-    const served = stringField(input.id, records[index] as Record<string, unknown>, 'served');
+    const fields = records[index] as Record<string, unknown>;
+    const served = stringField(input.id, fields, 'served');
     if (served === '') fail(input.id, '"served" must not be empty');
-    return { ...input, served };
+    const byVersion = parseVersionExpectations(
+      fields,
+      SIMULATE_OUTPUT_KEYS,
+      header.plugin,
+      (problem) => fail(input.id, problem)
+    );
+    for (const override of Object.values(byVersion ?? {})) {
+      if (override.served === '' || typeof override.served !== 'string') {
+        fail(input.id, `"${VERSION_EXPECTATIONS_KEY}" served must be a non-empty string`);
+      }
+    }
+    return { ...input, served, ...(byVersion === undefined ? {} : { byVersion }) };
   });
   return { header, rows };
 }

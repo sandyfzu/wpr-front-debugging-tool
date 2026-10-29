@@ -71,6 +71,37 @@ export function byteLength(
   return bytes;
 }
 
+/** Code units per stored prefix sum of {@link rangeByteCounter}. */
+const COUNTER_BLOCK = 64;
+
+/**
+ * A {@link byteLength} over many ranges of one text, each in O(1) amortized
+ * (at most {@link COUNTER_BLOCK} units read at each end): pure ASCII counts
+ * units; otherwise byte sums are stored every {@link COUNTER_BLOCK} units —
+ * for scans whose attempts measure nested ranges.
+ *
+ * @param text The text.
+ * @param measure The byte measure.
+ * @returns The byte length of `text[from, to)`.
+ */
+export function rangeByteCounter(
+  text: string,
+  measure: ByteMeasure = UTF8_MEASURE
+): (from: number, to: number) => number {
+  // Non-ASCII anywhere: a lone code unit at 0x80 or above.
+  if (!/[^\0-\x7f]/.test(text)) return (from, to) => Math.max(to - from, 0);
+  const sums = new Float64Array(Math.floor(text.length / COUNTER_BLOCK) + 1);
+  for (let block = 1; block < sums.length; block++) {
+    const start = (block - 1) * COUNTER_BLOCK;
+    sums[block] = (sums[block - 1] ?? 0) + byteLength(text, start, start + COUNTER_BLOCK, measure);
+  }
+  const prefix = (at: number): number => {
+    const block = Math.floor(at / COUNTER_BLOCK);
+    return (sums[block] ?? 0) + byteLength(text, block * COUNTER_BLOCK, at, measure);
+  };
+  return (from, to) => (to <= from ? 0 : prefix(to) - prefix(from));
+}
+
 /**
  * The UTF-8 length of `text[from, to)`.
  *

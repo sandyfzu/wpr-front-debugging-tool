@@ -26,6 +26,13 @@
  * Runtime imports carry their `.ts` extension and reach only leaf modules, so
  * the dev script can load this module under Node's native TypeScript.
  */
+import {
+  VERSION_EXPECTATIONS_KEY,
+  expectationsFor,
+  parseVersionExpectations,
+  withOverrides,
+  type VersionedRow
+} from './parity-version-expectations.ts';
 import { NON_BLOCKING_PROBLEMS, PROBLEM_IDS, type ProblemId } from './pcre/problems.ts';
 import { STORED_ROW_DROP_REASONS, type StoredRowDropReason } from './stored-row-drops.ts';
 import type { ExclusionFeatureId } from './set';
@@ -241,8 +248,11 @@ export interface MatchRow extends MatchInput {
 /** The authored part of any row (what the dev script feeds the harness). */
 export type ParityInput = SaveInput | MatchInput;
 
-/** A complete row: authored inputs plus the harness-derived outputs. */
-export type ParityRow = SaveRow | MatchRow;
+/**
+ * A complete row: authored inputs plus the harness-derived outputs (the
+ * reference version's), and `byVersion` where another supported version differs.
+ */
+export type ParityRow = (SaveRow | MatchRow) & VersionedRow;
 
 /** The whole table. */
 export interface ParityTable {
@@ -616,12 +626,12 @@ function parseInput(value: unknown, index: number): ParityInput {
   if (!ROW_ID.test(id)) fail(id, 'ids are save-… / match-… in lowercase kebab case');
   if (value.kind === 'save') {
     if (!id.startsWith('save-')) fail(id, 'save row ids start with "save-"');
-    checkKeys(id, value, [...SAVE_INPUT_KEYS, ...SAVE_OUTPUT_KEYS]);
+    checkKeys(id, value, [...SAVE_INPUT_KEYS, ...SAVE_OUTPUT_KEYS, VERSION_EXPECTATIONS_KEY]);
     return saveInput(id, value);
   }
   if (value.kind === 'match') {
     if (!id.startsWith('match-')) fail(id, 'match row ids start with "match-"');
-    checkKeys(id, value, [...MATCH_INPUT_KEYS, ...MATCH_OUTPUT_KEYS]);
+    checkKeys(id, value, [...MATCH_INPUT_KEYS, ...MATCH_OUTPUT_KEYS, VERSION_EXPECTATIONS_KEY]);
     return matchInput(id, value);
   }
   return fail(id, '"kind" must be "save" or "match"');
@@ -788,6 +798,20 @@ function parseHeader(value: unknown): ParityHeader {
   return parseHeaderFields(value);
 }
 
+/**
+ * The outputs a row's version-keyed expectations may override: a save row's
+ * outputs; a match row's, plus `rows` when it is derived (`from`).
+ *
+ * @param input The row's authored part.
+ */
+export function overridableKeys(input: {
+  readonly kind: string;
+  readonly from?: string;
+}): readonly string[] {
+  if (input.kind === 'save') return SAVE_OUTPUT_KEYS;
+  return input.from === undefined ? MATCH_OUTPUT_KEYS : [...MATCH_OUTPUT_KEYS, 'rows'];
+}
+
 /** Same JSON value (typed lines are strings or {b64}). */
 function sameLine(a: TypedLine, b: TypedLine): boolean {
   return typeof a === 'string' || typeof b === 'string' ? a === b : a.b64 === b.b64;
@@ -894,13 +918,33 @@ export function parseParityTable(value: unknown): ParityTable {
   const records = rowsOf(value) as Record<string, unknown>[];
   const rows = parseParityInputs(value).map((input, index): ParityRow => {
     const record = records[index] as Record<string, unknown>;
-    return input.kind === 'save' ? saveRow(input, record) : matchRow(input, record);
+    const complete = (fields: Record<string, unknown>): SaveRow | MatchRow =>
+      input.kind === 'save' ? saveRow(input, fields) : matchRow(input, fields);
+    const row = complete(record);
+    const byVersion = parseVersionExpectations(
+      record,
+      overridableKeys(input),
+      header.plugin,
+      (problem) => fail(input.id, problem)
+    );
+    if (byVersion === undefined) return row;
+    // Each version's outputs must be as consistent as the reference's.
+    for (const fields of Object.values(byVersion)) complete(withOverrides(record, fields));
+    return { ...row, byVersion };
   });
   for (const row of rows) {
     if (row.kind !== 'match' || row.from === undefined) continue;
-    const source = rows.find((candidate) => candidate.id === row.from) as SaveRow;
-    if (JSON.stringify(source.stored) !== JSON.stringify(row.rows)) {
-      fail(row.id, `"rows" must equal the stored rows of "${row.from}"`);
+    const source = rows.find((candidate) => candidate.id === row.from) as SaveRow & VersionedRow;
+    const versions = new Set([
+      header.plugin,
+      ...Object.keys(source.byVersion ?? {}),
+      ...Object.keys(row.byVersion ?? {})
+    ]);
+    for (const version of versions) {
+      const stored = expectationsFor(source, version).stored;
+      if (JSON.stringify(stored) !== JSON.stringify(expectationsFor(row, version).rows)) {
+        fail(row.id, `"rows" must equal the stored rows of "${row.from}" (WP Rocket ${version})`);
+      }
     }
   }
   return { header, rows };

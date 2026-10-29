@@ -31,8 +31,9 @@ import {
 } from '../wp-rocket/constants';
 import { SIMULATION_DATA_PATH, readSimulationData } from '../wp-rocket-simulation/simulation-data';
 import {
+  isDelayOnlyRow,
   parseSimulationTable,
-  type SimulateRow
+  type DelayOnlyRow
 } from '../wp-rocket-simulation/simulation-parity-table';
 import {
   runDocumentPipeline,
@@ -48,6 +49,9 @@ const TABLE = parseSimulationTable(
     readFileSync(join(HERE, '../wp-rocket-simulation/simulation-parity.fixtures.json'), 'utf8')
   )
 );
+
+/** The Delay JS rows without Defer JS (Defer JS rows have their own suite). */
+const DELAY_ROWS = TABLE.rows.filter(isDelayOnlyRow);
 
 const DATA = readSimulationData(
   JSON.parse(readFileSync(join(HERE, '../../public', SIMULATION_DATA_PATH), 'utf8'))
@@ -72,7 +76,7 @@ const BUDGET_MS = 600_000;
 const LARGE_PAGE_CHARS = 100_000;
 
 /** The simulation input a session would hand the engine for a table row. */
-function simulationInput(row: SimulateRow): DocumentSimulationInput {
+function simulationInput(row: DelayOnlyRow): DocumentSimulationInput {
   return {
     features: ['delay_js'],
     wpRocketVersion: TABLE.header.plugin,
@@ -90,9 +94,9 @@ function setWith(rows: Partial<ExclusionSet['rows']>): ExclusionSet {
 }
 
 /** Every Delay JS row set of the table the builder accepts as stored rows. */
-const DELAY_ROW_SETS: readonly ExclusionSet[] = TABLE.rows
-  .filter((row) => row.rows.length > 0)
-  .map((row) => setWith({ delayJs: acceptedRows(row.rows) }));
+const DELAY_ROW_SETS: readonly ExclusionSet[] = DELAY_ROWS.filter((row) => row.rows.length > 0).map(
+  (row) => setWith({ delayJs: acceptedRows(row.rows) })
+);
 
 /**
  * The set matrix O1 runs every case under: no rows, the table's Delay JS
@@ -156,14 +160,14 @@ function stripSimulationMarker(html: string, markerId: string): string {
 }
 
 /** The rows WP Rocket served with no stored rows: O1's oracle cases. */
-const O1_ROWS = TABLE.rows.filter((row) => row.rows.length === 0);
+const O1_ROWS = DELAY_ROWS.filter((row) => row.rows.length === 0);
 
 /** The rows with stored rows: O2's cases. */
-const O2_ROWS = TABLE.rows.filter((row) => row.rows.length > 0);
+const O2_ROWS = DELAY_ROWS.filter((row) => row.rows.length > 0);
 
 describe('simulation composed with exclusions — the table matrix', () => {
   it('runs every table row in one of the two oracles, over a non-trivial matrix', () => {
-    expect(O1_ROWS.length + O2_ROWS.length).toBe(TABLE.rows.length);
+    expect(O1_ROWS.length + O2_ROWS.length).toBe(DELAY_ROWS.length);
     expect(O2_ROWS.length).toBeGreaterThanOrEqual(7);
     // Every matrix set is runnable (no set refused before any step).
     for (const set of SET_MATRIX) expect(pipelineSetProblems(set)).toEqual([]);

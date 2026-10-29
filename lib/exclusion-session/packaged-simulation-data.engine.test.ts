@@ -12,7 +12,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_EXCLUSION_SET } from '../exclusion-builder/set';
 import { SIMULATION_DATA_PATH } from '../wp-rocket-simulation/simulation-data';
-import { parseSimulationTable } from '../wp-rocket-simulation/simulation-parity-table';
+import {
+  isDelayOnlyRow,
+  parseSimulationTable
+} from '../wp-rocket-simulation/simulation-parity-table';
 import type { InterceptedDocument } from './backend';
 import {
   rewriteDocument,
@@ -34,6 +37,9 @@ const TABLE = parseSimulationTable(
   )
 );
 
+/** The Delay JS rows without Defer JS (Defer JS rows have their own suite). */
+const DELAY_ROWS = TABLE.rows.filter(isDelayOnlyRow);
+
 const { sentinels } = TABLE.header.simulation;
 
 /** The real texts, straight from the committed file by the reference pins. */
@@ -46,7 +52,7 @@ const REAL = (() => {
 })();
 
 /** The table rows simulated with the bundled list and no stored rows. */
-const ROWS = TABLE.rows.filter(
+const ROWS = DELAY_ROWS.filter(
   (row) => row.list === 'bundled' && row.rows.length === 0 && row.served.includes(sentinels.runtime)
 );
 
