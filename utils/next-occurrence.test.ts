@@ -1,6 +1,6 @@
 /** The cached forward searches: exact for any call order, linear for forward scans. */
 import { describe, expect, it } from 'vitest';
-import { linearScaling } from '../vitest.shared';
+import { LINEAR_SCALING_TIMEOUT_MS, linearScaling } from '../vitest.shared';
 import { cachedForwardSearch, nextOccurrenceFinder } from './next-occurrence';
 
 /**
@@ -43,19 +43,23 @@ describe('nextOccurrenceFinder', () => {
     expect([find(0), find(2), find(4), find(1)]).toEqual([-1, -1, -1, -1]);
   });
 
-  it('reads a far needle once across forward calls (linear scan, 1 → 4 MiB)', () => {
-    // A fresh indexOf per call would read ~1.2e12 characters at 4 MiB.
-    const scaling = linearScaling(
-      (bytes) => 'x'.repeat(bytes) + '>',
-      (text) => {
-        const find = nextOccurrenceFinder(text, '>');
-        for (let from = 0; from < text.length; from += 7) find(from);
-        return find(0) === text.length - 1;
-      }
-    );
-    expect(scaling.violation).toBeUndefined();
-    expect(scaling.output).toBe(true);
-  });
+  it(
+    'reads a far needle once across forward calls (linear scan, 1 → 4 MiB)',
+    () => {
+      // A fresh indexOf per call would read ~1.2e12 characters at 4 MiB.
+      const scaling = linearScaling(
+        (bytes) => 'x'.repeat(bytes) + '>',
+        (text) => {
+          const find = nextOccurrenceFinder(text, '>');
+          for (let from = 0; from < text.length; from += 7) find(from);
+          return find(0) === text.length - 1;
+        }
+      );
+      expect(scaling.violation).toBeUndefined();
+      expect(scaling.output).toBe(true);
+    },
+    LINEAR_SCALING_TIMEOUT_MS
+  );
 
   it('refuses an empty needle', () => {
     expect(() => nextOccurrenceFinder('a', '')).toThrow(/non-empty needle/);

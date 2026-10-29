@@ -3,7 +3,7 @@
  * own (`IEConditionalSubscriber`, run through the parity harness).
  */
 import { describe, expect, it } from 'vitest';
-import { linearScaling } from '../../vitest.shared';
+import { LINEAR_SCALING_TIMEOUT_MS, linearScaling } from '../../vitest.shared';
 import {
   IE_CONDITIONAL_PLACEHOLDER,
   conditionalScan,
@@ -160,37 +160,49 @@ describe('conditionalScan / scriptConditionalParts — against the patterns', ()
 });
 
 describe('IE conditionals — linear on hostile input (1 → 4 MiB)', () => {
-  it('reads a script conditional with a whitespace body at once', () => {
-    // The backtracking pattern took 11 s at 4 KiB (cubic).
-    const scaling = linearScaling(
-      (bytes) => `<!--[if IE]><script a>${' '.repeat(bytes)}x<![endif]-->`,
-      (conditional) => reinjectedConditional(conditional) === conditional
-    );
-    expect(scaling.violation).toBeUndefined();
-    expect(scaling.output).toBe(true);
-  });
+  it(
+    'reads a script conditional with a whitespace body at once',
+    () => {
+      // The backtracking pattern took 11 s at 4 KiB (cubic).
+      const scaling = linearScaling(
+        (bytes) => `<!--[if IE]><script a>${' '.repeat(bytes)}x<![endif]-->`,
+        (conditional) => reinjectedConditional(conditional) === conditional
+      );
+      expect(scaling.violation).toBeUndefined();
+      expect(scaling.output).toBe(true);
+    },
+    LINEAR_SCALING_TIMEOUT_MS
+  );
 
-  it('scans `<!--[if` without a `]`', () => {
-    const scaling = linearScaling(
-      (bytes) => '<!--[if'.repeat(Math.floor(bytes / 7)),
-      conditionalScan
-    );
-    expect(scaling.violation).toBeUndefined();
-    expect(scaling.output).toEqual({ spans: [], unclosed: -1 });
-  });
+  it(
+    'scans `<!--[if` without a `]`',
+    () => {
+      const scaling = linearScaling(
+        (bytes) => '<!--[if'.repeat(Math.floor(bytes / 7)),
+        conditionalScan
+      );
+      expect(scaling.violation).toBeUndefined();
+      expect(scaling.output).toEqual({ spans: [], unclosed: -1 });
+    },
+    LINEAR_SCALING_TIMEOUT_MS
+  );
 
-  it('puts back conditionals in one pass', () => {
-    const conditional = '<!--[if IE]><script a> $x </script><![endif]-->';
-    const page = (bytes: number): string =>
-      `<p>${conditional.repeat(Math.floor(bytes / conditional.length))}</p>`;
-    const scaling = linearScaling(page, (html) => {
-      const extracted = extractIeConditionals(html);
-      return injectIeConditionals(extracted.html, extracted.conditionals);
-    });
-    expect(scaling.violation).toBeUndefined();
-    const html = page(4 * 1024 * 1024);
-    expect(scaling.output).toBe(html.replaceAll(' $x ', '\\$x'));
-  });
+  it(
+    'puts back conditionals in one pass',
+    () => {
+      const conditional = '<!--[if IE]><script a> $x </script><![endif]-->';
+      const page = (bytes: number): string =>
+        `<p>${conditional.repeat(Math.floor(bytes / conditional.length))}</p>`;
+      const scaling = linearScaling(page, (html) => {
+        const extracted = extractIeConditionals(html);
+        return injectIeConditionals(extracted.html, extracted.conditionals);
+      });
+      expect(scaling.violation).toBeUndefined();
+      const html = page(4 * 1024 * 1024);
+      expect(scaling.output).toBe(html.replaceAll(' $x ', '\\$x'));
+    },
+    LINEAR_SCALING_TIMEOUT_MS
+  );
 });
 
 describe('injectIeConditionals — placeholders in conditionals, and none left', () => {
@@ -240,22 +252,26 @@ describe('injectIeConditionals — placeholders in conditionals, and none left',
     }
   });
 
-  it('stays linear when conditionals keep landing on the page start (1 → 4 MiB)', () => {
-    // 40 000 conditionals per 4 MiB of page.
-    const build = (bytes: number): { page: string; conditionals: string[] } => ({
-      page: `${P}${'z'.repeat(bytes)}`,
-      conditionals: Array.from({ length: Math.floor(bytes / 105) }, (_, index) =>
-        index % 2 === 0 ? `<!--[if a]>${P}<![endif]-->` : '<!--[if b]>y<![endif]-->'
-      )
-    });
-    const scaling = linearScaling(build, (input) =>
-      injectIeConditionals(input.page, input.conditionals)
-    );
-    expect(scaling.violation).toBeUndefined();
-    expect(scaling.output?.endsWith('z'.repeat(1000))).toBe(true);
-    const { page, conditionals } = build(4 * 1024 * 1024);
-    expect(injectIeConditionals(page.slice(0, 2000), conditionals.slice(0, 200))).toBe(
-      literalInjection(page.slice(0, 2000), conditionals.slice(0, 200))
-    );
-  });
+  it(
+    'stays linear when conditionals keep landing on the page start (1 → 4 MiB)',
+    () => {
+      // 40 000 conditionals per 4 MiB of page.
+      const build = (bytes: number): { page: string; conditionals: string[] } => ({
+        page: `${P}${'z'.repeat(bytes)}`,
+        conditionals: Array.from({ length: Math.floor(bytes / 105) }, (_, index) =>
+          index % 2 === 0 ? `<!--[if a]>${P}<![endif]-->` : '<!--[if b]>y<![endif]-->'
+        )
+      });
+      const scaling = linearScaling(build, (input) =>
+        injectIeConditionals(input.page, input.conditionals)
+      );
+      expect(scaling.violation).toBeUndefined();
+      expect(scaling.output?.endsWith('z'.repeat(1000))).toBe(true);
+      const { page, conditionals } = build(4 * 1024 * 1024);
+      expect(injectIeConditionals(page.slice(0, 2000), conditionals.slice(0, 200))).toBe(
+        literalInjection(page.slice(0, 2000), conditionals.slice(0, 200))
+      );
+    },
+    LINEAR_SCALING_TIMEOUT_MS
+  );
 });

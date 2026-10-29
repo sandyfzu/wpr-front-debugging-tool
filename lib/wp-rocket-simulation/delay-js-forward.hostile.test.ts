@@ -6,7 +6,7 @@
  * comment-heavy page — each timed at 1 and 4 MiB.
  */
 import { describe, expect, it } from 'vitest';
-import { linearScaling } from '../../vitest.shared';
+import { LINEAR_SCALING_TIMEOUT_MS, linearScaling } from '../../vitest.shared';
 import { simulateDelayJs, type DelayJsForwardResult } from './delay-js-forward';
 
 /**
@@ -58,17 +58,25 @@ describe('simulateDelayJs — linear on hostile pages', () => {
       (bytes) =>
         `<html><head><meta <!--[if a]>x<![endif]--> charset=utf-8></head><body></body></html>${fill('<!--[if a]><!--{{WP_ROCKET_CONDITIONAL}}--><![endif]--><!--[if b]>y<![endif]-->', bytes)}`
     ]
-  ])('%s', (_name, build) => {
-    expect(linearScaling(build, simulate).violation).toBeUndefined();
-  });
+  ])(
+    '%s',
+    (_name, build) => {
+      expect(linearScaling(build, simulate).violation).toBeUndefined();
+    },
+    LINEAR_SCALING_TIMEOUT_MS
+  );
 
-  it('a realistic page: comments, scripts, svgs, body metas, a head conditional', () => {
-    const block = `<!-- block --><p>${'text '.repeat(40)}</p><script src="/wp-content/plugins/p/a.js?ver=1"></script><script>var x=${'1'.repeat(200)};</script><svg><path d="M0 0"/></svg><meta itemprop="position" content="1">\n`;
-    const page = (bytes: number): string =>
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title><!--[if lt IE 9]><script src="/h.js"></script><![endif]--></head><body>${fill(block, bytes)}</body></html>`;
-    const scaling = linearScaling(page, simulate);
-    expect(scaling.violation).toBeUndefined();
-    expect(scaling.output?.report.state).toBe('simulated');
-    expect(scaling.output?.report.delayed).toBeGreaterThan(10_000);
-  });
+  it(
+    'a realistic page: comments, scripts, svgs, body metas, a head conditional',
+    () => {
+      const block = `<!-- block --><p>${'text '.repeat(40)}</p><script src="/wp-content/plugins/p/a.js?ver=1"></script><script>var x=${'1'.repeat(200)};</script><svg><path d="M0 0"/></svg><meta itemprop="position" content="1">\n`;
+      const page = (bytes: number): string =>
+        `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title><!--[if lt IE 9]><script src="/h.js"></script><![endif]--></head><body>${fill(block, bytes)}</body></html>`;
+      const scaling = linearScaling(page, simulate);
+      expect(scaling.violation).toBeUndefined();
+      expect(scaling.output?.report.state).toBe('simulated');
+      expect(scaling.output?.report.delayed).toBeGreaterThan(10_000);
+    },
+    LINEAR_SCALING_TIMEOUT_MS
+  );
 });

@@ -4,7 +4,7 @@
  * patterns are quadratic on.
  */
 import { describe, expect, it } from 'vitest';
-import { linearScaling } from '../../vitest.shared';
+import { LINEAR_SCALING_TIMEOUT_MS, linearScaling } from '../../vitest.shared';
 import { firstOpeningTag, openingTagStart } from './opening-tag';
 
 /**
@@ -56,13 +56,17 @@ describe('firstOpeningTag', () => {
     expect(openingTagStart('<heads', 'head', false)).toBe(0);
   });
 
-  it('reads `<head` without a `>` in linear time (1 → 4 MiB)', () => {
-    // The patterns took ~0.5 s per 64 KiB here (quadratic).
-    const scaling = linearScaling(
-      (bytes) => '<head '.repeat(Math.floor(bytes / 6)),
-      (html) => [firstOpeningTag(html, 'head', false), firstOpeningTag(html, 'head', true)]
-    );
-    expect(scaling.violation).toBeUndefined();
-    expect(scaling.output).toEqual([null, null]);
-  });
+  it(
+    'reads `<head` without a `>` in linear time (1 → 4 MiB)',
+    () => {
+      // The patterns took ~0.5 s per 64 KiB here (quadratic).
+      const scaling = linearScaling(
+        (bytes) => '<head '.repeat(Math.floor(bytes / 6)),
+        (html) => [firstOpeningTag(html, 'head', false), firstOpeningTag(html, 'head', true)]
+      );
+      expect(scaling.violation).toBeUndefined();
+      expect(scaling.output).toEqual([null, null]);
+    },
+    LINEAR_SCALING_TIMEOUT_MS
+  );
 });

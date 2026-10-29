@@ -6,7 +6,7 @@
  * exactly when it was derived.
  */
 import { describe, expect, it } from 'vitest';
-import { linearScaling } from '../../vitest.shared';
+import { LINEAR_SCALING_TIMEOUT_MS, linearScaling } from '../../vitest.shared';
 import {
   PCRE_BACKTRACK_LIMIT,
   contentSteps,
@@ -169,28 +169,36 @@ describe('the byte measure', () => {
 });
 
 describe('failing attempts — linear on hostile input', () => {
-  it('shares one `>` search between openings before a far `>` (1 → 4 MiB)', () => {
-    // One `indexOf` per opening re-read the page: 19.7 s at 4 MiB.
-    const scaling = linearScaling(
-      (bytes) => `<head></head>${'<script'.repeat(Math.floor(bytes / 7))}>`,
-      delayScriptMatches
-    );
-    expect(scaling.violation).toBeUndefined();
-    // Its first attempt reads 4 MiB of attribute: past the limit, as on the plugin.
-    expect(scaling.output).toBeNull();
-  });
+  it(
+    'shares one `>` search between openings before a far `>` (1 → 4 MiB)',
+    () => {
+      // One `indexOf` per opening re-read the page: 19.7 s at 4 MiB.
+      const scaling = linearScaling(
+        (bytes) => `<head></head>${'<script'.repeat(Math.floor(bytes / 7))}>`,
+        delayScriptMatches
+      );
+      expect(scaling.violation).toBeUndefined();
+      // Its first attempt reads 4 MiB of attribute: past the limit, as on the plugin.
+      expect(scaling.output).toBeNull();
+    },
+    LINEAR_SCALING_TIMEOUT_MS
+  );
 
-  it('reads the end-tag reach after a shared `>` once (openings before `<   …`)', () => {
-    // `bytes` is split between the openings and the spaces (400 000 each at 4 MiB).
-    const scaling = linearScaling(
-      (bytes) => {
-        const count = Math.floor(bytes / 10);
-        const text = `${'<script '.repeat(count)}><${' '.repeat(count)}/`;
-        return { text, first: { start: 0, attrStart: 7, gt: text.indexOf('>') } };
-      },
-      (input) => failingTailSteps(input.text, input.first)
-    );
-    expect(scaling.violation).toBeUndefined();
-    expect(scaling.output).toBeGreaterThan(PCRE_BACKTRACK_LIMIT);
-  });
+  it(
+    'reads the end-tag reach after a shared `>` once (openings before `<   …`)',
+    () => {
+      // `bytes` is split between the openings and the spaces (400 000 each at 4 MiB).
+      const scaling = linearScaling(
+        (bytes) => {
+          const count = Math.floor(bytes / 10);
+          const text = `${'<script '.repeat(count)}><${' '.repeat(count)}/`;
+          return { text, first: { start: 0, attrStart: 7, gt: text.indexOf('>') } };
+        },
+        (input) => failingTailSteps(input.text, input.first)
+      );
+      expect(scaling.violation).toBeUndefined();
+      expect(scaling.output).toBeGreaterThan(PCRE_BACKTRACK_LIMIT);
+    },
+    LINEAR_SCALING_TIMEOUT_MS
+  );
 });

@@ -53,6 +53,17 @@ export const LINEAR_SCALING = {
   backstopMs: 5_000
 } as const;
 
+/**
+ * Per-test timeout (ms) for a test that calls {@link linearScaling} — pass it
+ * as the test's timeout argument. vitest's 5 s default is shorter than a
+ * passing measurement on a slow CI runner with coverage: `runs` rounds of two
+ * timed runs, each allowed up to `backstopMs`, plus a margin for the untimed
+ * input builds and the test's own assertions. Derived from the policy so the
+ * two cannot drift.
+ */
+export const LINEAR_SCALING_TIMEOUT_MS =
+  LINEAR_SCALING.runs * 2 * LINEAR_SCALING.backstopMs + 5_000;
+
 /** The knobs of {@link linearScaling}; defaults to {@link LINEAR_SCALING}. */
 export type LinearScalingPolicy = { readonly [K in keyof typeof LINEAR_SCALING]: number };
 
