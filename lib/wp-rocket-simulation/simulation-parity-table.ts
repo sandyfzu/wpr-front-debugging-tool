@@ -16,15 +16,26 @@
  *   for the runtime and the IE fallback. An optional `defer` also turns
  *   Defer JS on, in the same buffer before Delay JS (as WP Rocket orders them).
  * - `feature: "defer_all_js"`: Defer JS alone, from `defer`.
+ * - `feature: "lazyload"`: LazyLoad for images alone, from `lazyload`.
  *
  * `defer` = the stored Defer JS rows and the dynamic lists'
  * `defer_js_external_exclusions` + `defer_js_inline_exclusions` (`lists`, or
- * `"bundled"` = the pinned zip's own). Outputs are the reference build's;
- * `byVersion` holds another supported version's differing `served`.
+ * `"bundled"` = the pinned zip's own). `lazyload` = the plugin's assets URL
+ * and the stored `exclude_lazyload` rows, under the fixed images-only option
+ * set; any row may carry it (LazyLoad runs first in the buffer). Its page
+ * must hold exactly one `</head>`, then exactly one `</body>` (else the
+ * harness rejects it); its `served` then holds the plugin's own head and
+ * footer texts where a theme's template prints them: right before `</head>`
+ * — before WP Rocket's generator meta when the page ends its head with it —
+ * and right before `</body>` — before WP Rocket's beacon block when the page
+ * ends its body with it (both blocks are written later, by the buffer).
+ * Outputs are the reference
+ * build's; `byVersion` holds another supported version's differing `served`.
  *
  * The header carries the plugin reference fields shared with the exclusion
- * parity table plus `simulation`: the pins of the real runtime, IE fallback
- * and list (derived from the zip) and the two authored sentinels.
+ * parity table plus `simulation`: the pins of the real runtime, IE fallback,
+ * lists and LazyLoad texts (derived from the zip) and the two authored
+ * sentinels.
  *
  * Inputs are authored by hand; outputs and pins are written by the dev script
  * only. Runtime imports carry their `.ts` extension and reach only leaf
@@ -48,7 +59,7 @@ import { SHA256_PATTERN } from './simulation-data.ts';
 const TABLE_LABEL = 'simulation-parity fixtures';
 
 /** The features a simulate row may name (its last pass in the buffer). */
-export const SIMULATE_FEATURES = ['delay_js', 'defer_all_js'] as const;
+export const SIMULATE_FEATURES = ['delay_js', 'defer_all_js', 'lazyload'] as const;
 
 /** A feature a simulate row may name. */
 export type SimulateFeature = (typeof SIMULATE_FEATURES)[number];
@@ -70,6 +81,28 @@ export interface ListPin {
   readonly sha256: string;
 }
 
+/** A text's pin: its UTF-8 size and sha256. */
+export interface TextPin {
+  readonly bytes: number;
+  readonly sha256: string;
+}
+
+/** LazyLoad's pins (images-only option set): its runtime file and the texts it prints or tests. */
+export interface LazyloadPins {
+  /** The runtime file the footer's tag loads: path in the zip, size, sha256. */
+  readonly runtime: { readonly path: string; readonly bytes: number; readonly sha256: string };
+  /** What `wp_head` prints: the no-JavaScript style. */
+  readonly noJsStyle: TextPin;
+  /** The footer's first element: the inline `window.lazyLoadOptions` script. */
+  readonly optionsScript: TextPin;
+  /** The footer's runtime tag around its URL (the plugin's assets JS URL + the runtime's path there). */
+  readonly runtimeTag: { readonly beforeUrl: TextPin; readonly afterUrl: TextPin };
+  /** The image exclusion literals: attribute substrings. */
+  readonly excludedAttributes: ListPin;
+  /** The image exclusion literals: src substrings. */
+  readonly excludedSrc: ListPin;
+}
+
 /** The derived pins and the authored sentinels (`header.simulation`). */
 export interface SimulationPins {
   /** The real runtime file in the plugin zip: path, its own version (`this.v`), size, sha256. */
@@ -80,7 +113,7 @@ export interface SimulationPins {
     readonly sha256: string;
   };
   /** The plugin's IE fallback text (`get_ie_fallback()`, read through the harness). */
-  readonly ieFallback: { readonly bytes: number; readonly sha256: string };
+  readonly ieFallback: TextPin;
   /** The plugin-root `dynamic-lists.json` file. */
   readonly dynamicLists: { readonly sha256: string };
   /** Its `delay_js_exclusions` rows (sha256 of `JSON.stringify(rows)`, as every list pin). */
@@ -89,6 +122,7 @@ export interface SimulationPins {
   readonly deferJsExternalExclusions: ListPin;
   /** Its `defer_js_inline_exclusions` rows. */
   readonly deferJsInlineExclusions: ListPin;
+  readonly lazyload: LazyloadPins;
   readonly sentinels: SimulationSentinels;
 }
 
@@ -115,6 +149,16 @@ export interface DeferSimulateInput {
   readonly lists: DeferLists | 'bundled';
 }
 
+/** A row's LazyLoad inputs (option set fixed: images only). */
+export interface LazyloadSimulateInput {
+  /** The plugin's assets URL (`…/wp-rocket/assets/`): the footer's runtime tag loads from under it. */
+  readonly assetsUrl: string;
+  /** Stored LazyLoad exclusion rows (`exclude_lazyload`). */
+  readonly rows: readonly string[];
+  /** The rows only reach WP Rocket through a PHP filter — the settings form would change them. */
+  readonly filterOnly?: true;
+}
+
 /** The authored part of a simulate row. */
 export interface SimulateInput {
   readonly id: string;
@@ -131,20 +175,23 @@ export interface SimulateInput {
   readonly list?: 'bundled';
   /** Defer JS also on (Delay JS rows), or the feature itself (Defer JS rows). */
   readonly defer?: DeferSimulateInput;
+  /** LazyLoad also on (Delay/Defer JS rows), or the feature itself (LazyLoad rows). */
+  readonly lazyload?: LazyloadSimulateInput;
   readonly html: string;
 }
 
 /** A complete simulate row (reference outputs; `byVersion` where another version differs). */
 export interface SimulateRow extends SimulateInput, VersionedRow {
-  /** The page WP Rocket serves with Delay JS on (sentinels for the runtime + fallback). */
+  /** The page WP Rocket serves with the row's features on (sentinels for the Delay JS runtime + fallback). */
   readonly served: string;
 }
 
-/** A Delay JS row without Defer JS (its stored rows always present). */
+/** A Delay JS row without Defer JS or LazyLoad (its stored rows always present). */
 export type DelayOnlyRow = SimulateRow & {
   readonly feature: 'delay_js';
   readonly rows: readonly string[];
   readonly defer?: undefined;
+  readonly lazyload?: undefined;
 };
 
 /**
@@ -153,7 +200,12 @@ export type DelayOnlyRow = SimulateRow & {
  * @param row A table row.
  */
 export function isDelayOnlyRow(row: SimulateRow): row is DelayOnlyRow {
-  return row.feature === 'delay_js' && row.defer === undefined && row.rows !== undefined;
+  return (
+    row.feature === 'delay_js' &&
+    row.defer === undefined &&
+    row.lazyload === undefined &&
+    row.rows !== undefined
+  );
 }
 
 /** The whole table. */
@@ -173,7 +225,18 @@ const PIN_KEYS = [
   'delayJsExclusions',
   'deferJsExternalExclusions',
   'deferJsInlineExclusions',
+  'lazyload',
   'sentinels'
+];
+
+/** `header.simulation.lazyload` keys, in file order. */
+const LAZYLOAD_PIN_KEYS = [
+  'runtime',
+  'noJsStyle',
+  'optionsScript',
+  'runtimeTag',
+  'excludedAttributes',
+  'excludedSrc'
 ];
 
 /** The list pins of `header.simulation`, in file order. */
@@ -194,6 +257,7 @@ export const SIMULATE_INPUT_KEYS = [
   'listRows',
   'list',
   'defer',
+  'lazyload',
   'html'
 ] as const;
 
@@ -275,6 +339,43 @@ function sentinel(value: Record<string, unknown>, key: string): string {
   return text;
 }
 
+/** A `{count, sha256}` list pin at `where`. */
+function listPinAt(value: unknown, where: string): ListPin {
+  const list = record(null, value, ['count', 'sha256'], where);
+  return { count: countField(list, 'count', where), sha256: sha256Field(list, where) };
+}
+
+/** A `{bytes, sha256}` text pin at `where`. */
+function textPin(value: unknown, where: string): TextPin {
+  const text = record(null, value, ['bytes', 'sha256'], where);
+  return { bytes: countField(text, 'bytes', where), sha256: sha256Field(text, where) };
+}
+
+/** Parse `header.simulation.lazyload` strictly. */
+function parseLazyloadPins(value: unknown): LazyloadPins {
+  const where = (key: string): string => `header.simulation.lazyload.${key}`;
+  const pins = record(null, value, LAZYLOAD_PIN_KEYS, 'header.simulation.lazyload');
+  const runtime = record(null, pins.runtime, ['path', 'bytes', 'sha256'], where('runtime'));
+  const path = stringField(null, runtime, 'path');
+  if (path === '') fail(null, `${where('runtime')}.path must not be empty`);
+  const tag = record(null, pins.runtimeTag, ['beforeUrl', 'afterUrl'], where('runtimeTag'));
+  return {
+    runtime: {
+      path,
+      bytes: countField(runtime, 'bytes', where('runtime')),
+      sha256: sha256Field(runtime, where('runtime'))
+    },
+    noJsStyle: textPin(pins.noJsStyle, where('noJsStyle')),
+    optionsScript: textPin(pins.optionsScript, where('optionsScript')),
+    runtimeTag: {
+      beforeUrl: textPin(tag.beforeUrl, `${where('runtimeTag')}.beforeUrl`),
+      afterUrl: textPin(tag.afterUrl, `${where('runtimeTag')}.afterUrl`)
+    },
+    excludedAttributes: listPinAt(pins.excludedAttributes, where('excludedAttributes')),
+    excludedSrc: listPinAt(pins.excludedSrc, where('excludedSrc'))
+  };
+}
+
 /** Parse `header.simulation` strictly. */
 function parsePins(value: unknown): SimulationPins {
   const pins = record(null, value, PIN_KEYS, 'header.simulation');
@@ -285,12 +386,9 @@ function parsePins(value: unknown): SimulationPins {
     ['path', 'version', 'bytes', 'sha256'],
     where('runtime')
   );
-  const fallback = record(null, pins.ieFallback, ['bytes', 'sha256'], where('ieFallback'));
   const lists = record(null, pins.dynamicLists, ['sha256'], where('dynamicLists'));
-  const listPin = (key: (typeof LIST_PIN_KEYS)[number]): ListPin => {
-    const list = record(null, pins[key], ['count', 'sha256'], where(key));
-    return { count: countField(list, 'count', where(key)), sha256: sha256Field(list, where(key)) };
-  };
+  const listPin = (key: (typeof LIST_PIN_KEYS)[number]): ListPin =>
+    listPinAt(pins[key], where(key));
   const sentinels = record(null, pins.sentinels, ['runtime', 'ieFallback'], where('sentinels'));
   const path = stringField(null, runtime, 'path');
   const version = stringField(null, runtime, 'version');
@@ -303,14 +401,12 @@ function parsePins(value: unknown): SimulationPins {
       bytes: countField(runtime, 'bytes', where('runtime')),
       sha256: sha256Field(runtime, where('runtime'))
     },
-    ieFallback: {
-      bytes: countField(fallback, 'bytes', where('ieFallback')),
-      sha256: sha256Field(fallback, where('ieFallback'))
-    },
+    ieFallback: textPin(pins.ieFallback, where('ieFallback')),
     dynamicLists: { sha256: sha256Field(lists, where('dynamicLists')) },
     delayJsExclusions: listPin('delayJsExclusions'),
     deferJsExternalExclusions: listPin('deferJsExternalExclusions'),
     deferJsInlineExclusions: listPin('deferJsInlineExclusions'),
+    lazyload: parseLazyloadPins(pins.lazyload),
     sentinels: {
       runtime: sentinel(sentinels, 'runtime'),
       ieFallback: sentinel(sentinels, 'ieFallback')
@@ -349,6 +445,7 @@ function parseInput(value: unknown, index: number): SimulateInput {
     fail(id, '"note" must be a non-empty string');
   }
   const defer = value.defer === undefined ? undefined : deferInput(id, value.defer);
+  const lazyload = value.lazyload === undefined ? undefined : lazyloadInput(id, value.lazyload);
   const html = stringField(id, value, 'html');
   if (html === '') fail(id, '"html" must not be empty');
   const head = {
@@ -357,7 +454,18 @@ function parseInput(value: unknown, index: number): SimulateInput {
     feature,
     ...(note === undefined ? {} : { note })
   };
-  const tail = { ...(defer === undefined ? {} : { defer }), html };
+  const tail = {
+    ...(defer === undefined ? {} : { defer }),
+    ...(lazyload === undefined ? {} : { lazyload }),
+    html
+  };
+  if (feature === 'lazyload') {
+    const stray = [...DELAY_INPUT_KEYS, 'defer'].find((key) => key in value);
+    if (stray !== undefined)
+      fail(id, `a LazyLoad row has no Delay JS or Defer JS input ("${stray}")`);
+    if (lazyload === undefined) fail(id, 'a LazyLoad row needs "lazyload"');
+    return { ...head, ...tail };
+  }
   if (feature === 'defer_all_js') {
     const stray = DELAY_INPUT_KEYS.find((key) => key in value);
     if (stray !== undefined) fail(id, `a Defer JS row has no Delay JS input ("${stray}")`);
@@ -409,6 +517,25 @@ function deferInput(id: string, value: unknown): DeferSimulateInput {
     };
   }
   return { rows, ...(filterOnly ? { filterOnly: true as const } : {}), lists };
+}
+
+/**
+ * A plugin assets URL as WordPress builds it (`plugin_dir_url()` + `assets/`):
+ * absolute http(s), ending in `/assets/`, no character that would end the
+ * runtime tag's quoted `src` or the tag itself.
+ */
+const ASSETS_URL = /^https?:\/\/[^\s"'<>]+\/assets\/$/;
+
+/** Parse a row's `lazyload` strictly (no option-set key: the set is fixed to images). */
+function lazyloadInput(id: string, value: unknown): LazyloadSimulateInput {
+  const lazyload = record(id, value, ['assetsUrl', 'rows', 'filterOnly'], '"lazyload"');
+  const assetsUrl = stringField(id, lazyload, 'assetsUrl');
+  if (!ASSETS_URL.test(assetsUrl)) {
+    fail(id, '"lazyload.assetsUrl" must be an absolute http(s) URL ending in /assets/');
+  }
+  const rows = stringList(id, lazyload, 'rows');
+  const filterOnly = filterOnlyField(id, lazyload);
+  return { assetsUrl, rows, ...(filterOnly ? { filterOnly: true as const } : {}) };
 }
 
 /** The rows array of a table-shaped value. */

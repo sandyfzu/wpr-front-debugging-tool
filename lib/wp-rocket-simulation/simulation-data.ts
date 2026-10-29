@@ -6,9 +6,9 @@
  * as a packaged asset (copied as-is from `public/`).
  *
  * Content-keyed: each supported WP Rocket version names its Delay JS runtime,
- * IE fallback and `delay_js_exclusions` list by sha256, and the texts and row
- * lists live once under that key — versions with identical bytes share one
- * entry. Text sha256 = sha256 of the text's UTF-8 bytes; list sha256 = sha256
+ * IE fallback, bundled exclusion lists and LazyLoad texts by sha256, and the
+ * texts and row lists live once under that key — versions with identical
+ * bytes share one entry. Text sha256 = sha256 of the text's UTF-8 bytes; list sha256 = sha256
  * of `JSON.stringify(rows)`.
  *
  * {@link readSimulationData} is structural; {@link simulationDataHashProblem}
@@ -37,6 +37,41 @@ export interface SimulationVersionData {
   readonly deferJsExternalExclusions: SimulationListEntry;
   /** The bundled `defer_js_inline_exclusions` list (inline texts Defer JS never wraps). */
   readonly deferJsInlineExclusions: SimulationListEntry;
+  /** LazyLoad for images: its runtime, printed texts and image exclusion literals. */
+  readonly lazyload: LazyloadVersionData;
+}
+
+/** A text by content key. */
+export interface SimulationTextEntry {
+  readonly sha256: string;
+}
+
+/**
+ * One version's LazyLoad inputs (images-only option set). WP Rocket prints
+ * `noJsStyle` at the end of `wp_head`, and `optionsScript` then the runtime
+ * tag — `runtimeTag.beforeUrl` + the plugin's assets JS URL +
+ * `runtime.jsPath` + `runtimeTag.afterUrl` — at the end of `wp_footer`.
+ */
+export interface LazyloadVersionData {
+  /**
+   * The runtime file, pinned by sha256 and size but not held here (it ships
+   * as its own file): `jsPath` = its path under the plugin's `assets/js/`
+   * folder (and URL).
+   */
+  readonly runtime: { readonly sha256: string; readonly bytes: number; readonly jsPath: string };
+  /** The `<noscript><style>` element hiding placeholders without JavaScript. */
+  readonly noJsStyle: SimulationTextEntry;
+  /** The inline `window.lazyLoadOptions` script element. */
+  readonly optionsScript: SimulationTextEntry;
+  /** The runtime tag's text before and after its URL. */
+  readonly runtimeTag: {
+    readonly beforeUrl: SimulationTextEntry;
+    readonly afterUrl: SimulationTextEntry;
+  };
+  /** Attribute substrings that keep an image (or picture, background) as served. */
+  readonly excludedAttributes: SimulationListEntry;
+  /** Src substrings that keep an image (or picture, background) as served. */
+  readonly excludedSrc: SimulationListEntry;
 }
 
 /** A bundled list by content key, with its row count. */
@@ -60,7 +95,7 @@ export interface SimulationData {
   readonly format: typeof SIMULATION_DATA_FORMAT;
   /** WP Rocket version (e.g. `3.23.5.1`) → its inputs. */
   readonly versions: Readonly<Record<string, SimulationVersionData>>;
-  /** sha256 → runtime or IE fallback text. */
+  /** sha256 → runtime, IE fallback or LazyLoad text. */
   readonly texts: Readonly<Record<string, string>>;
   /** sha256 → exclusion list rows. */
   readonly rowLists: Readonly<Record<string, readonly string[]>>;
@@ -79,6 +114,20 @@ const WPR_VERSION = /^\d+(?:\.\d+)+$/;
 
 /** A runtime's own version (`this.v`): non-empty, no whitespace or quotes. */
 const RUNTIME_VERSION = /^[^\s"']+$/;
+
+/** A path under the plugin's `assets/js/`: relative, `/`-separated plain segments, a `.js` file. */
+const JS_PATH = /^(?:[\w.-]+\/)*[\w.-]+\.js$/;
+
+/**
+ * Whether `path` names a `.js` file under the plugin's `assets/js/` (the
+ * runtime path rule shared by the data file and its producer): relative,
+ * plain `/`-separated segments, none of them `..`.
+ *
+ * @param path The candidate path.
+ */
+export function isRuntimeJsPath(path: string): boolean {
+  return JS_PATH.test(path) && !path.split('/').includes('..');
+}
 
 /** Thrown inside the reader only; surfaced as `{ok: false, problem}`. */
 class DataProblem extends Error {}
@@ -126,7 +175,11 @@ function versionEntry(
   texts: Readonly<Record<string, string>>,
   rowLists: Readonly<Record<string, readonly string[]>>
 ): SimulationVersionData {
-  const entry = record(value, ['runtime', 'ieFallback', ...SIMULATION_LIST_FIELDS], where);
+  const entry = record(
+    value,
+    ['runtime', 'ieFallback', ...SIMULATION_LIST_FIELDS, 'lazyload'],
+    where
+  );
   const runtime = record(ownValue(entry, 'runtime'), ['sha256', 'version'], `${where}.runtime`);
   const version = ownValue(runtime, 'version');
   if (typeof version !== 'string' || !RUNTIME_VERSION.test(version)) {
@@ -135,12 +188,8 @@ function versionEntry(
   const fallback = record(ownValue(entry, 'ieFallback'), ['sha256'], `${where}.ieFallback`);
   const runtimeKey = sha256Field(runtime, `${where}.runtime`);
   const fallbackKey = sha256Field(fallback, `${where}.ieFallback`);
-  for (const [key, field] of [
-    [runtimeKey, 'runtime'],
-    [fallbackKey, 'ieFallback']
-  ] as const) {
-    if (ownValue(texts, key) === undefined) fail(`${where}.${field}: no text ${key}`);
-  }
+  requireText(texts, runtimeKey, `${where}.runtime`);
+  requireText(texts, fallbackKey, `${where}.ieFallback`);
   const list = (field: SimulationListField): SimulationListEntry =>
     listEntry(ownValue(entry, field), `${where}.${field}`, rowLists);
   return {
@@ -148,8 +197,93 @@ function versionEntry(
     ieFallback: { sha256: fallbackKey },
     delayJsExclusions: list('delayJsExclusions'),
     deferJsExternalExclusions: list('deferJsExternalExclusions'),
-    deferJsInlineExclusions: list('deferJsInlineExclusions')
+    deferJsInlineExclusions: list('deferJsInlineExclusions'),
+    lazyload: lazyloadEntry(ownValue(entry, 'lazyload'), `${where}.lazyload`, texts, rowLists)
   };
+}
+
+/** Fail unless `texts` holds `key`. */
+function requireText(texts: Readonly<Record<string, string>>, key: string, where: string): void {
+  if (ownValue(texts, key) === undefined) fail(`${where}: no text ${key}`);
+}
+
+/** A `{sha256}` text entry at `where`, resolved against the texts. */
+function textEntry(
+  value: unknown,
+  where: string,
+  texts: Readonly<Record<string, string>>
+): SimulationTextEntry {
+  const key = sha256Field(record(value, ['sha256'], where), where);
+  requireText(texts, key, where);
+  return { sha256: key };
+}
+
+/** A version's LazyLoad entry, its keys resolved against the texts and row lists. */
+function lazyloadEntry(
+  value: unknown,
+  where: string,
+  texts: Readonly<Record<string, string>>,
+  rowLists: Readonly<Record<string, readonly string[]>>
+): LazyloadVersionData {
+  const entry = record(
+    value,
+    ['runtime', 'noJsStyle', 'optionsScript', 'runtimeTag', 'excludedAttributes', 'excludedSrc'],
+    where
+  );
+  const runtime = record(
+    ownValue(entry, 'runtime'),
+    ['sha256', 'bytes', 'jsPath'],
+    `${where}.runtime`
+  );
+  const jsPath = ownValue(runtime, 'jsPath');
+  if (typeof jsPath !== 'string' || !isRuntimeJsPath(jsPath)) {
+    fail(`${where}.runtime.jsPath must be a relative path to a .js file`);
+  }
+  const bytes = ownValue(runtime, 'bytes');
+  if (typeof bytes !== 'number' || !Number.isInteger(bytes) || bytes <= 0) {
+    fail(`${where}.runtime.bytes must be a positive integer`);
+  }
+  const tag = record(
+    ownValue(entry, 'runtimeTag'),
+    ['beforeUrl', 'afterUrl'],
+    `${where}.runtimeTag`
+  );
+  const text = (field: 'noJsStyle' | 'optionsScript'): SimulationTextEntry =>
+    textEntry(ownValue(entry, field), `${where}.${field}`, texts);
+  const list = (field: 'excludedAttributes' | 'excludedSrc'): SimulationListEntry =>
+    listEntry(ownValue(entry, field), `${where}.${field}`, rowLists);
+  return {
+    runtime: { sha256: sha256Field(runtime, `${where}.runtime`), bytes, jsPath },
+    noJsStyle: text('noJsStyle'),
+    optionsScript: text('optionsScript'),
+    runtimeTag: {
+      beforeUrl: textEntry(ownValue(tag, 'beforeUrl'), `${where}.runtimeTag.beforeUrl`, texts),
+      afterUrl: textEntry(ownValue(tag, 'afterUrl'), `${where}.runtimeTag.afterUrl`, texts)
+    },
+    excludedAttributes: list('excludedAttributes'),
+    excludedSrc: list('excludedSrc')
+  };
+}
+
+/**
+ * Every content key a version entry names in `texts`/`rowLists` (LazyLoad's
+ * runtime is pinned only: it ships as its own file).
+ *
+ * @param entry A read version entry.
+ */
+function versionContentKeys(entry: SimulationVersionData): string[] {
+  const lazyload = entry.lazyload;
+  return [
+    entry.runtime.sha256,
+    entry.ieFallback.sha256,
+    ...SIMULATION_LIST_FIELDS.map((field) => entry[field].sha256),
+    lazyload.noJsStyle.sha256,
+    lazyload.optionsScript.sha256,
+    lazyload.runtimeTag.beforeUrl.sha256,
+    lazyload.runtimeTag.afterUrl.sha256,
+    lazyload.excludedAttributes.sha256,
+    lazyload.excludedSrc.sha256
+  ];
 }
 
 /** One list field, resolved against the row lists (its count must be the list's length). */
@@ -192,13 +326,7 @@ function readStrict(value: unknown): SimulationData {
     versions[version] = versionEntry(entry, `versions.${version}`, texts, rowLists);
   }
   // Every entry is reachable from a version: an orphan is dead weight in the package.
-  const used = new Set(
-    Object.values(versions).flatMap((entry) => [
-      entry.runtime.sha256,
-      entry.ieFallback.sha256,
-      ...SIMULATION_LIST_FIELDS.map((field) => entry[field].sha256)
-    ])
-  );
+  const used = new Set(Object.values(versions).flatMap(versionContentKeys));
   for (const key of [...Object.keys(texts), ...Object.keys(rowLists)]) {
     if (!used.has(key)) fail(`entry ${key} is not used by any version`);
   }

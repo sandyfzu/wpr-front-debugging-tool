@@ -29,12 +29,14 @@ const DATA = (() => {
   return read.data;
 })();
 
-/** The Defer JS-only rows. */
-const DEFER_ROWS = TABLE.rows.filter((row) => row.feature === 'defer_all_js');
+/** The Defer JS-only rows (rows with LazyLoad also on belong to the LazyLoad suites). */
+const DEFER_ROWS = TABLE.rows.filter(
+  (row) => row.feature === 'defer_all_js' && row.lazyload === undefined
+);
 
-/** The Delay JS rows with Defer JS on in the same buffer. */
+/** The Delay JS rows with Defer JS (and not LazyLoad) on in the same buffer. */
 const COMPOSED_ROWS = TABLE.rows.filter(
-  (row) => row.feature === 'delay_js' && row.defer !== undefined
+  (row) => row.feature === 'delay_js' && row.defer !== undefined && row.lazyload === undefined
 );
 
 /**

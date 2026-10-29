@@ -19,6 +19,12 @@ import {
   assembleSimulateRow,
   committedSentinels,
   dataFindings,
+  DEFAULT_LAZYLOAD_ASSETS_URL,
+  lazyloadArtifacts,
+  sameLazyloadTexts,
+  simulationRuns,
+  simulationSurvivalSources,
+  splitLazyloadFooter,
   pinFindings,
   simulationArtifacts,
   simulationCases,
@@ -702,6 +708,157 @@ describe('committedSentinels', () => {
   });
 });
 
+/** LazyLoad's head text in the fixtures. */
+const LAZYLOAD_HEAD = '<noscript>N.</noscript>';
+
+/** LazyLoad's options script in the fixtures. */
+const LAZYLOAD_OPTIONS = '<script>window.o=1;</script>';
+
+/** The fixtures' assets URL. */
+const LAZYLOAD_ASSETS = 'https://e.org/wp-content/plugins/wp-rocket/assets/';
+
+/** LazyLoad's texts as a harness run reports them. */
+const LAZYLOAD_TEXTS = {
+  assetsUrl: LAZYLOAD_ASSETS,
+  head: LAZYLOAD_HEAD,
+  footer: `${LAZYLOAD_OPTIONS}<script async src="${LAZYLOAD_ASSETS}js/lazyload/1.0/lazyload.min.js"></script>`,
+  excludedAttributes: ['data-src=', 'skip-lazy'],
+  excludedSrc: ['/captcha/']
+};
+
+describe('splitLazyloadFooter', () => {
+  it('splits the options script from the runtime tag, cut around its URL', () => {
+    expect(splitLazyloadFooter(LAZYLOAD_TEXTS.footer, LAZYLOAD_ASSETS)).toEqual({
+      optionsScript: LAZYLOAD_OPTIONS,
+      beforeUrl: '<script async src="',
+      jsPath: 'lazyload/1.0/lazyload.min.js',
+      afterUrl: '"></script>'
+    });
+  });
+
+  it('fails fast on any other footer shape', () => {
+    const tag = (src: string): string => `<script async src="${src}"></script>`;
+    const js = `${LAZYLOAD_ASSETS}js/`;
+    for (const [footer, problem] of [
+      [tag(`${js}l.js`), 'does not start with an inline script'],
+      ['<script>o', 'does not start with an inline script'],
+      [`${LAZYLOAD_OPTIONS}${tag('https://other.org/js/l.js')}`, 'exactly once'],
+      [`${LAZYLOAD_OPTIONS}${tag(`${js}a.js`)}${tag(`${js}b.js`)}`, 'exactly once'],
+      [`${LAZYLOAD_OPTIONS}${tag(`${js}l.css`)}`, 'loads no .js file'],
+      [`${LAZYLOAD_OPTIONS}${tag(`${js}../x.js`)}`, 'loads no .js file'],
+      [`${LAZYLOAD_OPTIONS}${tag(`${js}l.js?v=1`)}`, 'loads no .js file'],
+      [`${LAZYLOAD_OPTIONS}${tag(`${js}a//l.js`)}`, 'loads no .js file'],
+      [`${LAZYLOAD_OPTIONS}<script async src="${js}l.js></script>`, 'loads no .js file']
+    ] as const) {
+      expect(() => splitLazyloadFooter(footer, LAZYLOAD_ASSETS), footer).toThrow(problem);
+    }
+  });
+});
+
+describe('LazyLoad harness runs', () => {
+  const lazyCase = (
+    id: string,
+    assetsUrl?: string
+  ): Parameters<typeof simulationRuns>[0][number] => ({
+    id,
+    kind: 'simulate',
+    feature: assetsUrl === undefined ? 'delay_js' : 'lazyload',
+    ...(assetsUrl === undefined ? {} : { lazyload: { assetsUrl, rows: [] } }),
+    html: '<p>'
+  });
+
+  it('runs once per assets URL, cases without LazyLoad joining the first', () => {
+    const cases = [
+      lazyCase('a'),
+      lazyCase('b', 'https://x/assets/'),
+      lazyCase('c', 'https://y/assets/'),
+      lazyCase('d', 'https://x/assets/')
+    ];
+    expect(
+      simulationRuns(cases).map((run) => [run.assetsUrl, run.cases.map((entry) => entry.id)])
+    ).toEqual([
+      ['https://x/assets/', ['a', 'b', 'd']],
+      ['https://y/assets/', ['c']]
+    ]);
+  });
+
+  it('runs once under the default URL when no case has LazyLoad', () => {
+    expect(simulationRuns([lazyCase('a')])).toEqual([
+      { assetsUrl: DEFAULT_LAZYLOAD_ASSETS_URL, cases: [lazyCase('a')] }
+    ]);
+    expect(simulationRuns([])).toEqual([{ assetsUrl: DEFAULT_LAZYLOAD_ASSETS_URL, cases: [] }]);
+  });
+
+  it('takes texts that agree on all but the URL, and fails otherwise', () => {
+    const other = 'https://cdn.example/p/assets/';
+    const moved = {
+      ...LAZYLOAD_TEXTS,
+      assetsUrl: other,
+      footer: LAZYLOAD_TEXTS.footer.replace(LAZYLOAD_ASSETS, other)
+    };
+    expect(sameLazyloadTexts([LAZYLOAD_TEXTS, moved])).toBe(LAZYLOAD_TEXTS);
+    expect(() => sameLazyloadTexts([LAZYLOAD_TEXTS, { ...moved, head: 'x' }])).toThrow(
+      'LazyLoad texts differ between assets URLs beyond the URL itself'
+    );
+    expect(() => sameLazyloadTexts([LAZYLOAD_TEXTS, undefined])).toThrow(
+      'returned no LazyLoad texts'
+    );
+    expect(() => sameLazyloadTexts([])).toThrow('returned no LazyLoad texts');
+  });
+
+  it("derives LazyLoad's pins without putting the runtime among the texts", () => {
+    const runtime = new TextEncoder().encode('\u{FEFF}é');
+    const { pins, entry, texts } = lazyloadArtifacts({ texts: LAZYLOAD_TEXTS, runtime });
+    expect(pins.runtime).toMatchObject({
+      path: 'assets/js/lazyload/1.0/lazyload.min.js',
+      bytes: 5
+    });
+    expect(entry.runtime).toEqual({
+      sha256: pins.runtime.sha256,
+      bytes: 5,
+      jsPath: 'lazyload/1.0/lazyload.min.js'
+    });
+    expect(Object.keys(texts)).not.toContain(pins.runtime.sha256);
+    // Bytes, not UTF-8 text: a runtime that is not UTF-8 is still pinned as shipped.
+    expect(
+      lazyloadArtifacts({ texts: LAZYLOAD_TEXTS, runtime: Uint8Array.of(0xff) }).pins.runtime.bytes
+    ).toBe(1);
+  });
+
+  it('sends LazyLoad inputs base64-encoded, with a survival case for its rows', () => {
+    const input: SimulateInput = {
+      id: 'simulate-l',
+      kind: 'simulate',
+      feature: 'lazyload',
+      lazyload: { assetsUrl: LAZYLOAD_ASSETS, rows: ['é'], filterOnly: true },
+      html: '<p>'
+    };
+    expect(simulationCases([input])).toEqual({
+      saves: [
+        {
+          id: 'survival:simulate-l#lazyload',
+          kind: 'save',
+          feature: 'lazyload',
+          typed: [b64('é')],
+          safeMode: false
+        }
+      ],
+      simulates: [
+        {
+          id: 'simulate-l',
+          kind: 'simulate',
+          feature: 'lazyload',
+          lazyload: { assetsUrl: LAZYLOAD_ASSETS, rows: [b64('é')] },
+          html: '<p>'
+        }
+      ]
+    });
+    expect(simulationSurvivalSources([input])).toEqual([
+      { id: 'simulate-l#lazyload', feature: 'lazyload', rows: ['é'], filterOnly: true }
+    ]);
+  });
+});
+
 describe('simulationArtifacts', () => {
   const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
   const sha = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
@@ -716,11 +873,13 @@ describe('simulationArtifacts', () => {
     defer_js_external_exclusions: external,
     defer_js_inline_exclusions: inline
   };
+  const lazyRuntime = '!function(){}';
   const sources = {
     version: '3.0',
     runtime: encode(runtime),
     dynamicLists: encode(JSON.stringify(lists)),
-    ieFallback: 'fallback é'
+    ieFallback: 'fallback é',
+    lazyload: { texts: LAZYLOAD_TEXTS, runtime: encode(lazyRuntime) }
   };
 
   it('derives the pins and a content-keyed data file from the plugin files', () => {
@@ -737,6 +896,21 @@ describe('simulationArtifacts', () => {
       delayJsExclusions: { count: 2, sha256: sha(JSON.stringify(rows)) },
       deferJsExternalExclusions: { count: 1, sha256: sha(JSON.stringify(external)) },
       deferJsInlineExclusions: { count: 1, sha256: sha(JSON.stringify(inline)) },
+      lazyload: {
+        runtime: {
+          path: 'assets/js/lazyload/1.0/lazyload.min.js',
+          bytes: 13,
+          sha256: sha(lazyRuntime)
+        },
+        noJsStyle: { bytes: 23, sha256: sha(LAZYLOAD_HEAD) },
+        optionsScript: { bytes: 28, sha256: sha(LAZYLOAD_OPTIONS) },
+        runtimeTag: {
+          beforeUrl: { bytes: 19, sha256: sha('<script async src="') },
+          afterUrl: { bytes: 11, sha256: sha('"></script>') }
+        },
+        excludedAttributes: { count: 2, sha256: sha('["data-src=","skip-lazy"]') },
+        excludedSrc: { count: 1, sha256: sha('["/captcha/"]') }
+      },
       sentinels
     });
     expect(data).toEqual({
@@ -747,14 +921,39 @@ describe('simulationArtifacts', () => {
           ieFallback: { sha256: sha('fallback é') },
           delayJsExclusions: { sha256: sha(JSON.stringify(rows)), count: 2 },
           deferJsExternalExclusions: { sha256: sha(JSON.stringify(external)), count: 1 },
-          deferJsInlineExclusions: { sha256: sha(JSON.stringify(inline)), count: 1 }
+          deferJsInlineExclusions: { sha256: sha(JSON.stringify(inline)), count: 1 },
+          lazyload: {
+            runtime: {
+              sha256: sha(lazyRuntime),
+              bytes: 13,
+              jsPath: 'lazyload/1.0/lazyload.min.js'
+            },
+            noJsStyle: { sha256: sha(LAZYLOAD_HEAD) },
+            optionsScript: { sha256: sha(LAZYLOAD_OPTIONS) },
+            runtimeTag: {
+              beforeUrl: { sha256: sha('<script async src="') },
+              afterUrl: { sha256: sha('"></script>') }
+            },
+            excludedAttributes: { sha256: sha('["data-src=","skip-lazy"]'), count: 2 },
+            excludedSrc: { sha256: sha('["/captcha/"]'), count: 1 }
+          }
         }
       },
-      texts: { [sha(runtime)]: runtime, [sha('fallback é')]: 'fallback é' },
+      // LazyLoad's runtime is pinned only: it ships as its own file.
+      texts: {
+        [sha(runtime)]: runtime,
+        [sha('fallback é')]: 'fallback é',
+        [sha(LAZYLOAD_HEAD)]: LAZYLOAD_HEAD,
+        [sha(LAZYLOAD_OPTIONS)]: LAZYLOAD_OPTIONS,
+        [sha('<script async src="')]: '<script async src="',
+        [sha('"></script>')]: '"></script>'
+      },
       rowLists: {
         [sha(JSON.stringify(rows))]: rows,
         [sha(JSON.stringify(external))]: external,
-        [sha(JSON.stringify(inline))]: inline
+        [sha(JSON.stringify(inline))]: inline,
+        [sha('["data-src=","skip-lazy"]')]: ['data-src=', 'skip-lazy'],
+        [sha('["/captcha/"]')]: ['/captcha/']
       }
     });
   });
@@ -845,6 +1044,17 @@ describe('the simulation table in the shared verdicts', () => {
           delayJsExclusions: { count: 0, sha256: '4'.repeat(64) },
           deferJsExternalExclusions: { count: 0, sha256: '5'.repeat(64) },
           deferJsInlineExclusions: { count: 0, sha256: '6'.repeat(64) },
+          lazyload: {
+            runtime: { path: 'assets/js/l.js', bytes: 4, sha256: '7'.repeat(64) },
+            noJsStyle: { bytes: 5, sha256: '8'.repeat(64) },
+            optionsScript: { bytes: 6, sha256: '9'.repeat(64) },
+            runtimeTag: {
+              beforeUrl: { bytes: 7, sha256: 'a'.repeat(64) },
+              afterUrl: { bytes: 8, sha256: 'b'.repeat(64) }
+            },
+            excludedAttributes: { count: 22, sha256: 'c'.repeat(64) },
+            excludedSrc: { count: 3, sha256: 'd'.repeat(64) }
+          },
           sentinels: { runtime: 'R.run()', ieFallback: 'F' }
         }
       },

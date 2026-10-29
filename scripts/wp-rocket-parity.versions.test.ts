@@ -60,7 +60,17 @@ function build(version: string, options: { stored?: string; runtime?: string } =
       dynamicLists: new TextEncoder().encode(
         '{"delay_js_exclusions":["a"],"defer_js_external_exclusions":["b"],"defer_js_inline_exclusions":["c"]}'
       ),
-      ieFallback: 'F'
+      ieFallback: 'F',
+      lazyload: {
+        texts: {
+          assetsUrl: 'https://e.org/assets/',
+          head: '<noscript>N</noscript>',
+          footer: '<script>O</script><script src="https://e.org/assets/js/l/1/l.min.js"></script>',
+          excludedAttributes: ['a='],
+          excludedSrc: ['/s/']
+        },
+        runtime: new TextEncoder().encode('!function(){}')
+      }
     },
     { runtime: 'R.run()', ieFallback: 'S' }
   );
@@ -162,15 +172,16 @@ describe('mergeBuilds', () => {
       simulation: build('3.24').pins
     });
     expect(Object.keys(merged.data.versions)).toEqual(['3.24', '3.23.5.1']);
-    // Identical runtime, fallback and lists: one text each, one entry per list (three lists).
-    expect(Object.keys(merged.data.texts)).toHaveLength(2);
-    expect(Object.keys(merged.data.rowLists)).toHaveLength(3);
+    // Identical runtime, fallback, lists and LazyLoad texts: one text each (runtime, fallback,
+    // four LazyLoad texts), one entry per list (three dynamic lists, two LazyLoad lists).
+    expect(Object.keys(merged.data.texts)).toHaveLength(6);
+    expect(Object.keys(merged.data.rowLists)).toHaveLength(5);
   });
 
   it('stores a build-specific runtime as its own text', () => {
     const other = 'class Y{constructor(){this.v="2.0.6"}}';
     const merged = mergeBuilds([build('3.24', { runtime: other }), build('3.23.5.1')], '3.24');
-    expect(Object.keys(merged.data.texts)).toHaveLength(3);
+    expect(Object.keys(merged.data.texts)).toHaveLength(7);
     expect(merged.data.versions['3.24']?.runtime).toEqual({ sha256: sha(other), version: '2.0.6' });
     expect(merged.simulation.header.simulation).toEqual(build('3.24', { runtime: other }).pins);
   });

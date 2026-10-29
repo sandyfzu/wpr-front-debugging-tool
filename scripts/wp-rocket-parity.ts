@@ -8,7 +8,8 @@
  * `lib/exclusion-builder/wp-rocket-parity.fixtures.json` (settings-form saves
  * and exclusion matches) and
  * `lib/wp-rocket-simulation/simulation-parity.fixtures.json` (pages served
- * with Delay JS on, plus the pins of the real runtime, IE fallback and list),
+ * with Delay JS, Defer JS or LazyLoad on, plus the pins of the real runtimes,
+ * IE fallback, lists and LazyLoad texts),
  * and the simulation data file `public/wp-rocket-simulation/simulation-data.json`
  * (every supported version's real texts and rows, content-keyed). Each
  * plugin zip and seven `wp-includes` files of the pinned WordPress release
@@ -103,14 +104,18 @@ import {
   parseSimulationInputs,
   parseSimulationTable,
   type DeferSimulateInput,
+  type LazyloadPins,
+  type ListPin,
   type SimulateInput,
   type SimulationPins,
-  type SimulationSentinels
+  type SimulationSentinels,
+  type TextPin
 } from '../lib/wp-rocket-simulation/simulation-parity-table.ts';
 import {
   SIMULATION_DATA_FORMAT,
   SIMULATION_DATA_PATH,
   SIMULATION_LIST_FIELDS,
+  isRuntimeJsPath,
   readSimulationData,
   rowListKeyText,
   type SimulationData
@@ -436,6 +441,20 @@ interface SaveResult {
 /** The harness's match result (outputs as the table stores them). */
 type MatchResult = { readonly id: string } & Record<string, unknown>;
 
+/** LazyLoad's texts as a harness run reports them (images-only option set, no stored rows). */
+export interface LazyloadTexts {
+  /** The run's plugin assets URL (`WP_ROCKET_ASSETS_URL`). */
+  readonly assetsUrl: string;
+  /** What `wp_head` prints. */
+  readonly head: string;
+  /** What `wp_footer` prints. */
+  readonly footer: string;
+  /** The image exclusion literals, unfiltered: attribute substrings. */
+  readonly excludedAttributes: readonly string[];
+  /** The image exclusion literals, unfiltered: src substrings. */
+  readonly excludedSrc: readonly string[];
+}
+
 /** The harness's whole output. */
 interface HarnessOutput<R> {
   readonly env: {
@@ -450,6 +469,8 @@ interface HarnessOutput<R> {
   readonly results: readonly R[];
   /** The plugin's own IE fallback text (runs given sentinels only). */
   readonly ieFallback?: string;
+  /** LazyLoad's own texts under the run's assets URL (runs given sentinels only). */
+  readonly lazyload?: LazyloadTexts;
 }
 
 /** A derived table as an object, in file key order. */
@@ -1386,22 +1407,27 @@ interface SimulateCase {
     readonly rows: readonly string[];
     readonly lists: 'bundled' | { readonly external: string[]; readonly inline: string[] };
   };
+  readonly lazyload?: { readonly assetsUrl: string; readonly rows: readonly string[] };
   readonly html: string;
 }
 
 /** The survival-case id suffix of a row's Defer JS rows (its Delay JS rows take the bare id). */
 const DEFER_SURVIVAL_SUFFIX = '#defer';
 
+/** The survival-case id suffix of a row's LazyLoad rows. */
+const LAZYLOAD_SURVIVAL_SUFFIX = '#lazyload';
+
 /**
  * Every authored row set of the simulation inputs that the settings form must
  * store unchanged (unless `filterOnly`): a row's Delay JS rows under its id,
- * its Defer JS rows under the id + {@link DEFER_SURVIVAL_SUFFIX}.
+ * its Defer JS rows under the id + {@link DEFER_SURVIVAL_SUFFIX}, its
+ * LazyLoad rows under the id + {@link LAZYLOAD_SURVIVAL_SUFFIX}.
  *
  * @param inputs The table's inputs.
  */
 export function simulationSurvivalSources(
   inputs: readonly SimulateInput[]
-): (SurvivalSource & { readonly feature: 'delay_js' | 'defer_all_js' })[] {
+): (SurvivalSource & { readonly feature: 'delay_js' | 'defer_all_js' | 'lazyload' })[] {
   return inputs.flatMap((input) => [
     ...(input.rows === undefined
       ? []
@@ -1421,6 +1447,16 @@ export function simulationSurvivalSources(
             feature: 'defer_all_js' as const,
             rows: input.defer.rows,
             ...(input.defer.filterOnly === true ? { filterOnly: true as const } : {})
+          }
+        ]),
+    ...(input.lazyload === undefined
+      ? []
+      : [
+          {
+            id: `${input.id}${LAZYLOAD_SURVIVAL_SUFFIX}`,
+            feature: 'lazyload' as const,
+            rows: input.lazyload.rows,
+            ...(input.lazyload.filterOnly === true ? { filterOnly: true as const } : {})
           }
         ])
   ]);
@@ -1483,6 +1519,14 @@ export function simulationCases(inputs: readonly SimulateInput[]): {
           ? { list: 'bundled' as const }
           : { listRows: input.listRows.map(lineBase64) }),
       ...(input.defer === undefined ? {} : { defer: deferCase(input.defer) }),
+      ...(input.lazyload === undefined
+        ? {}
+        : {
+            lazyload: {
+              assetsUrl: input.lazyload.assetsUrl,
+              rows: input.lazyload.rows.map(lineBase64)
+            }
+          }),
       html: input.html
     }))
   };
@@ -1496,6 +1540,110 @@ export function simulationCases(inputs: readonly SimulateInput[]): {
  */
 export function assembleSimulateRow(input: SimulateInput, served: string): Record<string, unknown> {
   return { ...pick(input as unknown as Record<string, unknown>, SIMULATE_INPUT_KEYS), served };
+}
+
+/**
+ * The assets URL the harness runs with when no row turns LazyLoad on (the
+ * texts then only feed the pins, which never hold the URL).
+ */
+export const DEFAULT_LAZYLOAD_ASSETS_URL =
+  'https://example.org/wp-content/plugins/wp-rocket/assets/';
+
+/** One harness run of simulate cases: PHP defines the plugin's assets URL once per process. */
+export interface SimulationRun {
+  readonly assetsUrl: string;
+  readonly cases: readonly SimulateCase[];
+}
+
+/**
+ * The harness runs for the simulate cases: one per distinct LazyLoad assets
+ * URL, in first-use order; cases without LazyLoad join the first run (the
+ * default URL's when no case has one).
+ *
+ * @param cases The simulate cases.
+ */
+export function simulationRuns(cases: readonly SimulateCase[]): SimulationRun[] {
+  const urls = [
+    ...new Set(
+      cases.flatMap((entry) => (entry.lazyload === undefined ? [] : [entry.lazyload.assetsUrl]))
+    )
+  ];
+  const [first = DEFAULT_LAZYLOAD_ASSETS_URL] = urls;
+  return (urls.length === 0 ? [first] : urls).map((assetsUrl) => ({
+    assetsUrl,
+    cases: cases.filter((entry) => (entry.lazyload?.assetsUrl ?? first) === assetsUrl)
+  }));
+}
+
+/** The plugin's assets folder (its URL is a run's assets URL, `WP_ROCKET_ASSETS_URL`). */
+const ASSETS_DIR = 'assets/';
+
+/**
+ * The JS folder under the assets folder (`WP_ROCKET_ASSETS_JS_URL` = assets
+ * URL + this), where LazyLoad's runtime paths start.
+ */
+export const LAZYLOAD_JS_DIR = 'js/';
+
+/**
+ * A LazyLoad runtime's path in the plugin.
+ *
+ * @param jsPath The runtime's path under {@link LAZYLOAD_JS_DIR}.
+ */
+function lazyloadRuntimePath(jsPath: string): string {
+  return `${ASSETS_DIR}${LAZYLOAD_JS_DIR}${jsPath}`;
+}
+
+/** LazyLoad's footer, split at the runtime URL (see {@link splitLazyloadFooter}). */
+export interface LazyloadFooter {
+  /** The inline `window.lazyLoadOptions` script element (the footer up to its first `</script>`). */
+  readonly optionsScript: string;
+  /** The runtime tag before its URL. */
+  readonly beforeUrl: string;
+  /** The runtime's path under the assets JS URL (up to the URL's closing quote). */
+  readonly jsPath: string;
+  /** The runtime tag after its URL. */
+  readonly afterUrl: string;
+}
+
+/** The end of the inline options script. */
+const SCRIPT_END = '</script>';
+
+/**
+ * Split LazyLoad's footer into the inline options script and the runtime tag
+ * around its URL (= the assets JS URL, `<assets URL>` + {@link LAZYLOAD_JS_DIR}, + the runtime's
+ * path), so the data file can name each part and a page's own assets URL can
+ * be put between them.
+ *
+ * @param footer What `wp_footer` printed.
+ * @param assetsUrl The run's plugin assets URL.
+ * @throws {@link Error} when the footer is not one inline script followed by
+ *   one tag loading a `.js` file from under the assets JS URL.
+ */
+export function splitLazyloadFooter(footer: string, assetsUrl: string): LazyloadFooter {
+  const jsUrl = `${assetsUrl}${LAZYLOAD_JS_DIR}`;
+  const scriptEnd = footer.indexOf(SCRIPT_END);
+  const problem = (what: string): Error =>
+    new Error(`LazyLoad's footer ${what}: ${footer.slice(0, 120)}…`);
+  if (!footer.startsWith('<script>') || scriptEnd < 0) {
+    throw problem('does not start with an inline script');
+  }
+  const optionsScript = footer.slice(0, scriptEnd + SCRIPT_END.length);
+  const tag = footer.slice(optionsScript.length);
+  const urlAt = tag.indexOf(jsUrl);
+  if (urlAt < 0 || tag.indexOf(jsUrl, urlAt + 1) >= 0) {
+    throw problem(`does not name the assets JS URL ${jsUrl} exactly once after it`);
+  }
+  const rest = tag.slice(urlAt + jsUrl.length);
+  const jsPath = rest.slice(0, rest.indexOf('"'));
+  if (!rest.includes('"') || !isRuntimeJsPath(jsPath)) {
+    throw problem('loads no .js file from under the assets JS URL');
+  }
+  return {
+    optionsScript,
+    beforeUrl: tag.slice(0, urlAt),
+    jsPath,
+    afterUrl: rest.slice(jsPath.length)
+  };
 }
 
 /**
@@ -1535,6 +1683,8 @@ export interface SimulationSources {
   readonly dynamicLists: Uint8Array;
   /** `get_ie_fallback()`'s text, read through the harness. */
   readonly ieFallback: string;
+  /** LazyLoad's texts (read through the harness) and the runtime file its footer loads. */
+  readonly lazyload: { readonly texts: LazyloadTexts; readonly runtime: Uint8Array };
 }
 
 /** sha256 of a text's UTF-8 bytes. */
@@ -1545,6 +1695,66 @@ function textSha256(text: string): string {
 /** Strict UTF-8 (no BOM stripping), so the text re-encodes to exactly the file's bytes. */
 const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
+/** A text's pin. */
+function pinText(text: string): TextPin {
+  return { bytes: new TextEncoder().encode(text).byteLength, sha256: textSha256(text) };
+}
+
+/**
+ * LazyLoad's pins, data-file entry and texts, from its harness texts and
+ * runtime file. The runtime is pinned (path, size, sha256) but not put in the
+ * texts: it ships as its own packaged file, checked against the pin.
+ *
+ * @param lazyload The harness texts and the runtime bytes.
+ * @throws {@link Error} when the footer does not split.
+ */
+export function lazyloadArtifacts(lazyload: SimulationSources['lazyload']): {
+  pins: LazyloadPins;
+  entry: SimulationData['versions'][string]['lazyload'];
+  texts: Record<string, string>;
+  rowLists: Record<string, readonly string[]>;
+} {
+  const footer = splitLazyloadFooter(lazyload.texts.footer, lazyload.texts.assetsUrl);
+  const path = lazyloadRuntimePath(footer.jsPath);
+  const named = [lazyload.texts.head, footer.optionsScript, footer.beforeUrl, footer.afterUrl];
+  const lists = [lazyload.texts.excludedAttributes, lazyload.texts.excludedSrc];
+  const listPin = (rows: readonly string[]): ListPin => ({
+    count: rows.length,
+    sha256: textSha256(rowListKeyText(rows))
+  });
+  const [noJsStyle, optionsScript, beforeUrl, afterUrl] = named.map(pinText) as [
+    TextPin,
+    TextPin,
+    TextPin,
+    TextPin
+  ];
+  const [excludedAttributes, excludedSrc] = lists.map(listPin) as [ListPin, ListPin];
+  const runtimeSha = digest('sha256', lazyload.runtime);
+  return {
+    pins: {
+      runtime: { path, bytes: lazyload.runtime.byteLength, sha256: runtimeSha },
+      noJsStyle,
+      optionsScript,
+      runtimeTag: { beforeUrl, afterUrl },
+      excludedAttributes,
+      excludedSrc
+    },
+    entry: {
+      runtime: { sha256: runtimeSha, bytes: lazyload.runtime.byteLength, jsPath: footer.jsPath },
+      noJsStyle: { sha256: noJsStyle.sha256 },
+      optionsScript: { sha256: optionsScript.sha256 },
+      runtimeTag: {
+        beforeUrl: { sha256: beforeUrl.sha256 },
+        afterUrl: { sha256: afterUrl.sha256 }
+      },
+      excludedAttributes: { sha256: excludedAttributes.sha256, count: excludedAttributes.count },
+      excludedSrc: { sha256: excludedSrc.sha256, count: excludedSrc.count }
+    },
+    texts: Object.fromEntries(named.map((text) => [textSha256(text), text])),
+    rowLists: Object.fromEntries(lists.map((rows) => [textSha256(rowListKeyText(rows)), rows]))
+  };
+}
+
 /**
  * The simulation pins and the data file, from the plugin's own files.
  *
@@ -1552,7 +1762,8 @@ const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
  * @param sentinels The authored sentinels (kept in the pins).
  * @returns `pins` (`header.simulation`) and `data` (the data file object).
  * @throws {@link Error} when the runtime is not UTF-8 or names no `this.v`
- *   version, or the lists file has no `delay_js_exclusions` string list.
+ *   version, the lists file has no `delay_js_exclusions` string list, or
+ *   LazyLoad's texts or runtime are malformed (see {@link lazyloadArtifacts}).
  */
 export function simulationArtifacts(
   sources: SimulationSources,
@@ -1588,6 +1799,7 @@ export function simulationArtifacts(
   >;
   const runtimeSha = digest('sha256', sources.runtime);
   const fallbackSha = textSha256(sources.ieFallback);
+  const lazyload = lazyloadArtifacts(sources.lazyload);
   const pins: SimulationPins = {
     runtime: {
       path: RUNTIME_PATH,
@@ -1601,6 +1813,7 @@ export function simulationArtifacts(
     },
     dynamicLists: { sha256: digest('sha256', sources.dynamicLists) },
     ...listPins,
+    lazyload: lazyload.pins,
     sentinels
   };
   const data: SimulationData = {
@@ -1611,11 +1824,15 @@ export function simulationArtifacts(
         ieFallback: { sha256: fallbackSha },
         ...(Object.fromEntries(
           listed.map(({ field, entry }) => [field, { sha256: entry.sha256, count: entry.count }])
-        ) as typeof listPins)
+        ) as typeof listPins),
+        lazyload: lazyload.entry
       }
     },
-    texts: { [runtimeSha]: runtime, [fallbackSha]: sources.ieFallback },
-    rowLists: Object.fromEntries(listed.map(({ rows, entry }) => [entry.sha256, rows]))
+    texts: { [runtimeSha]: runtime, [fallbackSha]: sources.ieFallback, ...lazyload.texts },
+    rowLists: {
+      ...Object.fromEntries(listed.map(({ rows, entry }) => [entry.sha256, rows])),
+      ...lazyload.rowLists
+    }
   };
   const read = readSimulationData(data); // The derived file must satisfy its own reader.
   if (!read.ok) throw new Error(`derived ${SIMULATION_DATA_FILE}: ${read.problem}`);
@@ -1647,7 +1864,7 @@ export function dataFindings(committed: string | null, fresh: string): Finding[]
 
 /**
  * The `--compare` finding for the simulation pins: the other version ships
- * another runtime, IE fallback or list. Never an error.
+ * another runtime, IE fallback, list or LazyLoad text. Never an error.
  *
  * @param before The committed simulation table's header.
  * @param fresh The header derived from the other build.
@@ -1663,7 +1880,8 @@ export function pinFindings(
     'runtime',
     'ieFallback',
     'dynamicLists',
-    ...LIST_PIN_KEYS
+    ...LIST_PIN_KEYS,
+    'lazyload'
   ]).map((line) => line.replace(/^header\./, 'header.simulation.'));
   if (lines.length === 0) return [];
   return [
@@ -2052,15 +2270,35 @@ function deriveSimulationRows(
   const cases = simulationCases(inputs);
   const saves = runHarness<SaveResult>(php, pluginRoot, wpRoot, cases.saves);
   checkSurvival(simulationSurvivalSources(inputs), saves.results);
-  const run = runHarness<SimulateResult>(php, pluginRoot, wpRoot, cases.simulates, { sentinels });
-  if (typeof run.ieFallback !== 'string') throw new Error('the harness returned no ieFallback');
-  const served = new Map(run.results.map((result) => [result.id, result.served]));
+  const runs = simulationRuns(cases.simulates).map((group) =>
+    runHarness<SimulateResult>(php, pluginRoot, wpRoot, group.cases, {
+      sentinels,
+      lazyloadAssetsUrl: group.assetsUrl
+    })
+  );
+  const [run] = runs;
+  if (run === undefined || typeof run.ieFallback !== 'string') {
+    throw new Error('the harness returned no ieFallback');
+  }
+  const texts = sameLazyloadTexts(runs.map((output) => output.lazyload));
+  const served = new Map(
+    runs.flatMap((output) => output.results.map((result) => [result.id, result.served]))
+  );
   const { pins, data } = simulationArtifacts(
     {
       version: readPluginVersion(readFileSync(join(pluginRoot, 'wp-rocket.php'), 'utf8')),
       runtime: readFileSync(join(pluginRoot, RUNTIME_PATH)),
       dynamicLists: readFileSync(join(pluginRoot, DYNAMIC_LISTS_PATH)),
-      ieFallback: run.ieFallback
+      ieFallback: run.ieFallback,
+      lazyload: {
+        texts,
+        runtime: readFileSync(
+          join(
+            pluginRoot,
+            lazyloadRuntimePath(splitLazyloadFooter(texts.footer, texts.assetsUrl).jsPath)
+          )
+        )
+      }
     },
     sentinels
   );
@@ -2069,7 +2307,31 @@ function deriveSimulationRows(
     if (page === undefined) throw new Error(`${input.id}: the harness returned no result`);
     return assembleSimulateRow(input, page);
   });
-  return { rows, pins, data, envs: [saves.env, run.env] };
+  return { rows, pins, data, envs: [saves.env, ...runs.map((output) => output.env)] };
+}
+
+/**
+ * The LazyLoad texts of a build's harness runs, which must agree on
+ * everything but the assets URL (the footer split at it).
+ *
+ * @param texts Each run's texts.
+ * @returns The first run's.
+ * @throws {@link Error} when a run reported none or runs disagree.
+ */
+export function sameLazyloadTexts(texts: readonly (LazyloadTexts | undefined)[]): LazyloadTexts {
+  const shape = (entry: LazyloadTexts): string => {
+    const { assetsUrl, footer, ...rest } = entry;
+    return JSON.stringify({ ...rest, footer: splitLazyloadFooter(footer, assetsUrl) });
+  };
+  const [first] = texts;
+  if (first === undefined || texts.some((entry) => entry === undefined)) {
+    throw new Error('a harness run returned no LazyLoad texts');
+  }
+  const expected = shape(first);
+  if (texts.some((entry) => entry !== undefined && shape(entry) !== expected)) {
+    throw new Error('LazyLoad texts differ between assets URLs beyond the URL itself');
+  }
+  return first;
 }
 
 /** The committed files' texts (the data file may not exist yet). */

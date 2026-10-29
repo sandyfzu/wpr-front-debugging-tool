@@ -47,7 +47,18 @@ function dataFile(version = '3.24'): Record<string, unknown> {
         ieFallback: { sha256: textKey(FALLBACK) },
         delayJsExclusions: { sha256: listKey(ROWS), count: ROWS.length },
         deferJsExternalExclusions: { sha256: listKey(ROWS), count: ROWS.length },
-        deferJsInlineExclusions: { sha256: listKey(ROWS), count: ROWS.length }
+        deferJsInlineExclusions: { sha256: listKey(ROWS), count: ROWS.length },
+        lazyload: {
+          runtime: { sha256: 'f'.repeat(64), bytes: 10, jsPath: 'lazyload/1.0/lazyload.min.js' },
+          noJsStyle: { sha256: textKey(FALLBACK) },
+          optionsScript: { sha256: textKey(FALLBACK) },
+          runtimeTag: {
+            beforeUrl: { sha256: textKey(FALLBACK) },
+            afterUrl: { sha256: textKey(FALLBACK) }
+          },
+          excludedAttributes: { sha256: listKey(ROWS), count: ROWS.length },
+          excludedSrc: { sha256: listKey(ROWS), count: ROWS.length }
+        }
       }
     },
     texts: { [textKey(RUNTIME)]: RUNTIME, [textKey(FALLBACK)]: FALLBACK },

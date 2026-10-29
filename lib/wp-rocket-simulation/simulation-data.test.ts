@@ -11,6 +11,7 @@ import { SUPPORTED_WPR_VERSIONS } from '../wp-rocket/versions';
 import { DELAY_JS_VERSION_PATTERN } from '../wp-rocket/constants';
 import {
   SIMULATION_DATA_PATH,
+  isRuntimeJsPath,
   readSimulationData,
   rowListKeyText,
   simulationDataHashProblem,
@@ -31,6 +32,22 @@ type Json = Record<string, unknown>;
 const RUNTIME = 'a'.repeat(64);
 const FALLBACK = 'b'.repeat(64);
 const LIST = 'c'.repeat(64);
+const LAZY_RUNTIME = 'f'.repeat(64);
+
+/**
+ * A LazyLoad entry over the given text and list keys (its runtime is pinned
+ * only, never a text).
+ */
+function lazyloadEntry(text: string, list: string): Json {
+  return {
+    runtime: { sha256: LAZY_RUNTIME, bytes: 10, jsPath: 'lazyload/1.0/lazyload.min.js' },
+    noJsStyle: { sha256: text },
+    optionsScript: { sha256: text },
+    runtimeTag: { beforeUrl: { sha256: text }, afterUrl: { sha256: text } },
+    excludedAttributes: { sha256: list, count: 2 },
+    excludedSrc: { sha256: list, count: 2 }
+  };
+}
 
 /** A data file under test: every field loosely typed, so a test can break any of them. */
 interface File {
@@ -50,7 +67,8 @@ function valid(): File {
         ieFallback: { sha256: FALLBACK },
         delayJsExclusions: { sha256: LIST, count: 2 },
         deferJsExternalExclusions: { sha256: LIST, count: 2 },
-        deferJsInlineExclusions: { sha256: LIST, count: 2 }
+        deferJsInlineExclusions: { sha256: LIST, count: 2 },
+        lazyload: lazyloadEntry(FALLBACK, LIST)
       }
     },
     texts: { [RUNTIME]: 'runtime', [FALLBACK]: 'fallback' },
@@ -176,6 +194,51 @@ describe('readSimulationData', () => {
     }, `no row list ${RUNTIME}`);
   });
 
+  it('rejects a malformed LazyLoad entry, naming the field', () => {
+    const lazy = (file: File): Json => entry(file).lazyload as Json;
+    rejects((file) => delete entry(file).lazyload, 'versions.3.23.5.1.lazyload must be an object');
+    rejects((file) => (lazy(file).iframes = {}), 'versions.3.23.5.1.lazyload has keys other than');
+    for (const jsPath of ['', '/abs.js', 'a/../b.js', 'lazyload.css', 'a b.js', 1]) {
+      rejects(
+        (file) => ((lazy(file).runtime as Json).jsPath = jsPath),
+        'lazyload.runtime.jsPath must be a relative path to a .js file'
+      );
+    }
+    for (const bytes of [0, -1, 1.5, '10']) {
+      rejects(
+        (file) => ((lazy(file).runtime as Json).bytes = bytes),
+        'lazyload.runtime.bytes must be a positive integer'
+      );
+    }
+    rejects(
+      (file) => ((lazy(file).runtime as Json).sha256 = 'x'),
+      'lazyload.runtime.sha256 must be 64 lowercase hex digits'
+    );
+    rejects(
+      (file) => ((lazy(file).noJsStyle as Json).sha256 = RUNTIME.replace('a', 'e')),
+      `versions.3.23.5.1.lazyload.noJsStyle: no text`
+    );
+    rejects(
+      (file) => (((lazy(file).runtimeTag as Json).afterUrl as Json).sha256 = LIST),
+      `versions.3.23.5.1.lazyload.runtimeTag.afterUrl: no text ${LIST}`
+    );
+    rejects(
+      (file) => delete (lazy(file).runtimeTag as Json).beforeUrl,
+      'lazyload.runtimeTag.beforeUrl must be an object'
+    );
+    rejects(
+      (file) => ((lazy(file).excludedSrc as Json).count = 3),
+      'versions.3.23.5.1.lazyload.excludedSrc.count must be 2'
+    );
+  });
+
+  it("keeps LazyLoad's runtime out of the texts: a text under its key is dead weight", () => {
+    rejects(
+      (file) => (file.texts[LAZY_RUNTIME] = 'runtime bytes'),
+      `entry ${LAZY_RUNTIME} is not used by any version`
+    );
+  });
+
   it('rejects an entry no version uses (dead weight in the package)', () => {
     const orphan = 'd'.repeat(64);
     rejects((file) => (file.texts[orphan] = 'x'), `entry ${orphan} is not used by any version`);
@@ -245,7 +308,8 @@ describe('simulationDataHashProblem', () => {
           ieFallback: { sha256: textKey(fallback) },
           delayJsExclusions: { sha256: listKey(rows), count: 2 },
           deferJsExternalExclusions: { sha256: listKey(rows), count: 2 },
-          deferJsInlineExclusions: { sha256: listKey(rows), count: 2 }
+          deferJsInlineExclusions: { sha256: listKey(rows), count: 2 },
+          lazyload: lazyloadEntry(textKey(fallback), listKey(rows))
         }
       },
       texts: { [textKey(runtime)]: runtime, [textKey(fallback)]: fallback },
@@ -315,7 +379,22 @@ describe('the committed data file', () => {
       ieFallback: { sha256: pins.ieFallback.sha256 },
       delayJsExclusions: pins.delayJsExclusions,
       deferJsExternalExclusions: pins.deferJsExternalExclusions,
-      deferJsInlineExclusions: pins.deferJsInlineExclusions
+      deferJsInlineExclusions: pins.deferJsInlineExclusions,
+      lazyload: {
+        runtime: {
+          sha256: pins.lazyload.runtime.sha256,
+          bytes: pins.lazyload.runtime.bytes,
+          jsPath: pins.lazyload.runtime.path.replace(/^assets\/js\//, '')
+        },
+        noJsStyle: { sha256: pins.lazyload.noJsStyle.sha256 },
+        optionsScript: { sha256: pins.lazyload.optionsScript.sha256 },
+        runtimeTag: {
+          beforeUrl: { sha256: pins.lazyload.runtimeTag.beforeUrl.sha256 },
+          afterUrl: { sha256: pins.lazyload.runtimeTag.afterUrl.sha256 }
+        },
+        excludedAttributes: pins.lazyload.excludedAttributes,
+        excludedSrc: pins.lazyload.excludedSrc
+      }
     });
     // The pinned byte sizes too: the texts are the plugin's own files.
     const encoder = new TextEncoder();
@@ -323,6 +402,40 @@ describe('the committed data file', () => {
     expect(encoder.encode(data.texts[pins.ieFallback.sha256]).byteLength).toBe(
       pins.ieFallback.bytes
     );
+  });
+
+  it("holds LazyLoad's texts at their pinned sizes, its runtime only as a pin", () => {
+    const lazyload = pins.lazyload;
+    const encoder = new TextEncoder();
+    for (const pin of [
+      lazyload.noJsStyle,
+      lazyload.optionsScript,
+      lazyload.runtimeTag.beforeUrl,
+      lazyload.runtimeTag.afterUrl
+    ]) {
+      expect(encoder.encode(data.texts[pin.sha256]).byteLength).toBe(pin.bytes);
+    }
+    expect(data.texts[lazyload.runtime.sha256]).toBeUndefined();
+    expect(lazyload.runtime).toMatchObject({
+      path: 'assets/js/lazyload/17.8.3/lazyload.min.js',
+      bytes: 8892
+    });
+    expect(data.texts[lazyload.noJsStyle.sha256]).toBe(
+      '<noscript><style id="rocket-lazyload-nojs-css">.rll-youtube-player, [data-lazy-src]{display:none !important;}</style></noscript>'
+    );
+    expect(data.texts[lazyload.optionsScript.sha256]).toMatch(
+      /^<script>window\.lazyLoadOptions=\[\{elements_selector:"img\[data-lazy-src\],\.rocket-lazyload".*<\/script>$/s
+    );
+    expect(data.texts[lazyload.runtimeTag.beforeUrl.sha256]).toBe(
+      '<script data-no-minify="1" async src="'
+    );
+    expect(data.texts[lazyload.runtimeTag.afterUrl.sha256]).toBe('"></script>');
+    expect(data.rowLists[lazyload.excludedSrc.sha256]).toEqual([
+      '/wpcf7_captcha/',
+      'timthumb.php?src',
+      'woocommerce/assets/images/placeholder.png'
+    ]);
+    expect(data.rowLists[lazyload.excludedAttributes.sha256]).toHaveLength(22);
   });
 
   it('ships runtime 2.0.5, its version read from the runtime text itself', () => {
@@ -341,6 +454,30 @@ describe('the committed data file', () => {
     expect(reference.test('a\\0b')).toBe(true);
     for (const entry of Object.values(data.versions)) {
       expect(reference.test(data.texts[entry.runtime.sha256] ?? '$0')).toBe(false);
+    }
+  });
+});
+
+describe('isRuntimeJsPath', () => {
+  it('takes relative paths of plain segments ending in a .js file', () => {
+    for (const path of ['l.js', 'lazyload/17.8.3/lazyload.min.js', 'a-b_c/d.e.js']) {
+      expect(isRuntimeJsPath(path), path).toBe(true);
+    }
+  });
+
+  it('refuses anything else: other files, absolute, empty or parent segments, queries, spaces', () => {
+    for (const path of [
+      '',
+      'l.css',
+      '/l.js',
+      'a//l.js',
+      '../l.js',
+      'a/../l.js',
+      'l.js?v=1',
+      'a b.js',
+      '.js/'
+    ]) {
+      expect(isRuntimeJsPath(path), path).toBe(false);
     }
   });
 });

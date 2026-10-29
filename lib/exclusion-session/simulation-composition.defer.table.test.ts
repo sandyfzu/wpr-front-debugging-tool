@@ -68,14 +68,18 @@ const { sentinels } = TABLE.header.simulation;
 /** A budget no table run comes near. */
 const BUDGET_MS = 600_000;
 
-/** The Defer JS-only rows the session can reach (a builder-refused row never does). */
+/**
+ * The Defer JS-only rows the session can reach (a builder-refused row never
+ * does; rows with LazyLoad also on belong to the LazyLoad suites).
+ */
 const DEFER_ROWS = TABLE.rows.filter(
-  (row) => row.feature === 'defer_all_js' && row.defer?.filterOnly !== true
+  (row) =>
+    row.feature === 'defer_all_js' && row.defer?.filterOnly !== true && row.lazyload === undefined
 );
 
-/** The Delay JS rows with Defer JS on in the same buffer. */
+/** The Delay JS rows with Defer JS (and not LazyLoad) on in the same buffer. */
 const COMPOSED_ROWS = TABLE.rows.filter(
-  (row) => row.feature === 'delay_js' && row.defer !== undefined
+  (row) => row.feature === 'delay_js' && row.defer !== undefined && row.lazyload === undefined
 );
 
 /** A data-file list by its key. */
