@@ -11,7 +11,7 @@ import { INERT_SIMULATION_SOURCES } from '../../lib/exclusion-session/simulation
 import { SIMULATION_DATA_PATH } from '../../lib/wp-rocket-simulation/simulation-data';
 import type { InterceptedDocument } from '../../lib/exclusion-session/backend';
 import { getTabSimulationMarkers } from '../../lib/storage/simulation-markers';
-import { createSimulationSources } from './simulation-sources';
+import { createSimulationSources, cspBrowser } from './simulation-sources';
 
 const DATA_TEXT = readFileSync(join(process.cwd(), 'public', SIMULATION_DATA_PATH), 'utf8');
 
@@ -49,7 +49,33 @@ describe('createSimulationSources', () => {
   it('keeps every other source inert', () => {
     const sources = createSimulationSources({ error: vi.fn() });
     expect(sources.list).toBe(INERT_SIMULATION_SOURCES.list);
-    expect(sources.csp).toBe(INERT_SIMULATION_SOURCES.csp);
+  });
+
+  it("reads a document's CSP headers and head metas for this build's engine", () => {
+    const sources = createSimulationSources({ error: vi.fn() });
+    const document = {
+      tabId: 7,
+      documentUrl: 'https://site.test/',
+      body: new Uint8Array(),
+      status: 200,
+      method: 'GET',
+      contentType: 'text/html',
+      cspHeaders: [{ name: 'content-security-policy', value: "script-src 'self'" }]
+    } satisfies InterceptedDocument;
+    const html = '<head><meta http-equiv="Content-Security-Policy" content="img-src *">';
+    expect(sources.csp(document, html)).toEqual({
+      browser: cspBrowser(),
+      headers: document.cspHeaders,
+      metas: [{ content: 'img-src *', offset: 6 }]
+    });
+  });
+
+  it('names the engine from the build target', () => {
+    vi.stubEnv('BROWSER', 'firefox');
+    expect(cspBrowser()).toBe('firefox');
+    vi.stubEnv('BROWSER', 'chrome');
+    expect(cspBrowser()).toBe('chromium');
+    vi.unstubAllEnvs();
   });
 
   it('draws a fresh marker id per document and remembers it for the tab and origin', async () => {

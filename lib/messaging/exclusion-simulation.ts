@@ -134,6 +134,8 @@ export interface SimulationCspInput {
   readonly browser: SimulationCspBrowser;
   readonly headers: readonly SimulationCspHeader[];
   readonly metas: readonly SimulationCspMeta[];
+  /** An applied `<meta>` CSP could not be read (its policy is unknown, never dropped). */
+  readonly metasUnreadable?: true;
 }
 
 /**
@@ -554,7 +556,8 @@ function cspMeta(entry: Record<string, unknown>, htmlLength: number): CspPart<Si
  * Fit a page's CSP inputs to the engine contract — the one rule both
  * engines' hosts apply before a run, and the engine re-applies on receipt
  * (exact keys): a known browser, bounded header lines and metas, each meta
- * at an offset inside the document. A policy past a bound is `oversized`
+ * at an offset inside the document, `metasUnreadable` absent or exactly
+ * `true`. A policy past a bound is `oversized`
  * (truncating it would change its meaning) and one that cannot be read is
  * `unreadable` — then carried as `cspUnavailable`, never dropped as "no CSP".
  *
@@ -568,16 +571,27 @@ export function fitSimulationCsp(
 ):
   | { readonly csp: SimulationCspInput }
   | { readonly cspUnavailable: SimulationCspUnavailableReason } {
-  if (!isRecord(input) || !keysAllowed(input, ['browser', 'headers', 'metas'], 'reject')) {
+  const keys = ['browser', 'headers', 'metas', 'metasUnreadable'];
+  if (!isRecord(input) || !keysAllowed(input, keys, 'reject')) {
     return { cspUnavailable: 'unreadable' };
   }
   const browser = oneOf(SIMULATION_CSP_BROWSERS, ownValue(input, 'browser'));
-  if (browser === undefined) return { cspUnavailable: 'unreadable' };
+  const metasUnreadable = ownValue(input, 'metasUnreadable');
+  if (browser === undefined || (metasUnreadable !== undefined && metasUnreadable !== true)) {
+    return { cspUnavailable: 'unreadable' };
+  }
   const headers = cspRecords(ownValue(input, 'headers'), cspHeader);
   if (isCspUnavailable(headers)) return { cspUnavailable: headers };
   const metas = cspRecords(ownValue(input, 'metas'), (entry) => cspMeta(entry, htmlLength));
   if (isCspUnavailable(metas)) return { cspUnavailable: metas };
-  return { csp: { browser, headers: headers.list, metas: metas.list } };
+  return {
+    csp: {
+      browser,
+      headers: headers.list,
+      metas: metas.list,
+      ...(metasUnreadable === true ? { metasUnreadable } : {})
+    }
+  };
 }
 
 /**

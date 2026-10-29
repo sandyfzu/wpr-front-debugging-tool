@@ -47,6 +47,7 @@ import type {
   InterceptionHost
 } from './backend';
 import type { DocumentTransformRunner, InterceptedResponseFacts } from './document-transform';
+import { cspHeaderFacts } from '../wp-rocket-simulation/csp-headers';
 import {
   OPENING_STREAM,
   streamTransition,
@@ -225,7 +226,9 @@ export function responseFacts(details: StreamResponseDetails): InterceptedRespon
   return {
     status: details.statusCode,
     method: details.method,
-    contentType: responseContentType(details.responseHeaders)
+    contentType: responseContentType(details.responseHeaders),
+    // Firefox joins repeated lines into one comma-separated value: the policy parser splits it.
+    ...cspHeaderFacts(details.responseHeaders ?? [])
   };
 }
 

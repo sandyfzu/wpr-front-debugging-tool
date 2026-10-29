@@ -49,7 +49,13 @@ describe('simulation vocabulary', () => {
       'meta-charset'
     ]);
     expect(SIMULATION_CAVEATS).toEqual(['combined-js']);
-    expect(SIMULATION_CSP_LIMITS).toEqual(['eval', 'data', 'inline']);
+    expect(SIMULATION_CSP_LIMITS).toEqual([
+      'eval',
+      'data',
+      'inline',
+      'inline-after-fallback',
+      'trusted-types'
+    ]);
     expect(SIMULATION_CSP_BROWSERS).toEqual(['chromium', 'firefox']);
     expect(SIMULATION_CSP_UNAVAILABLE_REASONS).toEqual(['oversized', 'unreadable']);
     expect(SIMULATION_LIST_SOURCES).toEqual(['latest', 'bundled']);

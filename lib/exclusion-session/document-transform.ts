@@ -21,7 +21,10 @@ import {
   type ExclusionSet
 } from '../exclusion-builder/set';
 import type { ExclusionDocumentOutcome } from '../messaging/exclusion-session';
-import type { DocumentSimulationInput } from '../messaging/exclusion-simulation';
+import type {
+  DocumentSimulationInput,
+  SimulationCspHeader
+} from '../messaging/exclusion-simulation';
 import type { SimulationStage } from '../wp-rocket-simulation/spec';
 import { decodeDocument, encodeDocument, extractMimeType } from './charset';
 import type { SimulationPreparer } from './simulation-sources';
@@ -246,6 +249,12 @@ export interface InterceptedResponseFacts {
   readonly method: string;
   /** The response's `Content-Type` value (several headers joined with `, `), or null. */
   readonly contentType: string | null;
+  /**
+   * The response's Content Security Policy header lines (enforcing and
+   * report-only), as received — absent when it has none (every backend
+   * reads the response headers).
+   */
+  readonly cspHeaders?: readonly SimulationCspHeader[];
 }
 
 /**

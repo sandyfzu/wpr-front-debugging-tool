@@ -114,9 +114,19 @@ export type SimulationCaveat = (typeof SIMULATION_CAVEATS)[number];
  * it would block WP Rocket's: `eval` (no `'unsafe-eval'`: `on…` handlers
  * of delayed elements throw), `inline` (at least one delayed inline script
  * fails), `data` (Chromium only, informational: `data:` loads blocked, the
- * runtime's inline fallback runs them).
+ * runtime's inline fallback runs them), `inline-after-fallback` (Chromium
+ * only: a delayed inline script runs from its `data:` URL, but fails once
+ * an earlier page in the tab switched the runtime to its inline fallback —
+ * tab state a per-document check cannot see), `trusted-types` (the page
+ * requires Trusted Types: every delayed script fails, `eval` too).
  */
-export const SIMULATION_CSP_LIMITS = ['eval', 'data', 'inline'] as const;
+export const SIMULATION_CSP_LIMITS = [
+  'eval',
+  'data',
+  'inline',
+  'inline-after-fallback',
+  'trusted-types'
+] as const;
 
 /** One CSP limit (see {@link SIMULATION_CSP_LIMITS}). */
 export type SimulationCspLimit = (typeof SIMULATION_CSP_LIMITS)[number];

@@ -29,6 +29,7 @@ import {
   SIMULATED_FEATURES,
   type SimulatedFeatureId,
   type SimulationCspLimit,
+  type SimulationCspUnavailableReason,
   type SimulationState
 } from '../wp-rocket-simulation/spec';
 import type { ByteMeasure } from '../wp-rocket-simulation/utf8';
@@ -116,12 +117,14 @@ function listProvenance(input: DocumentSimulationInput): SimulationListProvenanc
  * @param report The transform's report.
  * @param input The simulation input.
  * @param cspLimits The runtime work the page's CSP limits.
+ * @param cspUnavailable Why the step could not evaluate the CSP (over the input's own reason).
  */
 export function wireSimulationReport(
   feature: SimulatedFeatureId,
   report: StepReport,
   input: DocumentSimulationInput,
-  cspLimits: readonly SimulationCspLimit[]
+  cspLimits: readonly SimulationCspLimit[],
+  cspUnavailable: SimulationCspUnavailableReason | undefined = input.cspUnavailable
 ): DocumentSimulationReport {
   const simulated = report.state === 'simulated';
   return {
@@ -139,9 +142,7 @@ export function wireSimulationReport(
     ...(simulated && report.undetermined > 0 ? { undetermined: report.undetermined } : {}),
     ...(simulated && report.regexLimitHit ? { regexLimitHit: true as const } : {}),
     ...(simulated && cspLimits.length > 0 ? { cspLimits: [...cspLimits] } : {}),
-    ...(simulated && input.cspUnavailable !== undefined
-      ? { cspUnavailable: input.cspUnavailable }
-      : {}),
+    ...(simulated && cspUnavailable !== undefined ? { cspUnavailable } : {}),
     ...(simulated && report.caveats.length > 0 ? { caveats: [...report.caveats] } : {})
   };
 }
@@ -173,17 +174,23 @@ function simulationStep(
       if (result.report.state !== 'simulated') {
         return { html, report: wireSimulationReport(feature, result.report, input, []) };
       }
-      const csp = evaluateSimulationCsp(input.csp, result.html);
+      const csp = evaluateSimulationCsp({
+        csp: input.csp,
+        served: html,
+        simulated: result.html,
+        runtime: input.runtime
+      });
       if (csp.blocked) {
         return {
           html,
           report: wireSimulationReport(feature, identityReport('csp-blocked'), input, [])
         };
       }
-      return {
-        html: result.html,
-        report: wireSimulationReport(feature, result.report, input, csp.limits)
-      };
+      const report =
+        'unavailable' in csp
+          ? wireSimulationReport(feature, result.report, input, [], csp.unavailable)
+          : wireSimulationReport(feature, result.report, input, csp.limits);
+      return { html: result.html, report };
     }
   };
 }

@@ -501,6 +501,13 @@ describe('parseDocumentSimulationInput', () => {
       expect(fitSimulationCsp(oversized, 0)).toEqual({ cspUnavailable: 'oversized' });
       const unreadable = { ...fitting, metas: [{ content: 'x', offset: 1 }] };
       expect(fitSimulationCsp(unreadable, 0)).toEqual({ cspUnavailable: 'unreadable' });
+      const flagged = { ...fitting, metasUnreadable: true };
+      expect(fitSimulationCsp(flagged, 0)).toEqual({ csp: flagged });
+      for (const metasUnreadable of [false, 'true', 1, null]) {
+        expect(fitSimulationCsp({ ...fitting, metasUnreadable }, 0)).toEqual({
+          cspUnavailable: 'unreadable'
+        });
+      }
     }
   });
 });

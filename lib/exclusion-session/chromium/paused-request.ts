@@ -19,6 +19,7 @@
 import { isRecord } from '../../../utils/is-record';
 import { base64ToBytes, bytesToBase64 } from '../../../utils/base64';
 import { isRewritableResponse, type InterceptedResponseFacts } from '../document-transform';
+import { cspHeaderFacts } from '../../wp-rocket-simulation/csp-headers';
 
 /** One response header line. */
 export interface HeaderEntry {
@@ -189,7 +190,9 @@ export function classifyPause(pause: PausedRequest): PauseDisposition {
   const facts: InterceptedResponseFacts = {
     status: pause.status,
     method: pause.method,
-    contentType: headerValue(pause.headers, 'content-type')
+    contentType: headerValue(pause.headers, 'content-type'),
+    // One entry per header line, report-only under its own name.
+    ...cspHeaderFacts(pause.headers)
   };
   return isRewritableResponse(facts)
     ? { kind: 'candidate', facts }
