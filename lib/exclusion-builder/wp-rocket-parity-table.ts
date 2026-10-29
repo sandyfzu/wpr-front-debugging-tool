@@ -117,6 +117,12 @@ export interface ParityHeader {
    * so a rebuild of the same tag may vendor other versions).
    */
   readonly pluginPackages: Readonly<Record<string, string>>;
+  /**
+   * Every pinned plugin build the rows were derived under (one per
+   * supported WP Rocket version; `plugin`/`pluginZipSha256`/`pluginPackages`
+   * repeat the reference one): each must produce every row's outputs.
+   */
+  readonly plugins: readonly PinnedPlugin[];
   readonly wp: string;
   readonly wpZipSha1: string;
   readonly php: string;
@@ -129,6 +135,21 @@ export interface ParityHeader {
   readonly libxml: string;
   readonly generatedBy: string;
 }
+
+/** One pinned plugin build of a table header (see `ParityHeader.plugins`). */
+export interface PinnedPlugin {
+  readonly version: string;
+  readonly zipSha256: string;
+  /** As `ParityHeader.pluginPackages`, for this build. */
+  readonly packages: Readonly<Record<string, string>>;
+}
+
+/** A pinned plugin's keys, in file order. */
+export const PINNED_PLUGIN_KEYS: readonly (keyof PinnedPlugin)[] = [
+  'version',
+  'zipSha256',
+  'packages'
+];
 
 /** A typed line the settings form drops. */
 export interface DroppedLine {
@@ -234,6 +255,7 @@ export const HEADER_KEYS: readonly (keyof ParityHeader)[] = [
   'plugin',
   'pluginZipSha256',
   'pluginPackages',
+  'plugins',
   'wp',
   'wpZipSha1',
   'php',
@@ -637,23 +659,96 @@ export function parseParityInputs(value: unknown): ParityInput[] {
   return inputs;
 }
 
-/** Parse `pluginPackages`: a non-empty `{name: version}` map of non-empty strings. */
-function packageVersions(value: unknown, table: string): Record<string, string> {
+/**
+ * Parse a packages map: a non-empty `{name: version}` map of non-empty strings.
+ *
+ * @param value The raw field.
+ * @param table The table's name in error messages.
+ * @param field The field's name in error messages.
+ */
+function packageVersions(
+  value: unknown,
+  table: string,
+  field = 'header "pluginPackages"'
+): Record<string, string> {
   if (!isRecord(value) || Object.keys(value).length === 0) {
-    return fail(null, 'header "pluginPackages" must be a non-empty {name: version} object', table);
+    return fail(null, `${field} must be a non-empty {name: version} object`, table);
   }
   for (const [name, version] of Object.entries(value)) {
     if (typeof version !== 'string' || version === '') {
-      fail(null, `header "pluginPackages" "${name}" must be a non-empty version string`, table);
+      fail(null, `${field} "${name}" must be a non-empty version string`, table);
     }
   }
   return value as Record<string, string>;
 }
 
 /**
+ * Parse one `plugins` entry: exact keys, non-empty strings, a packages map.
+ *
+ * @param value The raw entry.
+ * @param index Its position (error messages).
+ * @param table The table's name in error messages.
+ */
+function pinnedPlugin(value: unknown, index: number, table: string): PinnedPlugin {
+  const where = `header "plugins"[${String(index)}]`;
+  if (!isRecord(value)) return fail(null, `${where} must be an object`, table);
+  for (const key of Object.keys(value)) {
+    if (!(PINNED_PLUGIN_KEYS as readonly string[]).includes(key)) {
+      fail(null, `${where} has unknown key "${key}"`, table);
+    }
+  }
+  for (const key of ['version', 'zipSha256'] as const) {
+    const field = value[key];
+    if (typeof field !== 'string' || field === '') {
+      fail(null, `${where} "${key}" must be a non-empty string`, table);
+    }
+  }
+  return {
+    version: value.version as string,
+    zipSha256: value.zipSha256 as string,
+    packages: packageVersions(value.packages, table, `${where} "packages"`)
+  };
+}
+
+/**
+ * Parse `plugins`: a non-empty list of builds, one per version, holding the
+ * reference build exactly as the reference fields name it.
+ *
+ * @param value The raw field.
+ * @param reference The parsed reference fields.
+ * @param table The table's name in error messages.
+ */
+function pinnedPlugins(
+  value: unknown,
+  reference: Pick<ParityHeader, 'plugin' | 'pluginZipSha256' | 'pluginPackages'>,
+  table: string
+): PinnedPlugin[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return fail(null, 'header "plugins" must be a non-empty array', table);
+  }
+  const plugins = value.map((entry: unknown, index) => pinnedPlugin(entry, index, table));
+  const versions = new Set(plugins.map((plugin) => plugin.version));
+  if (versions.size !== plugins.length) {
+    fail(null, 'header "plugins" must name each version once', table);
+  }
+  const own = plugins.find((plugin) => plugin.version === reference.plugin);
+  if (
+    own?.zipSha256 !== reference.pluginZipSha256 ||
+    JSON.stringify(own.packages) !== JSON.stringify(reference.pluginPackages)
+  ) {
+    fail(
+      null,
+      `header "plugins" must hold the reference build (${reference.plugin}) with the header's own zip sha256 and packages`,
+      table
+    );
+  }
+  return plugins;
+}
+
+/**
  * The reference fields ({@link HEADER_KEYS}) of a table header, each required
  * and non-empty; other keys are the caller's to check. Shared by every table
- * the parity script derives from the same plugin zip.
+ * the parity script derives from the same plugin zips.
  *
  * @param value The header object.
  * @param table The table's name in error messages.
@@ -668,6 +763,11 @@ export function parseHeaderFields(
   for (const key of HEADER_KEYS) {
     if (key === 'pluginPackages') {
       header[key] = packageVersions(value[key], table);
+      continue;
+    }
+    if (key === 'plugins') {
+      // After `plugin`, `pluginZipSha256` and `pluginPackages` (file order): they are parsed.
+      header[key] = pinnedPlugins(value[key], header as ParityHeader, table);
       continue;
     }
     const field = value[key];

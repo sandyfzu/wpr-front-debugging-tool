@@ -32,6 +32,7 @@ import {
   FEATURE_COMMENT_PATTERN,
   FDT_EXCLUDED_RESOURCE,
   BUILDER_MARKER_META_NAME,
+  GENERATOR_META_NAME,
   GENERATOR_META_SELECTOR,
   WPR_FEATURES_ATTRIBUTE,
   WPR_FEATURES_META_SELECTOR,
@@ -142,6 +143,7 @@ describe('other feature footprints', () => {
     expect(LAZYLOAD_BG_CONTAINER_ID).toBe('wpr-lazyload-bg-container');
     expect(LAZYLOAD_BG_EXCLUSION_ID).toBe('wpr-lazyload-bg-exclusion');
     expect(BEACON_DATA_NAME).toBe('wpr-wpr-beacon');
+    expect(GENERATOR_META_NAME).toBe('generator');
     expect(GENERATOR_META_SELECTOR).toBe('meta[name="generator"]');
     expect(WPR_FEATURES_ATTRIBUTE).toBe('data-wpr-features');
     expect(WPR_FEATURES_META_SELECTOR).toBe('meta[name="generator"][data-wpr-features]');

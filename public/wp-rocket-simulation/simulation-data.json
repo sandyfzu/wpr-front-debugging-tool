@@ -1,6 +1,19 @@
 {
   "format": 1,
   "versions": {
+    "3.24": {
+      "runtime": {
+        "sha256": "00bd608a083105a0ec3181e439f2975c911aae30c6c2a8e476a10ea9b49bae98",
+        "version": "2.0.5"
+      },
+      "ieFallback": {
+        "sha256": "efb5a648656ae8f944fbf74e5644126464160ab50197a288c8b587e74edd575a"
+      },
+      "delayJsExclusions": {
+        "sha256": "3301ed232ba587bb81f002fc46ac7716b6a9f88fc9f5cfb60ae94a08a16baee8",
+        "count": 75
+      }
+    },
     "3.23.5.1": {
       "runtime": {
         "sha256": "00bd608a083105a0ec3181e439f2975c911aae30c6c2a8e476a10ea9b49bae98",

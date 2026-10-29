@@ -11,6 +11,7 @@
 import { CONTROLLER_RUN_MARKER } from '../exclusion-builder/delay-js';
 import { delayMaskedRegions, firstRegionFrom } from '../exclusion-builder/delay-js-mask';
 import { scanTags, type ScannedTag } from '../exclusion-builder/html-scan';
+import { attributeValue, isGeneratorMeta } from './generator-meta';
 import {
   DELAY_JS_SRC,
   FEATURE_META_TOKENS,
@@ -19,22 +20,12 @@ import {
 } from '../wp-rocket/constants';
 
 /**
- * The attribute value of `name` on a tag (`null` when absent or valueless).
- *
- * @param tag The tag.
- * @param name A lowercase attribute name.
- */
-function attributeValue(tag: ScannedTag, name: string): string | null {
-  return tag.attrs.find((attr) => attr.name === name)?.value ?? null;
-}
-
-/**
  * Whether a tag is the generator meta declaring Delay JS.
  *
  * @param tag An opening tag.
  */
 function declaresDelayJs(tag: ScannedTag): boolean {
-  if (tag.name !== 'meta' || attributeValue(tag, 'name') !== 'generator') return false;
+  if (!isGeneratorMeta(tag)) return false;
   const features = attributeValue(tag, WPR_FEATURES_ATTRIBUTE);
   return features?.split(/\s+/).includes(FEATURE_META_TOKENS.delay_js) ?? false;
 }

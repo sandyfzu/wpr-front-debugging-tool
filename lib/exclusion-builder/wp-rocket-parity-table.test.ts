@@ -21,6 +21,7 @@ function validTable(): { header: Json; rows: Json[] } {
       plugin: '3.0',
       pluginZipSha256: 'aa',
       pluginPackages: { 'a/b': 'v1' },
+      plugins: [{ version: '3.0', zipSha256: 'aa', packages: { 'a/b': 'v1' } }],
       wp: '7.0',
       wpZipSha1: 'bb',
       php: '8.1',
@@ -545,6 +546,66 @@ describe('parseHeaderFields', () => {
     );
     expect(() => parseHeaderFields({ ...header, pluginPackages: [] }, 'other fixtures')).toThrow(
       'other fixtures: header "pluginPackages" must be a non-empty {name: version} object'
+    );
+  });
+});
+
+describe('header "plugins" (every pinned build)', () => {
+  /** A second pinned build. */
+  const other = { version: '2.9', zipSha256: 'cc', packages: { 'a/b': 'v0' } };
+
+  it('parses every build, the reference included', () => {
+    const table = validTable();
+    table.header.plugins = [...(table.header.plugins as Json[]), other];
+    expect(parseParityTable(table).header.plugins).toEqual([
+      { version: '3.0', zipSha256: 'aa', packages: { 'a/b': 'v1' } },
+      other
+    ]);
+  });
+
+  it('rejects a missing, empty or malformed list', () => {
+    const list = 'header "plugins" must be a non-empty array';
+    rejects((table) => delete table.header.plugins, list);
+    rejects((table) => (table.header.plugins = []), list);
+    rejects((table) => (table.header.plugins = {}), list);
+    rejects((table) => (table.header.plugins = [null]), 'header "plugins"[0] must be an object');
+    rejects(
+      (table) => (table.header.plugins = [{ ...other, extra: 1 }]),
+      'header "plugins"[0] has unknown key "extra"'
+    );
+    rejects(
+      (table) => (table.header.plugins = [{ ...other, version: '' }]),
+      'header "plugins"[0] "version" must be a non-empty string'
+    );
+    rejects(
+      (table) => (table.header.plugins = [{ ...other, zipSha256: 1 }]),
+      'header "plugins"[0] "zipSha256" must be a non-empty string'
+    );
+    rejects(
+      (table) => (table.header.plugins = [{ ...other, packages: {} }]),
+      'header "plugins"[0] "packages" must be a non-empty {name: version} object'
+    );
+  });
+
+  it('rejects a version listed twice', () => {
+    rejects(
+      (table) => (table.header.plugins = [other, other]),
+      'header "plugins" must name each version once'
+    );
+  });
+
+  it('requires the reference build exactly as the reference fields name it', () => {
+    const message = 'header "plugins" must hold the reference build (3.0)';
+    rejects((table) => (table.header.plugins = [other]), message);
+    rejects(
+      (table) =>
+        (table.header.plugins = [{ version: '3.0', zipSha256: 'xx', packages: { 'a/b': 'v1' } }]),
+      message
+    );
+    rejects(
+      (table) =>
+        (table.header.plugins = [{ version: '3.0', zipSha256: 'aa', packages: { 'a/b': 'v2' } }]),
+      message
     );
   });
 });

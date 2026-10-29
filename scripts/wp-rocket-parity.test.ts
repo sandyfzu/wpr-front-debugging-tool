@@ -428,6 +428,7 @@ function table(): {
       plugin: '3.0',
       pluginZipSha256: 'aa',
       pluginPackages: { 'a/run': 'v1' },
+      plugins: [{ version: '3.0', zipSha256: 'aa', packages: { 'a/run': 'v1' } }],
       wp: '7.0',
       wpZipSha1: 'bb',
       php: '8.1.34',

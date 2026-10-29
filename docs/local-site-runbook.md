@@ -50,11 +50,23 @@ mkdir -p docker/wpr && cp /tmp/wpr-out/wp-rocket-*.zip docker/wpr/wpr-rocket.zip
 `v3.23.5.1` @ `8e89a59` → version 3.23.5.1 (update `WPR_FDT_EXPECTED_WPR_VERSION`, in
 both the `.env` and `.env.example`, when you re-pin a newer tag).
 
-A re-pin also re-derives the parity tables and the simulation data file from the new zip
-(`pnpm parity:wp-rocket --write`, then review the row changes): their `header.plugin` is the tag the parity workflow
-(`.github/workflows/wp-rocket-parity.yml`) builds (`tag:v<plugin>`), and `header.pluginPackages`
-the vendored package versions it expects — no workflow edit needed. The workflow's own APVM
-release is pinned there (`APVM_VERSION`).
+The parity harness (`pnpm parity:wp-rocket`) does not read this zip: it derives the parity tables and the
+simulation data file under every supported WP Rocket version (`SUPPORTED_WPR_VERSIONS`, `lib/wp-rocket/versions.ts`),
+each from its own git-ignored zip `docker/wpr/wpr-rocket-<version>.zip` whose sha256 must equal the row's
+`zipSha256` (apvm builds are not byte-reproducible, so the pinned file is the reference). Cold start: copy the
+pinned builds from apvm's cache and check them —
+
+```bash
+cp ~/.apvm/cache/wp-rocket/commits/3.24/5b71db4/wp-rocket-3.24.zip docker/wpr/wpr-rocket-3.24.zip
+cp ~/.apvm/cache/wp-rocket/commits/3.23.5.1/8e89a59/wp-rocket-3.23.5.1.zip docker/wpr/wpr-rocket-3.23.5.1.zip
+shasum -a 256 docker/wpr/wpr-rocket-*.zip   # = the registry's zipSha256 values
+```
+
+Adding or replacing a supported version (owner decision, never from GitHub's release flags): edit its registry
+row (version, zip sha256, role, rule variants), put its zip in place, run `pnpm parity:wp-rocket --write` and
+review the changes. The tables' `header.plugins` lists the tags the parity workflow
+(`.github/workflows/wp-rocket-parity.yml`) builds (`tag:v<version>`) and the package versions each must vendor —
+no workflow edit needed. The workflow's own APVM release is pinned there (`APVM_VERSION`).
 
 ## Scenario flags (any page)
 

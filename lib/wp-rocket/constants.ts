@@ -290,8 +290,11 @@ export const FEATURE_COMMENT_PATTERN = /^\s*wpr_[a-z0-9_]+\s*$/;
 /** Optimize critical images' feature comment (corroboration only — see below). */
 export const OPTIMIZE_CRITICAL_IMAGES_COMMENT = 'wpr_oci';
 
+/** The generator meta's `name` value, compared exactly (as WordPress and WP Rocket spell it). */
+export const GENERATOR_META_NAME = 'generator';
+
 /** Generator meta declaring the active optimization plugins. */
-export const GENERATOR_META_SELECTOR = 'meta[name="generator"]';
+export const GENERATOR_META_SELECTOR = `meta[name="${GENERATOR_META_NAME}"]`;
 
 /**
  * The feature-declaration attribute on that generator meta: since 3.17.2 the

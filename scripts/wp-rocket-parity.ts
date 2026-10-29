@@ -2,31 +2,43 @@
  * WP Rocket parity table generator/checker (`pnpm parity:wp-rocket`).
  *
  * Re-derives every expected output of two tables by running the REAL plugin
- * and WordPress core code under `php -n` (`scripts/wp-rocket-parity.php`):
+ * and WordPress core code under `php -n` (`scripts/wp-rocket-parity.php`),
+ * once per supported WP Rocket version (`lib/wp-rocket/versions.ts`, each
+ * with its own pinned zip — every build must derive the same rows):
  * `lib/exclusion-builder/wp-rocket-parity.fixtures.json` (settings-form saves
  * and exclusion matches) and
  * `lib/wp-rocket-simulation/simulation-parity.fixtures.json` (pages served
  * with Delay JS on, plus the pins of the real runtime, IE fallback and list),
  * and the simulation data file `public/wp-rocket-simulation/simulation-data.json`
- * (those real texts and rows, content-keyed). The plugin zip and seven
- * `wp-includes` files of the pinned WordPress release are unzipped into a
- * temporary directory, the tables' authored inputs are fed to the harness, and
- * the outputs are merged back and formatted with the repo's Prettier config —
- * so every file is byte-for-byte what `--write` produces.
+ * (every supported version's real texts and rows, content-keyed). Each
+ * plugin zip and seven `wp-includes` files of the pinned WordPress release
+ * are unzipped into a temporary directory, the tables' authored inputs are
+ * fed to the harness, and the outputs are merged back and formatted with the
+ * repo's Prettier config — so every file is byte-for-byte what `--write`
+ * produces. The headers name the reference build (the latest-stable version)
+ * and list every pinned build (`plugins`).
  *
  * - default (check): fails with the differences when a committed file is
  *   stale (headers included: the exact local zip bytes and PHP build);
  * - `--write`: rewrites the three files;
- * - `--ci`: checks a fresh build of the reference tag — zip bytes are never
+ * - `--ci`: checks fresh builds of the pinned tags — zip bytes are never
  *   reproducible across builds (skipped) and another PHP build is a notice;
  *   fails as "table stale" on any other difference (the data file included)
- *   and as "reference drift" when the build vendored other package versions
- *   than `pluginPackages`;
- * - `--compare`: reports how another plugin version (e.g. the latest release)
- *   differs from the tables, as warnings only — never fails.
+ *   and as "reference drift" when a build vendored other package versions
+ *   than its header entry;
+ * - `--compare`: reports how another plugin version (e.g. a newer release)
+ *   differs from the tables, as warnings only — never fails;
+ * - `--release-check`: reads release tags (one per line) on stdin and warns,
+ *   never fails, when one is newer than every supported version or is a
+ *   newer patch of a supported minor — release flags ignored (a stable
+ *   release may still be flagged pre-release); the newest such tag goes to
+ *   `GITHUB_OUTPUT` as `newest=` for the workflow to build and `--compare`.
  *
- * `--zip <path>` selects the plugin zip (default `docker/wpr/wpr-rocket.zip`,
- * built locally with apvm). Network is used only to download the pinned
+ * Check, `--write` and `--ci` read one zip per supported version,
+ * `docker/wpr/wpr-rocket-<version>.zip` (git-ignored; built with apvm, or
+ * copied from apvm's cache — check and `--write` require the registry's
+ * sha256); `--compare --zip <path>` names the other build. Network is used
+ * only to download the pinned
  * WordPress zip once; it is sha1-verified and cached in `.cache/wp-rocket-parity/`.
  * Needs `unzip` and PHP ≥ 8.1 with ext-dom + ext-mbstring, compiled in or as
  * shared modules (the harness runs without php.ini, so the script loads
@@ -66,10 +78,17 @@ import {
   type MatchInput,
   type ParityHeader,
   type ParityInput,
+  type PinnedPlugin,
   type SaveInput,
   type TypedLine
 } from '../lib/exclusion-builder/wp-rocket-parity-table.ts';
 import { DELAY_JS_VERSION_PATTERN } from '../lib/wp-rocket/constants.ts';
+import {
+  SUPPORTED_WPR_VERSIONS,
+  latestStableWprVersion,
+  supportedWprVersion,
+  type SupportedWprVersion
+} from '../lib/wp-rocket/versions.ts';
 import {
   SIMULATE_INPUT_KEYS,
   SIMULATION_HEADER_KEYS,
@@ -111,8 +130,15 @@ const RUNTIME_PATH = 'assets/js/lazyload-scripts.min.js';
 /** The plugin-root dynamic lists file (the copy a fresh install reads). */
 const DYNAMIC_LISTS_PATH = 'dynamic-lists.json';
 
-/** The default plugin zip, relative to the repo root (see docs/local-site-runbook.md). */
-const PLUGIN_ZIP = 'docker/wpr/wpr-rocket.zip';
+/**
+ * A supported version's plugin zip, relative to the repo root (git-ignored;
+ * see docs/local-site-runbook.md).
+ *
+ * @param version The supported version.
+ */
+export function pluginZipPath(version: string): string {
+  return `docker/wpr/wpr-rocket-${version}.zip`;
+}
 
 /** The PHP harness, next to this script. */
 const HARNESS = 'scripts/wp-rocket-parity.php';
@@ -179,12 +205,12 @@ export function phpCommand(extensions: readonly string[], rest: readonly string[
 }
 
 /** What the run does with the derived table. */
-export type Mode = 'check' | 'write' | 'ci' | 'compare';
+export type Mode = 'check' | 'write' | 'ci' | 'compare' | 'release-check';
 
 /** The parsed command line. */
 export interface Options {
   readonly mode: Mode;
-  /** The plugin zip as given (resolved against the working directory); absent = the default zip. */
+  /** The `--compare` plugin zip as given (resolved against the working directory). */
   readonly zip?: string;
 }
 
@@ -192,11 +218,35 @@ export interface Options {
 const MODE_FLAGS: Readonly<Partial<Record<string, Mode>>> = {
   '--write': 'write',
   '--ci': 'ci',
-  '--compare': 'compare'
+  '--compare': 'compare',
+  '--release-check': 'release-check'
 };
 
 /** The command line, for error messages. */
-const USAGE = 'pnpm parity:wp-rocket [--write | --ci | --compare] [--zip <plugin.zip>]';
+const USAGE =
+  'pnpm parity:wp-rocket [--write | --ci | --compare --zip <plugin.zip> | --release-check < tags]';
+
+/**
+ * The `--compare` zip, after checking the options pair it with the right mode.
+ *
+ * @param options The parsed options.
+ * @returns The zip path (`--compare`), or `undefined` (every other mode).
+ * @throws {@link Error} when `--compare` lacks `--zip`, or another mode has one
+ *   (they read the supported versions' zips, {@link pluginZipPath}).
+ */
+export function compareZip(options: Options): string | undefined {
+  if (options.mode === 'compare') {
+    if (options.zip === undefined)
+      throw new Error(`--compare needs --zip <path> (usage: ${USAGE})`);
+    return options.zip;
+  }
+  if (options.zip !== undefined) {
+    throw new Error(
+      `--zip is for --compare only: the other modes read ${pluginZipPath('<version>')} for each supported version (usage: ${USAGE})`
+    );
+  }
+  return undefined;
+}
 
 /**
  * The run options from the CLI arguments.
@@ -752,15 +802,60 @@ export const SIMULATION_TABLE: TableSpec = {
 };
 
 /**
- * The `--ci` verdict for a fresh build of the reference tag.
+ * A fresh header's `plugins` with each build the committed header also pins
+ * taking the committed zip sha256 and packages (never reproducible / judged
+ * as drift); a build added, removed or reordered still differs.
+ *
+ * @param before The committed builds.
+ * @param fresh The fresh header's `plugins` (absent = none).
+ */
+export function alignedPlugins(
+  before: readonly PinnedPlugin[],
+  fresh: unknown
+): readonly unknown[] | undefined {
+  if (!Array.isArray(fresh)) return undefined;
+  return fresh.map((entry: unknown) => {
+    const version = (entry as { version?: unknown } | null)?.version;
+    return before.find((plugin) => plugin.version === version) ?? entry;
+  });
+}
+
+/**
+ * Package drift of the non-reference builds: one `WP Rocket <version>: <line>`
+ * per package difference of a build both headers pin (the reference build's
+ * drift is `pluginPackages`').
+ *
+ * @param before The committed header.
+ * @param fresh The fresh header's `plugins`.
+ * @returns The lines, and the versions that drifted.
+ */
+export function pinnedBuildDrift(
+  before: ParityHeader,
+  fresh: unknown
+): { lines: string[]; versions: string[] } {
+  const lines: string[] = [];
+  const versions: string[] = [];
+  for (const entry of Array.isArray(fresh) ? (fresh as Partial<PinnedPlugin>[]) : []) {
+    const pinned = before.plugins.find((plugin) => plugin.version === entry.version);
+    if (pinned === undefined || pinned.version === before.plugin) continue;
+    const differences = packageDifferences(pinned.packages, entry.packages ?? {});
+    if (differences.length === 0) continue;
+    versions.push(pinned.version);
+    lines.push(...differences.map((line) => `WP Rocket ${pinned.version}: ${line}`));
+  }
+  return { lines, versions };
+}
+
+/**
+ * The `--ci` verdict for fresh builds of the pinned tags.
  *
  * @param committed The committed table text.
  * @param fresh The derived table.
  * @param spec Which table (default: the exclusion parity table).
  * @returns "<label> stale" (rows, or any header field other than the zip bytes,
  *   PHP build and packages — compared byte-for-byte after aligning those),
- *   "reference drift" (packages), and a PHP-build notice; a single "reproduces"
- *   notice when nothing differs.
+ *   "reference drift" (packages of any pinned build), and a PHP-build notice;
+ *   a single "reproduces" notice when nothing differs.
  * @throws {@link Error} when the committed table does not parse.
  */
 export async function ciFindings(
@@ -770,18 +865,26 @@ export async function ciFindings(
 ): Promise<Finding[]> {
   const before = spec.parse(JSON.parse(committed)).header;
   const tolerated = [...CI_SKIPPED_KEYS, 'pluginPackages', ...ENVIRONMENT_KEYS];
+  const plugins = alignedPlugins(before.plugins, fresh.header.plugins);
   const aligned = await formatTable(
     {
       ...fresh,
-      header: { ...fresh.header, ...pick(before as unknown as Record<string, unknown>, tolerated) }
+      header: {
+        ...fresh.header,
+        ...pick(before as unknown as Record<string, unknown>, tolerated),
+        ...(plugins === undefined ? {} : { plugins })
+      }
     },
     spec.path
   );
   const stale = describeStaleness(committed, aligned, spec.headerKeys);
-  const drift = packageDifferences(
+  const reference = packageDifferences(
     before.pluginPackages,
     fresh.header.pluginPackages as Record<string, string>
   );
+  const others = pinnedBuildDrift(before, fresh.header.plugins);
+  const drift = [...reference, ...others.lines];
+  const drifted = [...(reference.length > 0 ? [before.plugin] : []), ...others.versions];
   const environment = headerDifferences(
     before as unknown as Record<string, unknown>,
     fresh.header,
@@ -804,7 +907,7 @@ export async function ciFindings(
       title: 'reference drift: rebuild locally and review',
       details: [
         ...drift,
-        `This build of WP Rocket ${before.plugin} vendors other package versions than the table's. Rebuild the zip (\`apvm build wp-rocket tag:v${before.plugin}\`), run \`pnpm parity:wp-rocket --write\`, and review the header and row changes.`
+        `This build of WP Rocket ${drifted.join(' / ')} vendors other package versions than the table's. Rebuild the zip (${drifted.map((version) => `\`apvm build wp-rocket tag:v${version}\``).join(', ')}), run \`pnpm parity:wp-rocket --write\`, and review the header and row changes.`
       ]
     });
   }
@@ -818,7 +921,7 @@ export async function ciFindings(
   if (stale.length === 0 && drift.length === 0) {
     findings.push({
       level: 'notice',
-      title: `the ${spec.label} reproduces with a fresh build of WP Rocket ${before.plugin}`,
+      title: `the ${spec.label} reproduces with a fresh build of WP Rocket ${before.plugins.map((plugin) => plugin.version).join(' and ')}`,
       details: []
     });
   }
@@ -842,6 +945,223 @@ export function sameVersionFindings(version: string): Finding[] {
       details: []
     }
   ];
+}
+
+/**
+ * The `--compare` verdict when the build is a supported version other than
+ * the reference: `--ci` already derives every row under it.
+ *
+ * @param version The build's plugin version.
+ */
+export function pinnedVersionFindings(version: string): Finding[] {
+  return [
+    {
+      level: 'notice',
+      title: `WP Rocket ${version} is a supported version the tables are derived under; comparison skipped`,
+      details: []
+    }
+  ];
+}
+
+/** A release tag's version: numeric parts, then the pre-release suffix (`''` = none). */
+export interface ReleaseVersion {
+  readonly parts: readonly number[];
+  readonly suffix: string;
+}
+
+/** `v`, dotted digits, an optional `-suffix` (`v3.24`, `v3.23.5.1`, `v3.24-beta5`). */
+const RELEASE_TAG = /^v?(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?$/;
+
+/**
+ * Parse a WP Rocket release tag or version.
+ *
+ * @param tag `v3.24-beta5`, `3.23.5.1`…
+ * @returns The version, or `null` for any other tag shape.
+ */
+export function parseReleaseVersion(tag: string): ReleaseVersion | null {
+  const match = RELEASE_TAG.exec(tag.trim());
+  if (match?.[1] === undefined) return null;
+  return { parts: match[1].split('.').map(Number), suffix: match[2] ?? '' };
+}
+
+/** Pre-release stages, oldest first; a release (no suffix) ranks after all of them. */
+const PRE_RELEASE_STAGES = ['prealpha', 'alpha', 'beta', 'rc'] as const;
+
+/** A known stage then an optional number (`alpha`, `beta12`, `RC1`); case-insensitive. */
+const PRE_RELEASE_SUFFIX = /^(prealpha|alpha|beta|rc)(\d*)$/i;
+
+/**
+ * Rank a pre-release suffix for ordering: its stage index (`prealpha` 0 …
+ * `rc` 3; a release `''` = the stage count, after every pre-release; an
+ * unknown suffix = -1, a pre-release below every known stage), then its
+ * number (none = 0, so `beta` < `beta1`).
+ *
+ * @param suffix The suffix without its `-` (`''` = a release).
+ * @returns `[stage, number]`.
+ */
+function preReleaseRank(suffix: string): readonly [number, number] {
+  if (suffix === '') return [PRE_RELEASE_STAGES.length, 0];
+  const match = PRE_RELEASE_SUFFIX.exec(suffix);
+  if (match?.[1] === undefined) return [-1, 0];
+  const stage = PRE_RELEASE_STAGES.indexOf(
+    match[1].toLowerCase() as (typeof PRE_RELEASE_STAGES)[number]
+  );
+  return [stage, match[2] === undefined || match[2] === '' ? 0 : Number(match[2])];
+}
+
+/**
+ * Order two release versions: numeric parts (missing = 0, so `3.24` =
+ * `3.24.0`), then the suffix — `prealpha` < `alpha` < `beta` < `rc` < the
+ * release, each stage by its number (`beta2` < `beta10`); unknown suffixes
+ * rank below every known stage, in natural order among themselves.
+ *
+ * @param a One version.
+ * @param b The other.
+ * @returns Negative, zero or positive as `a` is older, equal or newer.
+ */
+export function compareReleaseVersions(a: ReleaseVersion, b: ReleaseVersion): number {
+  for (let index = 0; index < Math.max(a.parts.length, b.parts.length); index++) {
+    const difference = (a.parts[index] ?? 0) - (b.parts[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  if (a.suffix === b.suffix) return 0;
+  const [aStage, aNumber] = preReleaseRank(a.suffix);
+  const [bStage, bNumber] = preReleaseRank(b.suffix);
+  if (aStage !== bStage) return aStage - bStage;
+  if (aStage === -1) return a.suffix.localeCompare(b.suffix, 'en', { numeric: true });
+  return aNumber - bNumber;
+}
+
+/**
+ * Whether two versions share their minor (`major.minor`, missing = 0):
+ * `3.23.6` and `3.23.5.1` do, `3.24` and `3.23.5.1` do not.
+ *
+ * @param a One version.
+ * @param b The other.
+ */
+function sameMinor(a: ReleaseVersion, b: ReleaseVersion): boolean {
+  return (a.parts[0] ?? 0) === (b.parts[0] ?? 0) && (a.parts[1] ?? 0) === (b.parts[1] ?? 0);
+}
+
+/** A release tag the owner should review, and why. */
+export interface NewerRelease {
+  readonly tag: string;
+  /**
+   * The supported version of the same minor it is newer than (a newer
+   * patch or pre-release of a supported minor), else `undefined` — newer
+   * than every supported version (a new minor or major).
+   */
+  readonly supersedes?: string;
+}
+
+/**
+ * Classify one tag against the supported versions.
+ *
+ * @param version The tag's version.
+ * @param pinned The supported versions, parsed, with their source strings.
+ * @returns The reason it is newer, or `null` when it is not.
+ */
+function newerReason(
+  version: ReleaseVersion,
+  pinned: readonly { readonly raw: string; readonly version: ReleaseVersion }[]
+): { supersedes?: string } | null {
+  const sibling = pinned.find((pin) => sameMinor(version, pin.version));
+  if (sibling !== undefined) {
+    return compareReleaseVersions(version, sibling.version) > 0
+      ? { supersedes: sibling.raw }
+      : null;
+  }
+  return pinned.every((pin) => compareReleaseVersions(version, pin.version) > 0) ? {} : null;
+}
+
+/**
+ * The release tags to review, newest first: every tag newer than all
+ * supported versions, and every newer patch (or pre-release) of a supported
+ * minor — the supported list pins each minor's latest patch. Pre-releases
+ * count (release flags are not trusted); other tag shapes are ignored.
+ *
+ * @param tags Release tag names.
+ * @param supported The supported versions.
+ */
+export function newerReleases(
+  tags: readonly string[],
+  supported: readonly string[]
+): NewerRelease[] {
+  const pinned = supported.flatMap((raw) => {
+    const version = parseReleaseVersion(raw);
+    return version === null ? [] : [{ raw, version }];
+  });
+  const newer: { release: NewerRelease; version: ReleaseVersion }[] = [];
+  for (const raw of tags) {
+    const tag = raw.trim();
+    const version = parseReleaseVersion(tag);
+    const reason = version === null ? null : newerReason(version, pinned);
+    if (version !== null && reason !== null) newer.push({ release: { tag, ...reason }, version });
+  }
+  return newer
+    .sort((a, b) => compareReleaseVersions(b.version, a.version))
+    .map((entry) => entry.release);
+}
+
+/**
+ * The tags of {@link newerReleases}, newest first — the first is the one the
+ * workflow builds and compares (the newest overall, so a new minor wins over
+ * a supported minor's newer patch).
+ *
+ * @param tags Release tag names.
+ * @param supported The supported versions.
+ */
+export function newerReleaseTags(tags: readonly string[], supported: readonly string[]): string[] {
+  return newerReleases(tags, supported).map((release) => release.tag);
+}
+
+/** The owner-review note every newer-release warning carries. */
+const RELEASE_REVIEW_NOTE =
+  'Release flags are not trusted: pre-releases count too. For owner review — supporting a version is a reviewed change (registry row in lib/wp-rocket/versions.ts, its pinned zip, `pnpm parity:wp-rocket --write`).';
+
+/**
+ * The `--release-check` verdict: one warning naming the releases newer than
+ * every supported version (a new minor or major), one naming each newer
+ * patch of a supported minor (`v3.23.6` over pinned `3.23.5.1`) — for the
+ * owner to decide on a version bump — else a notice. Never an error.
+ *
+ * @param tags Release tag names.
+ * @param supported The supported versions (registry order).
+ */
+export function releaseCheckFindings(
+  tags: readonly string[],
+  supported: readonly string[]
+): Finding[] {
+  const newer = newerReleases(tags, supported);
+  const pinned = supported.join(', ');
+  if (newer.length === 0) {
+    return [
+      {
+        level: 'notice',
+        title: `no WP Rocket release newer than the supported versions (${pinned})`,
+        details: []
+      }
+    ];
+  }
+  const findings: Finding[] = [];
+  const beyond = newer.filter((release) => release.supersedes === undefined);
+  if (beyond.length > 0) {
+    findings.push({
+      level: 'warning',
+      title: `WP Rocket ${beyond.map((release) => release.tag).join(', ')} newer than the supported versions (${pinned})`,
+      details: [RELEASE_REVIEW_NOTE]
+    });
+  }
+  for (const version of supported) {
+    const patches = newer.filter((release) => release.supersedes === version);
+    if (patches.length === 0) continue;
+    findings.push({
+      level: 'warning',
+      title: `WP Rocket ${patches.map((release) => release.tag).join(', ')} newer than the supported ${version} of the same minor`,
+      details: [RELEASE_REVIEW_NOTE]
+    });
+  }
+  return findings;
 }
 
 /**
@@ -1310,6 +1630,151 @@ export function otherVersionFindings(
 }
 
 // ---------------------------------------------------------------------------
+// Merging the supported versions' builds.
+// ---------------------------------------------------------------------------
+
+/** A table header's per-build fields: every {@link ParityHeader} key but `plugins`. */
+export type BuildHeader = Omit<ParityHeader, 'plugins'>;
+
+/** What one plugin build derives (rows unassembled into tables yet). */
+export interface BuildResult {
+  readonly header: BuildHeader;
+  readonly parityRows: readonly Readonly<Record<string, unknown>>[];
+  readonly simulationRows: readonly Readonly<Record<string, unknown>>[];
+  /** The simulation pins (`header.simulation`) of this build. */
+  readonly pins: SimulationPins;
+  /** The data file holding this build's version only. */
+  readonly data: SimulationData;
+}
+
+/**
+ * One header `plugins` entry from a build's header.
+ *
+ * @param header The build's header fields.
+ */
+export function pinnedPluginOf(header: BuildHeader): PinnedPlugin {
+  return {
+    version: header.plugin,
+    zipSha256: header.pluginZipSha256,
+    packages: header.pluginPackages
+  };
+}
+
+/**
+ * Several builds' data files as one: each version's entry, in build order,
+ * and the union of the content-keyed texts and row lists (a shared key is
+ * the same content — keys are sha256 digests — so identical runtimes,
+ * fallbacks and lists are stored once).
+ *
+ * @param files The per-build data files.
+ * @throws {@link Error} when the merged file fails its own reader.
+ */
+export function mergeSimulationData(files: readonly SimulationData[]): SimulationData {
+  const data: SimulationData = {
+    format: SIMULATION_DATA_FORMAT,
+    versions: Object.assign(
+      {},
+      ...files.map((file) => file.versions)
+    ) as SimulationData['versions'],
+    texts: Object.assign({}, ...files.map((file) => file.texts)) as SimulationData['texts'],
+    rowLists: Object.assign({}, ...files.map((file) => file.rowLists)) as SimulationData['rowLists']
+  };
+  const read = readSimulationData(data);
+  if (!read.ok) throw new Error(`merged ${SIMULATION_DATA_FILE}: ${read.problem}`);
+  return data;
+}
+
+/**
+ * Row differences between the reference build and another, each line
+ * prefixed with the other build's version.
+ *
+ * @param label The table's name.
+ * @param reference The reference build's rows.
+ * @param other The other build's rows.
+ * @param version The other build's version.
+ */
+function buildRowDifferences(
+  label: string,
+  reference: readonly Readonly<Record<string, unknown>>[],
+  other: readonly Readonly<Record<string, unknown>>[],
+  version: string
+): string[] {
+  return rowDifferences(reference, other).map(
+    (difference) => `${label}, WP Rocket ${version}: ${difference.line}`
+  );
+}
+
+/**
+ * Both tables and the data file from every supported version's build: the
+ * rows (each build must derive them all identically), the reference build's
+ * header fields and simulation pins, `plugins` listing every build in the
+ * given order, and every version's data-file entry.
+ *
+ * @param builds One result per supported version, in registry order.
+ * @param reference The reference version (the latest stable).
+ * @throws {@link Error} when no build is the reference, or another build
+ *   derives other outputs (named per row: a version-specific expectation
+ *   would be needed for that row).
+ */
+export function mergeBuilds(
+  builds: readonly BuildResult[],
+  reference: string
+): { parity: TableObject; simulation: TableObject; data: SimulationData } {
+  const base = builds.find((build) => build.header.plugin === reference);
+  if (base === undefined) throw new Error(`no build of the reference WP Rocket ${reference}`);
+  const differences = builds
+    .filter((build) => build !== base)
+    .flatMap((build) => [
+      ...buildRowDifferences('table', base.parityRows, build.parityRows, build.header.plugin),
+      ...buildRowDifferences(
+        'simulation table',
+        base.simulationRows,
+        build.simulationRows,
+        build.header.plugin
+      )
+    ]);
+  if (differences.length > 0) {
+    throw new Error(
+      `the supported WP Rocket versions derive other outputs than the reference (${reference}); each row's expectation must hold for every version:\n  ${differences.join('\n  ')}`
+    );
+  }
+  const header = pick(
+    { ...base.header, plugins: builds.map((build) => pinnedPluginOf(build.header)) },
+    HEADER_KEYS
+  );
+  return {
+    parity: { header, rows: base.parityRows },
+    simulation: { header: { ...header, simulation: base.pins }, rows: base.simulationRows },
+    data: mergeSimulationData(builds.map((build) => build.data))
+  };
+}
+
+/**
+ * Where a supported version's zip fails its pin: another plugin version
+ * inside (every mode), or other bytes than the registry's (check and
+ * `--write` only — `--ci` builds are never byte-reproducible).
+ *
+ * @param row The supported version.
+ * @param found The zip's `Version:` header and sha256.
+ * @param mode The run mode.
+ * @returns The problem, or `null` when the zip is the pinned one.
+ */
+export function zipPinProblem(
+  row: SupportedWprVersion,
+  found: { readonly version: string; readonly sha256: string },
+  mode: Mode
+): string | null {
+  const path = pluginZipPath(row.version);
+  if (found.version !== row.version) {
+    return `${path} is WP Rocket ${found.version}, expected ${row.version}`;
+  }
+  if (mode !== 'ci' && found.sha256 !== row.zipSha256) {
+    return `${path} has sha256 ${found.sha256}, pinned ${row.zipSha256} (lib/wp-rocket/versions.ts): copy the pinned build (docs/local-site-runbook.md) and check it with \`shasum -a 256\``;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Running the harness.
 // ---------------------------------------------------------------------------
 
@@ -1388,18 +1853,18 @@ async function withPluginTree<T>(
 }
 
 /**
- * A table's reference header fields, from the tree and the harness runs that
- * derived it.
+ * A build's header fields, from the tree and the harness runs that derived
+ * its rows.
  *
  * @param tree The plugin tree.
- * @param envs The `env` of every harness run behind the table.
+ * @param envs The `env` of every harness run behind the rows.
  */
-function referenceHeader(
+function buildHeader(
   tree: PluginTree,
   envs: readonly HarnessOutput<unknown>['env'][]
-): ParityHeader {
+): BuildHeader {
   const [env] = envs;
-  if (env === undefined) throw new Error('referenceHeader: no harness run');
+  if (env === undefined) throw new Error('buildHeader: no harness run');
   const vendorPackages = new Set(envs.flatMap((run) => run.vendorPackages));
   return {
     plugin: readPluginVersion(readFileSync(join(tree.pluginRoot, 'wp-rocket.php'), 'utf8')),
@@ -1418,22 +1883,19 @@ function referenceHeader(
   };
 }
 
-/** A derived table: object + formatted text. */
-interface DerivedTable {
-  readonly table: TableObject;
-  readonly text: string;
+/** One build's exclusion parity rows and the harness runs behind them. */
+interface ParityDerivation {
+  readonly rows: Record<string, unknown>[];
+  readonly envs: readonly HarnessOutput<unknown>['env'][];
 }
 
 /**
- * Derive the exclusion parity table from its inputs.
+ * Derive the exclusion parity rows from their inputs on one build.
  *
  * @param inputs The authored inputs.
  * @param tree The plugin tree.
  */
-async function deriveParityTable(
-  inputs: readonly ParityInput[],
-  tree: PluginTree
-): Promise<DerivedTable> {
+function deriveParityRows(inputs: readonly ParityInput[], tree: PluginTree): ParityDerivation {
   const { php, pluginRoot, wpRoot } = tree;
   const saves = runHarness<SaveResult>(php, pluginRoot, wpRoot, saveCases(inputs));
   checkSurvival(inputs, saves.results);
@@ -1445,30 +1907,35 @@ async function deriveParityTable(
     const input = inputs.find((candidate) => candidate.id === match.id) as MatchInput;
     if (input.from !== undefined) results.set(match.id, { ...match, rows: stored.get(input.from) });
   }
-  const header = referenceHeader(tree, [saves.env, matches.env]);
   const rows = inputs.map((input) => {
     const result = results.get(input.id);
     if (result === undefined) throw new Error(`${input.id}: the harness returned no result`);
     return assembleRow(input, result);
   });
-  const table = { header: pick(header as unknown as Record<string, unknown>, HEADER_KEYS), rows };
-  parseParityTable(table); // The derived table must satisfy the suite's own parser.
-  return { table, text: await formatTable(table) };
+  return { rows, envs: [saves.env, matches.env] };
+}
+
+/** One build's simulation rows, pins and data file. */
+interface SimulationDerivation {
+  readonly rows: Record<string, unknown>[];
+  readonly pins: SimulationPins;
+  readonly data: SimulationData;
+  readonly envs: readonly HarnessOutput<unknown>['env'][];
 }
 
 /**
- * Derive the simulation table and the data file from the table's inputs and
- * authored sentinels.
+ * Derive the simulation rows, pins and data file from the table's inputs and
+ * authored sentinels on one build.
  *
  * @param inputs The authored inputs.
  * @param sentinels The authored sentinels.
  * @param tree The plugin tree.
  */
-async function deriveSimulation(
+function deriveSimulationRows(
   inputs: readonly SimulateInput[],
   sentinels: SimulationSentinels,
   tree: PluginTree
-): Promise<DerivedTable & { readonly data: string }> {
+): SimulationDerivation {
   const { php, pluginRoot, wpRoot } = tree;
   const cases = simulationCases(inputs);
   const saves = runHarness<SaveResult>(php, pluginRoot, wpRoot, cases.saves);
@@ -1476,10 +1943,9 @@ async function deriveSimulation(
   const run = runHarness<SimulateResult>(php, pluginRoot, wpRoot, cases.simulates, { sentinels });
   if (typeof run.ieFallback !== 'string') throw new Error('the harness returned no ieFallback');
   const served = new Map(run.results.map((result) => [result.id, result.served]));
-  const header = referenceHeader(tree, [saves.env, run.env]);
   const { pins, data } = simulationArtifacts(
     {
-      version: header.plugin,
+      version: readPluginVersion(readFileSync(join(pluginRoot, 'wp-rocket.php'), 'utf8')),
       runtime: readFileSync(join(pluginRoot, RUNTIME_PATH)),
       dynamicLists: readFileSync(join(pluginRoot, DYNAMIC_LISTS_PATH)),
       ieFallback: run.ieFallback
@@ -1491,19 +1957,7 @@ async function deriveSimulation(
     if (page === undefined) throw new Error(`${input.id}: the harness returned no result`);
     return assembleSimulateRow(input, page);
   });
-  const table = {
-    header: {
-      ...pick(header as unknown as Record<string, unknown>, HEADER_KEYS),
-      simulation: pins
-    },
-    rows
-  };
-  parseSimulationTable(table); // The derived table must satisfy the suite's own parser.
-  return {
-    table,
-    text: await formatTable(table, SIMULATION_TABLE_PATH),
-    data: await formatTable(data, SIMULATION_DATA_FILE)
-  };
+  return { rows, pins, data, envs: [saves.env, run.env] };
 }
 
 /** The committed files' texts (the data file may not exist yet). */
@@ -1513,38 +1967,117 @@ interface Committed {
   readonly data: string | null;
 }
 
-/** Everything derived from one plugin zip. */
+/** The committed tables' authored inputs. */
+interface Inputs {
+  readonly parity: readonly ParityInput[];
+  readonly simulation: readonly SimulateInput[];
+  readonly sentinels: SimulationSentinels;
+}
+
+/**
+ * The authored inputs of the committed tables.
+ *
+ * @param committed The committed texts.
+ */
+function committedInputs(committed: Committed): Inputs {
+  const simulation: unknown = JSON.parse(committed.simulation);
+  return {
+    parity: parseParityInputs(JSON.parse(committed.parity)),
+    simulation: parseSimulationInputs(simulation),
+    sentinels: committedSentinels(simulation)
+  };
+}
+
+/**
+ * Derive everything one build contributes.
+ *
+ * @param inputs The authored inputs.
+ * @param tree The build's plugin tree.
+ */
+function deriveBuild(inputs: Inputs, tree: PluginTree): BuildResult {
+  const parity = deriveParityRows(inputs.parity, tree);
+  const simulation = deriveSimulationRows(inputs.simulation, inputs.sentinels, tree);
+  return {
+    header: buildHeader(tree, [...parity.envs, ...simulation.envs]),
+    parityRows: parity.rows,
+    simulationRows: simulation.rows,
+    pins: simulation.pins,
+    data: simulation.data
+  };
+}
+
+/** Everything derived from the supported versions' zips, formatted. */
 interface Derived {
-  readonly parity: DerivedTable;
-  readonly simulation: DerivedTable;
+  readonly parity: { readonly table: TableObject; readonly text: string };
+  readonly simulation: { readonly table: TableObject; readonly text: string };
   readonly data: string;
 }
 
 /**
- * Derive both tables and the data file from the committed inputs and a plugin zip.
+ * Parse (each derived file must satisfy the suite's own parsers) and format
+ * merged tables and data file.
+ *
+ * @param merged The merged builds (see {@link mergeBuilds}).
+ */
+async function formatDerived(merged: ReturnType<typeof mergeBuilds>): Promise<Derived> {
+  parseParityTable(merged.parity);
+  parseSimulationTable(merged.simulation);
+  return {
+    parity: { table: merged.parity, text: await formatTable(merged.parity) },
+    simulation: {
+      table: merged.simulation,
+      text: await formatTable(merged.simulation, SIMULATION_TABLE_PATH)
+    },
+    data: await formatTable(merged.data, SIMULATION_DATA_FILE)
+  };
+}
+
+/**
+ * Check a supported version's zip against its pin.
+ *
+ * @param row The supported version.
+ * @param mode The run mode.
+ * @returns The zip's absolute path.
+ * @throws {@link Error} when it is missing or not the pinned build.
+ */
+function pinnedZip(row: SupportedWprVersion, mode: Mode): string {
+  const zip = join(REPO_ROOT, pluginZipPath(row.version));
+  requirePluginZip(zip);
+  const version = readPluginVersion(
+    requireCommand('unzip', ['-p', zip, 'wp-rocket/wp-rocket.php'], 'Is it a WP Rocket plugin zip?')
+  );
+  const problem = zipPinProblem(
+    row,
+    { version, sha256: digest('sha256', readFileSync(zip)) },
+    mode
+  );
+  if (problem !== null) throw new Error(problem);
+  return zip;
+}
+
+/**
+ * Derive both tables and the data file from the committed inputs under every
+ * supported version.
  *
  * @param committed The committed texts.
- * @param pluginZip Absolute path of the plugin zip.
+ * @param mode The run mode (decides whether zip bytes must match their pins).
  * @param php Extra `php -n` arguments (see {@link phpArgs}).
  */
 async function deriveAll(
   committed: Committed,
-  pluginZip: string,
+  mode: Mode,
   php: readonly string[]
 ): Promise<Derived> {
-  const parityInputs = parseParityInputs(JSON.parse(committed.parity));
-  const simulationValue: unknown = JSON.parse(committed.simulation);
-  const simulationInputs = parseSimulationInputs(simulationValue);
-  const sentinels = committedSentinels(simulationValue);
-  return withPluginTree(pluginZip, php, async (tree) => {
-    const parity = await deriveParityTable(parityInputs, tree);
-    const simulation = await deriveSimulation(simulationInputs, sentinels, tree);
-    return {
-      parity,
-      simulation: { table: simulation.table, text: simulation.text },
-      data: simulation.data
-    };
-  });
+  const inputs = committedInputs(committed);
+  const builds: BuildResult[] = [];
+  for (const row of SUPPORTED_WPR_VERSIONS) {
+    const zip = pinnedZip(row, mode);
+    console.log(`[parity] deriving under WP Rocket ${row.version} (${pluginZipPath(row.version)})`);
+    builds.push(
+      await withPluginTree(zip, php, (tree) => Promise.resolve(deriveBuild(inputs, tree)))
+    );
+  }
+  return formatDerived(mergeBuilds(builds, latestStableWprVersion().version));
 }
 
 /**
@@ -1554,20 +2087,26 @@ async function deriveAll(
  *
  * @param committedText The committed simulation table text.
  * @param tree The other build's tree.
+ * @param header The other build's header fields.
  */
-async function compareSimulation(
+function compareSimulation(
   committedText: string,
-  tree: PluginTree
-): Promise<SimulationComparison> {
+  tree: PluginTree,
+  header: BuildHeader
+): SimulationComparison {
   try {
     const before = JSON.parse(committedText) as TableObject;
     parseSimulationTable(before);
-    const fresh = await deriveSimulation(
+    const fresh = deriveSimulationRows(
       parseSimulationInputs(before),
       committedSentinels(before),
       tree
     );
-    return { ok: true, before, fresh: fresh.table };
+    return {
+      ok: true,
+      before,
+      fresh: { header: { ...header, simulation: fresh.pins }, rows: fresh.rows }
+    };
   } catch (error) {
     return { ok: false, problem: error instanceof Error ? error.message : String(error) };
   }
@@ -1590,14 +2129,20 @@ async function compare(committed: Committed, pluginZip: string): Promise<void> {
     const version = readPluginVersion(mainFile);
     if (version === parity.header.plugin) {
       findings = sameVersionFindings(version);
+    } else if (supportedWprVersion(version) !== undefined) {
+      findings = pinnedVersionFindings(version);
     } else {
-      findings = await withPluginTree(pluginZip, phpArgs(), async (tree) =>
-        otherVersionFindings(
-          parity,
-          (await deriveParityTable(parityInputs, tree)).table,
-          await compareSimulation(committed.simulation, tree)
-        )
-      );
+      findings = await withPluginTree(pluginZip, phpArgs(), (tree) => {
+        const rows = deriveParityRows(parityInputs, tree);
+        const header = buildHeader(tree, rows.envs);
+        return Promise.resolve(
+          otherVersionFindings(
+            parity,
+            { header, rows: rows.rows },
+            compareSimulation(committed.simulation, tree, header)
+          )
+        );
+      });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1612,6 +2157,18 @@ async function compare(committed: Committed, pluginZip: string): Promise<void> {
   report(heading, findings);
 }
 
+/** `--release-check`: tags on stdin; findings reported, the newest newer tag to the step output. */
+function releaseCheck(): void {
+  const tags = readFileSync(0, 'utf8').split('\n');
+  const supported = SUPPORTED_WPR_VERSIONS.map((row) => row.version);
+  report('WP Rocket parity: newer releases', releaseCheckFindings(tags, supported));
+  const [newest] = newerReleaseTags(tags, supported);
+  const output = process.env.GITHUB_OUTPUT;
+  if (newest !== undefined && output !== undefined && output !== '') {
+    appendFileSync(output, `newest=${newest}\n`);
+  }
+}
+
 /** Read a repo file, or `null` when it does not exist. */
 function readOptional(path: string): string | null {
   const file = join(REPO_ROOT, path);
@@ -1621,18 +2178,22 @@ function readOptional(path: string): string | null {
 /** Entry point. */
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  const zip = compareZip(options);
+  if (options.mode === 'release-check') {
+    releaseCheck();
+    return;
+  }
   requireCommand('unzip', ['-v'], 'Install unzip.');
-  const pluginZip = options.zip === undefined ? join(REPO_ROOT, PLUGIN_ZIP) : resolve(options.zip);
   const committed: Committed = {
     parity: readFileSync(join(REPO_ROOT, TABLE_PATH), 'utf8'),
     simulation: readFileSync(join(REPO_ROOT, SIMULATION_TABLE_PATH), 'utf8'),
     data: readOptional(SIMULATION_DATA_FILE)
   };
-  if (options.mode === 'compare') {
-    await compare(committed, pluginZip);
+  if (zip !== undefined) {
+    await compare(committed, resolve(zip));
     return;
   }
-  const fresh = await deriveAll(committed, pluginZip, phpArgs());
+  const fresh = await deriveAll(committed, options.mode, phpArgs());
   if (options.mode === 'write') {
     writeFileSync(join(REPO_ROOT, TABLE_PATH), fresh.parity.text);
     writeFileSync(join(REPO_ROOT, SIMULATION_TABLE_PATH), fresh.simulation.text);
@@ -1647,7 +2208,7 @@ async function main(): Promise<void> {
       ...(await ciFindings(committed.simulation, fresh.simulation.table, SIMULATION_TABLE)),
       ...dataFindings(committed.data, fresh.data)
     ];
-    if (report('WP Rocket parity: reference build', findings)) process.exitCode = 1;
+    if (report('WP Rocket parity: pinned builds', findings)) process.exitCode = 1;
     return;
   }
   const stale = [

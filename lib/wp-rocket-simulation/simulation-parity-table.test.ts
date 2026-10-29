@@ -37,6 +37,7 @@ function validTable(): { header: Json & { simulation: Json }; rows: Json[] } {
       plugin: '3.0',
       pluginZipSha256: 'aa',
       pluginPackages: { 'a/b': 'v1' },
+      plugins: [{ version: '3.0', zipSha256: 'aa', packages: { 'a/b': 'v1' } }],
       wp: '7.0',
       wpZipSha1: 'bb',
       php: '8.1',
