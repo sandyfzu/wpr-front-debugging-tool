@@ -14,14 +14,21 @@ import type {
   InterceptedDocument,
   InterceptedResponseIdentity,
   InterceptionBackend,
+  InterceptionGrant,
   InterceptionHost
 } from '../backend';
-import { DOCUMENT_BODY_BYTE_LIMIT } from '../document-transform';
+import { DOCUMENT_BODY_BYTE_LIMIT, DOCUMENT_TRANSFORM_BUDGET_MS } from '../document-transform';
 import { speculationRulesGuardSource } from '../speculation-rules';
-import { INTERCEPTION_HOST_BOUNDS_MS, SESSION_STEP_TIMEOUTS_MS } from '../timeouts';
+import {
+  INTERCEPTION_HOST_BOUNDS_MS,
+  rewriteDocumentBoundMs,
+  SESSION_STEP_TIMEOUTS_MS,
+  SIMULATION_PREPARATION_BOUND_MS
+} from '../timeouts';
 import {
   CHROMIUM_OPERATION_BUDGETS_MS,
   CHROMIUM_TIMEOUTS_MS,
+  chromiumReleaseMs,
   createChromiumInterceptionBackend
 } from './backend';
 import type { DebuggerEventHandlers, DebuggerPort, DebuggerTarget, TabPresence } from './port';
@@ -184,11 +191,13 @@ class FakeHost implements InterceptionHost {
   readonly ended: [number, string, number][] = [];
 
   intercept = true;
+  /** The grant when intercepting (an exclusions-only session by default). */
+  grant: InterceptionGrant = { rewriteBoundMs: INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument };
   readonly gated: [number, string][] = [];
 
-  shouldIntercept(tabId: number, documentUrl: string): Promise<boolean> {
+  shouldIntercept(tabId: number, documentUrl: string): Promise<InterceptionGrant | null> {
     this.gated.push([tabId, documentUrl]);
-    return Promise.resolve(this.intercept);
+    return Promise.resolve(this.intercept ? this.grant : null);
   }
 
   rewriteDocument(document: InterceptedDocument): Promise<Uint8Array | null> {
@@ -883,16 +892,42 @@ describe('paused requests', () => {
     expect(rig.host.unavailable).toHaveLength(1);
   });
 
-  it('serves the original once the host passes the release deadline, ignoring its late answer', async () => {
-    expect(CHROMIUM_TIMEOUTS_MS.release).toBeGreaterThan(
-      INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument
+  it('keeps an exclusions-only release deadline at the host bound + 1 s', () => {
+    // The bound before simulation existed: 2 s engine budget + steps + 1 s margin.
+    const headRelease =
+      SESSION_STEP_TIMEOUTS_MS.ready +
+      2 * SESSION_STEP_TIMEOUTS_MS.store +
+      DOCUMENT_TRANSFORM_BUDGET_MS +
+      SESSION_STEP_TIMEOUTS_MS.runnerOverhead +
+      1_000;
+    expect(chromiumReleaseMs(rewriteDocumentBoundMs(false))).toBe(headRelease);
+    expect(chromiumReleaseMs(rewriteDocumentBoundMs(true))).toBe(
+      headRelease + SIMULATION_PREPARATION_BOUND_MS
     );
+  });
+
+  it('serves the original once the host passes the release deadline, ignoring its late answer', async () => {
+    const release = chromiumReleaseMs(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
+    expect(release).toBeGreaterThan(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
     const late = deferred<Uint8Array | null>();
     rig.host.rewrite = () => late.promise;
     await rig.pause();
-    rig.timers.fire(CHROMIUM_TIMEOUTS_MS.release);
+    rig.timers.fire(release);
     await flush();
     late.resolve(REWRITTEN);
+    await flush();
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
+  });
+
+  it('gives a simulating session’s rewrite its longer granted deadline', async () => {
+    rig.host.grant = { rewriteBoundMs: rewriteDocumentBoundMs(true) };
+    const late = deferred<Uint8Array | null>();
+    rig.host.rewrite = () => late.promise;
+    await rig.pause();
+    rig.timers.fire(chromiumReleaseMs(rewriteDocumentBoundMs(false)));
+    await flush();
+    expect(rig.port.releases('req-1')).toEqual([]);
+    rig.timers.fire(chromiumReleaseMs(rewriteDocumentBoundMs(true)));
     await flush();
     expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
   });

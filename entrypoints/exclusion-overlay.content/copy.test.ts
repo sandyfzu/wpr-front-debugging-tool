@@ -690,8 +690,14 @@ describe('unmodifiedCopy: runtime unavailable', () => {
     for (const cause of SIMULATION_RUNTIME_UNAVAILABLE_CAUSES) {
       const copy = unmodifiedCopy({ kind: 'runtime-unavailable', cause });
       expect(copy).toBe(runtimeUnavailableCopy(cause));
-      expect(copy).toMatch(/served unmodified\. (?:Reload or reinstall|Update) the extension/);
+      expect(copy).toMatch(
+        /served unmodified\. (?:(?:Reload or reinstall|Update) the extension|Reload the page to retry)/
+      );
     }
+    // Unreachable is retried on the next document: a page reload, not a reinstall.
+    expect(runtimeUnavailableCopy('asset-unreachable')).toBe(
+      'The packaged simulation data could not be loaded, so the page was served unmodified. Reload the page to retry.'
+    );
     expect(runtimeUnavailableCopy('hash-mismatch')).toBe(
       'The packaged simulation data is damaged, so the page was served unmodified. Reload or reinstall the extension.'
     );

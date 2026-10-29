@@ -14,7 +14,7 @@ import { STREAM_FILTER_BACKEND } from './stream-filter-backend';
 type Hook = (details: unknown) => unknown;
 
 const HOST: InterceptionHost = {
-  shouldIntercept: () => Promise.resolve(true),
+  shouldIntercept: () => Promise.resolve({ rewriteBoundMs: 1 }),
   rewriteDocument: () => Promise.resolve(null),
   documentBodyUnavailable: () => Promise.resolve(),
   documentNotServed: () => Promise.resolve(),

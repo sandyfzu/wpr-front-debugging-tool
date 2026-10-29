@@ -50,6 +50,7 @@ import {
 import { INTERCEPTION_BACKENDS } from './interception-backends';
 import { openExclusionOverlay, reopenExclusionOverlay } from './exclusion-overlay';
 import { tabExists } from './tab-exists';
+import { createSimulationSources } from './simulation-sources';
 
 const log = createLogger('exclusion-session');
 
@@ -172,6 +173,7 @@ export function initExclusionSessions(
     tabExists: (tabId) => tabExists(tabId, log),
     now: () => Date.now(),
     extensionId: browser.runtime.id,
+    simulation: createSimulationSources(log),
     log
   });
 

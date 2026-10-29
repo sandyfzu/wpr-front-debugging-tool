@@ -106,8 +106,10 @@ import {
 import {
   DeadlineExceededError,
   INTERCEPTION_HOST_BOUNDS_MS,
+  rewriteDocumentBoundMs,
   SESSION_STEP_TIMEOUTS_MS as STEPS,
-  withinDeadline
+  withinDeadline,
+  withinExtensibleDeadline
 } from './timeouts';
 
 /** The per-tab session store (the `session:` helpers' shape). */
@@ -551,17 +553,23 @@ export function createExclusionSessionController(
   // ── Host side ──────────────────────────────────────────────────────────
 
   /**
-   * Run a host method within its bound: past it (or on an unexpected
-   * fault) the backend gets `fallback` — the host never rejects.
+   * Answer a host method from its already-bounded work: past the bound (or
+   * on an unexpected fault) the backend gets `fallback` — the host never
+   * rejects.
+   *
+   * @param method The host method (names the step).
+   * @param fallback The safe answer past the bound or on a fault.
+   * @param boundedWork The method's work under its deadline (named by `step`).
+   * @param onExpired Called once the bound passed (before `fallback` is answered).
    */
-  const hostCall = async <T>(
+  const hostGuard = async <T>(
     method: keyof typeof INTERCEPTION_HOST_BOUNDS_MS,
     fallback: T,
-    work: () => Promise<T>,
+    boundedWork: (step: string) => Promise<T>,
     onExpired?: () => void
   ): Promise<T> => {
     try {
-      return await bounded(`Host ${method}`, INTERCEPTION_HOST_BOUNDS_MS[method], work);
+      return await boundedWork(`Host ${method}`);
     } catch (cause) {
       if (timedOut(cause)) {
         onExpired?.();
@@ -572,6 +580,14 @@ export function createExclusionSessionController(
       return fallback;
     }
   };
+
+  /** {@link hostGuard} under the method's declared bound. */
+  const hostCall = <T>(
+    method: keyof typeof INTERCEPTION_HOST_BOUNDS_MS,
+    fallback: T,
+    work: () => Promise<T>
+  ): Promise<T> =>
+    hostGuard(method, fallback, (step) => bounded(step, INTERCEPTION_HOST_BOUNDS_MS[method], work));
 
   /** The tab's active session for a document URL, or null (no session, another origin, not ready). */
   const activeFor = async (
@@ -662,15 +678,25 @@ export function createExclusionSessionController(
       (backend?.runner ?? fallbackRunner)(request)
     );
 
-  /** Rewrite one eligible document of the tab's live session (see the seam). */
+  /**
+   * Rewrite one eligible document of the tab's live session (see the seam).
+   *
+   * @param document The intercepted document.
+   * @param expired Whether the host bound already passed.
+   * @param abandoned Whether the backend stopped waiting.
+   * @param extendBound Lengthens the host bound to a simulating session's —
+   *   called once the session is known to simulate, before its preparation.
+   */
   const rewriteForSession = async (
     document: InterceptedDocument,
     expired: () => boolean,
-    abandoned: () => boolean
+    abandoned: () => boolean,
+    extendBound: () => void
   ): Promise<Uint8Array | null> => {
     if (!isRewritableResponse(document)) return null;
     const session = await activeFor(document.tabId, document.documentUrl);
     if (session === null) return null;
+    if (session.simulate !== undefined) extendBound();
     const result = await rewriteDocument(
       document,
       session.set,
@@ -756,18 +782,28 @@ export function createExclusionSessionController(
 
   const host: InterceptionHost = {
     shouldIntercept: (tabId, documentUrl) =>
-      hostCall(
-        'shouldIntercept',
-        false,
-        async () => (await activeFor(tabId, documentUrl)) !== null
-      ),
+      hostCall('shouldIntercept', null, async () => {
+        const session = await activeFor(tabId, documentUrl);
+        return session === null
+          ? null
+          : { rewriteBoundMs: rewriteDocumentBoundMs(session.simulate !== undefined) };
+      }),
 
+    // Bounded from the call: the exclusions-only bound, lengthened to the
+    // simulating one only once the session read shows it simulates.
     rewriteDocument: (document, abandoned = () => false) => {
       let expired = false;
-      return hostCall(
+      return hostGuard(
         'rewriteDocument',
         null,
-        () => rewriteForSession(document, () => expired, abandoned),
+        (step) =>
+          withinExtensibleDeadline(
+            step,
+            rewriteDocumentBoundMs(false),
+            rewriteDocumentBoundMs(true),
+            (extend) => rewriteForSession(document, () => expired, abandoned, extend),
+            deps.schedule
+          ),
         () => {
           expired = true;
         }

@@ -15,8 +15,8 @@
  *   continued), unexpected fault. A detach releases what is still paused
  *   (the browser continues it), so a release after one is a no-op.
  * - **Every debugger call is time-boxed** ({@link CHROMIUM_TIMEOUTS_MS}),
- *   and the host gets {@link CHROMIUM_TIMEOUTS_MS.release} — above its own
- *   bound — before the response is served unmodified. Each arm/resume/
+ *   and the host gets {@link chromiumReleaseMs} of its gate's grant — above
+ *   its own bound — before the response is served unmodified. Each arm/resume/
  *   disarm runs inside one budget ({@link CHROMIUM_OPERATION_BUDGETS_MS},
  *   from the moment it is called, queue wait included) below the
  *   controller's deadline for it, so it always answers first.
@@ -60,18 +60,14 @@ import type {
   ArmUnavailableCause,
   InterceptedResponseIdentity,
   InterceptionBackend,
+  InterceptionGrant,
   InterceptionHost
 } from '../backend';
 import { DOCUMENT_BODY_BYTE_LIMIT, type InterceptedResponseFacts } from '../document-transform';
 import { speculationRulesGuardSource } from '../speculation-rules';
 import { createMonotonicStamp } from '../../../utils/monotonic-stamp';
 import { parseUrl } from '../../../utils/urls';
-import {
-  DeadlineExceededError,
-  INTERCEPTION_HOST_BOUNDS_MS,
-  SESSION_STEP_TIMEOUTS_MS,
-  withinDeadline
-} from '../timeouts';
+import { DeadlineExceededError, SESSION_STEP_TIMEOUTS_MS, withinDeadline } from '../timeouts';
 import {
   DETACHED,
   mayRewrite,
@@ -110,9 +106,23 @@ export const CHROMIUM_TIMEOUTS_MS = {
    * once it is complete) and recorded as unreadable.
    */
   bodyRead: 10_000,
-  /** The host's rewrite, above its own bound: past it, the original is served. */
-  release: INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument + 1_000
+  /**
+   * How far the release deadline sits past the host's rewrite bound
+   * ({@link chromiumReleaseMs}): past it, the original is served.
+   */
+  releaseMargin: 1_000
 } as const;
+
+/**
+ * The release deadline (ms) of one document's host rewrite: its gate's
+ * granted bound plus {@link CHROMIUM_TIMEOUTS_MS.releaseMargin} — so a
+ * session that does not simulate keeps the exclusions-only deadline.
+ *
+ * @param rewriteBoundMs The host's rewrite bound for the document (its grant).
+ */
+export function chromiumReleaseMs(rewriteBoundMs: number): number {
+  return rewriteBoundMs + CHROMIUM_TIMEOUTS_MS.releaseMargin;
+}
 
 /** What each operation keeps free below the controller's deadline for it (ms). */
 const OPERATION_MARGIN_MS = 100;
@@ -542,10 +552,11 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     pause: PausedRequest,
     facts: InterceptedResponseFacts,
     body: Uint8Array,
-    identity: InterceptedResponseIdentity
+    identity: InterceptedResponseIdentity,
+    grant: InterceptionGrant
   ): Promise<Uint8Array | null> => {
     try {
-      return await bounded('Host rewrite', CHROMIUM_TIMEOUTS_MS.release, () =>
+      return await bounded('Host rewrite', chromiumReleaseMs(grant.rewriteBoundMs), () =>
         host.rewriteDocument({
           tabId: target.tabId,
           documentUrl: pause.url,
@@ -582,7 +593,8 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     if (!(await isTopFrame(target, pause.frameId))) return release.pass('sub-frame');
     // Another origin in the session tab (or no session): its body is none
     // of the session's business — never read, passed through.
-    if (!(await host.shouldIntercept(target.tabId, pause.url))) return release.pass('no-session');
+    const grant = await host.shouldIntercept(target.tabId, pause.url);
+    if (grant === null) return release.pass('no-session');
     const identity = identityOf(target.tabId, pause, arrival);
     const body = await readBody(target, pause);
     if (body === null) {
@@ -590,7 +602,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
       await host.documentBodyUnavailable(target.tabId, pause.url, identity);
       return;
     }
-    const rewritten = await hostRewrite(target, pause, disposition.facts, body, identity);
+    const rewritten = await hostRewrite(target, pause, disposition.facts, body, identity, grant);
     if (rewritten === null) return release.passWithoutRulesHeader('unmodified', pause);
     const fulfilled = await release.fulfill(fulfillParams(pause, rewritten));
     if (fulfilled === 'fulfilled') return;
@@ -623,7 +635,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     pause.status !== null &&
     headerValue(pause.headers, SPECULATION_RULES_HEADER) !== null &&
     (await isTopFrame(target, pause.frameId)) &&
-    (await host.shouldIntercept(target.tabId, pause.url));
+    (await host.shouldIntercept(target.tabId, pause.url)) !== null;
 
   /** A `Fetch.requestPaused` event: validate, handle, and always release. */
   const onPaused = async (target: DebuggerTarget, params: unknown): Promise<void> => {

@@ -24,8 +24,10 @@ import {
   type DocumentSimulationInput,
   type SimulationListProvenance
 } from '../messaging/exclusion-simulation';
+import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
 import { selectWprVersion } from '../wp-rocket-simulation/select-version';
 import type { SimulateSpec, SimulationRuntimeUnavailableCause } from '../wp-rocket-simulation/spec';
+import { DeadlineExceededError, SIMULATION_SOURCE_TIMEOUTS_MS, withinDeadline } from './timeouts';
 
 /** One supported WP Rocket version's packaged simulation texts and bundled list. */
 export interface SimulationPackage {
@@ -93,25 +95,92 @@ export class SimulationPreparationError extends Error {
 }
 
 /**
- * Prepare one document's simulation input.
+ * The sources, each awaited one under its own deadline
+ * ({@link SIMULATION_SOURCE_TIMEOUTS_MS}): a runtime past it reads as
+ * `asset-unreachable`, a list as the bundled rows (miss `timeout`); a
+ * marker id past it rejects (no simulated page without its id — the
+ * document is served unmodified). A source's own rejection passes through.
+ *
+ * @param sources The sources.
+ * @param schedule Timer seam.
+ */
+export function deadlinedSources(
+  sources: SimulationSources,
+  schedule: ScheduleTimer = scheduleWithTimeout
+): SimulationSources {
+  const limits = SIMULATION_SOURCE_TIMEOUTS_MS;
+  return {
+    runtime: (version) =>
+      orOnDeadline(
+        withinDeadline(
+          'Simulation runtime source',
+          limits.runtime,
+          () => sources.runtime(version),
+          schedule
+        ),
+        { ok: false, cause: 'asset-unreachable' }
+      ),
+    list: (version, bundledRows) =>
+      orOnDeadline(
+        withinDeadline(
+          'Simulation list source',
+          limits.list,
+          () => sources.list(version, bundledRows),
+          schedule
+        ),
+        { listRows: bundledRows, listSource: 'bundled', listMiss: 'timeout' }
+      ),
+    markerId: (document, simulate) =>
+      withinDeadline(
+        'Simulation marker id source',
+        limits.markerId,
+        () => sources.markerId(document, simulate),
+        schedule
+      ),
+    csp: sources.csp
+  };
+}
+
+/**
+ * A deadlined source's answer, or `fallback` when its deadline passed (any
+ * other rejection passes through).
+ *
+ * @param answer The deadlined answer.
+ * @param fallback The answer past the deadline.
+ */
+async function orOnDeadline<T>(answer: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await answer;
+  } catch (cause) {
+    if (cause instanceof DeadlineExceededError) return fallback;
+    throw cause;
+  }
+}
+
+/**
+ * Prepare one document's simulation input, every awaited source under its
+ * deadline (see {@link deadlinedSources}).
  *
  * @param html The decoded document.
  * @param simulate The session's simulate spec.
  * @param document The intercepted document (what the marker and CSP sources read).
  * @param sources The input sources.
+ * @param schedule Timer seam for the source deadlines.
  * @returns The input, or the runtime-unavailable cause.
- * @throws {@link SimulationPreparationError} when a source fails or an own
- *   input fails the engine contract (a source bug — never page-derived);
- *   the original failure is its `cause`.
+ * @throws {@link SimulationPreparationError} when a source fails (a marker
+ *   id past its deadline included) or an own input fails the engine
+ *   contract (a source bug — never page-derived); the original failure is
+ *   its `cause`.
  */
 export async function prepareSimulation(
   html: string,
   simulate: SimulateSpec,
   document: InterceptedDocument,
-  sources: SimulationSources
+  sources: SimulationSources,
+  schedule: ScheduleTimer = scheduleWithTimeout
 ): Promise<PreparedSimulation> {
   try {
-    return await assembleSimulation(html, simulate, document, sources);
+    return await assembleSimulation(html, simulate, document, deadlinedSources(sources, schedule));
   } catch (cause) {
     if (cause instanceof SimulationPreparationError) throw cause;
     throw new SimulationPreparationError('A simulation input source failed', { cause });

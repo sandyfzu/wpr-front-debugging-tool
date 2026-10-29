@@ -17,9 +17,11 @@
  * **Time bounds.** The controller time-boxes every backend call (a timed-
  * out `arm` answers `attach-denied`; a timed-out `resume` is stale; a
  * timed-out `disarm` is logged), and every host method resolves within
- * `INTERCEPTION_HOST_BOUNDS_MS` (`./timeouts`). A backend still never
- * trusts the host with a paused response: it arms its own release deadline
- * above that bound and, when it passes, serves the response unmodified
+ * `INTERCEPTION_HOST_BOUNDS_MS` (`./timeouts`) — `rewriteDocument` within
+ * the bound its gate granted ({@link InterceptionGrant}: longer only for a
+ * session that simulates). A backend still never trusts the host with a
+ * paused response: it arms its own release deadline above that bound and,
+ * when it passes, serves the response unmodified
  * (CDP: continue; stream filter: write the buffered bytes through). An
  * `arm` or `resume` that settles after its timeout — or after a `disarm` —
  * must not leave interception behind: per tab, the latest of
@@ -107,6 +109,15 @@ export interface InterceptedDocument extends InterceptedDocumentBody, Intercepte
 }
 
 /**
+ * The host's yes to intercepting one document: the bound (ms) its
+ * `rewriteDocument` resolves within — the backend's release deadline sits
+ * above it.
+ */
+export interface InterceptionGrant {
+  readonly rewriteBoundMs: number;
+}
+
+/**
  * The controller side a backend calls. Every method resolves (never
  * rejects) and is safe to call for any tab — a tab without an active
  * session is answered "do nothing". A backend must not await these from
@@ -115,11 +126,12 @@ export interface InterceptedDocument extends InterceptedDocumentBody, Intercepte
  */
 export interface InterceptionHost {
   /**
-   * Whether the tab's next top-level document should be intercepted: an
-   * active session whose origin is the document's. The per-navigation gate
-   * for backends that choose per request (e.g. a streaming filter).
+   * Whether the tab's next top-level document should be intercepted (an
+   * active session whose origin is the document's): its grant, or null.
+   * The per-navigation gate for backends that choose per request (e.g. a
+   * streaming filter).
    */
-  shouldIntercept(tabId: number, documentUrl: string): Promise<boolean>;
+  shouldIntercept(tabId: number, documentUrl: string): Promise<InterceptionGrant | null>;
   /**
    * Rewrite one intercepted top-level document and record its outcome.
    *

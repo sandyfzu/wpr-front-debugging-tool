@@ -4,6 +4,7 @@ import {
   buildDirectory,
   matchesGlob,
   measureRow,
+  requiredGlobProblems,
   measureSurface,
   parseBudgetRows,
   readPinnedNode,
@@ -247,5 +248,76 @@ describe('measureRow', () => {
       rawOver: true,
       gzipOver: false
     });
+  });
+});
+
+describe('required rows', () => {
+  const row = {
+    kind: 'bytes',
+    surface: 'data',
+    globs: ['data/d.json'],
+    maxKb: { raw: 1 },
+    required: true
+  };
+  const reader = () => Buffer.alloc(100);
+
+  it('parses required: true on a bytes row; rejects any other value and timing rows carrying it', () => {
+    expect(parseBudgetRows([row])).toEqual([row]);
+    expect(() => parseBudgetRows([{ ...row, required: false }])).toThrow(
+      /required must be true when present/
+    );
+    expect(() => parseBudgetRows([{ ...row, required: 'yes' }])).toThrow(
+      /required must be true when present/
+    );
+    expect(() =>
+      parseBudgetRows([
+        { surface: 't', kind: 'timing', maxMs: 5, measuredBy: 'a spec', required: true }
+      ])
+    ).toThrow(/timing row.*required/);
+  });
+
+  it('names each glob that does not match exactly one file, with its count', () => {
+    expect(requiredGlobProblems(['a.js', 'b-1.js', 'b-2.js'], ['a.js', 'b-*.js', 'c.js'])).toEqual([
+      { glob: 'b-*.js', matched: 2 },
+      { glob: 'c.js', matched: 0 }
+    ]);
+    expect(requiredGlobProblems(['a.js'], ['a.js'])).toEqual([]);
+  });
+
+  it('fails a required row whose file is missing (renamed or moved) instead of reading it absent', () => {
+    expect(
+      measureRow(
+        row,
+        () => ['data/other.json'],
+        () => reader
+      )
+    ).toEqual({ status: 'unmatched', problems: [{ glob: 'data/d.json', matched: 0 }] });
+  });
+
+  it('fails a required row whose glob matches more than one file', () => {
+    expect(
+      measureRow(
+        { ...row, globs: ['data/*.json'] },
+        () => ['data/d.json', 'data/d2.json'],
+        () => reader
+      )
+    ).toEqual({ status: 'unmatched', problems: [{ glob: 'data/*.json', matched: 2 }] });
+  });
+
+  it('measures a required row that matches exactly once, and still skips it while its build is absent', () => {
+    expect(
+      measureRow(
+        row,
+        () => ['data/d.json'],
+        () => reader
+      )
+    ).toMatchObject({ status: 'measured', rawBytes: 100, rawOver: false });
+    expect(
+      measureRow(
+        { ...row, build: 'firefox-mv2' },
+        () => null,
+        () => reader
+      )
+    ).toEqual({ status: 'skipped', build: 'firefox-mv2' });
   });
 });

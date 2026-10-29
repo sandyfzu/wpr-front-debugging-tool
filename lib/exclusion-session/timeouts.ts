@@ -47,6 +47,40 @@ export const SESSION_STEP_TIMEOUTS_MS = {
 const STEPS = SESSION_STEP_TIMEOUTS_MS;
 
 /**
+ * Deadlines (ms) for each awaited simulation input source while a document
+ * is prepared: past one, that source's own fallback applies (runtime: the
+ * document is not simulated, `asset-unreachable`; list: the bundled rows,
+ * miss `timeout`; marker id: the document is served unmodified) — a hung
+ * source never holds the release.
+ */
+export const SIMULATION_SOURCE_TIMEOUTS_MS = {
+  /**
+   * The packaged data's first read in a background lifetime (a ~20 KB
+   * extension file: fetch, parse, hash — milliseconds), then a memory read.
+   */
+  runtime: 1_000,
+  /** The exclusion list choice (one stored-copy read). */
+  list: STEPS.store,
+  /** The marker id (one memo write). */
+  markerId: STEPS.store
+} as const;
+
+/**
+ * The synchronous CPU a document's simulation preparation spends outside
+ * its sources (version selection, contract checks — a linear scan; ~58 ms
+ * measured on a 4 MiB page), with ≥ 10× headroom for slower machines — a
+ * bound, not a timeout.
+ */
+export const SIMULATION_PREPARATION_CPU_BOUND_MS = 600;
+
+/** The longest a document's simulation preparation takes (ms): every source deadline + its CPU. */
+export const SIMULATION_PREPARATION_BOUND_MS =
+  SIMULATION_SOURCE_TIMEOUTS_MS.runtime +
+  SIMULATION_SOURCE_TIMEOUTS_MS.list +
+  SIMULATION_SOURCE_TIMEOUTS_MS.markerId +
+  SIMULATION_PREPARATION_CPU_BOUND_MS;
+
+/**
  * The most analysis work a whole set's prevalidation can spend (work
  * units), by construction: each pattern row's analysis is capped at
  * `workBase + workPerChar × length` (`analysisWorkBudget` — past it the
@@ -124,7 +158,11 @@ export const SESSION_ASK_WORST_CASE_MS = {
 export const INTERCEPTION_HOST_BOUNDS_MS = {
   /** Wake wait + one session read. */
   shouldIntercept: STEPS.ready + STEPS.store,
-  /** Wake wait + session read + engine budget + runner overhead + the post-run session re-check. */
+  /**
+   * Wake wait + session read + engine budget + runner overhead + the
+   * post-run session re-check — a session that does not simulate (one that
+   * does: {@link rewriteDocumentBoundMs}).
+   */
   rewriteDocument:
     STEPS.ready + 2 * STEPS.store + DOCUMENT_TRANSFORM_BUDGET_MS + STEPS.runnerOverhead,
   /** Wake wait + session read + the record wait. */
@@ -134,6 +172,18 @@ export const INTERCEPTION_HOST_BOUNDS_MS = {
   /** Wake wait + the record wait. */
   interceptionEnded: STEPS.ready + STEPS.record
 } as const;
+
+/**
+ * The bound (ms) a document's `rewriteDocument` resolves within: the
+ * declared host bound, plus the simulation preparation only for a session
+ * that simulates — a session that does not keeps the exclusions-only bound.
+ *
+ * @param simulates Whether the document's session simulates WP Rocket.
+ */
+export function rewriteDocumentBoundMs(simulates: boolean): number {
+  const bound = INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument;
+  return simulates ? bound + SIMULATION_PREPARATION_BOUND_MS : bound;
+}
 
 /**
  * Streaming backends: how long a complete body waits for a final status in
@@ -165,12 +215,12 @@ export const STREAM_RELEASE_MARGIN_MS = 500;
  * settle wait, then the late-facts wait, then the release deadline (armed
  * only once the body is settled, so settling never eats into the host's
  * rewrite bound).
+ *
+ * @param rewriteBoundMs The document's host rewrite bound ({@link rewriteDocumentBoundMs}).
  */
-export const STREAM_HOLD_WORST_CASE_MS =
-  STREAM_SETTLE_WAIT_MS +
-  STREAM_FACTS_WAIT_MS +
-  INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument +
-  STREAM_RELEASE_MARGIN_MS;
+export function streamHoldWorstCaseMs(rewriteBoundMs: number): number {
+  return STREAM_SETTLE_WAIT_MS + STREAM_FACTS_WAIT_MS + rewriteBoundMs + STREAM_RELEASE_MARGIN_MS;
+}
 
 /** A step that did not settle within its deadline. */
 export class DeadlineExceededError extends Error {
@@ -228,5 +278,59 @@ export function withinDeadline<T>(
         reject(cause);
       }
     );
+  });
+}
+
+/**
+ * {@link withinDeadline} with a deadline `work` may lengthen once: both
+ * timers start now, and the base one rejects only while `work` has not
+ * called `extend` — so the extended deadline counts from the same start
+ * (no clock needed) and a work that never extends keeps the base exactly.
+ *
+ * @param step What runs (names the timeout).
+ * @param baseMs The deadline (ms) unless extended.
+ * @param extendedMs The deadline (ms) once extended (≥ `baseMs`).
+ * @param work The step; `extend` lengthens its deadline (a no-op once the
+ *   base deadline passed — the step already timed out).
+ * @param schedule Timer seam; defaults to `setTimeout`.
+ * @throws {@link RangeError} When `extendedMs` is below `baseMs`.
+ */
+export function withinExtensibleDeadline<T>(
+  step: string,
+  baseMs: number,
+  extendedMs: number,
+  work: (extend: () => void) => Promise<T>,
+  schedule: ScheduleTimer = scheduleWithTimeout
+): Promise<T> {
+  if (extendedMs < baseMs) {
+    throw new RangeError(
+      `${step}: extended deadline ${String(extendedMs)} ms is below its base ${String(baseMs)} ms`
+    );
+  }
+  let extended = false;
+  let cancelBase: (() => void) | undefined;
+  return withinDeadline(
+    step,
+    extendedMs,
+    () =>
+      new Promise<T>((resolve, reject) => {
+        cancelBase = schedule(() => {
+          if (!extended) reject(new DeadlineExceededError(step, baseMs));
+        }, baseMs);
+        const extend = (): void => {
+          extended = true;
+        };
+        let running: Promise<T>;
+        try {
+          running = work(extend);
+        } catch (cause) {
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- passed through as thrown: the caller branches on the step's own failure
+          running = Promise.reject(cause);
+        }
+        running.then(resolve, reject);
+      }),
+    schedule
+  ).finally(() => {
+    cancelBase?.();
   });
 }

@@ -34,7 +34,11 @@ import {
 } from './controller';
 import { DOCUMENT_TRANSFORM_BUDGET_MS, type DocumentTransformRunner } from './document-transform';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
-import { INTERCEPTION_HOST_BOUNDS_MS, SESSION_STEP_TIMEOUTS_MS } from './timeouts';
+import {
+  INTERCEPTION_HOST_BOUNDS_MS,
+  rewriteDocumentBoundMs,
+  SESSION_STEP_TIMEOUTS_MS
+} from './timeouts';
 import { simulateDelayJs } from '../wp-rocket-simulation/delay-js-forward';
 
 const TAB = 3;
@@ -636,11 +640,14 @@ describe('host', () => {
 
   it('gates interception on an active session of the document’s origin', async () => {
     const r = rig();
-    await expect(r.host.shouldIntercept(TAB, `${ORIGIN}/x`)).resolves.toBe(false);
+    await expect(r.host.shouldIntercept(TAB, `${ORIGIN}/x`)).resolves.toBeNull();
     await seedActive();
-    await expect(r.host.shouldIntercept(TAB, `${ORIGIN}/x`)).resolves.toBe(true);
-    await expect(r.host.shouldIntercept(TAB, 'https://other.test/x')).resolves.toBe(false);
-    await expect(r.host.shouldIntercept(TAB, 'not a url')).resolves.toBe(false);
+    // An exclusions-only session: granted the exclusions-only rewrite bound.
+    await expect(r.host.shouldIntercept(TAB, `${ORIGIN}/x`)).resolves.toEqual({
+      rewriteBoundMs: INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument
+    });
+    await expect(r.host.shouldIntercept(TAB, 'https://other.test/x')).resolves.toBeNull();
+    await expect(r.host.shouldIntercept(TAB, 'not a url')).resolves.toBeNull();
   });
 
   it('rewrites a session document and records its outcome', async () => {
@@ -863,7 +870,7 @@ describe('wake re-validation', () => {
     resolveResume(false);
     await revalidation;
     await expect(status).resolves.toEqual({ state: 'inactive' });
-    await expect(gate).resolves.toBe(false);
+    await expect(gate).resolves.toBeNull();
   });
 });
 
@@ -1062,7 +1069,7 @@ describe('time bounds', () => {
     await flush();
     timers.fire();
     await revalidation;
-    await expect(gate).resolves.toBe(false);
+    await expect(gate).resolves.toBeNull();
     await expect(getExclusionSessionRecords()).resolves.toEqual({});
   });
 
@@ -1086,7 +1093,7 @@ describe('time bounds', () => {
     const rewrite = r.host.rewriteDocument(htmlDoc());
     await flush();
     timers.fire();
-    await expect(gate).resolves.toBe(false);
+    await expect(gate).resolves.toBeNull();
     await expect(rewrite).resolves.toBeNull();
   });
 
@@ -1799,6 +1806,49 @@ describe('host — simulating sessions', () => {
         simulation: { feature: 'delay_js', state: 'simulated', delayed: 1, wpRocketVersion: '3.24' }
       }
     });
+  });
+
+  it('grants a simulating session the longer rewrite bound', async () => {
+    const r = rig();
+    await seedSimulating();
+    await expect(r.host.shouldIntercept(TAB, `${ORIGIN}/x`)).resolves.toEqual({
+      rewriteBoundMs: rewriteDocumentBoundMs(true)
+    });
+  });
+
+  it('bounds a simulating session’s rewrite by the simulating bound, not the exclusions-only one', async () => {
+    const timers = manualTimers();
+    let answerRuntime: () => void = () => undefined;
+    const r = rig({
+      schedule: timers.schedule,
+      simulation: {
+        runtime: () =>
+          new Promise((resolve) => {
+            answerRuntime = () => {
+              resolve({ ok: false, cause: 'asset-unreachable' });
+            };
+          }),
+        list: () => Promise.reject(new Error('unused')),
+        markerId: () => Promise.reject(new Error('unused')),
+        csp: () => undefined
+      }
+    });
+    await seedSimulating();
+    let settled = false;
+    const rewrite = r.host.rewriteDocument(doc()).finally(() => {
+      settled = true;
+    });
+    await flush();
+    timers.fire(rewriteDocumentBoundMs(false));
+    await flush();
+    expect(settled).toBe(false);
+    timers.fire(rewriteDocumentBoundMs(true));
+    await expect(rewrite).resolves.toBeNull();
+    expect(logged(r.log, 'warn', /past its bound/)).toBe(true);
+    // The late source answer records nothing: the host already answered.
+    answerRuntime();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
   });
 
   it('never asks a source for a session that does not simulate', async () => {

@@ -11,10 +11,11 @@
  * entry. Text sha256 = sha256 of the text's UTF-8 bytes; list sha256 = sha256
  * of `JSON.stringify(rows)`.
  *
- * Structural only: whether each entry really hashes to its key is the
- * caller's check. Runtime imports carry their `.ts` extension and reach only
- * leaf modules, so the dev script can load this module under Node's native
- * TypeScript.
+ * {@link readSimulationData} is structural; {@link simulationDataHashProblem}
+ * then checks every entry really hashes to its key (the pin each version
+ * names), so a damaged package is never simulated with. Runtime imports
+ * carry their `.ts` extension and reach only leaf modules, so the dev script
+ * can load this module under Node's native TypeScript.
  */
 import { hasOnlyKeys, isRecord, ownValue } from '../../utils/is-record.ts';
 
@@ -190,4 +191,42 @@ export function readSimulationData(value: unknown): SimulationDataRead {
     if (error instanceof DataProblem) return { ok: false, problem: error.message };
     throw error;
   }
+}
+
+/** A sha256 of a text's UTF-8 bytes, lowercase hex (the caller's platform digest). */
+export type TextSha256 = (text: string) => Promise<string>;
+
+/**
+ * The text a row list's content key is the sha256 of: `JSON.stringify(rows)`
+ * — the rows' order and exact characters, nothing else. (A text's key is
+ * the sha256 of the text itself.)
+ *
+ * @param rows An exclusion list.
+ */
+export function rowListKeyText(rows: readonly string[]): string {
+  return JSON.stringify(rows);
+}
+
+/**
+ * Check that every text and row list of a structurally read data file
+ * hashes to its content key — each version's pins name those keys, so a
+ * changed byte anywhere is caught before it reaches a page.
+ *
+ * @param data A file {@link readSimulationData} accepted.
+ * @param sha256 The digest.
+ * @returns The first entry whose content differs from its key, or null when all match.
+ */
+export async function simulationDataHashProblem(
+  data: SimulationData,
+  sha256: TextSha256
+): Promise<string | null> {
+  for (const [key, text] of Object.entries(data.texts)) {
+    if ((await sha256(text)) !== key) return `texts.${key} does not hash to its key`;
+  }
+  for (const [key, rows] of Object.entries(data.rowLists)) {
+    if ((await sha256(rowListKeyText(rows))) !== key) {
+      return `rowLists.${key} does not hash to its key`;
+    }
+  }
+  return null;
 }

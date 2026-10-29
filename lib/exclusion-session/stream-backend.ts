@@ -56,7 +56,7 @@ import {
   type StreamWait
 } from './stream-machine';
 import {
-  INTERCEPTION_HOST_BOUNDS_MS,
+  rewriteDocumentBoundMs,
   STREAM_FACTS_WAIT_MS,
   STREAM_RELEASE_MARGIN_MS,
   STREAM_SETTLE_WAIT_MS
@@ -66,8 +66,9 @@ import {
  * The delay of a stream's timer (ms): `settle` — the bounded wait for the
  * request's network completion after the body's end; `facts` — the late-facts
  * wait; `release` — the stream's own release deadline, past the host's
- * rewrite bound. (A function, not a constant: nothing of this module runs
- * at load.)
+ * exclusions-only rewrite bound (a longer grant extends it:
+ * {@link releaseExtensionMs}). (A function, not a constant: nothing of this
+ * module runs at load.)
  *
  * @param wait Which wait.
  */
@@ -78,8 +79,22 @@ export function streamTimerMs(wait: StreamWait): number {
     case 'facts':
       return STREAM_FACTS_WAIT_MS;
     case 'release':
-      return INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument + STREAM_RELEASE_MARGIN_MS;
+      return rewriteDocumentBoundMs(false) + STREAM_RELEASE_MARGIN_MS;
   }
+}
+
+/**
+ * How much longer (ms) a stream's release deadline runs, once its
+ * exclusions-only one passed, for the rewrite bound its gate granted — a
+ * simulating session's grant extends it by the difference (so the
+ * deadline stays the grant + margin from the same start, without a clock);
+ * no grant (the gate never answered — it is bounded far below that
+ * deadline) or an exclusions-only one: 0.
+ *
+ * @param rewriteBoundMs The granted bound, or null when the gate never answered.
+ */
+export function releaseExtensionMs(rewriteBoundMs: number | null): number {
+  return rewriteBoundMs === null ? 0 : Math.max(0, rewriteBoundMs - rewriteDocumentBoundMs(false));
 }
 
 /** The filter surface the backend drives (a `StreamFilter`, or a test shim). */
@@ -182,6 +197,8 @@ interface LiveStream {
   state: StreamState;
   /** Cancels the stream's one armed timer, or null. */
   cancelTimer: (() => void) | null;
+  /** The host's rewrite bound its gate granted, or null until it answers. */
+  rewriteBoundMs: number | null;
 }
 
 /**
@@ -263,8 +280,9 @@ export function createStreamInterceptionBackend(
   /** Ask the host whether the session wants the document. */
   const askGate = (stream: LiveStream): void => {
     host.shouldIntercept(stream.tabId, stream.url).then(
-      (allowed) => {
-        dispatch(stream, { type: 'gate', allowed });
+      (grant) => {
+        if (grant !== null) stream.rewriteBoundMs = grant.rewriteBoundMs;
+        dispatch(stream, { type: 'gate', allowed: grant !== null });
       },
       (cause: unknown) => {
         // The host never rejects; a rejection keeps buffering (the rewrite re-gates).
@@ -302,18 +320,38 @@ export function createStreamInterceptionBackend(
       );
   };
 
-  /** (Re)arm the stream's one timer (an armed one is cancelled first). */
-  const armTimer = (stream: LiveStream, wait: StreamWait): void => {
+  /**
+   * (Re)arm the stream's one timer (an armed one is cancelled first). The
+   * release deadline fires at the exclusions-only bound, then re-arms once
+   * for the extension a longer grant asks ({@link releaseExtensionMs}).
+   *
+   * @param stream The stream.
+   * @param wait Which wait.
+   * @param delayMs The delay (ms); defaults to the wait's.
+   * @param extended Whether this is the release deadline's extension.
+   */
+  const armTimer = (
+    stream: LiveStream,
+    wait: StreamWait,
+    delayMs = streamTimerMs(wait),
+    extended = false
+  ): void => {
     stream.cancelTimer?.();
     stream.cancelTimer = schedule(() => {
       stream.cancelTimer = null;
+      const extensionMs =
+        wait === 'release' && !extended ? releaseExtensionMs(stream.rewriteBoundMs) : 0;
+      if (extensionMs > 0) {
+        armTimer(stream, wait, extensionMs, true);
+        return;
+      }
       if (wait === 'release') {
         log.warn('Stream rewrite missed its deadline — document served unmodified', {
           requestId: stream.requestId
         });
       }
       dispatch(stream, { type: 'timer', wait });
-    }, streamTimerMs(wait));
+    }, delayMs);
   };
 
   /** Perform one machine effect. */
@@ -466,7 +504,8 @@ export function createStreamInterceptionBackend(
         },
         servingRewrite: false,
         state: OPENING_STREAM,
-        cancelTimer: null
+        cancelTimer: null,
+        rewriteBoundMs: null
       };
       streams.set(details.requestId, stream);
       wire(stream);

@@ -662,7 +662,8 @@ const RELOAD_EXTENSION = 'Reload or reinstall the extension.';
 const RUNTIME_UNAVAILABLE_COPY: Readonly<
   Record<SimulationRuntimeUnavailableCause, { readonly what: string; readonly remedy: string }>
 > = {
-  'asset-unreachable': { what: 'could not be loaded', remedy: RELOAD_EXTENSION },
+  // A failed read is retried on the next document: reloading the page retries it.
+  'asset-unreachable': { what: 'could not be loaded', remedy: 'Reload the page to retry.' },
   'asset-malformed': { what: 'is damaged', remedy: RELOAD_EXTENSION },
   'hash-mismatch': { what: 'is damaged', remedy: RELOAD_EXTENSION },
   // This build carries no data for the version: only a newer build can.

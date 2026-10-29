@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKER_ID } from '../messaging/exclusion-simulation.fixtures';
 import type { InterceptedDocument } from './backend';
 import {
@@ -9,6 +9,7 @@ import {
   type SimulationPackage,
   type SimulationSources
 } from './simulation-sources';
+import { DeadlineExceededError, SIMULATION_SOURCE_TIMEOUTS_MS } from './timeouts';
 
 const SIMULATE = { features: ['delay_js'] } as const;
 
@@ -261,5 +262,96 @@ describe('simulationPreparer', () => {
     const prepare = simulationPreparer(SIMULATE, DOCUMENT, sources({}, asked));
     await expect(prepare(page(wprMeta('3.23.5.1')))).resolves.toMatchObject({ ok: true });
     expect(asked).toEqual(['3.23.5.1']);
+  });
+});
+
+describe('prepareSimulation — source deadlines', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A source answer that never settles. */
+  const hung = <T>(): Promise<T> => new Promise<T>(() => undefined);
+
+  /** Prepare with `overrides`, letting `ms` pass; the settled result or the rejection. */
+  async function preparedAfter(overrides: Partial<SimulationSources>, ms: number) {
+    const settled = prepareSimulation(page(), SIMULATE, DOCUMENT, sources(overrides)).catch(
+      (cause: unknown) => ({ rejected: cause })
+    );
+    await vi.advanceTimersByTimeAsync(ms);
+    return settled;
+  }
+
+  it('reads a hung runtime source as asset-unreachable at its deadline (no later source asked)', async () => {
+    const touched: string[] = [];
+    const settled = preparedAfter(
+      {
+        runtime: hung,
+        list: () => {
+          touched.push('list');
+          return INERT_SIMULATION_SOURCES.list('', []);
+        }
+      },
+      SIMULATION_SOURCE_TIMEOUTS_MS.runtime
+    );
+    await expect(settled).resolves.toEqual({ ok: false, cause: 'asset-unreachable' });
+    expect(touched).toEqual([]);
+  });
+
+  it('does not end a runtime source before its deadline', async () => {
+    let answered = false;
+    const prepared = prepareSimulation(page(), SIMULATE, DOCUMENT, sources({ runtime: hung })).then(
+      () => {
+        answered = true;
+      }
+    );
+    await vi.advanceTimersByTimeAsync(SIMULATION_SOURCE_TIMEOUTS_MS.runtime - 1);
+    expect(answered).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await prepared;
+    expect(answered).toBe(true);
+  });
+
+  it('falls back to the bundled list (miss timeout) when the list source hangs', async () => {
+    const settled = await preparedAfter({ list: hung }, SIMULATION_SOURCE_TIMEOUTS_MS.list);
+    expect(settled).toMatchObject({
+      ok: true,
+      input: { listRows: PACKAGE.bundledListRows, listSource: 'bundled', listMiss: 'timeout' }
+    });
+  });
+
+  it('fails the preparation when the marker id source hangs (never simulated without its id)', async () => {
+    const settled = await preparedAfter({ markerId: hung }, SIMULATION_SOURCE_TIMEOUTS_MS.markerId);
+    const { rejected } = settled as { rejected: unknown };
+    expect(rejected).toBeInstanceOf(SimulationPreparationError);
+    expect((rejected as Error).cause).toBeInstanceOf(DeadlineExceededError);
+  });
+
+  it('bounds the whole preparation by the sum of the source deadlines', async () => {
+    const limits = SIMULATION_SOURCE_TIMEOUTS_MS;
+    // Each source answers just before its own deadline: the preparation still completes.
+    const late = <T>(ms: number, value: T) =>
+      new Promise<T>((resolve) => {
+        setTimeout(() => {
+          resolve(value);
+        }, ms - 1);
+      });
+    const settled = await preparedAfter(
+      {
+        runtime: () => late(limits.runtime, { ok: true, package: PACKAGE }),
+        list: (_version, bundled) =>
+          late(limits.list, {
+            listRows: bundled,
+            listSource: 'bundled',
+            listMiss: 'never-fetched'
+          }),
+        markerId: () => late(limits.markerId, undefined)
+      },
+      limits.runtime + limits.list + limits.markerId
+    );
+    expect(settled).toMatchObject({ ok: true, input: { listMiss: 'never-fetched' } });
   });
 });

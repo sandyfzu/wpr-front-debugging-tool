@@ -102,6 +102,7 @@ import {
   SIMULATION_DATA_FORMAT,
   SIMULATION_DATA_PATH,
   readSimulationData,
+  rowListKeyText,
   type SimulationData
 } from '../lib/wp-rocket-simulation/simulation-data.ts';
 
@@ -1499,7 +1500,7 @@ export function simulationArtifacts(
   }
   const runtimeSha = digest('sha256', sources.runtime);
   const fallbackSha = textSha256(sources.ieFallback);
-  const listSha = textSha256(JSON.stringify(rows));
+  const listSha = textSha256(rowListKeyText(rows));
   const pins: SimulationPins = {
     runtime: {
       path: RUNTIME_PATH,

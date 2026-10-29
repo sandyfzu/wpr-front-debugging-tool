@@ -3,7 +3,7 @@
     "surface": "background service worker",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 243.8
+      "raw": 249.1
     }
   },
   {
@@ -11,7 +11,36 @@
     "globs": ["assets/background.json"],
     "maxKb": {
       "raw": 85
-    }
+    },
+    "required": true
+  },
+  {
+    "surface": "known-conflicts DB seed asset (background-owned)",
+    "globs": ["assets/background.json"],
+    "maxKb": {
+      "raw": 85
+    },
+    "build": "firefox-mv2",
+    "required": true
+  },
+  {
+    "surface": "simulation data (packaged, background-loaded)",
+    "globs": ["wp-rocket-simulation/simulation-data.json"],
+    "maxKb": {
+      "raw": 19.0,
+      "gzip": 5.9
+    },
+    "required": true
+  },
+  {
+    "surface": "simulation data (packaged, background-loaded)",
+    "globs": ["wp-rocket-simulation/simulation-data.json"],
+    "maxKb": {
+      "raw": 19.0,
+      "gzip": 5.9
+    },
+    "build": "firefox-mv2",
+    "required": true
   },
   {
     "surface": "popup JS",
@@ -123,7 +152,7 @@
     "build": "firefox-mv2",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 240.5
+      "raw": 245.9
     }
   },
   {
@@ -139,7 +168,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1671.6
+      "raw": 1676.9
     }
   }
 ]

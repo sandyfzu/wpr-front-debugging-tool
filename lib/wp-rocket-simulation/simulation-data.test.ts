@@ -7,7 +7,24 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { SIMULATION_DATA_PATH, readSimulationData } from './simulation-data';
+import { SUPPORTED_WPR_VERSIONS } from '../wp-rocket/versions';
+import { DELAY_JS_VERSION_PATTERN } from '../wp-rocket/constants';
+import {
+  SIMULATION_DATA_PATH,
+  readSimulationData,
+  rowListKeyText,
+  simulationDataHashProblem,
+  type SimulationData
+} from './simulation-data';
+import { sha256Hex } from '../../utils/sha256';
+import { webSha256Hex } from '../../utils/web-sha256';
+
+/** A text's content key (sync, for building fixtures). */
+const textKey = sha256Hex;
+
+/** A row list's content key (sync, for building fixtures). */
+const listKey = (rows: readonly string[]): string => sha256Hex(rowListKeyText(rows));
+import { parseSimulationTable } from './simulation-parity-table';
 
 type Json = Record<string, unknown>;
 
@@ -180,5 +197,135 @@ describe('readSimulationData', () => {
     );
     const read = readSimulationData(JSON.parse(readFileSync(path, 'utf8')));
     expect(read.ok).toBe(true);
+  });
+});
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** The committed data file, read (failing the test when it does not read). */
+function committed(): SimulationData {
+  const read = readSimulationData(
+    JSON.parse(readFileSync(join(HERE, '../../public', SIMULATION_DATA_PATH), 'utf8'))
+  );
+  if (!read.ok) throw new Error(`committed data file unreadable: ${read.problem}`);
+  return read.data;
+}
+
+describe('rowListKeyText', () => {
+  it('is the rows’ JSON: order and characters count, nothing else', () => {
+    expect(rowListKeyText(['a', 'b'])).toBe('["a","b"]');
+    expect(rowListKeyText([])).toBe('[]');
+    expect(rowListKeyText(['b', 'a'])).not.toBe(rowListKeyText(['a', 'b']));
+    expect(rowListKeyText(['é"\\'])).toBe('["é\\"\\\\"]');
+  });
+});
+
+describe('simulationDataHashProblem', () => {
+  /** Real-keyed data: one version over two texts and one list. */
+  function keyed(): SimulationData {
+    const runtime = 'runtime';
+    const fallback = 'fallback';
+    const rows = ['x', 'y'];
+    const read = readSimulationData({
+      format: 1,
+      versions: {
+        '3.24': {
+          runtime: { sha256: textKey(runtime), version: '2.0.5' },
+          ieFallback: { sha256: textKey(fallback) },
+          delayJsExclusions: { sha256: listKey(rows), count: 2 }
+        }
+      },
+      texts: { [textKey(runtime)]: runtime, [textKey(fallback)]: fallback },
+      rowLists: { [listKey(rows)]: rows }
+    });
+    if (!read.ok) throw new Error(read.problem);
+    return read.data;
+  }
+
+  it('accepts data whose every entry hashes to its key', async () => {
+    await expect(simulationDataHashProblem(keyed(), webSha256Hex)).resolves.toBeNull();
+  });
+
+  it('names a text whose bytes changed', async () => {
+    const data = keyed();
+    const key = textKey('fallback');
+    const damaged = { ...data, texts: { ...data.texts, [key]: 'fallbacK' } };
+    await expect(simulationDataHashProblem(damaged, webSha256Hex)).resolves.toBe(
+      `texts.${key} does not hash to its key`
+    );
+  });
+
+  it('names a row list whose rows changed (an extra row, a reorder)', async () => {
+    const data = keyed();
+    const key = listKey(['x', 'y']);
+    for (const rows of [
+      ['x', 'y', 'z'],
+      ['y', 'x']
+    ]) {
+      const damaged = { ...data, rowLists: { [key]: rows } };
+      await expect(simulationDataHashProblem(damaged, webSha256Hex)).resolves.toBe(
+        `rowLists.${key} does not hash to its key`
+      );
+    }
+  });
+
+  it('rejects the reader-only fixture (its keys are not hashes of its content)', async () => {
+    const read = readSimulationData(valid());
+    if (!read.ok) throw new Error(read.problem);
+    await expect(simulationDataHashProblem(read.data, webSha256Hex)).resolves.toBe(
+      `texts.${RUNTIME} does not hash to its key`
+    );
+  });
+});
+
+describe('the committed data file', () => {
+  const data = committed();
+  const table = parseSimulationTable(
+    JSON.parse(readFileSync(join(HERE, 'simulation-parity.fixtures.json'), 'utf8'))
+  );
+  const pins = table.header.simulation;
+
+  it('hashes to its keys', async () => {
+    await expect(simulationDataHashProblem(data, webSha256Hex)).resolves.toBeNull();
+  });
+
+  it('holds an entry for every supported WP Rocket version, and no other', () => {
+    expect(Object.keys(data.versions).sort()).toEqual(
+      SUPPORTED_WPR_VERSIONS.map((row) => row.version).sort()
+    );
+  });
+
+  it('names the parity header pins for the reference version', () => {
+    const reference = data.versions[table.header.plugin];
+    expect(reference).toEqual({
+      runtime: { sha256: pins.runtime.sha256, version: pins.runtime.version },
+      ieFallback: { sha256: pins.ieFallback.sha256 },
+      delayJsExclusions: pins.delayJsExclusions
+    });
+    // The pinned byte sizes too: the texts are the plugin's own files.
+    const encoder = new TextEncoder();
+    expect(encoder.encode(data.texts[pins.runtime.sha256]).byteLength).toBe(pins.runtime.bytes);
+    expect(encoder.encode(data.texts[pins.ieFallback.sha256]).byteLength).toBe(
+      pins.ieFallback.bytes
+    );
+  });
+
+  it('ships runtime 2.0.5, its version read from the runtime text itself', () => {
+    for (const entry of Object.values(data.versions)) {
+      expect(entry.runtime.version).toBe('2.0.5');
+      const text = data.texts[entry.runtime.sha256] ?? '';
+      expect(DELAY_JS_VERSION_PATTERN.exec(text)?.[1]).toBe(entry.runtime.version);
+    }
+  });
+
+  it('holds no PHP replacement reference in a runtime (inserted via preg_replace, it would be rewritten)', () => {
+    // `$n`, `${n}` and `\n` (n a digit) are back-references in a preg_replace replacement.
+    const reference = /\$\d|\$\{\d|\\\d/;
+    expect(reference.test('a$1b')).toBe(true);
+    expect(reference.test('a${12}b')).toBe(true);
+    expect(reference.test('a\\0b')).toBe(true);
+    for (const entry of Object.values(data.versions)) {
+      expect(reference.test(data.texts[entry.runtime.sha256] ?? '$0')).toBe(false);
+    }
   });
 });
