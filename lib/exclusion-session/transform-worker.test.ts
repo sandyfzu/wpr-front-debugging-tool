@@ -9,6 +9,7 @@ import { applyPipeline, EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
 import type { DocumentTransformRequest } from './document-transform';
+import { simulationInput } from '../messaging/exclusion-simulation.fixtures';
 import {
   createWorkerTransformRunner,
   handleTransformWorkerMessage,
@@ -515,5 +516,102 @@ describe('createWorkerTransformRunner', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('simulation fields', () => {
+  const valid = { type: 'transform', id: 1, request: REQUEST };
+  /** A simulation input whose CSP meta sits inside {@link DELAYED}. */
+  const simulate = { ...simulationInput(), csp: { ...simulationInput().csp, metas: [] } };
+
+  it('carries a valid simulation input through the request guard', () => {
+    const data = { ...valid, request: { ...REQUEST, simulate } };
+    expect(parseTransformWorkerRequest(data)?.request).toEqual({ ...REQUEST, simulate });
+  });
+
+  it('rejects a malformed simulation input, and a CSP meta past the document', () => {
+    const bad = { ...valid, request: { ...REQUEST, simulate: { ...simulate, runtime: '' } } };
+    expect(parseTransformWorkerRequest(bad)).toBeNull();
+    const past = {
+      ...simulate,
+      csp: { ...simulate.csp, metas: [{ content: '', offset: DELAYED.length + 1 }] }
+    };
+    expect(
+      parseTransformWorkerRequest({ ...valid, request: { ...REQUEST, simulate: past } })
+    ).toBeNull();
+  });
+
+  it('names the simulate stage of a run killed in its simulation step (no row)', async () => {
+    const timers = manualTimers();
+    const host = createWorkerTransformRunner({
+      spawn: () =>
+        new FakePort((self, message) => {
+          self.emit({ type: 'step', id: message.id, feature: 'delay_js', stage: 'simulate' });
+        }),
+      schedule: timers.schedule,
+      graceMs: 5
+    });
+    const run = host.run(REQUEST);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    timers.fire();
+    await expect(run).resolves.toEqual({
+      ok: false,
+      outcome: {
+        outcome: 'over-budget',
+        feature: 'delay_js',
+        row: null,
+        budgetMs: 100,
+        stage: 'simulate'
+      }
+    });
+  });
+
+  it('a later stage-less step clears the stage (an unknown stage reads as none)', async () => {
+    const timers = manualTimers();
+    const host = createWorkerTransformRunner({
+      spawn: () =>
+        new FakePort((self, message) => {
+          self.emit({ type: 'step', id: message.id, feature: 'delay_js', stage: 'simulate' });
+          self.emit({ type: 'step', id: message.id, feature: 'delay_js', stage: 'other' });
+        }),
+      schedule: timers.schedule,
+      graceMs: 5
+    });
+    const run = host.run(REQUEST);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    timers.fire();
+    await expect(run).resolves.toEqual({
+      ok: false,
+      outcome: { outcome: 'over-budget', feature: 'delay_js', row: 'a\\.js', budgetMs: 100 }
+    });
+  });
+
+  it('passes a runtime-unavailable worker result through', async () => {
+    const result = {
+      ok: false,
+      outcome: { outcome: 'runtime-unavailable', cause: 'hash-mismatch' }
+    };
+    const host = createWorkerTransformRunner({
+      spawn: () =>
+        new FakePort((self, message) => {
+          self.emit({ type: 'result', id: message.id, result });
+        }),
+      schedule: manualTimers().schedule
+    });
+    await expect(host.run(REQUEST)).resolves.toEqual(result);
+  });
+
+  it('still refuses an unknown unmodified outcome', async () => {
+    const result = { ok: false, outcome: { outcome: 'skipped' } };
+    const host = createWorkerTransformRunner({
+      spawn: () =>
+        new FakePort((self, message) => {
+          self.emit({ type: 'result', id: message.id, result });
+        }),
+      schedule: manualTimers().schedule
+    });
+    const answer = await host.run(REQUEST);
+    expect(answer.ok).toBe(false);
+    expect(answer.outcome).toEqual({ outcome: 'failed', reason: 'engine-failed' });
   });
 });

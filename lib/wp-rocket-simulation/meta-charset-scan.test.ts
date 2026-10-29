@@ -4,7 +4,7 @@
  * its speed on subjects the pattern is polynomial on.
  */
 import { describe, expect, it } from 'vitest';
-import { HOSTILE_CEILING_MS } from '../../vitest.shared';
+import { linearScaling } from '../../vitest.shared';
 import { metaCharsetByteSpans } from './meta-charset-scan';
 
 /** WP Rocket's pattern without its lookahead, `U` written out (the caller cuts at the last `</head>`). */
@@ -98,10 +98,11 @@ describe('metaCharsetByteSpans', () => {
     ['`<meta ` repeated before one `charset`', '<meta '],
     ['`http-equiv` blocks sharing one far `>`', '<meta http-equiv=x Content-Type"charset '],
     ['`charset` repeated with no `=` or `>`', 'charset ']
-  ])('reads 4 MiB of %s in linear time', (_name, unit) => {
-    const bytes = `${unit.repeat((4 * 1024 * 1024) / unit.length)}charset`;
-    const started = performance.now();
-    metaCharsetByteSpans(bytes);
-    expect(performance.now() - started).toBeLessThan(HOSTILE_CEILING_MS);
+  ])('reads %s in linear time (1 → 4 MiB)', (_name, unit) => {
+    const scaling = linearScaling(
+      (size) => `${unit.repeat(Math.floor(size / unit.length))}charset`,
+      metaCharsetByteSpans
+    );
+    expect(scaling.violation).toBeUndefined();
   });
 });

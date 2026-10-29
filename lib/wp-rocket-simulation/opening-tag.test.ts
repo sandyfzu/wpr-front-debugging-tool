@@ -4,7 +4,7 @@
  * patterns are quadratic on.
  */
 import { describe, expect, it } from 'vitest';
-import { HOSTILE_CEILING_MS } from '../../vitest.shared';
+import { linearScaling } from '../../vitest.shared';
 import { firstOpeningTag, openingTagStart } from './opening-tag';
 
 /**
@@ -56,12 +56,13 @@ describe('firstOpeningTag', () => {
     expect(openingTagStart('<heads', 'head', false)).toBe(0);
   });
 
-  it('reads 4 MiB of `<head` without a `>` in linear time', () => {
-    const html = '<head '.repeat((4 * 1024 * 1024) / 6);
-    const started = performance.now();
-    expect(firstOpeningTag(html, 'head', false)).toBeNull();
-    expect(firstOpeningTag(html, 'head', true)).toBeNull();
+  it('reads `<head` without a `>` in linear time (1 → 4 MiB)', () => {
     // The patterns took ~0.5 s per 64 KiB here (quadratic).
-    expect(performance.now() - started).toBeLessThan(HOSTILE_CEILING_MS);
+    const scaling = linearScaling(
+      (bytes) => '<head '.repeat(Math.floor(bytes / 6)),
+      (html) => [firstOpeningTag(html, 'head', false), firstOpeningTag(html, 'head', true)]
+    );
+    expect(scaling.violation).toBeUndefined();
+    expect(scaling.output).toEqual([null, null]);
   });
 });

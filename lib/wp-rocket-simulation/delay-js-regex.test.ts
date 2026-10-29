@@ -6,7 +6,7 @@
  * exactly when it was derived.
  */
 import { describe, expect, it } from 'vitest';
-import { HOSTILE_CEILING_MS } from '../../vitest.shared';
+import { linearScaling } from '../../vitest.shared';
 import {
   PCRE_BACKTRACK_LIMIT,
   contentSteps,
@@ -169,20 +169,28 @@ describe('the byte measure', () => {
 });
 
 describe('failing attempts — linear on hostile input', () => {
-  it('shares one `>` search between openings before a far `>` (4 MiB)', () => {
-    const text = `<head></head>${'<script'.repeat((4 * 1024 * 1024) / 7)}>`;
-    const started = performance.now();
+  it('shares one `>` search between openings before a far `>` (1 → 4 MiB)', () => {
+    // One `indexOf` per opening re-read the page: 19.7 s at 4 MiB.
+    const scaling = linearScaling(
+      (bytes) => `<head></head>${'<script'.repeat(Math.floor(bytes / 7))}>`,
+      delayScriptMatches
+    );
+    expect(scaling.violation).toBeUndefined();
     // Its first attempt reads 4 MiB of attribute: past the limit, as on the plugin.
-    expect(delayScriptMatches(text)).toBeNull();
-    // One `indexOf` per opening re-read the page: 19.7 s at this size.
-    expect(performance.now() - started).toBeLessThan(HOSTILE_CEILING_MS);
+    expect(scaling.output).toBeNull();
   });
 
   it('reads the end-tag reach after a shared `>` once (openings before `<   …`)', () => {
-    const text = `${'<script '.repeat(100_000)}><${' '.repeat(100_000)}/`;
-    const first = { start: 0, attrStart: 7, gt: text.indexOf('>') };
-    const started = performance.now();
-    expect(failingTailSteps(text, first)).toBeGreaterThan(PCRE_BACKTRACK_LIMIT);
-    expect(performance.now() - started).toBeLessThan(HOSTILE_CEILING_MS);
+    // `bytes` is split between the openings and the spaces (400 000 each at 4 MiB).
+    const scaling = linearScaling(
+      (bytes) => {
+        const count = Math.floor(bytes / 10);
+        const text = `${'<script '.repeat(count)}><${' '.repeat(count)}/`;
+        return { text, first: { start: 0, attrStart: 7, gt: text.indexOf('>') } };
+      },
+      (input) => failingTailSteps(input.text, input.first)
+    );
+    expect(scaling.violation).toBeUndefined();
+    expect(scaling.output).toBeGreaterThan(PCRE_BACKTRACK_LIMIT);
   });
 });
