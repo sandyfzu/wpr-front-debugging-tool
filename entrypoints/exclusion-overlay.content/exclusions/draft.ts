@@ -1,7 +1,8 @@
 /**
  * The editor's draft: the exclusion set as the user edits it — per-lane
  * rows with stable ids (row UI state and virtual-list keys follow the id,
- * never the index) plus the feature-wide disables. Pure and immutable: every
+ * never the index) plus the feature-wide disables and what is simulated
+ * beside them (the Delay JS lane's mode). Pure and immutable: every
  * edit returns a new draft; the view stores it. Blank rows are unfinished
  * edits, not exclusions: they never reach the set and never show an error.
  * Rows are held in the form WP Rocket's settings save stores them: a row
@@ -34,6 +35,8 @@ import {
   type StoredRowDiff
 } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
+import type { SimulateSpec } from '../../../lib/wp-rocket-simulation/spec';
+import { delayModeFields, delayModeOf, type DelayMode } from './delay-mode';
 import {
   createBoundedMemo,
   detachedString,
@@ -59,6 +62,11 @@ export interface DraftRow {
 export interface Draft {
   readonly rows: Readonly<Record<LaneKey, readonly DraftRow[]>>;
   readonly disable: ExclusionSetToggles;
+  /**
+   * What to simulate with the set (absent: nothing) — never a feature the
+   * draft disables ({@link setDelayMode} and {@link setDisable} keep it so).
+   */
+  readonly simulate?: SimulateSpec;
 }
 
 /** Issues row ids. */
@@ -313,8 +321,14 @@ export function commitAll(draft: Draft, carry?: RowCarry): Committed {
  *
  * @param set The set to edit.
  * @param nextId The id issuer.
+ * @param simulate What was simulated with the set (a contradictory one is
+ *   dropped: the disable wins, as a stored set reads).
  */
-export function restoreDraft(set: ExclusionSet, nextId: IdSource): Committed {
+export function restoreDraft(
+  set: ExclusionSet,
+  nextId: IdSource,
+  simulate?: SimulateSpec
+): Committed {
   const rows = {} as Record<LaneKey, DraftRow[]>;
   const commits: RowCommit[] = [];
   for (const lane of LANE_ORDER) {
@@ -329,7 +343,25 @@ export function restoreDraft(set: ExclusionSet, nextId: IdSource): Committed {
     });
     rows[lane] = laneRows;
   }
-  return { draft: { rows, disable: { ...set.disable } }, commits };
+  const draft: Draft = { rows, disable: { ...set.disable } };
+  return { draft: withSimulate(draft, simulate), commits };
+}
+
+/**
+ * A draft with a simulate spec, its Delay JS part reconciled with the
+ * draft's disable (Disabled wins over a contradictory Simulated).
+ *
+ * @param draft The draft (its own spec replaced).
+ * @param simulate The spec (absent: nothing simulated).
+ */
+function withSimulate(draft: Draft, simulate: SimulateSpec | undefined): Draft {
+  const mode = delayModeOf(draft.disable.delayJs, simulate);
+  const fields = delayModeFields(mode, simulate);
+  return {
+    rows: draft.rows,
+    disable: { ...draft.disable, delayJs: fields.disableDelayJs },
+    ...(fields.simulate === undefined ? {} : { simulate: fields.simulate })
+  };
 }
 
 /**
@@ -338,9 +370,10 @@ export function restoreDraft(set: ExclusionSet, nextId: IdSource): Committed {
  *
  * @param set The set to edit.
  * @param nextId The id issuer.
+ * @param simulate What is simulated with the set.
  */
-export function draftFromSet(set: ExclusionSet, nextId: IdSource): Draft {
-  return restoreDraft(set, nextId).draft;
+export function draftFromSet(set: ExclusionSet, nextId: IdSource, simulate?: SimulateSpec): Draft {
+  return restoreDraft(set, nextId, simulate).draft;
 }
 
 /** Whether a row is an unfinished (blank) edit: empty once trimmed. */
@@ -369,6 +402,31 @@ export function draftToSet(draft: Draft): ExclusionSet {
     rows[lane] = nonBlankRows(draft.rows[lane].map((row) => row.text));
   }
   return { rows, disable: { ...draft.disable } };
+}
+
+/**
+ * The Delay JS lane's mode a draft stands for.
+ *
+ * @param draft The draft.
+ */
+export function draftDelayMode(draft: Draft): DelayMode {
+  return delayModeOf(draft.disable.delayJs, draft.simulate);
+}
+
+/**
+ * Set the Delay JS lane's mode: its disable and its simulation together,
+ * so the pair never contradicts.
+ *
+ * @param draft The draft.
+ * @param mode The mode.
+ */
+export function setDelayMode(draft: Draft, mode: DelayMode): Draft {
+  if (draftDelayMode(draft) === mode) return draft;
+  const fields = delayModeFields(mode, draft.simulate);
+  return withSimulate(
+    { ...draft, disable: { ...draft.disable, delayJs: fields.disableDelayJs } },
+    fields.simulate
+  );
 }
 
 /**
@@ -629,9 +687,9 @@ export function removeRow(draft: Draft, lane: LaneKey, id: string): Removed {
  * @param value On (feature disabled for the page) or off.
  */
 export function setDisable(draft: Draft, key: ToggleKey, value: boolean): Draft {
-  return draft.disable[key] === value
-    ? draft
-    : { ...draft, disable: { ...draft.disable, [key]: value } };
+  if (draft.disable[key] === value) return draft;
+  // Disabling Delay JS ends its simulation (a disabled feature is never simulated).
+  return withSimulate({ ...draft, disable: { ...draft.disable, [key]: value } }, draft.simulate);
 }
 
 /**

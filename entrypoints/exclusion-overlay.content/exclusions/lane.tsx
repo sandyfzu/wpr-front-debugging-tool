@@ -51,7 +51,9 @@ import {
   PAGE_OFF_ROWS_SHOWN,
   PASTE_COPY,
   ROW_NOTE_COPY,
+  SIMULATION_LANE_COPY,
   appliedRowWarningNote,
+  simulationListCopy,
   rowWarningNote,
   type LanePageCopy,
   type NoteText,
@@ -61,6 +63,7 @@ import { countNoun } from '../../../utils/format-count';
 import type { OverlayController, SettledPasteOutcome } from '../controller';
 import { capText } from '../../../utils/cap-text';
 import { CopyAll } from './copy-all';
+import { DELAY_MODE_LANE, DelayModeControl, DelayModeNotes } from './delay-mode-control';
 import { laneCounts, rowMatches } from './counts';
 import { isBlankRow, laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
 import type { PageOffRow } from './lane-page';
@@ -102,6 +105,8 @@ export interface LaneProps {
   readonly writeClipboard?: ClipboardWriter | undefined;
   /** The virtualizer seam (tests). */
   readonly createVirtualizer?: VirtualizerFactory | undefined;
+  /** Epoch ms now, for the simulation's list age (default `Date.now`). */
+  readonly now?: (() => number) | undefined;
 }
 
 /**
@@ -161,6 +166,16 @@ export function Lane(props: LaneProps): JSX.Element {
     return key !== null && props.controller.draft().disable[key];
   };
   const headingId = (): string => `xo-lane-${props.lane}`;
+  /** The lane carries the Delay JS mode control instead of a disable switch. */
+  const modeLane = (): boolean => props.lane === DELAY_MODE_LANE;
+  /** The simulation that delayed scripts on this applied page (the Delay JS lane only). */
+  const simulation = createMemo(() => {
+    if (!modeLane()) return undefined;
+    const view = props.controller.view();
+    return view?.kind === 'applied' && view.simulation?.state === 'simulated'
+      ? view.simulation
+      : undefined;
+  });
   /** The lane's rows read as one set (null: its rows act alone). */
   const page = (): ReturnType<OverlayController['lanePage']> =>
     props.controller.lanePage(props.lane);
@@ -395,10 +410,33 @@ export function Lane(props: LaneProps): JSX.Element {
           <Show when={copy().limitHint}>
             {(hint) => <span class="xo-lane-hint">{hint()}</span>}
           </Show>
+          <Show when={simulation()}>
+            {(simulated) => (
+              <>
+                <span class="xo-lane-count">
+                  {SIMULATION_LANE_COPY.line(simulated().delayed, props.report?.rewritten ?? 0)}
+                </span>
+                <span class="xo-lane-hint">{SIMULATION_LANE_COPY.version(simulated())}</span>
+                <span class="xo-lane-hint">
+                  {simulationListCopy(simulated(), (props.now ?? Date.now)())}
+                </span>
+                <Show when={simulated().undetermined}>
+                  {(count) => (
+                    <span class="xo-lane-caveat">{SIMULATION_LANE_COPY.undetermined(count())}</span>
+                  )}
+                </Show>
+                <Show when={simulated().regexLimitHit}>
+                  <span class="xo-lane-caveat">{SIMULATION_LANE_COPY.regexLimit}</span>
+                </Show>
+              </>
+            )}
+          </Show>
           <Show when={counts()}>
             {(current) => (
               <>
-                <span class="xo-lane-count">{COUNT_COPY.line(current(), copy().noun)}</span>
+                <Show when={simulation() === undefined}>
+                  <span class="xo-lane-count">{COUNT_COPY.line(current(), copy().noun)}</span>
+                </Show>
                 <For each={COUNT_COPY.caveats(current(), copy().noun, rowRefs, copy().page)}>
                   {(caveat) => <span class="xo-lane-caveat">{withCode(caveat)}</span>}
                 </For>
@@ -406,7 +444,10 @@ export function Lane(props: LaneProps): JSX.Element {
             )}
           </Show>
         </div>
-        <Show when={toggleKey()}>
+        <Show when={modeLane()}>
+          <DelayModeControl controller={props.controller} locked={props.locked} />
+        </Show>
+        <Show when={modeLane() ? null : toggleKey()}>
           {(key) => (
             <button
               type="button"
@@ -427,6 +468,9 @@ export function Lane(props: LaneProps): JSX.Element {
           )}
         </Show>
       </div>
+      <Show when={modeLane()}>
+        <DelayModeNotes controller={props.controller} locked={props.locked} />
+      </Show>
       <Show when={disabled()}>
         <p class="xo-lane-note">
           The whole feature is off for this page; rows are not used while it is.

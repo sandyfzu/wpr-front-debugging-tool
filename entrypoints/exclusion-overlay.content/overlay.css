@@ -744,6 +744,98 @@
   font-size: 11px;
 }
 
+/*
+ * The Delay JS lane's mode control: the shared choice group, styled here
+ * through its data attributes (an injected UI carries no utility classes).
+ * Selection is state, swapped instantly — never animated.
+ */
+.xo-mode-choice {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--surface-1);
+}
+
+.xo-mode-choice [data-fdt='choice'] {
+  display: inline-flex;
+  border-radius: 4px;
+}
+
+/* The hidden radio keeps keyboard focus: the tile shows it. */
+.xo-mode-choice [data-fdt='choice']:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.xo-mode-choice label {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  color: var(--fg-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.xo-mode-choice label:not([data-checked], [data-disabled]):hover {
+  background: var(--surface-3);
+  color: var(--fg-primary);
+}
+
+.xo-mode-choice label[data-checked] {
+  background: var(--accent-strong);
+  color: var(--on-accent);
+}
+
+/* Unavailable (the lane says why): dimmed, never hidden. */
+.xo-mode-choice label[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The lines under the control: the warning keeps its glyph (never color alone). */
+.xo-mode-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 10px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--status-warn);
+  border-radius: 6px;
+  background: var(--status-warn-soft);
+  color: var(--fg-primary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.xo-mode-warning > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--status-warn);
+}
+
+/* Compact panels: the control takes the lane's full width under the title. */
+@container xo-panel (width < 360px) {
+  .xo-mode-choice {
+    display: flex;
+    width: 100%;
+  }
+  .xo-mode-choice [data-fdt='choice'] {
+    flex: 1 1 auto;
+  }
+  .xo-mode-choice label {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
 /* A lane's page-wide warning: names its rows, never blocks (icon + words, never color alone). */
 .xo-page-off {
   display: flex;

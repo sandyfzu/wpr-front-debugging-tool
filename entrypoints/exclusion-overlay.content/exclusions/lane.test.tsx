@@ -517,16 +517,30 @@ describe('Lane', () => {
     expect(document.querySelectorAll('.xo-match')).toHaveLength(3);
   });
 
-  it('toggles the feature-wide disable and says rows are unused', async () => {
+  it('turns the feature off through the mode control (Disabled) and says rows are unused', async () => {
     const controller = await readyController();
     mountLane(controller);
-    fireEvent.click(
-      screen.getByRole('switch', {
-        name: 'Disable feature: Delay JavaScript execution on this page'
-      })
-    );
+    const group = screen.getByRole('radiogroup', {
+      name: 'Delay JavaScript execution on this page'
+    });
+    expect(group).toBeTruthy();
+    // The Delay JS lane has no switch any more: the control replaces it.
+    expect(screen.queryByRole('switch')).toBeNull();
+    fireEvent.click(screen.getByText('Disabled'));
     expect(controller.draft().disable.delayJs).toBe(true);
     expect(screen.getByText(/rows are not used/)).toBeTruthy();
+  });
+
+  it('keeps the disable switch on a lane without a mode control', async () => {
+    const controller = await readyController();
+    mountLane(controller, undefined, undefined, undefined, 'deferJs');
+    fireEvent.click(
+      screen.getByRole('switch', {
+        name: 'Disable feature: Load JavaScript deferred on this page'
+      })
+    );
+    expect(controller.draft().disable.deferJs).toBe(true);
+    expect(screen.queryByRole('radiogroup')).toBeNull();
   });
 
   it('forgets an arrow target it never reached, so the next move starts from the focused row', async () => {

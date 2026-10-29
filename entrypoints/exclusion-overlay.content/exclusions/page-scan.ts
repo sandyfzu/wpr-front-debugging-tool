@@ -29,15 +29,20 @@ export const PAGE_SCAN_LIMIT = 5_000;
 /** Characters of a script's text the classifier may read (it needs the first line only). */
 const SCRIPT_TEXT_CHARS = 512;
 
+/** The scripts Delay JS holds — its footprints on a live page. */
+export const DELAY_FOOTPRINT_SELECTOR = [
+  `script[type*="${DELAY_JS_TYPE_OLD}"]`,
+  `script[${DELAY_STATUS_ATTRIBUTE}]`,
+  `script[${DELAY_TYPE_ATTRIBUTE}]`,
+  `script[${DELAY_JS_SRC}]`
+].join(',');
+
 /**
  * Every element some lane may act on — a superset the classifier narrows
  * (declared from the same vocabulary the classifier reads).
  */
 export const PICKABLE_SELECTOR = [
-  `script[type*="${DELAY_JS_TYPE_OLD}"]`,
-  `script[${DELAY_STATUS_ATTRIBUTE}]`,
-  `script[${DELAY_TYPE_ATTRIBUTE}]`,
-  `script[${DELAY_JS_SRC}]`,
+  DELAY_FOOTPRINT_SELECTOR,
   `script[${WPR_DEFER_ATTRIBUTE}]`,
   `img[${DATA_LAZY_SRC}]`,
   `[${LAZY_RENDER_ATTRIBUTE}]`

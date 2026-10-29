@@ -57,7 +57,8 @@ import { DRAFT_TOO_LARGE_WORDS, TOOL_TITLE, sessionIndicator } from './copy';
 import { draftTooLarge, footerLine as footerLineFor } from './footer-line';
 import type { OverlayController } from './controller';
 import { LANE_ORDER } from './exclusions/draft';
-import { Glyph } from './glyph';
+import { Glyph, SimulatedIndicator } from './glyph';
+import { runsSimulation } from './exclusions/delay-mode';
 import { retryFocus } from './focus-retry';
 import { createAnnouncer } from './announcer';
 import {
@@ -167,11 +168,13 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   const held = (): boolean => !c.editable();
   const paused = (): boolean => props.page.pageModal();
   const indicator = createMemo(() => sessionIndicator(state(), c.view()));
+  /** The page on screen runs a simulation: said beside the session's indicator, folded too. */
+  const simulated = createMemo(() => runsSimulation(c.delayState()));
   const banner = createMemo(() => stateBanner(state(), c.view()));
   const notice = createMemo(() => {
     const current = state();
     return current.phase === 'ready' && current.notice !== null
-      ? noticeBanner(current.notice)
+      ? noticeBanner(current.notice, simulated())
       : null;
   });
   const sessionState = (): 'inactive' | 'active' | 'unavailable' | null => {
@@ -571,6 +574,9 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                   {indicator().label}
                 </span>
               </span>
+              <Show when={simulated()}>
+                <SimulatedIndicator />
+              </Show>
               <span class="xo-origin" title={props.origin}>
                 {hostOf(props.origin)}
               </span>
@@ -727,6 +733,9 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
             <Glyph name={paused() ? 'idle' : indicator().glyph} size={12} />
             {paused() ? 'Paused: page dialog open' : indicator().label}
           </span>
+          <Show when={simulated() && !paused()}>
+            <SimulatedIndicator />
+          </Show>
           <span class="xo-sr-only"> — open the exclusion builder</span>
         </button>
       </Show>

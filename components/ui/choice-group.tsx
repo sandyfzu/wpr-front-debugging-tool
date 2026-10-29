@@ -11,7 +11,9 @@
 import type { JSX } from 'solid-js';
 import { For } from 'solid-js';
 import { RadioGroup as KobalteRadioGroup } from '@kobalte/core';
-import { cn } from '../../utils/cn';
+// Plain joining, not `cn`: no caller fights the group's own utilities, and
+// the conflict resolver would ship to every injected UI that mounts a group.
+import { clsx } from 'clsx';
 
 /** One choice offered by a group. */
 export interface ChoiceOption<T extends string> {
@@ -19,13 +21,18 @@ export interface ChoiceOption<T extends string> {
   readonly value: T;
   /** The tile's visible text (also the radio's accessible name, label-linked). */
   readonly label: string;
+  /**
+   * Whether this one choice is unavailable (dimmed, skipped by arrow keys,
+   * never selectable); the caller says why next to the group.
+   */
+  readonly disabled?: boolean;
 }
 
 export interface ChoiceGroupProps<T extends string> {
   /** The choices, in display order. */
   options: readonly ChoiceOption<T>[];
-  /** The selected value; pair with `onChange`. */
-  value: T;
+  /** The selected value (null: none checked, still controlled); pair with `onChange`. */
+  value: T | null;
   /** Called with the chosen value's {@link ChoiceOption.value}. */
   onChange: (value: T) => void;
   /**
@@ -47,7 +54,10 @@ export interface ChoiceGroupProps<T extends string> {
   'aria-describedby'?: string;
   /** Whether the whole group is disabled (dimmed, still hoverable). */
   disabled?: boolean;
-  /** Extra classes on the group, merged last so callers win. */
+  /**
+   * Extra classes on the group, appended last — joined, never
+   * conflict-resolved: pass none that fights the group's own utilities.
+   */
   class?: string;
 }
 
@@ -60,12 +70,12 @@ export interface ChoiceGroupProps<T extends string> {
  * instantly — selection is state, never an animated change.
  *
  * @param props.options The choices in display order.
- * @param props.value The selected value.
+ * @param props.value The selected value (null: none checked).
  * @param props.onChange The selection callback.
  * @param props['aria-label'] The group's accessible name.
  * @param props['aria-labelledby'] The naming element's id (by reference).
  * @param props['aria-describedby'] The describing element's id.
- * @param props.disabled Disables every option.
+ * @param props.disabled Disables every option (an option's own `disabled` disables it alone).
  * @param props.class Extra classes on the group element.
  * @throws {@link Error} when the group is named neither by `aria-label` nor by
  *   an `aria-labelledby` reference (a wiring bug — the radios would be nameless).
@@ -93,14 +103,16 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>): JSX.E
     <KobalteRadioGroup.Root
       data-fdt="choice-group"
       orientation="horizontal"
-      value={props.value}
+      // `''` keeps the group controlled with nothing checked (`undefined`
+      // would hand the selection to the group itself).
+      value={props.value ?? ''}
       onChange={(value: string) => {
         props.onChange(value as T);
       }}
       {...naming()}
       aria-describedby={props['aria-describedby']}
       disabled={props.disabled}
-      class={cn('flex flex-wrap items-center gap-1', props.class)}
+      class={clsx('flex flex-wrap items-center gap-1', props.class)}
     >
       <For each={props.options}>
         {(option) => {
@@ -110,13 +122,14 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>): JSX.E
           return (
             <KobalteRadioGroup.Item
               value={option.value}
+              disabled={option.disabled === true}
               data-fdt="choice"
               data-fdt-choice-value={option.value}
               // The focus ring rides the item wrapper: the hidden input keeps
               // keyboard focus, so FOCUS_RING (`:focus-visible` keyed on the
               // element's own state) cannot match the wrapper — the ancestor
               // `:has` lights up the tile for real keyboard focus only.
-              class={cn(
+              class={clsx(
                 'inline-flex rounded',
                 'has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-1 has-[input:focus-visible]:outline-accent',
                 // Disabled styling from Kobalte's `data-disabled` attribute —
@@ -127,14 +140,17 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>): JSX.E
             >
               <KobalteRadioGroup.ItemInput />
               <KobalteRadioGroup.ItemLabel
-                class={cn(
+                class={clsx(
                   'flex h-7 cursor-pointer select-none items-center justify-center whitespace-nowrap rounded border px-2 text-xs font-medium',
                   checked()
                     ? 'border-transparent bg-accent-strong text-on-accent'
                     : 'border-line-2 bg-surface-2 text-fg-primary',
                   // Pointer feedback only while the group can change (a
                   // disabled tile keeps its resting look).
-                  !checked() && props.disabled !== true && 'hover:border-line-3 hover:bg-surface-3',
+                  !checked() &&
+                    props.disabled !== true &&
+                    option.disabled !== true &&
+                    'hover:border-line-3 hover:bg-surface-3',
                   // The item label also carries `data-disabled` from Kobalte's
                   // dataset; the variant's specificity beats `cursor-pointer`.
                   'data-disabled:opacity-50 data-disabled:cursor-not-allowed'

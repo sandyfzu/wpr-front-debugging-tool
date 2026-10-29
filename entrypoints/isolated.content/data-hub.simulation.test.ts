@@ -18,7 +18,7 @@ import {
 import { parseFdtData } from '../../lib/messaging/validate';
 import { badgeFor } from '../background/badge';
 import { composeFdtData, processSerializedPage, type LivePageFacts } from './data-hub';
-import type { SimulationMarkerVerifier } from './simulation-verify';
+import type { SimulationMarkerVerifier } from '../../lib/messaging/simulation-marker-verifier';
 
 const DELAY_ON_NO_META = readFileSync(join(FIXTURE_DIR, 'delay-on-no-meta.html'), 'utf8');
 

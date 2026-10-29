@@ -35,9 +35,17 @@ import {
 import type { SessionProblem } from './session/port';
 import type {
   LatestListMiss,
-  SimulationRuntimeUnavailableCause
+  SimulationCaveat,
+  SimulationCspLimit,
+  SimulationCspUnavailableReason,
+  SimulationRuntimeUnavailableCause,
+  UnreproducedRegex
 } from '../../lib/wp-rocket-simulation/spec';
-import type { SimulationListProvenance } from '../../lib/messaging/exclusion-simulation';
+import type {
+  DocumentSimulationReport,
+  SimulationListProvenance
+} from '../../lib/messaging/exclusion-simulation';
+import type { DelayMode, DelayModeBlock } from './exclusions/delay-mode';
 import { LATEST_LIST_MAX_AGE_MS } from '../../lib/exclusion-session/latest-list-source';
 import { relativeAge } from '../../utils/relative-age';
 import type { OverlayState, SessionAction } from './session/machine';
@@ -734,8 +742,25 @@ export function simulationListCopy(
 export function unmodifiedCopy(reason: UnmodifiedReason): string {
   if (reason.kind === 'failed') return DOCUMENT_FAILURE_COPY[reason.reason];
   if (reason.kind === 'runtime-unavailable') return runtimeUnavailableCopy(reason.cause);
+  if (reason.stage === 'simulate') {
+    return `Simulating ${FEATURE_NAMES[reason.feature]} took longer than ${String(reason.budgetMs)} ms (the simulation counts toward the time budget), so the page was served unmodified. Reload to try again, or choose As served to apply your exclusions without the simulation.`;
+  }
   const row = reason.row === null ? '' : ` (row ${reason.row})`;
   return `${FEATURE_NAMES[reason.feature]}${row} took longer than ${String(reason.budgetMs)} ms, so the page was served unmodified. Simplify the row, then apply again.`;
+}
+
+/**
+ * The unmodified banner's title: the simulation's own failures are named
+ * apart (their remedy is not the rows').
+ *
+ * @param reason Why the page was served unmodified.
+ */
+function unmodifiedTitle(reason: UnmodifiedReason): string {
+  if (reason.kind === 'runtime-unavailable')
+    return 'Served unmodified: simulation data unavailable';
+  if (reason.kind === 'over-budget' && reason.stage === 'simulate')
+    return 'Served unmodified: the simulation took too long';
+  return 'Served unmodified';
 }
 
 /** An ask that produced nothing, per problem. */
@@ -794,6 +819,8 @@ export function appliedWarningLine(warning: AppliedWarning): string {
  * @param view The applied view.
  */
 function appliedCopy(view: Extract<SessionView, { kind: 'applied' }>): StateCopy {
+  const simulated = view.simulation === undefined ? null : simulationOutcomeCopy(view.simulation);
+  if (simulated !== null) return simulated;
   const warnings = view.warnings.map(appliedWarningLine);
   const tail = warnings.length === 0 ? '' : ` ${warnings.join(' ')}`;
   if (view.unmatched > 0) {
@@ -802,13 +829,17 @@ function appliedCopy(view: Extract<SessionView, { kind: 'applied' }>): StateCopy
       body: `${String(view.unmatched)} ${countNoun(view.unmatched, COUNT_WORDS.rowMatches)} no element on this page. Check the rows marked “No match”.${tail}`
     };
   }
+  const rendered = view.simulation?.state === 'simulated' ? SIMULATED_RENDER_WORDS : RENDER_WORDS;
   return warnings.length === 0
-    ? { title: 'Applied', body: 'This page was rendered with your exclusions.' }
-    : {
-        title: 'Applied, with warnings',
-        body: `This page was rendered with your exclusions.${tail}`
-      };
+    ? { title: 'Applied', body: rendered }
+    : { title: 'Applied, with warnings', body: `${rendered}${tail}` };
 }
+
+/** What an applied page shows. */
+const RENDER_WORDS = 'This page was rendered with your exclusions.';
+
+/** What an applied, simulated page shows — never mistaken for the site's own configuration. */
+const SIMULATED_RENDER_WORDS = `This page was rendered with WP Rocket ${LABEL_DELAY_JAVASCRIPT_EXECUTION} simulated and your exclusions — not the site’s real configuration.`;
 
 /** The session view's banner words. */
 export function viewCopy(view: SessionView): StateCopy {
@@ -828,7 +859,7 @@ export function viewCopy(view: SessionView): StateCopy {
     case 'applied':
       return appliedCopy(view);
     case 'unmodified':
-      return { title: 'Served unmodified', body: unmodifiedCopy(view.reason) };
+      return { title: unmodifiedTitle(view.reason), body: unmodifiedCopy(view.reason) };
     case 'not-intercepted':
       return {
         title: 'This page was not intercepted',
@@ -850,8 +881,19 @@ export interface Indicator {
   readonly tone: IndicatorTone;
   readonly label: string;
   /** Glyph name (the overlay's icon set). */
-  readonly glyph: 'idle' | 'waiting' | 'check' | 'alert' | 'blocked' | 'spinner' | 'question';
+  readonly glyph:
+    'idle' | 'waiting' | 'check' | 'alert' | 'blocked' | 'spinner' | 'question' | 'simulated';
 }
+
+/**
+ * The simulation indicator beside the session's: shown whenever the page
+ * on screen runs a simulation (every simulated load, the folded pill too).
+ */
+export const SIMULATED_INDICATOR: Indicator = {
+  tone: 'info',
+  label: 'Simulated',
+  glyph: 'simulated'
+};
 
 /**
  * The header's session indicator for the overlay state.
@@ -939,4 +981,195 @@ function isSaveFailure(
   reason: ExclusionSaveFailure | SessionProblem
 ): reason is ExclusionSaveFailure {
   return Object.hasOwn(SAVE_FAILURE_COPY, reason);
+}
+
+/** The Delay JS lane's mode control: its options, and why one is unavailable. */
+export const DELAY_MODE_COPY = {
+  /** The control's accessible name. */
+  groupName: `${LABEL_DELAY_JAVASCRIPT_EXECUTION} on this page`,
+  labels: {
+    served: 'As served',
+    simulated: 'Simulated',
+    disabled: 'Disabled'
+  } satisfies Readonly<Record<DelayMode, string>>,
+  /** Why the page leaves an option out (one line under the control). */
+  blocks: {
+    'already-delayed':
+      'WP Rocket already delays scripts on this page — exclusions apply to its output.',
+    amp: 'WP Rocket never delays AMP pages.',
+    checking: 'Checking whether WP Rocket delays scripts on this page…'
+  } satisfies Readonly<Record<DelayModeBlock, string>>,
+  /**
+   * The draft's mode the page does not allow: no option is checked and the
+   * page runs as served (the draft keeps the mode for other pages).
+   *
+   * @param mode The replaced mode.
+   */
+  replaced: (mode: DelayMode): string =>
+    `${DELAY_MODE_COPY.labels[mode]} isn’t available on this page, so the page runs as served — ${DELAY_MODE_COPY.labels[mode]} stays set for other pages.`,
+  /** Disabled is shown on a page WP Rocket does not delay (allowed: it is a no-op here). */
+  disabledChangesNothing:
+    'WP Rocket doesn’t delay scripts on this page, so Disabled changes nothing here.',
+  /** The page still runs a simulation the session no longer applies (e.g. after Stop). */
+  kept: 'Simulated · reload to see the page without it.',
+  /** The admin and login screens' warning (never blocks). */
+  adminScreen:
+    'This is a WordPress admin or login screen. WP Rocket never optimizes these screens, so a simulation here shows something the site never serves.'
+} as const;
+
+/** Each CSP limit of a simulated page: what fails, as it would on the site. */
+const CSP_LIMIT_COPY: Readonly<Record<SimulationCspLimit, string>> = {
+  eval: 'This page’s Content Security Policy blocks eval: event handlers of delayed elements fail here as they would on the site.',
+  data: 'This page’s Content Security Policy blocks data: scripts: WP Rocket’s runtime falls back to inline copies of the delayed scripts, as it would on the site.',
+  inline:
+    'This page’s Content Security Policy blocks inline scripts: delayed inline scripts fail here as they would on the site.',
+  'inline-after-fallback':
+    'This page’s Content Security Policy allows WP Rocket’s data: scripts but not inline ones — if an earlier page in this tab switched Delay JS to its inline fallback, delayed inline scripts fail here as they would live.',
+  'trusted-types':
+    'This page requires Trusted Types — WP Rocket’s Delay JS cannot load delayed scripts under it; they fail here as they would on the site.'
+};
+
+/** Why a page's CSP was not evaluated (never said as "no CSP"). */
+const CSP_UNAVAILABLE_COPY: Readonly<Record<SimulationCspUnavailableReason, string>> = {
+  oversized:
+    'CSP not evaluated: this page’s Content Security Policy is too large to check, so scripts it blocks aren’t named.',
+  unreadable:
+    'CSP not evaluated: this page’s Content Security Policy couldn’t be read, so scripts it blocks aren’t named.'
+};
+
+/** What a simulation cannot reproduce on a page. */
+const CAVEAT_COPY: Readonly<Record<SimulationCaveat, string>> = {
+  'combined-js':
+    'This page serves WP Rocket’s combined JavaScript files: with Delay JS on, WP Rocket would serve them uncombined, which the simulation can’t reproduce.'
+};
+
+/** The WP Rocket pattern a page may stop, named for the not-reproduced reason. */
+const UNREPRODUCED_REGEX_NAMES: Readonly<Record<UnreproducedRegex, string>> = {
+  'ie-conditionals': 'IE conditional comments',
+  'ie-conditional-script': 'IE conditional scripts',
+  'xmp-mask': '<xmp> masking',
+  'svg-mask': '<svg> masking',
+  'meta-charset': 'meta charset'
+};
+
+/** What to do when a page could not be simulated: the forward actions. */
+const NOT_SIMULATED_REMEDY =
+  'Test on another page of the site, or choose As served to apply your exclusions without the simulation.';
+
+/**
+ * The applied banner of a simulating session whose step did not delay
+ * this page — each state titled with a way forward — or null when the
+ * page was simulated (the regular applied words then say so).
+ *
+ * @param simulation The simulation step's report.
+ */
+export function simulationOutcomeCopy(simulation: DocumentSimulationReport): StateCopy | null {
+  switch (simulation.state) {
+    case 'simulated':
+      return null;
+    case 'already-served':
+      return {
+        title: 'Applied — WP Rocket already delays scripts here',
+        body: 'Nothing was simulated: your exclusions apply to WP Rocket’s own Delay JavaScript execution, as served.'
+      };
+    case 'csp-blocked':
+      return {
+        title: 'Not simulated: blocked by this page’s Content Security Policy',
+        body: `The policy forbids WP Rocket’s inline Delay JS script, as it would on the site, so nothing was delayed and the page was rendered with your exclusions only. ${NOT_SIMULATED_REMEDY}`
+      };
+    case 'not-applicable':
+      return notApplicableCopy(simulation);
+  }
+}
+
+/**
+ * A not-applicable simulation's banner, per reason.
+ *
+ * @param simulation The report (state `not-applicable`).
+ */
+function notApplicableCopy(simulation: DocumentSimulationReport): StateCopy {
+  const served = 'the page was rendered as served, with your exclusions.';
+  switch (simulation.reason) {
+    case 'amp':
+      return {
+        title: 'Not simulated: AMP page',
+        body: `WP Rocket never delays scripts on AMP pages, so ${served} Choose As served to stop asking for the simulation.`
+      };
+    case 'unsupported-charset':
+      return {
+        title: 'Not simulated: character encoding',
+        body: `Only UTF-8 pages (or pages whose text is plain ASCII) can be simulated, so ${served} ${NOT_SIMULATED_REMEDY}`
+      };
+    case 'beyond-exact-reproduction':
+    case undefined: {
+      const regex =
+        simulation.unreproducedRegex === undefined
+          ? 'patterns'
+          : `${UNREPRODUCED_REGEX_NAMES[simulation.unreproducedRegex]} pattern`;
+      return {
+        title: 'Not simulated: this page can’t be reproduced exactly',
+        body: `WP Rocket’s ${regex} may stop on this page, which the simulation can’t reproduce, so ${served} ${NOT_SIMULATED_REMEDY}`
+      };
+    }
+  }
+}
+
+/**
+ * What a simulated page cannot show as the site would, one line each:
+ * the CSP's limits (or why it was not evaluated) and the caveats. Empty
+ * for any other state.
+ *
+ * @param simulation The simulation step's report.
+ */
+export function simulationLimitLines(simulation: DocumentSimulationReport): string[] {
+  if (simulation.state !== 'simulated') return [];
+  const lines = (simulation.cspLimits ?? []).map((limit) => CSP_LIMIT_COPY[limit]);
+  if (simulation.cspUnavailable !== undefined)
+    lines.push(CSP_UNAVAILABLE_COPY[simulation.cspUnavailable]);
+  lines.push(...(simulation.caveats ?? []).map((caveat) => CAVEAT_COPY[caveat]));
+  return lines;
+}
+
+/** The Delay JS lane's lines about the simulation on the page it applied to. */
+export const SIMULATION_LANE_COPY = {
+  /**
+   * The count line, e.g. "5 delayed by the simulation · 2 excluded by your rows".
+   *
+   * @param delayed Scripts the simulation delayed.
+   * @param excluded Of those, scripts the rows restored.
+   */
+  line: (delayed: number, excluded: number): string =>
+    `${String(delayed)} delayed by the simulation · ${String(excluded)} excluded by your rows`,
+  /**
+   * The simulated version, and the site's when it serves another one.
+   *
+   * @param simulation The simulation step's report.
+   */
+  version: (simulation: DocumentSimulationReport): string =>
+    simulation.siteVersion === undefined || simulation.siteVersion === simulation.wpRocketVersion
+      ? `Simulated · WP Rocket ${simulation.wpRocketVersion}`
+      : `Simulated · WP Rocket ${simulation.wpRocketVersion} (the site serves ${simulation.siteVersion})`,
+  /**
+   * Scripts left as served because WP Rocket's verdict on them depends on
+   * ids it draws at random.
+   *
+   * @param count The count (≥ 1).
+   */
+  undetermined: (count: number): string =>
+    `${String(count)} left undelayed by the simulation: whether WP Rocket delays ${countNoun(count, COUNT_WORDS.it)} depends on ids it draws at random.`,
+  /** WP Rocket's own pattern stops on the page: it would delay nothing either. */
+  regexLimit:
+    'WP Rocket’s Delay JS pattern stops on this page (PHP’s backtracking limit), so nothing is delayed — as on the site.'
+} as const;
+
+/**
+ * The stopped notice's words: a page that still runs a simulation says
+ * the reload removes it too.
+ *
+ * @param simulated The page on screen still runs a simulation.
+ */
+export function stoppedBody(simulated: boolean): string {
+  return simulated
+    ? 'Reload to see the page without exclusions or the simulation.'
+    : 'Reload to see the page without exclusions.';
 }

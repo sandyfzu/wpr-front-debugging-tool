@@ -25,7 +25,7 @@ import {
   putExclusionSessionRecord,
   removeExclusionSessionRecord
 } from '../../lib/storage/exclusion-sessions';
-import { getSavedExclusionSet, saveExclusionSet } from '../../lib/storage/exclusion-sets';
+import { getSavedExclusionEntry, saveExclusionSet } from '../../lib/storage/exclusion-sets';
 import {
   createOverlayReopener,
   restoreSessionOverlays,
@@ -169,7 +169,7 @@ export function initExclusionSessions(
       remove: removeExclusionSessionRecord
     },
     savedSets: {
-      get: getSavedExclusionSet,
+      get: getSavedExclusionEntry,
       save: (origin, set, simulate) => saveExclusionSet(origin, set, undefined, simulate)
     },
     pushToTab: (tabId, status) =>

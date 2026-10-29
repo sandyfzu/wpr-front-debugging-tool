@@ -217,6 +217,64 @@ describe('ChoiceGroup', () => {
     expect(hover()).toEqual([]);
   });
 
+  it('disables one option alone: unselectable, dimmed, no hover, siblings still selectable', () => {
+    const onChange = vi.fn();
+    render(() => (
+      <ChoiceGroup
+        options={[OPTIONS[0], { ...OPTIONS[1], disabled: true }, OPTIONS[2]]}
+        value="system"
+        onChange={onChange}
+        aria-label="Color theme"
+      />
+    ));
+    const items = [...group().querySelectorAll('[data-fdt="choice"]')];
+    expect(items.map((item) => item.hasAttribute('data-disabled'))).toEqual([false, true, false]);
+    const radio = (value: string): HTMLInputElement | null =>
+      group().querySelector<HTMLInputElement>(`input[value="${value}"]`);
+    // The native radio is disabled too: arrow keys skip it.
+    expect(radio('dark')?.disabled).toBe(true);
+    expect(radio('light')?.disabled).toBe(false);
+    const dark = screen.getByText('Dark');
+    expect(dark.className.split(/\s+/).filter((token) => token.startsWith('hover:'))).toEqual([]);
+    fireEvent.click(dark);
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Light'));
+    expect(onChange).toHaveBeenCalledWith('light');
+  });
+
+  it('shows a disabled option that is the controlled value as checked (never silently moved)', () => {
+    render(() => (
+      <ChoiceGroup
+        options={[OPTIONS[0], { ...OPTIONS[1], disabled: true }]}
+        value="dark"
+        onChange={vi.fn()}
+        aria-label="Color theme"
+      />
+    ));
+    expect(checkedValue()).toBe('dark');
+  });
+
+  it('checks nothing for a null value, still controlled: a click reports, the value prop decides', async () => {
+    const onChange = vi.fn<(value: (typeof OPTIONS)[number]['value']) => void>();
+    const [value, setValue] = createSignal<(typeof OPTIONS)[number]['value'] | null>(null);
+    render(() => (
+      <ChoiceGroup
+        options={[...OPTIONS]}
+        value={value()}
+        onChange={onChange}
+        aria-label="Color theme"
+      />
+    ));
+    expect(checkedValue()).toBeNull();
+    expect(group().querySelector('[data-checked]')).toBeNull();
+    fireEvent.click(screen.getByText('System default'));
+    expect(onChange).toHaveBeenCalledWith('system');
+    // Not taken by the group itself: nothing checked until the owner sets it.
+    await expect.poll(checkedValue, { timeout: 300 }).toBeNull();
+    setValue('system');
+    await expect.poll(checkedValue, { timeout: 300 }).toBe('system');
+  });
+
   it('throws when the group is named neither by label nor by reference', () => {
     expect(() =>
       render(() => (

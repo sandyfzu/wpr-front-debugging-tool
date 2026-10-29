@@ -139,7 +139,7 @@ function rig(
       remove: removeExclusionSessionRecord
     },
     savedSets: {
-      get: getSavedExclusionSet,
+      get: getSavedExclusionEntry,
       save: (origin, set, simulate) => saveExclusionSet(origin, set, NOW, simulate)
     },
     pushToTab: (tabId, status) => {
@@ -443,7 +443,7 @@ describe('apply', () => {
 
   it('stays applying when saving the set, the reload or a push fails (logged)', async () => {
     const r = rig({
-      savedSets: { get: getSavedExclusionSet, save: () => Promise.reject(new Error('disk')) },
+      savedSets: { get: getSavedExclusionEntry, save: () => Promise.reject(new Error('disk')) },
       reload: () => {
         throw new Error('tab gone');
       },
@@ -563,6 +563,16 @@ describe('saved sets', () => {
     await expect(r.controller.savedSet(PANEL)).resolves.toEqual({ set: null });
   });
 
+  it('answers the simulation saved beside the set (absent when none was saved)', async () => {
+    const r = rig();
+    const simulate = { features: ['delay_js' as const] };
+    await saveExclusionSet(ORIGIN, SET, NOW, simulate);
+    const reply = await r.controller.savedSet(page());
+    expect(reply).toEqual({ set: SET, simulate });
+    await saveExclusionSet(ORIGIN, SET, NOW);
+    expect(Object.hasOwn(await r.controller.savedSet(page()), 'simulate')).toBe(false);
+  });
+
   it('rejects when the store read fails', async () => {
     const r = rig({
       savedSets: { get: () => Promise.reject(new Error('io')), save: () => Promise.resolve() }
@@ -588,7 +598,7 @@ describe('saved sets', () => {
       reason: 'invalid-request'
     });
     const failing = rig({
-      savedSets: { get: getSavedExclusionSet, save: () => Promise.reject(new Error('q')) }
+      savedSets: { get: getSavedExclusionEntry, save: () => Promise.reject(new Error('q')) }
     });
     await expect(failing.controller.save(page(), { set: SET })).resolves.toEqual({
       outcome: 'not-saved',

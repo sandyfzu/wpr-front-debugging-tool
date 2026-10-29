@@ -120,9 +120,16 @@ export interface SessionRecordStore {
   remove(tabId: number): Promise<void>;
 }
 
+/** One origin's saved set with what was simulated beside it (absent: nothing). */
+export interface SavedSetEntry {
+  readonly set: ExclusionSet;
+  readonly simulate?: SimulateSpec;
+}
+
 /** The per-origin saved sets (the `local:` helpers' shape). */
 export interface SavedSetStore {
-  get(origin: string): Promise<ExclusionSet | null>;
+  /** The origin's entry, or null when it has none. */
+  get(origin: string): Promise<SavedSetEntry | null>;
   /** Save `set` with its simulation (absent: none — a stored one is replaced). */
   save(origin: string, set: ExclusionSet, simulate?: SimulateSpec): Promise<unknown>;
 }
@@ -950,9 +957,12 @@ export function createExclusionSessionController(
     async savedSet(sender) {
       const page = pageSender(sender, 'getSavedExclusionSet');
       if (page === null) return { set: null };
-      return {
-        set: await bounded('Saved-set read', STEPS.store, () => deps.savedSets.get(page.origin))
-      };
+      const entry = await bounded('Saved-set read', STEPS.store, () =>
+        deps.savedSets.get(page.origin)
+      );
+      if (entry === null) return { set: null };
+      // The mode restores with the rows; restoring never arms by itself.
+      return { set: entry.set, ...withSimulate(entry.simulate) };
     },
 
     async save(sender, data) {

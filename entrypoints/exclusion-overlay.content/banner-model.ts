@@ -14,6 +14,8 @@ import {
   PROBLEM_COPY,
   SESSION_ON_NOTE,
   SESSION_PERSISTS_NOTE,
+  simulationLimitLines,
+  stoppedBody,
   viewCopy,
   type Indicator,
   type IndicatorTone
@@ -82,12 +84,17 @@ function viewBanner(view: SessionView): Banner | null {
     case 'armed':
       return { ...base, tone: 'info', glyph: 'waiting', actions: ['reload'] };
     case 'applied': {
-      const clean = view.unmatched === 0 && view.warnings.length === 0;
+      const simulation = view.simulation;
+      // A simulation that did not run here, or one the page limits, warns.
+      const limits = simulation === undefined ? [] : simulationLimitLines(simulation);
+      const notSimulated = simulation !== undefined && simulation.state !== 'simulated';
+      const clean =
+        view.unmatched === 0 && view.warnings.length === 0 && limits.length === 0 && !notSimulated;
       return {
         ...base,
         tone: clean ? 'ok' : 'warn',
         glyph: clean ? 'check' : 'alert',
-        notes: [...base.notes, ...servedNotes(view.served)],
+        notes: [...limits, ...base.notes, ...servedNotes(view.served)],
         actions: []
       };
     }
@@ -158,8 +165,10 @@ export function stateBanner(state: OverlayState, view: SessionView | null): Bann
  * The banner of the last action's outcome.
  *
  * @param notice The notice.
+ * @param simulated The page on screen still runs a simulation (the stopped
+ *   notice says the reload removes it too).
  */
-export function noticeBanner(notice: ActionNotice): Banner {
+export function noticeBanner(notice: ActionNotice, simulated = false): Banner {
   switch (notice.kind) {
     case 'action-failed':
       return {
@@ -213,7 +222,7 @@ export function noticeBanner(notice: ActionNotice): Banner {
         tone: 'info',
         glyph: 'check',
         title: 'Session stopped',
-        body: 'Reload to see the page without exclusions.',
+        body: stoppedBody(simulated),
         notes: [],
         actions: ['reload', 'dismiss']
       };

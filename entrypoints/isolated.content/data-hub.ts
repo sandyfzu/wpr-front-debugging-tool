@@ -55,7 +55,7 @@ import {
   createSimulationMarkerVerifier,
   UNVERIFIED_MARKERS,
   type SimulationMarkerVerifier
-} from './simulation-verify';
+} from '../../lib/messaging/simulation-marker-verifier';
 
 const log = createLogger('');
 

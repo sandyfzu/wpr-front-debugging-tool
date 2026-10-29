@@ -60,6 +60,22 @@ describe('createMessagingSessionPort', () => {
     expect(t.send).toHaveBeenCalledWith('stopExclusionSession', undefined);
   });
 
+  it('carries the simulate spec beside the set only when there is one', async () => {
+    const t = transport(() => Promise.resolve({ outcome: 'saved' }));
+    const port = createMessagingSessionPort(t.fake, log);
+    const simulate = { features: ['delay_js' as const] };
+    await port.save(validSet(), simulate);
+    expect(t.send).toHaveBeenLastCalledWith('saveExclusionSet', { set: validSet(), simulate });
+    await port.apply(validSet(), simulate);
+    expect(t.send).toHaveBeenLastCalledWith('applyExclusionSession', {
+      set: validSet(),
+      simulate
+    });
+    await port.apply(validSet(), undefined);
+    const payload = t.send.mock.lastCall?.[1];
+    expect(payload !== null && typeof payload === 'object' && 'simulate' in payload).toBe(false);
+  });
+
   it('turns a malformed answer into invalid-reply', async () => {
     const port = createMessagingSessionPort(transport(() => Promise.resolve({ set: 7 })).fake, log);
     expect(await port.savedSet()).toEqual({ kind: 'problem', problem: 'invalid-reply' });

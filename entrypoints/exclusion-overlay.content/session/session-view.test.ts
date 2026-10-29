@@ -4,6 +4,10 @@ import type {
   ExclusionDocumentOutcome
 } from '../../../lib/messaging/exclusion-session';
 import { activeRecord } from '../../../lib/messaging/exclusion-session.fixtures';
+import {
+  delaySimulate,
+  simulatedReport
+} from '../../../lib/messaging/exclusion-simulation.fixtures';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
 import { appliedWarnings, sessionView } from './session-view';
 
@@ -149,6 +153,40 @@ describe('sessionView: the runtime-unavailable outcome', () => {
       kind: 'unmodified',
       reason: { kind: 'runtime-unavailable', cause: 'hash-mismatch' },
       served: undefined
+    });
+  });
+});
+
+describe('sessionView: simulation', () => {
+  it('carries the simulation report on the applied view (absent when none)', () => {
+    const simulation = simulatedReport();
+    const session = {
+      ...withDocument({ outcome: 'rewritten', reports: [REPORT], simulation }),
+      simulate: delaySimulate()
+    };
+    const view = sessionView(session, () => 'this-page');
+    expect(view).toMatchObject({ kind: 'applied', simulation });
+    const plain = sessionView(
+      withDocument({ outcome: 'rewritten', reports: [] }),
+      () => 'this-page'
+    );
+    expect(Object.hasOwn(plain, 'simulation')).toBe(false);
+  });
+
+  it('names a simulation-step overrun by its stage', () => {
+    const view = sessionView(
+      withDocument({
+        outcome: 'over-budget',
+        feature: 'delay_js',
+        row: null,
+        budgetMs: 2000,
+        stage: 'simulate'
+      }),
+      () => 'this-page'
+    );
+    expect(view).toMatchObject({
+      kind: 'unmodified',
+      reason: { kind: 'over-budget', stage: 'simulate' }
     });
   });
 });

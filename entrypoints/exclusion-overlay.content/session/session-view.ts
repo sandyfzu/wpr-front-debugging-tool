@@ -18,7 +18,11 @@ import {
   type ExclusionSetRows
 } from '../../../lib/exclusion-builder/set';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import type { SimulationRuntimeUnavailableCause } from '../../../lib/wp-rocket-simulation/spec';
+import type { DocumentSimulationReport } from '../../../lib/messaging/exclusion-simulation';
+import type {
+  SimulationRuntimeUnavailableCause,
+  SimulationStage
+} from '../../../lib/wp-rocket-simulation/spec';
 import type { PageMatch } from './page-match';
 
 /**
@@ -27,7 +31,8 @@ import type { PageMatch } from './page-match';
  * - `armed` — applied; no document intercepted yet.
  * - `applied` — this page was rewritten; `unmatched` counts rows that
  *   matched nothing (the no-match warnings); `warnings` names the applied
- *   rows WP Rocket applies as-is that change the whole feature on the page.
+ *   rows WP Rocket applies as-is that change the whole feature on the page;
+ *   `simulation` is the simulation step's report when the session simulates.
  * - `unmodified` — this page was intercepted but served unmodified.
  * - `not-intercepted` — the session is on, but this page is not the one it
  *   rewrote.
@@ -48,6 +53,7 @@ export type SessionView =
       readonly unmatched: number;
       readonly warnings: readonly AppliedWarning[];
       readonly served: ExclusionServedDocument | undefined;
+      readonly simulation?: DocumentSimulationReport;
     }
   | {
       readonly kind: 'unmodified';
@@ -65,6 +71,8 @@ export type UnmodifiedReason =
       readonly feature: ExclusionFeatureId;
       readonly row: string | null;
       readonly budgetMs: number;
+      /** `simulate`: the feature's simulation step overran (then no row). */
+      readonly stage?: SimulationStage;
     }
   | { readonly kind: 'runtime-unavailable'; readonly cause: SimulationRuntimeUnavailableCause };
 
@@ -138,7 +146,8 @@ export function sessionView(
         reports: document.reports,
         unmatched: unmatchedRows(document.reports),
         warnings: appliedWarnings(document.reports, status.set),
-        served: document.served
+        served: document.served,
+        ...(document.simulation === undefined ? {} : { simulation: document.simulation })
       };
     case 'over-budget':
       return {
@@ -147,7 +156,8 @@ export function sessionView(
           kind: 'over-budget',
           feature: document.feature,
           row: document.row,
-          budgetMs: document.budgetMs
+          budgetMs: document.budgetMs,
+          ...(document.stage === undefined ? {} : { stage: document.stage })
         },
         served: document.served
       };

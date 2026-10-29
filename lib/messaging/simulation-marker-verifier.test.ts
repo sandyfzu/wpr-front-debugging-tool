@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ScheduleTimer } from '../../lib/messaging/bounded-ask';
-import { EXCLUSION_SESSION_DEADLINES_MS } from '../../lib/messaging/exclusion-session';
-import { createSimulationMarkerVerifier, UNVERIFIED_MARKERS } from './simulation-verify';
+import type { ScheduleTimer } from './bounded-ask';
+import { EXCLUSION_SESSION_DEADLINES_MS } from './exclusion-session';
+import {
+  createSimulationMarkerCheck,
+  createSimulationMarkerVerifier,
+  UNVERIFIED_MARKERS
+} from './simulation-marker-verifier';
 
 const ID = '0123456789abcdef0123456789abcdef';
 
@@ -84,5 +88,45 @@ describe('createSimulationMarkerVerifier', () => {
 
   it('the extension-free verifier vouches for nothing', async () => {
     await expect(UNVERIFIED_MARKERS(ID)).resolves.toEqual([]);
+  });
+});
+
+describe('createSimulationMarkerCheck', () => {
+  /** A check over `send` (no deadline: the timer never fires unless asked). */
+  const check = (send: () => Promise<unknown>, invalid = false, schedule?: ScheduleTimer) =>
+    createSimulationMarkerCheck({
+      send,
+      isInvalid: () => invalid,
+      log: { debug: vi.fn(), warn: vi.fn() },
+      ...(schedule === undefined ? {} : { schedule })
+    })(ID);
+
+  it('tells an answer, even an empty one, apart from a miss', async () => {
+    await expect(check(() => Promise.resolve({ features: [] }))).resolves.toEqual({
+      kind: 'answered',
+      features: []
+    });
+  });
+
+  it('reads nothing listening, a failed send and the deadline as transient', async () => {
+    const fire: ScheduleTimer = (run) => {
+      run();
+      return () => undefined;
+    };
+    for (const outcome of [
+      check(() => Promise.reject(new Error('Receiving end does not exist.'))),
+      check(() => Promise.reject(new Error('boom'))),
+      check(() => Promise.reject(new Error('Extension context invalidated.')), true),
+      check(() => new Promise<unknown>(() => undefined), false, fire)
+    ]) {
+      await expect(outcome).resolves.toEqual({ kind: 'missed', transient: true });
+    }
+  });
+
+  it('reads a malformed answer as a definite miss (asking again repeats it)', async () => {
+    await expect(check(() => Promise.resolve(true))).resolves.toEqual({
+      kind: 'missed',
+      transient: false
+    });
   });
 });

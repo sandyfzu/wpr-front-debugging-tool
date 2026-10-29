@@ -14,8 +14,10 @@ import {
   createRowCarry,
   createRowValidator,
   draftChars,
+  draftDelayMode,
   draftFromSet,
   draftToSet,
+  setDelayMode,
   holdsCandidate,
   insertRows,
   isBlankRow,
@@ -799,5 +801,48 @@ describe('blankRowWarning', () => {
     // A blank pattern row is an unfinished edit: no warning (its `''` is never sent).
     expect(blankRowWarning('delayJs', '')).toBeNull();
     expect(blankRowWarning('deferJs', '')).toBeNull();
+  });
+});
+
+describe('Delay JS mode in the draft', () => {
+  const SIMULATE = { features: ['delay_js' as const] };
+
+  it('restores the simulate spec beside the set, leaving the set unchanged', () => {
+    const draft = draftFromSet(EMPTY_EXCLUSION_SET, createIdSource(), SIMULATE);
+    expect(draftDelayMode(draft)).toBe('simulated');
+    expect(draft.simulate).toEqual(SIMULATE);
+    expect(draftToSet(draft)).toEqual(EMPTY_EXCLUSION_SET);
+  });
+
+  it('drops a contradictory simulation on restore (the disable wins)', () => {
+    const set = {
+      ...EMPTY_EXCLUSION_SET,
+      disable: { ...EMPTY_EXCLUSION_SET.disable, delayJs: true }
+    };
+    const { draft } = restoreDraft(set, createIdSource(), SIMULATE);
+    expect(draftDelayMode(draft)).toBe('disabled');
+    expect(draft.simulate).toBeUndefined();
+  });
+
+  it('sets the mode as one pair, rows untouched; the same mode is a no-op', () => {
+    const start = draftFromSet(validSet(), createIdSource());
+    const simulated = setDelayMode(start, 'simulated');
+    expect(simulated.rows).toBe(start.rows);
+    expect(simulated.simulate).toEqual(SIMULATE);
+    expect(simulated.disable.deferJs).toBe(start.disable.deferJs);
+    expect(setDelayMode(simulated, 'simulated')).toBe(simulated);
+    const disabled = setDelayMode(simulated, 'disabled');
+    expect(disabled.disable.delayJs).toBe(true);
+    expect(disabled.simulate).toBeUndefined();
+    expect(draftDelayMode(setDelayMode(disabled, 'served'))).toBe('served');
+  });
+
+  it('ends the Delay JS simulation when the feature is disabled; other toggles keep it', () => {
+    const simulated = setDelayMode(
+      draftFromSet(EMPTY_EXCLUSION_SET, createIdSource()),
+      'simulated'
+    );
+    expect(setDisable(simulated, 'deferJs', true).simulate).toEqual(SIMULATE);
+    expect(setDisable(simulated, 'delayJs', true).simulate).toBeUndefined();
   });
 });
