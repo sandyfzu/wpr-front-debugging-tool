@@ -21,6 +21,8 @@ import {
   type ExclusionSet
 } from '../exclusion-builder/set';
 import type { ExclusionDocumentOutcome } from '../messaging/exclusion-session';
+import type { DocumentSimulationInput } from '../messaging/exclusion-simulation';
+import type { SimulationStage } from '../wp-rocket-simulation/spec';
 import { decodeDocument, encodeDocument, extractMimeType } from './charset';
 import { removeSpeculationRules } from './speculation-rules';
 
@@ -54,6 +56,8 @@ export interface DocumentTransformRequest {
   readonly budgetMs: number;
   /** How the text was decoded from the served bytes, when known. */
   readonly bytes?: DocumentBytes;
+  /** What to simulate before the exclusions, with its packaged inputs (absent: nothing). */
+  readonly simulate?: DocumentSimulationInput;
 }
 
 /**
@@ -100,13 +104,18 @@ export function overrunRow(set: ExclusionSet, feature: ExclusionFeatureId): stri
  * @param set The set the run used.
  * @param feature The feature that overran.
  * @param budgetMs The budget it overran.
+ * @param stage `simulate` when the overrun was the feature's simulation
+ *   step — feature-wide, so it names no row.
  */
 export function overBudgetOutcome(
   set: ExclusionSet,
   feature: ExclusionFeatureId,
-  budgetMs: number
+  budgetMs: number,
+  stage?: SimulationStage
 ): UnmodifiedDocumentOutcome {
-  return { outcome: 'over-budget', feature, row: overrunRow(set, feature), budgetMs };
+  return stage === undefined
+    ? { outcome: 'over-budget', feature, row: overrunRow(set, feature), budgetMs }
+    : { outcome: 'over-budget', feature, row: null, budgetMs, stage };
 }
 
 /** The `engine-failed` result, carrying its cause for the log (every runner's one builder). */

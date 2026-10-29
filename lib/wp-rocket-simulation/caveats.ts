@@ -7,9 +7,10 @@
  */
 import type { ScannedTag } from '../exclusion-builder/html-scan';
 import { recoverOriginalScript } from '../wp-rocket/minify-url-recovery';
+import type { SimulationCaveat } from './spec';
 
-/** A limit of the simulation on one page. */
-export type SimulationCaveat = 'combined-js';
+/** Re-exported from its declaring site for this module's callers. */
+export type { SimulationCaveat };
 
 /** The base relative script URLs resolve against: only their path is classified. */
 const PLACEHOLDER_BASE = 'http://document.invalid/';

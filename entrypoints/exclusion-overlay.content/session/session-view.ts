@@ -18,6 +18,7 @@ import {
   type ExclusionSetRows
 } from '../../../lib/exclusion-builder/set';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
+import type { SimulationRuntimeUnavailableCause } from '../../../lib/wp-rocket-simulation/spec';
 import type { PageMatch } from './page-match';
 
 /**
@@ -64,7 +65,8 @@ export type UnmodifiedReason =
       readonly feature: ExclusionFeatureId;
       readonly row: string | null;
       readonly budgetMs: number;
-    };
+    }
+  | { readonly kind: 'runtime-unavailable'; readonly cause: SimulationRuntimeUnavailableCause };
 
 /**
  * An applied warning, for the page-wide announcement: the rows behind a
@@ -153,6 +155,12 @@ export function sessionView(
       return {
         kind: 'unmodified',
         reason: { kind: 'failed', reason: document.reason },
+        served: document.served
+      };
+    case 'runtime-unavailable':
+      return {
+        kind: 'unmodified',
+        reason: { kind: 'runtime-unavailable', cause: document.cause },
         served: document.served
       };
   }

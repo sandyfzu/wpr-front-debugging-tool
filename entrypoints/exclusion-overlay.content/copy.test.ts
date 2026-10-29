@@ -25,11 +25,13 @@ import {
   saveStateWords,
   sessionIndicator,
   unmodifiedCopy,
+  runtimeUnavailableCopy,
   viewCopy
 } from './copy';
 import type { StoredRowDiff } from '../../lib/exclusion-builder/field-text';
 import type { AppliedWarning, SessionView } from './session/session-view';
 import type { OverlayState } from './session/machine';
+import { SIMULATION_RUNTIME_UNAVAILABLE_CAUSES } from '../../lib/wp-rocket-simulation/spec';
 
 /** Names applied rows by their text (the rows left the lane). */
 const textRefs = (rows: readonly string[]): readonly RowRef[] => rows.map((text) => ({ text }));
@@ -680,5 +682,22 @@ describe('applied warnings in the status banner (K.5c)', () => {
       title: 'Applied',
       body: 'This page was rendered with your exclusions.'
     });
+  });
+});
+
+describe('unmodifiedCopy: runtime unavailable', () => {
+  it('words every cause with a forward action', () => {
+    for (const cause of SIMULATION_RUNTIME_UNAVAILABLE_CAUSES) {
+      const copy = unmodifiedCopy({ kind: 'runtime-unavailable', cause });
+      expect(copy).toBe(runtimeUnavailableCopy(cause));
+      expect(copy).toMatch(/served unmodified\. (?:Reload or reinstall|Update) the extension/);
+    }
+    expect(runtimeUnavailableCopy('hash-mismatch')).toBe(
+      'The packaged simulation data is damaged, so the page was served unmodified. Reload or reinstall the extension.'
+    );
+    // A missing version is this build's gap: reinstalling the same build cannot fix it.
+    expect(runtimeUnavailableCopy('version-missing')).toBe(
+      'The packaged simulation data has no entry for this WP Rocket version, so the page was served unmodified. Update the extension to simulate this version.'
+    );
   });
 });

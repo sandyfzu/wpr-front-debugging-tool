@@ -21,7 +21,11 @@ import {
   putExclusionSessionRecord,
   removeExclusionSessionRecord
 } from '../storage/exclusion-sessions';
-import { getSavedExclusionSet, saveExclusionSet } from '../storage/exclusion-sets';
+import {
+  getSavedExclusionEntry,
+  getSavedExclusionSet,
+  saveExclusionSet
+} from '../storage/exclusion-sets';
 import type { ArmResult, InterceptionBackend, InterceptionHost } from './backend';
 import {
   createExclusionSessionController,
@@ -262,6 +266,15 @@ describe('apply', () => {
     const r = rig();
     await expect(r.controller.apply(page(), { set: 'nope' })).rejects.toThrow(/malformed payload/);
     expect(r.backend.calls).toEqual([]);
+  });
+
+  it('refuses a payload asking to simulate as malformed (no simulation runs yet)', async () => {
+    const r = rig();
+    const simulating = { set: SET, simulate: { features: ['delay_js'] } };
+    await expect(r.controller.apply(page(), simulating)).rejects.toThrow(/malformed payload/);
+    expect(r.backend.calls).toEqual([]);
+    await expect(getExclusionSessionRecords()).resolves.toEqual({});
+    await expect(getSavedExclusionSet(ORIGIN)).resolves.toBeNull();
   });
 
   it('answers invalid rows without arming or saving', async () => {
@@ -552,6 +565,20 @@ describe('saved sets', () => {
     await expect(failing.controller.save(page(), { set: SET })).resolves.toEqual({
       outcome: 'not-saved',
       reason: 'storage-failed'
+    });
+  });
+
+  it('refuses a save asking to simulate as invalid-request, keeping the stored entry', async () => {
+    const r = rig();
+    await saveExclusionSet(ORIGIN, SET, NOW, { features: ['delay_js'] });
+    const simulating = { set: EMPTY_EXCLUSION_SET, simulate: { features: ['delay_js'] } };
+    await expect(r.controller.save(page(), simulating)).resolves.toEqual({
+      outcome: 'not-saved',
+      reason: 'invalid-request'
+    });
+    await expect(getSavedExclusionEntry(ORIGIN)).resolves.toMatchObject({
+      set: SET,
+      simulate: { features: ['delay_js'] }
     });
   });
 });

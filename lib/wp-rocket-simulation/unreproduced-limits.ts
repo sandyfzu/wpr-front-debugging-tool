@@ -19,6 +19,7 @@ import { metaCharsetCost } from './meta-charset-cost';
 import { byteLength, byteView, UTF8_MEASURE, type ByteMeasure } from './utf8';
 import type { ConditionalScan, ScriptConditionalParts } from './ie-conditionals';
 import { delayXmpRegions, type DelayMaskScan } from '../exclusion-builder/delay-js-mask';
+import type { UnreproducedRegex } from './spec';
 
 /**
  * The most estimated steps a regex attempt may take for the page to be
@@ -26,9 +27,8 @@ import { delayXmpRegions, type DelayMaskScan } from '../exclusion-builder/delay-
  */
 export const UNREPRODUCED_STEP_CEILING = PCRE_BACKTRACK_LIMIT / 2;
 
-/** A WP Rocket regex whose backtrack-limit failure is not reproduced. */
-export type UnreproducedRegex =
-  'ie-conditionals' | 'ie-conditional-script' | 'xmp-mask' | 'svg-mask' | 'meta-charset';
+/** Re-exported from its declaring site for this module's callers. */
+export type { UnreproducedRegex };
 
 /** Steps any attempt costs besides its bytes (measured: 2–13). */
 const ATTEMPT_OVERHEAD = 16;

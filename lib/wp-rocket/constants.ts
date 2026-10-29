@@ -356,9 +356,12 @@ export const FEATURE_META_TOKENS: Readonly<Record<FeatureMetaRow, string>> = {
 /** WP Rocket's name as it formats the generator content (`WP Rocket`, `WP-Rocket`…). */
 export const WPR_NAME_PATTERN = /wp\s*-?\s*rocket/i;
 
+/** A WP Rocket version number's grammar: 1–4 dot-separated digit runs (regex source). */
+export const WPR_VERSION_NUMBER_SOURCE = '[0-9]+(?:\\.[0-9]+){0,3}';
+
 /** Version match: the name, split across optional separators, then the digits. */
 export const WPR_VERSION_PATTERN = new RegExp(
-  `${WPR_NAME_PATTERN.source}[/\\s:;v=]*\\s*([0-9]+(?:\\.[0-9]+){0,3})`,
+  `${WPR_NAME_PATTERN.source}[/\\s:;v=]*\\s*(${WPR_VERSION_NUMBER_SOURCE})`,
   'i'
 );
 

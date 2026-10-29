@@ -135,3 +135,20 @@ describe('appliedWarnings', () => {
     });
   });
 });
+
+describe('sessionView: the runtime-unavailable outcome', () => {
+  it('reads as unmodified, naming its cause and keeping the served identity', () => {
+    const view = sessionView(
+      {
+        ...withDocument({ outcome: 'runtime-unavailable', cause: 'hash-mismatch' }),
+        simulate: { features: ['delay_js'] }
+      },
+      () => 'this-page'
+    );
+    expect(view).toEqual({
+      kind: 'unmodified',
+      reason: { kind: 'runtime-unavailable', cause: 'hash-mismatch' },
+      served: undefined
+    });
+  });
+});

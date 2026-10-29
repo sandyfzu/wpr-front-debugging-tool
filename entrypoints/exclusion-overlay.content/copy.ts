@@ -33,6 +33,7 @@ import {
   type LatestCommits
 } from './exclusions/row-notes';
 import type { SessionProblem } from './session/port';
+import type { SimulationRuntimeUnavailableCause } from '../../lib/wp-rocket-simulation/spec';
 import type { OverlayState, SessionAction } from './session/machine';
 import type { AppliedWarning, SessionView, UnmodifiedReason } from './session/session-view';
 import type { CandidateAddOutcome, SaveState } from './controller';
@@ -651,6 +652,36 @@ export const DOCUMENT_FAILURE_COPY: Readonly<Record<ExclusionDocumentFailure, st
   'not-served': 'The rewrite was not delivered: the navigation ended first.'
 };
 
+/** Reload or reinstall: the packaged data itself is unreadable, so a fresh copy can fix it. */
+const RELOAD_EXTENSION = 'Reload or reinstall the extension.';
+
+/**
+ * What went wrong with the packaged simulation data, per cause (the
+ * sentence's middle), and the action that can fix it.
+ */
+const RUNTIME_UNAVAILABLE_COPY: Readonly<
+  Record<SimulationRuntimeUnavailableCause, { readonly what: string; readonly remedy: string }>
+> = {
+  'asset-unreachable': { what: 'could not be loaded', remedy: RELOAD_EXTENSION },
+  'asset-malformed': { what: 'is damaged', remedy: RELOAD_EXTENSION },
+  'hash-mismatch': { what: 'is damaged', remedy: RELOAD_EXTENSION },
+  // This build carries no data for the version: only a newer build can.
+  'version-missing': {
+    what: 'has no entry for this WP Rocket version',
+    remedy: 'Update the extension to simulate this version.'
+  }
+};
+
+/**
+ * Why a simulating session served a page unmodified: its packaged runtime.
+ *
+ * @param cause The runtime-unavailable cause.
+ */
+export function runtimeUnavailableCopy(cause: SimulationRuntimeUnavailableCause): string {
+  const { what, remedy } = RUNTIME_UNAVAILABLE_COPY[cause];
+  return `The packaged simulation data ${what}, so the page was served unmodified. ${remedy}`;
+}
+
 /**
  * The words of an unmodified page's reason.
  *
@@ -658,6 +689,7 @@ export const DOCUMENT_FAILURE_COPY: Readonly<Record<ExclusionDocumentFailure, st
  */
 export function unmodifiedCopy(reason: UnmodifiedReason): string {
   if (reason.kind === 'failed') return DOCUMENT_FAILURE_COPY[reason.reason];
+  if (reason.kind === 'runtime-unavailable') return runtimeUnavailableCopy(reason.cause);
   const row = reason.row === null ? '' : ` (row ${reason.row})`;
   return `${FEATURE_NAMES[reason.feature]}${row} took longer than ${String(reason.budgetMs)} ms, so the page was served unmodified. Simplify the row, then apply again.`;
 }

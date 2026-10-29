@@ -534,3 +534,15 @@ describe('isRewritableResponse', () => {
     expect(isRewritableResponse(response)).toBe(false);
   });
 });
+
+describe('overBudgetOutcome: the simulate stage', () => {
+  it('names the stage and no row, even when the feature holds one row', () => {
+    expect(overBudgetOutcome(setWith({ delayJs: ['x'] }), 'delay_js', 5, 'simulate')).toEqual({
+      outcome: 'over-budget',
+      feature: 'delay_js',
+      row: null,
+      budgetMs: 5,
+      stage: 'simulate'
+    });
+  });
+});

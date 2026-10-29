@@ -56,6 +56,7 @@ import {
   type UnreproducedRegex
 } from './unreproduced-limits';
 import { UTF8_MEASURE, type ByteMeasure } from './utf8';
+import type { SimulationNotApplicableReason, SimulationState } from './spec';
 
 /** What the transform is given: the served page and the simulated version's inputs. */
 export interface DelayJsForwardInput {
@@ -79,19 +80,16 @@ export interface DelayJsForwardInput {
 }
 
 /**
- * The step's outcome on the page: `simulated` (the passes ran),
+ * The transform's outcome on the page: `simulated` (the passes ran),
  * `already-served` (WP Rocket already delays here: identity) or
- * `not-applicable` (identity, see {@link DelayJsNotApplicableReason}).
+ * `not-applicable` (identity, see {@link DelayJsNotApplicableReason}) —
+ * every step state but `csp-blocked`, which the CSP check decides before
+ * the transform runs.
  */
-export type DelayJsForwardState = 'simulated' | 'already-served' | 'not-applicable';
+export type DelayJsForwardState = Exclude<SimulationState, 'csp-blocked'>;
 
-/**
- * Why the step is `not-applicable`: an AMP document (WP Rocket never
- * delays one), or a page beyond exact reproduction — one of WP Rocket's
- * regexes could stop at PCRE's backtrack limit there, which the transform
- * does not reproduce (see `unreproducedRegex`).
- */
-export type DelayJsNotApplicableReason = 'amp' | 'beyond-exact-reproduction';
+/** Why the transform is `not-applicable` (see {@link SimulationNotApplicableReason}). */
+export type DelayJsNotApplicableReason = SimulationNotApplicableReason;
 
 /** What the transform did. */
 export interface DelayJsForwardReport {

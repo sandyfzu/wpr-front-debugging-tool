@@ -54,6 +54,7 @@ import {
   type ExclusionServedDocument,
   type ExclusionSessionRecord,
   type ExclusionSessionStatus,
+  type ExclusionSetPayload,
   type SavedExclusionSetReply
 } from '../messaging/exclusion-session';
 import { isNoReceiverError } from '../messaging/no-receiver';
@@ -212,6 +213,20 @@ function withServed(
   served: ExclusionServedDocument | null
 ): ExclusionDocumentOutcome {
   return served === null ? outcome : { ...outcome, served };
+}
+
+/**
+ * Parse an apply/save payload the controller can honour: a payload asking
+ * to simulate is refused like a malformed one, since nothing runs a
+ * simulation yet — accepting it would drop the ask silently (and a save
+ * would overwrite a stored simulation with none).
+ *
+ * @param data The untrusted payload.
+ * @returns The payload (never carrying `simulate`), or null when refused.
+ */
+function acceptedSetPayload(data: unknown): ExclusionSetPayload | null {
+  const payload = parseExclusionSetPayload(data);
+  return payload === null || payload.simulate !== undefined ? null : payload;
 }
 
 /** Whether a failure is a missed deadline. */
@@ -845,7 +860,7 @@ export function createExclusionSessionController(
       await awaitReady('apply proceeds');
       const page = pageSender(sender, 'applyExclusionSession');
       if (page === null) return { outcome: 'unavailable', cause: 'unsupported-page' };
-      const payload = parseExclusionSetPayload(data);
+      const payload = acceptedSetPayload(data);
       if (payload === null) throw new Error('applyExclusionSession: malformed payload refused');
       const notStored = notStoredRows(payload.set);
       if (notStored.length > 0) return invalidApplyReply(notStored);
@@ -893,7 +908,7 @@ export function createExclusionSessionController(
     async save(sender, data) {
       const page = pageSender(sender, 'saveExclusionSet');
       if (page === null) return { outcome: 'not-saved', reason: 'unsupported-page' };
-      const payload = parseExclusionSetPayload(data);
+      const payload = acceptedSetPayload(data);
       if (payload === null) return { outcome: 'not-saved', reason: 'invalid-request' };
       try {
         await saveSet(page.origin, payload.set);
