@@ -80,18 +80,20 @@ export function domIdOf(key: string): string {
  * @param row The classified script.
  * @param key The row's key.
  * @param capture How much inline text was captured.
+ * @param deferSimulated A verified simulation ran Defer JS on the page.
  */
 export function buildRowView(
   row: JsScriptResource,
   key: string,
-  capture: ContentCapture = 'complete'
+  capture: ContentCapture = 'complete',
+  deferSimulated = false
 ): ScriptRowView {
   return {
     key,
     domId: domIdOf(key),
     row,
     capture,
-    badges: scriptStateBadges(row),
+    badges: scriptStateBadges(row, deferSimulated),
     code: row.type === 'inline' ? inlineCode(row.content) : null
   };
 }
@@ -105,12 +107,15 @@ export function buildRowView(
  * @param previous The views of the previous pass (`[]` on the first).
  * @param rows The fresh classified rows, in document order.
  * @param captures Each row's capture state, by position (missing: complete).
+ * @param deferSimulated A verified simulation ran Defer JS on the page (the
+ *   caller passes `[]` as `previous` when it changes: every badge re-derives).
  * @returns The new views (`previous` itself when nothing changed).
  */
 export function reconcileRowViews(
   previous: readonly ScriptRowView[],
   rows: readonly JsScriptResource[],
-  captures: readonly ContentCapture[] = []
+  captures: readonly ContentCapture[] = [],
+  deferSimulated = false
 ): readonly ScriptRowView[] {
   const keys = scriptKeys(rows);
   /**
@@ -131,6 +136,6 @@ export function reconcileRowViews(
     (_row, index) => keyAt(index),
     (prior, row, index) =>
       prior.capture === (captures[index] ?? 'complete') && sameScript(prior.row, row),
-    (row, index) => buildRowView(row, keyAt(index), captures[index] ?? 'complete')
+    (row, index) => buildRowView(row, keyAt(index), captures[index] ?? 'complete', deferSimulated)
   );
 }

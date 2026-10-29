@@ -73,7 +73,7 @@ describe('Delay JS mode words', () => {
       disabled: 'Disabled'
     });
     expect(DELAY_MODE_COPY.blocks).toEqual({
-      'already-delayed':
+      'already-served':
         'WP Rocket already delays scripts on this page — exclusions apply to its output.',
       amp: 'WP Rocket never delays AMP pages.',
       checking: 'Checking whether WP Rocket delays scripts on this page…'

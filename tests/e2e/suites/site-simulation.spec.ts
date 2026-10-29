@@ -51,6 +51,7 @@ import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
 import {
   applySimulated,
   chooseDelayMode,
+  delayModeGroup,
   openCapturedBuilder,
   type CapturedBuilder,
   delayedScriptCount,
@@ -403,7 +404,9 @@ test.describe('Delay JS simulation over real sessions', () => {
       await chooseDelayMode(page, 'As served');
       await expect(reset).not.toHaveAttribute('aria-disabled', 'true');
       expect(await reloadThroughSession(page, () => reset.click())).toBe('Applied');
-      await expect(page.getByRole('radio', { name: 'Simulated', exact: true })).toBeChecked();
+      await expect(
+        delayModeGroup(page).getByRole('radio', { name: 'Simulated', exact: true })
+      ).toBeChecked();
       expect(hasDelayRuntime(await lastDocument())).toBe(true);
       const second = await documentSimulation(extension, tabId);
       expect(second.state).toBe('simulated');

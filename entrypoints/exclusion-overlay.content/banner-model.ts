@@ -22,7 +22,7 @@ import {
 } from './copy';
 import { countNoun } from '../../utils/format-count';
 import type { ActionNotice, OverlayState } from './session/machine';
-import type { SessionView } from './session/session-view';
+import { simulationReports, type SessionView } from './session/session-view';
 
 /** A banner's forward action. */
 export type BannerAction = 'retry-load' | 'retry-apply' | 'retry-action' | 'reload' | 'dismiss';
@@ -84,10 +84,10 @@ function viewBanner(view: SessionView): Banner | null {
     case 'armed':
       return { ...base, tone: 'info', glyph: 'waiting', actions: ['reload'] };
     case 'applied': {
-      const simulation = view.simulation;
+      const reports = simulationReports(view);
       // A simulation that did not run here, or one the page limits, warns.
-      const limits = simulation === undefined ? [] : simulationLimitLines(simulation);
-      const notSimulated = simulation !== undefined && simulation.state !== 'simulated';
+      const limits = reports.flatMap(simulationLimitLines);
+      const notSimulated = reports.some((report) => report.state !== 'simulated');
       const clean =
         view.unmatched === 0 && view.warnings.length === 0 && limits.length === 0 && !notSimulated;
       return {

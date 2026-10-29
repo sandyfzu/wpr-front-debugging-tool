@@ -4,7 +4,11 @@
  * drift between suites.
  */
 import type { SimulateSpec } from '../wp-rocket-simulation/spec';
-import type { DocumentSimulationInput, DelaySimulationReport } from './exclusion-simulation';
+import type {
+  DeferSimulationReport,
+  DocumentSimulationInput,
+  DelaySimulationReport
+} from './exclusion-simulation';
 
 /** A marker id (32 lowercase hex). */
 export const MARKER_ID = '0123456789abcdef0123456789abcdef';
@@ -29,6 +33,20 @@ export function simulatedReport(): DelaySimulationReport {
     markerId: MARKER_ID,
     cspLimits: ['eval', 'inline'],
     caveats: ['combined-js']
+  };
+}
+
+/** A simulated document's Defer JS report: scripts deferred and wrapped, the bundled lists. */
+export function deferSimulatedReport(): DeferSimulationReport {
+  return {
+    feature: 'defer_all_js',
+    state: 'simulated',
+    deferred: 4,
+    wrapped: 1,
+    wpRocketVersion: '3.24',
+    listSource: 'bundled',
+    listMiss: 'never-fetched',
+    markerId: MARKER_ID
   };
 }
 

@@ -104,11 +104,13 @@ function excludedFrom(row: JsScriptResource, feature: ExcludableFeature): boolea
  * worth noticing); plain "not" states are `neutral`.
  *
  * @param row The classified script.
+ * @param deferSimulated A verified simulation, not WP Rocket, ran Defer JS
+ *   here: its stamp names no WP Rocket defer.
  * @returns One or two badges.
  */
-export function scriptStateBadges(row: JsScriptResource): ScriptBadge[] {
+export function scriptStateBadges(row: JsScriptResource, deferSimulated = false): ScriptBadge[] {
   const badges: ScriptBadge[] = [delayBadge(row)];
-  if (row.type === 'external') badges.push(deferBadge(row));
+  if (row.type === 'external') badges.push(deferBadge(row, deferSimulated));
   return badges;
 }
 
@@ -137,9 +139,16 @@ function delayBadge(row: JsScriptResource): ScriptBadge {
   return { label: 'Not delayed', kind: 'neutral' };
 }
 
-/** The defer badge — WP Rocket's own defer wins over a native `defer`. */
-function deferBadge(row: JsScriptResource): ScriptBadge {
-  if (row.deferredByWPR) return { label: 'Deferred (By WP Rocket)', kind: 'info' };
+/**
+ * The defer badge — WP Rocket's own defer wins over a native `defer`; its
+ * stamp on a page a verified simulation deferred is the simulation's.
+ */
+function deferBadge(row: JsScriptResource, deferSimulated: boolean): ScriptBadge {
+  if (row.deferredByWPR) {
+    return deferSimulated
+      ? { label: 'Deferred (Simulated)', kind: 'info' }
+      : { label: 'Deferred (By WP Rocket)', kind: 'info' };
+  }
   if (row.deferred) return { label: 'Deferred', kind: 'info' };
   if (excludedFrom(row, 'defer_all_js')) {
     return { label: 'Not deferred (Excluded by FDT)', kind: 'warn' };

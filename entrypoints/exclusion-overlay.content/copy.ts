@@ -39,17 +39,23 @@ import type {
   SimulationCspLimit,
   SimulationCspUnavailableReason,
   SimulationRuntimeUnavailableCause,
+  SimulatedFeatureId,
   UnreproducedRegex
 } from '../../lib/wp-rocket-simulation/spec';
 import type {
   DocumentSimulationReport,
   SimulationListProvenance
 } from '../../lib/messaging/exclusion-simulation';
-import type { DelayMode, DelayModeBlock } from './exclusions/delay-mode';
+import type { ModeBlock, SimulationLane, SimulationMode } from './exclusions/simulation-mode';
 import { LATEST_LIST_MAX_AGE_MS } from '../../lib/exclusion-session/latest-list-source';
 import { relativeAge } from '../../utils/relative-age';
 import type { OverlayState, SessionAction } from './session/machine';
-import type { AppliedWarning, SessionView, UnmodifiedReason } from './session/session-view';
+import {
+  simulationReports,
+  type AppliedWarning,
+  type SessionView,
+  type UnmodifiedReason
+} from './session/session-view';
 import type { CandidateAddOutcome, SaveState } from './controller';
 
 /**
@@ -822,8 +828,16 @@ export function appliedWarningLine(warning: AppliedWarning): string {
  * @param view The applied view.
  */
 function appliedCopy(view: Extract<SessionView, { kind: 'applied' }>): StateCopy {
-  const simulated = view.simulation === undefined ? null : simulationOutcomeCopy(view.simulation);
-  if (simulated !== null) return simulated;
+  const reports = simulationReports(view);
+  const notSimulated = reports.find((report) => report.state !== 'simulated');
+  const outcome =
+    notSimulated === undefined
+      ? null
+      : simulationOutcomeCopy(
+          notSimulated,
+          reports.filter((report) => report !== notSimulated)
+        );
+  if (outcome !== null) return outcome;
   const warnings = view.warnings.map(appliedWarningLine);
   const tail = warnings.length === 0 ? '' : ` ${warnings.join(' ')}`;
   if (view.unmatched > 0) {
@@ -832,7 +846,7 @@ function appliedCopy(view: Extract<SessionView, { kind: 'applied' }>): StateCopy
       body: `${String(view.unmatched)} ${countNoun(view.unmatched, COUNT_WORDS.rowMatches)} no element on this page. Check the rows marked “No match”.${tail}`
     };
   }
-  const rendered = view.simulation?.state === 'simulated' ? SIMULATED_RENDER_WORDS : RENDER_WORDS;
+  const rendered = reports.length === 0 ? RENDER_WORDS : simulatedRenderWords(reports);
   return warnings.length === 0
     ? { title: 'Applied', body: rendered }
     : { title: 'Applied, with warnings', body: `${rendered}${tail}` };
@@ -841,8 +855,24 @@ function appliedCopy(view: Extract<SessionView, { kind: 'applied' }>): StateCopy
 /** What an applied page shows. */
 const RENDER_WORDS = 'This page was rendered with your exclusions.';
 
-/** What an applied, simulated page shows — never mistaken for the site's own configuration. */
-const SIMULATED_RENDER_WORDS = `This page was rendered with WP Rocket ${LABEL_DELAY_JAVASCRIPT_EXECUTION} simulated and your exclusions — not the site’s real configuration.`;
+/**
+ * What an applied, simulated page shows — never mistaken for the site's own
+ * configuration.
+ *
+ * @param reports The simulation reports (every one `simulated`).
+ */
+function simulatedRenderWords(reports: readonly DocumentSimulationReport[]): string {
+  return `This page was rendered with WP Rocket ${featureList(reports)} simulated and your exclusions — not the site’s real configuration.`;
+}
+
+/**
+ * The reports' feature names, joined ("A", "A and B").
+ *
+ * @param reports The reports, in buffer order.
+ */
+function featureList(reports: readonly DocumentSimulationReport[]): string {
+  return reports.map((report) => FEATURE_NAMES[report.feature]).join(' and ');
+}
 
 /** The session view's banner words. */
 export function viewCopy(view: SessionView): StateCopy {
@@ -986,33 +1016,21 @@ function isSaveFailure(
   return Object.hasOwn(SAVE_FAILURE_COPY, reason);
 }
 
-/** The Delay JS lane's mode control: its options, and why one is unavailable. */
-export const DELAY_MODE_COPY = {
-  /** The control's accessible name. */
-  groupName: `${LABEL_DELAY_JAVASCRIPT_EXECUTION} on this page`,
+/** The mode control's words every mode lane shares. */
+const SHARED_MODE_COPY = {
   labels: {
     served: 'As served',
     simulated: 'Simulated',
     disabled: 'Disabled'
-  } satisfies Readonly<Record<DelayMode, string>>,
-  /** Why the page leaves an option out (one line under the control). */
-  blocks: {
-    'already-delayed':
-      'WP Rocket already delays scripts on this page — exclusions apply to its output.',
-    amp: 'WP Rocket never delays AMP pages.',
-    checking: 'Checking whether WP Rocket delays scripts on this page…'
-  } satisfies Readonly<Record<DelayModeBlock, string>>,
+  } satisfies Readonly<Record<SimulationMode, string>>,
   /**
    * The draft's mode the page does not allow: no option is checked and the
    * page runs as served (the draft keeps the mode for other pages).
    *
    * @param mode The replaced mode.
    */
-  replaced: (mode: DelayMode): string =>
-    `${DELAY_MODE_COPY.labels[mode]} doesn’t apply here, so this page runs as served (${DELAY_MODE_COPY.labels[mode]} stays set for other pages).`,
-  /** Disabled is shown on a page WP Rocket does not delay (allowed: it is a no-op here). */
-  disabledChangesNothing:
-    'WP Rocket doesn’t delay scripts on this page, so Disabled changes nothing here.',
+  replaced: (mode: SimulationMode): string =>
+    `${SHARED_MODE_COPY.labels[mode]} doesn’t apply here, so this page runs as served (${SHARED_MODE_COPY.labels[mode]} stays set for other pages).`,
   /** Why the control is held (its tooltip): an action is in flight. */
   held: 'Wait for the current action to finish.',
   /** The page still runs a simulation the session no longer applies (e.g. after Stop). */
@@ -1021,6 +1039,55 @@ export const DELAY_MODE_COPY = {
   adminScreen:
     'This is a WordPress admin or login screen. WP Rocket never optimizes these screens, so a simulation here shows something the site never serves.'
 } as const;
+
+/** One mode lane's control words: the shared ones, then its own. */
+export type LaneModeCopy = typeof SHARED_MODE_COPY & {
+  /** The control's accessible name. */
+  readonly groupName: string;
+  /**
+   * Why the page leaves an option out (one line under the control) — every
+   * block the lane can meet (Delay JS never meets `delay-served`).
+   */
+  readonly blocks: Readonly<Partial<Record<ModeBlock, string>>>;
+  /** Disabled is shown on a page WP Rocket does not serve the feature on (allowed: a no-op here). */
+  readonly disabledChangesNothing: string;
+};
+
+/** The Delay JS lane's mode control: its options, and why one is unavailable. */
+export const DELAY_MODE_COPY = {
+  ...SHARED_MODE_COPY,
+  groupName: `${LABEL_DELAY_JAVASCRIPT_EXECUTION} on this page`,
+  blocks: {
+    'already-served':
+      'WP Rocket already delays scripts on this page — exclusions apply to its output.',
+    amp: 'WP Rocket never delays AMP pages.',
+    checking: 'Checking whether WP Rocket delays scripts on this page…'
+  },
+  disabledChangesNothing:
+    'WP Rocket doesn’t delay scripts on this page, so Disabled changes nothing here.'
+} as const satisfies LaneModeCopy;
+
+/** The Defer JS lane's mode control: its options, and why one is unavailable. */
+export const DEFER_MODE_COPY = {
+  ...SHARED_MODE_COPY,
+  groupName: `${LABEL_LOAD_JAVASCRIPT_DEFERRED} on this page`,
+  blocks: {
+    'already-served':
+      'WP Rocket already defers scripts on this page — exclusions apply to its output.',
+    'delay-served':
+      'WP Rocket delays scripts on this page and defers them before it delays them, so Defer JS can’t be simulated here.',
+    amp: 'WP Rocket never defers AMP pages.',
+    checking: 'Checking whether WP Rocket defers scripts on this page…'
+  },
+  disabledChangesNothing:
+    'WP Rocket doesn’t defer scripts on this page, so Disabled changes nothing here.'
+} as const satisfies LaneModeCopy;
+
+/** Each mode lane's control words. */
+export const MODE_LANE_COPY: Readonly<Record<SimulationLane, LaneModeCopy>> = {
+  delayJs: DELAY_MODE_COPY,
+  deferJs: DEFER_MODE_COPY
+};
 
 /** Each CSP limit of a simulated page: what fails, as it would on the site. */
 const CSP_LIMIT_COPY: Readonly<Record<SimulationCspLimit, string>> = {
@@ -1067,44 +1134,108 @@ const UNREPRODUCED_REGEX_NAMES: Readonly<Record<UnreproducedRegex, string>> = {
 const NOT_SIMULATED_REMEDY =
   'Test on another page of the site, or choose As served to apply your exclusions without the simulation.';
 
+/** What WP Rocket does to scripts, per simulated feature (the banners' verb). */
+const FEATURE_VERBS: Readonly<Record<SimulatedFeatureId, string>> = {
+  delay_js: 'delays',
+  defer_all_js: 'defers'
+};
+
 /**
- * The applied banner of a simulating session whose step did not delay
- * this page — each state titled with a way forward — or null when the
- * page was simulated (the regular applied words then say so).
+ * How the page was rendered when one feature's step did not run: as served
+ * with the exclusions, or with the other features' simulation.
  *
- * @param simulation The simulation step's report.
+ * @param simulated The other features' reports that simulated.
+ * @param alone The words when nothing else simulated.
  */
-export function simulationOutcomeCopy(simulation: DocumentSimulationReport): StateCopy | null {
-  switch (simulation.state) {
-    case 'simulated':
-      return null;
-    case 'already-served':
-      return {
-        title: 'Applied — WP Rocket already delays scripts here',
-        body: 'Nothing was simulated: your exclusions apply to WP Rocket’s own Delay JavaScript execution, as served.'
-      };
-    case 'csp-blocked':
-      return {
-        title: 'Not simulated: blocked by this page’s Content Security Policy',
-        body: `The policy forbids WP Rocket’s inline Delay JS script, as it would on the site, so nothing was delayed and the page was rendered with your exclusions only. ${NOT_SIMULATED_REMEDY}`
-      };
-    case 'not-applicable':
-      return notApplicableCopy(simulation);
-  }
+function renderedWith(simulated: readonly DocumentSimulationReport[], alone: string): string {
+  return simulated.length === 0
+    ? alone
+    : `the page was rendered with ${featureList(simulated)} simulated and your exclusions.`;
 }
 
 /**
- * A not-applicable simulation's banner, per reason.
+ * The applied banner of a simulating session whose step did not run on
+ * this page — each state titled with a way forward — or null when the
+ * page was simulated (the regular applied words then say so). With both
+ * features asked for, the other feature's outcome follows unless the body
+ * already says it.
+ *
+ * @param simulation The step's report.
+ * @param others The other features' reports on this page (buffer order).
+ */
+export function simulationOutcomeCopy(
+  simulation: DocumentSimulationReport,
+  others: readonly DocumentSimulationReport[] = []
+): StateCopy | null {
+  if (simulation.state === 'simulated') return null;
+  const simulated = others.filter((report) => report.state === 'simulated');
+  const copy = ownOutcomeCopy(simulation, simulated);
+  const tail = others.flatMap((other) => otherOutcomeSentence(simulation, other) ?? []);
+  return tail.length === 0 ? copy : { title: copy.title, body: [copy.body, ...tail].join(' ') };
+}
+
+/**
+ * One sentence on another feature's outcome beside a step that did not run.
+ *
+ * @param first The step that did not run.
+ * @param other The other feature's report.
+ * @returns The sentence, or null when the first step's words already say it
+ *   (Delay JS served, so Defer JS could not run; the other feature simulated,
+ *   named by every body but an already-served one).
+ */
+function otherOutcomeSentence(
+  first: DocumentSimulationReport,
+  other: DocumentSimulationReport
+): string | null {
+  const name = FEATURE_NAMES[other.feature];
+  if (first.reason === 'delay-js-served' && other.state === 'already-served') return null;
+  if (other.state !== 'simulated') return `${ownOutcomeCopy(other, []).title} (${name}).`;
+  // Every body but an already-served one names the simulated features already.
+  return first.state === 'already-served' ? `${name} was simulated.` : null;
+}
+
+/**
+ * A step's own banner words (a step that did not run: never `simulated`).
+ *
+ * @param simulation The report.
+ * @param simulated The other features' reports that simulated.
+ */
+function ownOutcomeCopy(
+  simulation: DocumentSimulationReport,
+  simulated: readonly DocumentSimulationReport[]
+): StateCopy {
+  const name = FEATURE_NAMES[simulation.feature];
+  if (simulation.state === 'already-served') {
+    const opener = simulated.length === 0 ? 'Nothing was simulated' : `${name} wasn’t simulated`;
+    return {
+      title: `Applied — WP Rocket already ${FEATURE_VERBS[simulation.feature]} scripts here`,
+      body: `${opener}: your exclusions apply to WP Rocket’s own ${name}, as served.`
+    };
+  }
+  if (simulation.state === 'csp-blocked') {
+    return {
+      title: 'Not simulated: blocked by this page’s Content Security Policy',
+      body: `The policy forbids WP Rocket’s inline Delay JS script, as it would on the site, so nothing was delayed and ${renderedWith(simulated, 'the page was rendered with your exclusions only.')} ${NOT_SIMULATED_REMEDY}`
+    };
+  }
+  return notApplicableCopy(
+    simulation,
+    renderedWith(simulated, 'the page was rendered as served, with your exclusions.')
+  );
+}
+
+/**
+ * A not-applicable step's banner, per reason.
  *
  * @param simulation The report (state `not-applicable`).
+ * @param served How the page was rendered instead.
  */
-function notApplicableCopy(simulation: DocumentSimulationReport): StateCopy {
-  const served = 'the page was rendered as served, with your exclusions.';
+function notApplicableCopy(simulation: DocumentSimulationReport, served: string): StateCopy {
   switch (simulation.reason) {
     case 'amp':
       return {
         title: 'Not simulated: AMP page',
-        body: `WP Rocket never delays scripts on AMP pages, so ${served} Choose As served to stop asking for the simulation.`
+        body: `WP Rocket never ${FEATURE_VERBS[simulation.feature]} scripts on AMP pages, so ${served} Choose As served to stop asking for the simulation.`
       };
     case 'delay-js-served':
       return {
@@ -1146,7 +1277,7 @@ export function simulationLimitLines(simulation: DocumentSimulationReport): stri
   return lines;
 }
 
-/** The Delay JS lane's lines about the simulation on the page it applied to. */
+/** A mode lane's lines about the simulation on the page it applied to. */
 export const SIMULATION_LANE_COPY = {
   /**
    * The count line, e.g. "5 delayed by the simulation · 2 excluded by your rows".
@@ -1156,6 +1287,16 @@ export const SIMULATION_LANE_COPY = {
    */
   line: (delayed: number, excluded: number): string =>
     `${String(delayed)} delayed by the simulation · ${String(excluded)} excluded by your rows`,
+  /**
+   * The Defer JS count line, e.g. "4 deferred and 1 inline wrapped by the
+   * simulation · 1 excluded by your rows".
+   *
+   * @param deferred External scripts the simulation deferred.
+   * @param wrapped Inline scripts it wrapped.
+   * @param excluded Of those, scripts the rows restored.
+   */
+  deferLine: (deferred: number, wrapped: number, excluded: number): string =>
+    `${String(deferred)} deferred and ${String(wrapped)} inline wrapped by the simulation · ${String(excluded)} excluded by your rows`,
   /**
    * The simulated version, and the site's when it serves another one.
    *

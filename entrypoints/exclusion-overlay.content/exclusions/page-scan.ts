@@ -37,13 +37,16 @@ export const DELAY_FOOTPRINT_SELECTOR = [
   `script[${DELAY_JS_SRC}]`
 ].join(',');
 
+/** The scripts Defer JS stamped deferred — its footprints on a live page. */
+export const DEFER_FOOTPRINT_SELECTOR = `script[${WPR_DEFER_ATTRIBUTE}]`;
+
 /**
  * Every element some lane may act on — a superset the classifier narrows
  * (declared from the same vocabulary the classifier reads).
  */
 export const PICKABLE_SELECTOR = [
   DELAY_FOOTPRINT_SELECTOR,
-  `script[${WPR_DEFER_ATTRIBUTE}]`,
+  DEFER_FOOTPRINT_SELECTOR,
   `img[${DATA_LAZY_SRC}]`,
   `[${LAZY_RENDER_ATTRIBUTE}]`
 ].join(',');

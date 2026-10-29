@@ -58,7 +58,6 @@ import { draftTooLarge, footerLine as footerLineFor } from './footer-line';
 import type { OverlayController } from './controller';
 import { LANE_ORDER } from './exclusions/draft';
 import { Glyph, SimulatedIndicator } from './glyph';
-import { runsSimulation } from './exclusions/delay-mode';
 import { retryFocus } from './focus-retry';
 import { createAnnouncer } from './announcer';
 import {
@@ -169,7 +168,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   const paused = (): boolean => props.page.pageModal();
   const indicator = createMemo(() => sessionIndicator(state(), c.view()));
   /** The page on screen runs a simulation: said beside the session's indicator, folded too. */
-  const simulated = createMemo(() => runsSimulation(c.delayState()));
+  const simulated = createMemo(() => c.runsSimulation());
   const banner = createMemo(() => stateBanner(state(), c.view()));
   const notice = createMemo(() => {
     const current = state();

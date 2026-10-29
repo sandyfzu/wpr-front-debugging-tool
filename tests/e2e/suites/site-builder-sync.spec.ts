@@ -52,7 +52,7 @@ import {
   clearDrafts,
   injectOverlay
 } from '../helpers/exclusion-overlay';
-import { chooseDelayMode } from '../helpers/simulation';
+import { chooseDelayMode, deferModeGroup } from '../helpers/simulation';
 import { openSitePage, SITE_URL } from '../helpers/site';
 import { clearWidgetMap, expectPillHint, STRIP_HOST } from '../helpers/strip-pill';
 
@@ -129,7 +129,7 @@ const ALR_OFF: ChangedRow = {
 };
 
 /**
- * Turn a lane's feature off for the page (its switch; Delay JS: its Disabled mode).
+ * Turn a lane's feature off for the page (its switch; Delay JS and Defer JS: their Disabled mode).
  *
  * @param page The page with the overlay.
  * @param label The lane's label.
@@ -137,6 +137,13 @@ const ALR_OFF: ChangedRow = {
 async function disable(page: Page, label: string): Promise<void> {
   if (label === DELAY) {
     await chooseDelayMode(page, 'Disabled');
+    return;
+  }
+  if (label === DEFER) {
+    // Defer JS's switch is its mode control's Disabled too.
+    const group = deferModeGroup(page);
+    await group.getByText('Disabled', { exact: true }).click();
+    await expect(group.getByRole('radio', { name: 'Disabled', exact: true })).toBeChecked();
     return;
   }
   const toggle = page.getByRole('switch', { name: `Disable feature: ${label} on this page` });

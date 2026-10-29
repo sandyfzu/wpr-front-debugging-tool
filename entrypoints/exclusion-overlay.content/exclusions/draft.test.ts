@@ -14,10 +14,10 @@ import {
   createRowCarry,
   createRowValidator,
   draftChars,
-  draftDelayMode,
+  draftLaneMode,
   draftFromSet,
   draftToSet,
-  setDelayMode,
+  setLaneMode,
   holdsCandidate,
   insertRows,
   isBlankRow,
@@ -809,7 +809,7 @@ describe('Delay JS mode in the draft', () => {
 
   it('restores the simulate spec beside the set, leaving the set unchanged', () => {
     const draft = draftFromSet(EMPTY_EXCLUSION_SET, createIdSource(), SIMULATE);
-    expect(draftDelayMode(draft)).toBe('simulated');
+    expect(draftLaneMode(draft, 'delayJs')).toBe('simulated');
     expect(draft.simulate).toEqual(SIMULATE);
     expect(draftToSet(draft)).toEqual(EMPTY_EXCLUSION_SET);
   });
@@ -820,29 +820,48 @@ describe('Delay JS mode in the draft', () => {
       disable: { ...EMPTY_EXCLUSION_SET.disable, delayJs: true }
     };
     const { draft } = restoreDraft(set, createIdSource(), SIMULATE);
-    expect(draftDelayMode(draft)).toBe('disabled');
+    expect(draftLaneMode(draft, 'delayJs')).toBe('disabled');
     expect(draft.simulate).toBeUndefined();
   });
 
   it('sets the mode as one pair, rows untouched; the same mode is a no-op', () => {
     const start = draftFromSet(validSet(), createIdSource());
-    const simulated = setDelayMode(start, 'simulated');
+    const simulated = setLaneMode(start, 'delayJs', 'simulated');
     expect(simulated.rows).toBe(start.rows);
     expect(simulated.simulate).toEqual(SIMULATE);
     expect(simulated.disable.deferJs).toBe(start.disable.deferJs);
-    expect(setDelayMode(simulated, 'simulated')).toBe(simulated);
-    const disabled = setDelayMode(simulated, 'disabled');
+    expect(setLaneMode(simulated, 'delayJs', 'simulated')).toBe(simulated);
+    const disabled = setLaneMode(simulated, 'delayJs', 'disabled');
     expect(disabled.disable.delayJs).toBe(true);
     expect(disabled.simulate).toBeUndefined();
-    expect(draftDelayMode(setDelayMode(disabled, 'served'))).toBe('served');
+    expect(draftLaneMode(setLaneMode(disabled, 'delayJs', 'served'), 'delayJs')).toBe('served');
   });
 
   it('ends the Delay JS simulation when the feature is disabled; other toggles keep it', () => {
-    const simulated = setDelayMode(
+    const simulated = setLaneMode(
       draftFromSet(EMPTY_EXCLUSION_SET, createIdSource()),
+      'delayJs',
       'simulated'
     );
     expect(setDisable(simulated, 'deferJs', true).simulate).toEqual(SIMULATE);
     expect(setDisable(simulated, 'delayJs', true).simulate).toBeUndefined();
+  });
+
+  it('carries both mode lanes in one spec, each reconciled with its own disable', () => {
+    const start = draftFromSet(EMPTY_EXCLUSION_SET, createIdSource());
+    const both = setLaneMode(setLaneMode(start, 'delayJs', 'simulated'), 'deferJs', 'simulated');
+    expect(both.simulate).toEqual({ features: ['defer_all_js', 'delay_js'] });
+    expect(draftLaneMode(both, 'deferJs')).toBe('simulated');
+    const deferOff = setDisable(both, 'deferJs', true);
+    expect(deferOff.simulate).toEqual(SIMULATE);
+    expect(draftLaneMode(deferOff, 'deferJs')).toBe('disabled');
+    // A stored contradictory pair restores as Disabled, the other lane kept.
+    const restored = draftFromSet(
+      { ...EMPTY_EXCLUSION_SET, disable: { ...EMPTY_EXCLUSION_SET.disable, deferJs: true } },
+      createIdSource(),
+      { features: ['defer_all_js', 'delay_js'] }
+    );
+    expect(restored.simulate).toEqual(SIMULATE);
+    expect(restored.disable.deferJs).toBe(true);
   });
 });

@@ -19,7 +19,11 @@ import { simulatedReport } from '../../lib/messaging/exclusion-simulation.fixtur
 import type { DelaySimulationReport } from '../../lib/messaging/exclusion-simulation';
 import type { SimulateSpec } from '../../lib/wp-rocket-simulation/spec';
 import { AUTOSAVE_DELAY_MS, createOverlayController, type OverlayController } from './controller';
-import { NO_DELAY_EVIDENCE, type DelayPageEvidence } from './exclusions/delay-mode';
+import {
+  NO_PAGE_EVIDENCE,
+  NO_SIMULATION_EVIDENCE,
+  type LanePageEvidence
+} from './exclusions/simulation-mode';
 import type { ExclusionSessionPort, PortOutcome } from './session/port';
 
 const PAGE = 'https://example.com/';
@@ -102,11 +106,11 @@ function fakePort(
 /** A started controller with settable page evidence (none: the evidence seam left out). */
 async function started(
   port: ExclusionSessionPort,
-  evidence: DelayPageEvidence | null = NO_DELAY_EVIDENCE,
+  evidence: LanePageEvidence | null = NO_PAGE_EVIDENCE,
   href = PAGE
 ) {
   const timers: { run: () => void; ms: number }[] = [];
-  const [page, setPage] = createSignal<DelayPageEvidence>(evidence ?? NO_DELAY_EVIDENCE);
+  const [page, setPage] = createSignal<LanePageEvidence>(evidence ?? NO_PAGE_EVIDENCE);
   let controller: OverlayController | undefined;
   createRoot(() => {
     controller = createOverlayController({
@@ -119,7 +123,9 @@ async function started(
       },
       reload: vi.fn(),
       log: { warn: vi.fn() },
-      ...(evidence === null ? {} : { delayEvidence: page })
+      ...(evidence === null
+        ? {}
+        : { simulationEvidence: () => ({ ...NO_SIMULATION_EVIDENCE, delayJs: page() }) })
     });
   });
   if (controller === undefined) throw new Error('controller not built');
@@ -132,13 +138,13 @@ async function started(
   return { controller, setPage, fireAutosave };
 }
 
-const DELAYED: DelayPageEvidence = { ...NO_DELAY_EVIDENCE, footprints: true };
+const DELAYED: LanePageEvidence = { ...NO_PAGE_EVIDENCE, footprints: true };
 
 describe('Delay JS mode: draft, save, apply, reset', () => {
   it('restores the saved mode with its rows (never arming: nothing is applied)', async () => {
     const port = fakePort({ state: 'inactive' }, { set: SET, simulate: SIMULATE });
     const { controller } = await started(port);
-    expect(controller.delayMode()).toBe('simulated');
+    expect(controller.laneMode('delayJs')).toBe('simulated');
     expect(controller.draft().simulate).toEqual(SIMULATE);
     expect(port.apply).not.toHaveBeenCalled();
   });
@@ -148,14 +154,14 @@ describe('Delay JS mode: draft, save, apply, reset', () => {
       fakePort(session(SET, SIMULATE, simulatedReport())),
       DELAYED
     );
-    expect(controller.delayMode()).toBe('simulated');
+    expect(controller.laneMode('delayJs')).toBe('simulated');
     expect(controller.dirty()).toBe(false);
   });
 
   it('saves and applies the mode as one {set, simulate} pair', async () => {
     const port = fakePort({ state: 'inactive' }, { set: SET });
     const { controller, fireAutosave } = await started(port);
-    controller.setDelayMode('simulated');
+    controller.setLaneMode('delayJs', 'simulated');
     await fireAutosave();
     expect(port.save).toHaveBeenLastCalledWith(SET, SIMULATE);
     controller.apply();
@@ -166,7 +172,7 @@ describe('Delay JS mode: draft, save, apply, reset', () => {
   it('applies Disabled exactly as the disable switch did (no simulate sent)', async () => {
     const port = fakePort({ state: 'inactive' }, { set: SET });
     const { controller } = await started(port, DELAYED);
-    controller.setDelayMode('disabled');
+    controller.setLaneMode('delayJs', 'disabled');
     controller.apply();
     await settle();
     expect(port.apply).toHaveBeenLastCalledWith(DISABLED_SET);
@@ -176,11 +182,11 @@ describe('Delay JS mode: draft, save, apply, reset', () => {
   it('never produces the contradictory pair when switching between modes', async () => {
     const port = fakePort({ state: 'inactive' }, { set: SET });
     const { controller } = await started(port, null);
-    controller.setDelayMode('simulated');
-    controller.setDelayMode('disabled');
+    controller.setLaneMode('delayJs', 'simulated');
+    controller.setLaneMode('delayJs', 'disabled');
     expect(controller.draft().disable.delayJs).toBe(true);
     expect(controller.draft().simulate).toBeUndefined();
-    controller.setDelayMode('simulated');
+    controller.setLaneMode('delayJs', 'simulated');
     expect(controller.draft().disable.delayJs).toBe(false);
     expect(controller.draft().simulate).toEqual(SIMULATE);
     controller.setDisable('delayJs', true);
@@ -190,10 +196,10 @@ describe('Delay JS mode: draft, save, apply, reset', () => {
   it('marks a mode change dirty and resets to the applied mode, re-applying it', async () => {
     const port = fakePort(session(SET, SIMULATE, simulatedReport()));
     const { controller } = await started(port, DELAYED);
-    controller.setDelayMode('served');
+    controller.setLaneMode('delayJs', 'served');
     expect(controller.dirty()).toBe(true);
     controller.reset();
-    expect(controller.delayMode()).toBe('simulated');
+    expect(controller.laneMode('delayJs')).toBe('simulated');
     await settle();
     expect(port.apply).toHaveBeenLastCalledWith(SET, SIMULATE);
   });
@@ -201,51 +207,51 @@ describe('Delay JS mode: draft, save, apply, reset', () => {
   it('ignores a mode the page does not allow, and any mode while not editable', async () => {
     const port = fakePort({ state: 'inactive' }, { set: SET });
     const { controller } = await started(port, DELAYED);
-    controller.setDelayMode('simulated');
-    expect(controller.delayMode()).toBe('served');
+    controller.setLaneMode('delayJs', 'simulated');
+    expect(controller.laneMode('delayJs')).toBe('served');
     controller.apply();
-    controller.setDelayMode('disabled');
-    expect(controller.delayMode()).toBe('served');
+    controller.setLaneMode('delayJs', 'disabled');
+    expect(controller.laneMode('delayJs')).toBe('served');
   });
 });
 
 describe('Delay JS mode: the page’s real state', () => {
   it('offers every mode when the host cannot read the page', async () => {
     const { controller } = await started(fakePort({ state: 'inactive' }), null);
-    expect(controller.delayState()).toBeNull();
-    controller.setDelayMode('disabled');
-    expect(controller.delayMode()).toBe('disabled');
+    expect(controller.laneState('delayJs')).toBeNull();
+    controller.setLaneMode('delayJs', 'disabled');
+    expect(controller.laneMode('delayJs')).toBe('disabled');
   });
 
   it('checks nothing for a restored mode the page does not allow, said, without saving', async () => {
     const port = fakePort({ state: 'inactive' }, { set: SET, simulate: SIMULATE });
     const { controller, fireAutosave } = await started(port, DELAYED);
-    expect(controller.delayState()).toEqual({ kind: 'delayed' });
-    expect(controller.delayMode()).toBeNull();
-    expect(controller.replacedDelayMode()).toBe('simulated');
+    expect(controller.laneState('delayJs')).toEqual({ kind: 'served' });
+    expect(controller.laneMode('delayJs')).toBeNull();
+    expect(controller.replacedLaneMode('delayJs')).toBe('simulated');
     await fireAutosave();
     expect(port.save).not.toHaveBeenCalled();
     // The draft keeps the restored mode (display only).
     expect(controller.draft().simulate).toEqual(SIMULATE);
     // Choosing a mode again ends the note.
-    controller.setDelayMode('disabled');
-    expect(controller.replacedDelayMode()).toBeNull();
+    controller.setLaneMode('delayJs', 'disabled');
+    expect(controller.replacedLaneMode('delayJs')).toBeNull();
   });
 
   it('keeps a saved Disabled on a page WP Rocket does not delay (a no-op, never replaced)', async () => {
     const port = fakePort({ state: 'inactive' }, { set: DISABLED_SET });
     const { controller } = await started(port);
-    expect(controller.delayMode()).toBe('disabled');
-    expect(controller.replacedDelayMode()).toBeNull();
+    expect(controller.laneMode('delayJs')).toBe('disabled');
+    expect(controller.replacedLaneMode('delayJs')).toBeNull();
   });
 
   it('ends the note by itself once the page allows the draft’s mode again', async () => {
     const port = fakePort({ state: 'inactive' }, { set: SET, simulate: SIMULATE });
     const { controller, setPage } = await started(port, DELAYED);
-    expect(controller.replacedDelayMode()).toBe('simulated');
-    setPage(NO_DELAY_EVIDENCE);
-    expect(controller.delayMode()).toBe('simulated');
-    expect(controller.replacedDelayMode()).toBeNull();
+    expect(controller.replacedLaneMode('delayJs')).toBe('simulated');
+    setPage(NO_PAGE_EVIDENCE);
+    expect(controller.laneMode('delayJs')).toBe('simulated');
+    expect(controller.replacedLaneMode('delayJs')).toBeNull();
   });
 
   it('waits for a marker verification before replacing anything', async () => {
@@ -254,19 +260,19 @@ describe('Delay JS mode: the page’s real state', () => {
       ...DELAYED,
       marker: 'checking'
     });
-    expect(controller.delayState()).toEqual({ kind: 'checking' });
-    expect(controller.delayMode()).toBe('simulated');
+    expect(controller.laneState('delayJs')).toEqual({ kind: 'checking' });
+    expect(controller.laneMode('delayJs')).toBe('simulated');
     setPage({ ...DELAYED, marker: 'verified' });
-    expect(controller.delayState()).toEqual({ kind: 'not-delayed', simulation: 'kept' });
-    expect(controller.delayMode()).toBe('simulated');
-    expect(controller.replacedDelayMode()).toBeNull();
+    expect(controller.laneState('delayJs')).toEqual({ kind: 'not-served', simulation: 'kept' });
+    expect(controller.laneMode('delayJs')).toBe('simulated');
+    expect(controller.replacedLaneMode('delayJs')).toBeNull();
   });
 
   it('reads a forged (unverified) marker as no evidence: the footprints decide', async () => {
     const port = fakePort({ state: 'inactive' }, { set: SET, simulate: SIMULATE });
     const { controller } = await started(port, { ...DELAYED, marker: 'unverified' });
-    expect(controller.delayState()).toEqual({ kind: 'delayed' });
-    expect(controller.delayMode()).toBeNull();
+    expect(controller.laneState('delayJs')).toEqual({ kind: 'served' });
+    expect(controller.laneMode('delayJs')).toBeNull();
   });
 
   it('applied Simulated, then reloaded: the footprints are the simulation’s, the mode stays switchable', async () => {
@@ -276,10 +282,10 @@ describe('Delay JS mode: the page’s real state', () => {
     });
     const { controller } = await started(port, DELAYED);
     expect(controller.view()?.kind).toBe('applied');
-    expect(controller.delayState()).toEqual({ kind: 'not-delayed', simulation: 'session' });
-    expect(controller.delayMode()).toBe('simulated');
+    expect(controller.laneState('delayJs')).toEqual({ kind: 'not-served', simulation: 'session' });
+    expect(controller.laneMode('delayJs')).toBe('simulated');
     // As served + Apply removes the simulation.
-    controller.setDelayMode('served');
+    controller.setLaneMode('delayJs', 'served');
     controller.apply();
     await settle();
     expect(port.apply).toHaveBeenLastCalledWith(SET);
@@ -289,32 +295,32 @@ describe('Delay JS mode: the page’s real state', () => {
   it('applied Disabled, then reloaded: no footprints, yet the page is delayed — Disabled stays', async () => {
     // The disable restored 3 delayed scripts: the report still counts them.
     const port = fakePort(session(DISABLED_SET, undefined, undefined, 3), { set: DISABLED_SET });
-    const { controller } = await started(port, NO_DELAY_EVIDENCE);
-    expect(controller.delayState()).toEqual({ kind: 'delayed' });
-    expect(controller.delayMode()).toBe('disabled');
-    expect(controller.replacedDelayMode()).toBeNull();
+    const { controller } = await started(port, NO_PAGE_EVIDENCE);
+    expect(controller.laneState('delayJs')).toEqual({ kind: 'served' });
+    expect(controller.laneMode('delayJs')).toBe('disabled');
+    expect(controller.replacedLaneMode('delayJs')).toBeNull();
   });
 
   it('applied Disabled where nothing was delayed: not delayed, Disabled stays', async () => {
     const port = fakePort(session(DISABLED_SET, undefined), { set: DISABLED_SET });
-    const { controller } = await started(port, NO_DELAY_EVIDENCE);
-    expect(controller.delayState()).toEqual({ kind: 'not-delayed', simulation: 'none' });
-    expect(controller.delayMode()).toBe('disabled');
-    expect(controller.replacedDelayMode()).toBeNull();
+    const { controller } = await started(port, NO_PAGE_EVIDENCE);
+    expect(controller.laneState('delayJs')).toEqual({ kind: 'not-served', simulation: 'none' });
+    expect(controller.laneMode('delayJs')).toBe('disabled');
+    expect(controller.replacedLaneMode('delayJs')).toBeNull();
   });
 
   it('ignores the builder’s Delay-off marker without a session on (page markup alone)', async () => {
     const { controller } = await started(fakePort({ state: 'inactive' }), {
-      ...NO_DELAY_EVIDENCE,
-      builderDelayOff: true
+      ...NO_PAGE_EVIDENCE,
+      builderOff: true
     });
-    expect(controller.delayState()).toEqual({ kind: 'not-delayed', simulation: 'none' });
+    expect(controller.laneState('delayJs')).toEqual({ kind: 'not-served', simulation: 'none' });
   });
 
   it('applied As served with rows restoring every delayed script: the report says delayed', async () => {
     const port = fakePort(session(SET, undefined, undefined, 3), { set: SET });
-    const { controller } = await started(port, NO_DELAY_EVIDENCE);
-    expect(controller.delayState()).toEqual({ kind: 'delayed' });
+    const { controller } = await started(port, NO_PAGE_EVIDENCE);
+    expect(controller.laneState('delayJs')).toEqual({ kind: 'served' });
   });
 
   it('applied Simulated on a page WP Rocket already delays: nothing checked, said', async () => {
@@ -329,9 +335,9 @@ describe('Delay JS mode: the page’s real state', () => {
     };
     const port = fakePort(session(SET, SIMULATE, already, 2), { set: SET, simulate: SIMULATE });
     const { controller } = await started(port, DELAYED);
-    expect(controller.delayState()).toEqual({ kind: 'delayed' });
-    expect(controller.delayMode()).toBeNull();
-    expect(controller.replacedDelayMode()).toBe('simulated');
+    expect(controller.laneState('delayJs')).toEqual({ kind: 'served' });
+    expect(controller.laneMode('delayJs')).toBeNull();
+    expect(controller.replacedLaneMode('delayJs')).toBe('simulated');
     // Display only: the session's mode is not the user's edit.
     expect(controller.dirty()).toBe(false);
     expect(controller.draft().simulate).toEqual(SIMULATE);
@@ -350,8 +356,8 @@ describe('Delay JS mode: the page’s real state', () => {
     // Applied Simulated on a plain page, then navigated (the overlay re-opens on the new page).
     const port = fakePort(session(SET, SIMULATE, already, 2), { set: SET, simulate: SIMULATE });
     const { controller, fireAutosave } = await started(port, DELAYED);
-    expect(controller.delayMode()).toBeNull();
-    expect(controller.replacedDelayMode()).toBe('simulated');
+    expect(controller.laneMode('delayJs')).toBeNull();
+    expect(controller.replacedLaneMode('delayJs')).toBe('simulated');
     // Nothing to reset (Reset held) and nothing saved: the site's mode stays.
     expect(controller.dirty()).toBe(false);
     await fireAutosave();
@@ -381,13 +387,13 @@ describe('Delay JS mode: the page’s real state', () => {
       listMiss: 'never-fetched'
     };
     const port = fakePort(session(SET, SIMULATE, amp), { set: SET, simulate: SIMULATE });
-    const { controller } = await started(port, NO_DELAY_EVIDENCE);
-    expect(controller.delayState()).toEqual({ kind: 'amp' });
-    expect(controller.delayMode()).toBeNull();
-    controller.setDelayMode('disabled');
-    expect(controller.delayMode()).toBeNull();
-    controller.setDelayMode('served');
-    expect(controller.delayMode()).toBe('served');
+    const { controller } = await started(port, NO_PAGE_EVIDENCE);
+    expect(controller.laneState('delayJs')).toEqual({ kind: 'amp' });
+    expect(controller.laneMode('delayJs')).toBeNull();
+    controller.setLaneMode('delayJs', 'disabled');
+    expect(controller.laneMode('delayJs')).toBeNull();
+    controller.setLaneMode('delayJs', 'served');
+    expect(controller.laneMode('delayJs')).toBe('served');
   });
 
   it('page-local stand-in for the session’s Simulated: As served drops the simulation, Disabled disables', async () => {
@@ -402,15 +408,15 @@ describe('Delay JS mode: the page’s real state', () => {
     };
     const port = fakePort(session(SET, SIMULATE, already, 2), { set: SET, simulate: SIMULATE });
     const { controller } = await started(port, DELAYED);
-    expect(controller.delayMode()).toBeNull();
+    expect(controller.laneMode('delayJs')).toBeNull();
     // Disabled is a real edit…
-    controller.setDelayMode('disabled');
-    expect(controller.delayMode()).toBe('disabled');
-    expect(controller.replacedDelayMode()).toBeNull();
+    controller.setLaneMode('delayJs', 'disabled');
+    expect(controller.laneMode('delayJs')).toBe('disabled');
+    expect(controller.replacedLaneMode('delayJs')).toBeNull();
     expect(controller.dirty()).toBe(true);
     // …and so is As served, which the stand-in no longer pre-checks.
-    controller.setDelayMode('served');
-    expect(controller.delayMode()).toBe('served');
+    controller.setLaneMode('delayJs', 'served');
+    expect(controller.laneMode('delayJs')).toBe('served');
     expect(controller.dirty()).toBe(true);
     controller.apply();
     await settle();
@@ -422,18 +428,18 @@ describe('Delay JS mode: the page’s real state', () => {
   it('reads a page a session’s rewrite touched, with no session left, as not delayed — unproven', async () => {
     // Stop after a Disabled rewrite: no footprints, the builder's marker stays.
     const { controller } = await started(fakePort({ state: 'inactive' }), {
-      ...NO_DELAY_EVIDENCE,
-      builderDelayOff: true,
-      builderDelayTouched: true
+      ...NO_PAGE_EVIDENCE,
+      builderOff: true,
+      builderTouched: true
     });
-    expect(controller.delayState()).toEqual({
-      kind: 'not-delayed',
+    expect(controller.laneState('delayJs')).toEqual({
+      kind: 'not-served',
       simulation: 'none',
       unproven: true
     });
     // Every mode stays offered.
-    controller.setDelayMode('simulated');
-    expect(controller.delayMode()).toBe('simulated');
+    controller.setLaneMode('delayJs', 'simulated');
+    expect(controller.laneMode('delayJs')).toBe('simulated');
   });
 });
 

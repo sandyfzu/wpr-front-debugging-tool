@@ -7,7 +7,11 @@ import type { ExclusionSet } from '../../lib/exclusion-builder/set';
 import { activeRecord, validSet } from '../../lib/messaging/exclusion-session.fixtures';
 import { OverlayApp } from './app';
 import { createOverlayController } from './controller';
-import { NO_DELAY_EVIDENCE, type DelayPageEvidence } from './exclusions/delay-mode';
+import {
+  NO_PAGE_EVIDENCE,
+  NO_SIMULATION_EVIDENCE,
+  type LanePageEvidence
+} from './exclusions/simulation-mode';
 import { createElementKeys, scanPage, type PageCandidate } from './exclusions/page-scan';
 import type { PageTools, PointedPick } from './page-tools';
 import type { PickerEvents } from './picker';
@@ -125,7 +129,7 @@ function mount(
   /** Run frame requests on a later task, like a browser (default: at once). */
   laterFrames = false,
   /** The page's Delay JS evidence (default: not read). */
-  delayEvidence?: DelayPageEvidence
+  delayEvidence?: LanePageEvidence
 ) {
   let reveal: (() => void) | null = null;
   const onClose = vi.fn();
@@ -151,7 +155,9 @@ function mount(
       },
       reload,
       log: { warn: vi.fn() },
-      ...(delayEvidence === undefined ? {} : { delayEvidence: () => delayEvidence })
+      ...(delayEvidence === undefined
+        ? {}
+        : { simulationEvidence: () => ({ ...NO_SIMULATION_EVIDENCE, delayJs: delayEvidence }) })
     });
     controller.start();
     made = controller;
@@ -251,7 +257,7 @@ describe('OverlayApp', () => {
   });
 
   it('shows the Simulated indicator while the page runs a simulation, on the panel and the pill', async () => {
-    const kept: DelayPageEvidence = { ...NO_DELAY_EVIDENCE, footprints: true, marker: 'verified' };
+    const kept: LanePageEvidence = { ...NO_PAGE_EVIDENCE, footprints: true, marker: 'verified' };
     const open = mount(port({ state: 'inactive' }), null, undefined, false, false, kept);
     await open.findByRole('heading', { level: 2, name: 'Delay JavaScript execution' });
     expect(open.container.querySelector('[data-indicator="simulated"]')?.textContent).toBe(
@@ -268,7 +274,7 @@ describe('OverlayApp', () => {
       undefined,
       false,
       false,
-      NO_DELAY_EVIDENCE
+      NO_PAGE_EVIDENCE
     );
     await plain.findByRole('heading', { level: 2, name: 'Delay JavaScript execution' });
     expect(plain.container.querySelector('[data-indicator="simulated"]')).toBeNull();
@@ -279,7 +285,8 @@ describe('OverlayApp', () => {
     await screen.findByRole('button', { name: /Stop/ });
     const reset = screen.getByRole('button', { name: /Reset/ });
     expect(reset.getAttribute('aria-disabled')).toBe('true');
-    fireEvent.click(screen.getByText('Disabled'));
+    // Two mode lanes each offer Disabled: the Delay JS one (the first) is meant.
+    fireEvent.click(screen.getAllByText('Disabled')[0] as HTMLElement);
     expect(reset.getAttribute('aria-disabled')).toBeNull();
   });
 

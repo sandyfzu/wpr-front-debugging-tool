@@ -88,22 +88,30 @@ export function parseExclusionSessionSummary(input: unknown): ExclusionSessionSu
   return simulated.length === 0 ? { state, origin } : { state, origin, simulated };
 }
 
+/** The document outcome's keys holding each feature's simulation report. */
+const SIMULATION_REPORT_KEYS = ['deferSimulation', 'simulation'] as const;
+
 /**
- * The known feature an untrusted document outcome reports as simulated —
+ * The known features an untrusted document outcome reports as simulated —
  * tolerant: a malformed outcome, an unknown feature or any other step state
  * (`already-served`, `csp-blocked`, `not-applicable`, an unmodified document)
  * reads as no simulation (the summary only words the session; the record's
  * own guard owns the outcome).
  *
  * @param input The status's `document` value.
- * @returns The simulated feature (one per document today), or empty.
+ * @returns The simulated features (Defer JS's and Delay JS's reports), in
+ *   registry order, or empty.
  */
 function simulatedFeatures(input: unknown): SimulatedFeatureId[] {
   if (!isRecord(input)) return [];
-  const simulation = ownValue(input, 'simulation');
-  if (!isRecord(simulation) || ownValue(simulation, 'state') !== 'simulated') return [];
-  const feature = ownValue(simulation, 'feature');
-  return SIMULATED_FEATURES.filter((row) => row.id === feature).map((row) => row.id);
+  const simulated = new Set<unknown>();
+  for (const key of SIMULATION_REPORT_KEYS) {
+    const simulation = ownValue(input, key);
+    if (isRecord(simulation) && ownValue(simulation, 'state') === 'simulated') {
+      simulated.add(ownValue(simulation, 'feature'));
+    }
+  }
+  return SIMULATED_FEATURES.filter((row) => simulated.has(row.id)).map((row) => row.id);
 }
 
 /**

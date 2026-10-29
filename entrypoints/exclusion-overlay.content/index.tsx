@@ -34,7 +34,7 @@ import {
   contextScheduler
 } from '../../utils/context-timers';
 import { createOverlayController } from './controller';
-import { createDelayEvidence, readDelayPage } from './exclusions/delay-page';
+import { createSimulationEvidence, readSimulationPage } from './exclusions/simulation-page';
 import { createSimulationMarkerCheck } from '../../lib/messaging/simulation-marker-verifier';
 import { createPageTools } from './page-tools';
 import { mountOverlay } from '../../components/injected-ui/mount-overlay';
@@ -119,8 +119,8 @@ function renderOverlay(
       // Recorded at document_start by the isolated script (same world).
       navigationAnchor: () => readNavigationAnchor(ISOLATED_WORLD)
     });
-    const delayEvidence = createDelayEvidence({
-      read: () => readDelayPage(document),
+    const simulationEvidence = createSimulationEvidence({
+      read: () => readSimulationPage(document),
       changed: page.candidates,
       verify: createSimulationMarkerCheck({
         send: (markerId) => sendMessage('verifySimulationMarker', { markerId }),
@@ -132,7 +132,7 @@ function renderOverlay(
     const controller = createOverlayController({
       port: createMessagingSessionPort(MESSAGING_TRANSPORT, log),
       pageFacts: page.pageFacts,
-      delayEvidence,
+      simulationEvidence,
       now: () => Date.now(),
       schedule,
       reload: () => {

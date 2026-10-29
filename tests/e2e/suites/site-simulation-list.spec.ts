@@ -16,6 +16,7 @@
 import { expect, test } from '../helpers/extension';
 import {
   applySimulated,
+  bundledDeferLists,
   bundledExclusionList,
   delayedScriptCount,
   delayLaneLines,
@@ -57,7 +58,8 @@ test('the start-up refresh never reaches the endpoint; a kept latest copy runs i
     await keepLatestList(
       extension,
       [...bundledExclusionList(SIMULATED_VERSION), EXTRA_ROW],
-      fetchedAt
+      fetchedAt,
+      bundledDeferLists(SIMULATED_VERSION)
     );
     const { opened, lastDocument } = await openCapturedBuilder(extension, (hook) =>
       openSitePage(extension, OFF, hook)

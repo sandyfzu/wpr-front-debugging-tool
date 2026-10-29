@@ -67,6 +67,30 @@ describe('parseExclusionSessionSummary — the simulated features', () => {
     ).toEqual({ state: 'active', origin: activeRecord().origin, simulated: ['delay_js'] });
   });
 
+  it('reads the Defer JS report beside the Delay JS one (registry order)', () => {
+    const both = {
+      ...activeRecord(),
+      simulate: { features: ['defer_all_js', 'delay_js'] },
+      document: {
+        outcome: 'rewritten',
+        reports: [],
+        simulation: { feature: 'delay_js', state: 'simulated', delayed: 3 },
+        deferSimulation: { feature: 'defer_all_js', state: 'simulated', deferred: 2, wrapped: 0 }
+      }
+    };
+    expect(parseExclusionSessionSummary(both)).toMatchObject({
+      simulated: ['defer_all_js', 'delay_js']
+    });
+    const deferOnly = {
+      ...both,
+      document: {
+        ...both.document,
+        simulation: { feature: 'delay_js', state: 'csp-blocked', delayed: 0 }
+      }
+    };
+    expect(parseExclusionSessionSummary(deferOnly)).toMatchObject({ simulated: ['defer_all_js'] });
+  });
+
   it('reads every step state but simulated as no simulation, never refusing the session', () => {
     for (const state of ['already-served', 'csp-blocked', 'not-applicable', 'future-state']) {
       expect(

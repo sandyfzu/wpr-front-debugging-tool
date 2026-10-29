@@ -39,6 +39,10 @@ import {
   trimExclusionRow
 } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
+import type {
+  DelaySimulationReport,
+  DocumentSimulationReport
+} from '../../../lib/messaging/exclusion-simulation';
 import { createLogger } from '../../../lib/logger';
 import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
 import {
@@ -63,7 +67,8 @@ import { countNoun } from '../../../utils/format-count';
 import type { OverlayController, SettledPasteOutcome } from '../controller';
 import { capText } from '../../../utils/cap-text';
 import { CopyAll } from './copy-all';
-import { DELAY_MODE_LANE, DelayModeControl, DelayModeNotes } from './delay-mode-control';
+import { SimulationModeControl, SimulationModeNotes } from './simulation-mode-control';
+import { isSimulationLane, type SimulationLane } from './simulation-mode';
 import { laneCounts, rowMatches } from './counts';
 import { isBlankRow, laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
 import type { PageOffRow } from './lane-page';
@@ -152,6 +157,28 @@ function isEditingKey(event: KeyboardEvent): boolean {
 }
 
 /**
+ * A simulated page's count line for its lane: scripts the simulation
+ * delayed, or deferred and wrapped, then those the rows restored.
+ *
+ * @param simulation The lane's simulation report (`simulated`).
+ * @param excluded Scripts the rows restored (the lane transform's rewrites).
+ */
+function simulationCountLine(simulation: DocumentSimulationReport, excluded: number): string {
+  return simulation.feature === 'delay_js'
+    ? SIMULATION_LANE_COPY.line(simulation.delayed, excluded)
+    : SIMULATION_LANE_COPY.deferLine(simulation.deferred, simulation.wrapped, excluded);
+}
+
+/**
+ * The Delay JS report's own facts, or null for another feature.
+ *
+ * @param simulation The lane's simulation report.
+ */
+function delayFacts(simulation: DocumentSimulationReport): DelaySimulationReport | null {
+  return simulation.feature === 'delay_js' ? simulation : null;
+}
+
+/**
  * The editor lane.
  *
  * @param props See {@link LaneProps}.
@@ -166,15 +193,15 @@ export function Lane(props: LaneProps): JSX.Element {
     return key !== null && props.controller.draft().disable[key];
   };
   const headingId = (): string => `xo-lane-${props.lane}`;
-  /** The lane carries the Delay JS mode control instead of a disable switch. */
-  const modeLane = (): boolean => props.lane === DELAY_MODE_LANE;
-  /** The simulation that delayed scripts on this applied page (the Delay JS lane only). */
+  /** The mode lane this lane is (its control replaces the disable switch), else null. */
+  const modeLane = (): SimulationLane | null => (isSimulationLane(props.lane) ? props.lane : null);
+  /** The simulation that ran on this applied page for this lane's feature (mode lanes only). */
   const simulation = createMemo(() => {
-    if (!modeLane()) return undefined;
+    const lane = modeLane();
     const view = props.controller.view();
-    return view?.kind === 'applied' && view.simulation?.state === 'simulated'
-      ? view.simulation
-      : undefined;
+    if (lane === null || view?.kind !== 'applied') return undefined;
+    const report = lane === 'delayJs' ? view.simulation : view.deferSimulation;
+    return report?.state === 'simulated' ? report : undefined;
   });
   /** The lane's rows read as one set (null: its rows act alone). */
   const page = (): ReturnType<OverlayController['lanePage']> =>
@@ -414,18 +441,18 @@ export function Lane(props: LaneProps): JSX.Element {
             {(simulated) => (
               <>
                 <span class="xo-lane-count">
-                  {SIMULATION_LANE_COPY.line(simulated().delayed, props.report?.rewritten ?? 0)}
+                  {simulationCountLine(simulated(), props.report?.rewritten ?? 0)}
                 </span>
                 <span class="xo-lane-hint">{SIMULATION_LANE_COPY.version(simulated())}</span>
                 <span class="xo-lane-hint">
                   {simulationListCopy(simulated(), (props.now ?? Date.now)())}
                 </span>
-                <Show when={simulated().undetermined}>
+                <Show when={delayFacts(simulated())?.undetermined}>
                   {(count) => (
                     <span class="xo-lane-caveat">{SIMULATION_LANE_COPY.undetermined(count())}</span>
                   )}
                 </Show>
-                <Show when={simulated().regexLimitHit}>
+                <Show when={delayFacts(simulated())?.regexLimitHit}>
                   <span class="xo-lane-caveat">{SIMULATION_LANE_COPY.regexLimit}</span>
                 </Show>
               </>
@@ -445,7 +472,13 @@ export function Lane(props: LaneProps): JSX.Element {
           </Show>
         </div>
         <Show when={modeLane()}>
-          <DelayModeControl controller={props.controller} locked={props.locked} />
+          {(lane) => (
+            <SimulationModeControl
+              controller={props.controller}
+              lane={lane()}
+              locked={props.locked}
+            />
+          )}
         </Show>
         <Show when={modeLane() ? null : toggleKey()}>
           {(key) => (
@@ -469,7 +502,9 @@ export function Lane(props: LaneProps): JSX.Element {
         </Show>
       </div>
       <Show when={modeLane()}>
-        <DelayModeNotes controller={props.controller} locked={props.locked} />
+        {(lane) => (
+          <SimulationModeNotes controller={props.controller} lane={lane()} locked={props.locked} />
+        )}
       </Show>
       <Show when={disabled()}>
         <p class="xo-lane-note">

@@ -14,7 +14,10 @@ import path from 'node:path';
 
 import type { Locator, Page, Response } from '@playwright/test';
 
-import type { DelaySimulationReport } from '../../../lib/messaging/exclusion-simulation';
+import type {
+  DeferSimulationReport,
+  DelaySimulationReport
+} from '../../../lib/messaging/exclusion-simulation';
 import { SIMULATION_MARKER_META_NAME } from '../../../lib/wp-rocket/constants';
 import { expect, type DriverPage, type ExtensionDriver } from './extension';
 import { DELAY, applyButton, injectOverlay, lane, reloadThroughSession } from './exclusion-overlay';
@@ -69,7 +72,17 @@ export async function delayModes(page: Page): Promise<DelayModeReading[]> {
 }
 
 /** The mode control's notes (block reason, admin warning, replaced, kept). */
-export const delayModeNotes = (page: Page): Locator => page.locator('#xo-delay-mode-notes p');
+export const delayModeNotes = (page: Page): Locator => page.locator('#xo-mode-notes-delayJs p');
+
+/** The Defer JS mode control's accessible name. */
+export const DEFER_MODE_GROUP = 'Load JavaScript deferred on this page';
+
+/** The Defer JS mode control's radio group. */
+export const deferModeGroup = (page: Page): Locator =>
+  page.getByRole('radiogroup', { name: DEFER_MODE_GROUP });
+
+/** The Defer JS mode control's notes. */
+export const deferModeNotes = (page: Page): Locator => page.locator('#xo-mode-notes-deferJs p');
 
 /** The Delay lane's count/hint/caveat lines (the simulation's count, version and list lines). */
 export async function delayLaneLines(page: Page): Promise<string[]> {
@@ -108,7 +121,11 @@ export async function simulationMarkers(page: Page): Promise<(string | null)[] |
 interface StoredSession {
   readonly state?: string;
   readonly simulate?: { readonly features?: readonly string[] };
-  readonly document?: { readonly outcome?: string; readonly simulation?: DelaySimulationReport };
+  readonly document?: {
+    readonly outcome?: string;
+    readonly simulation?: DelaySimulationReport;
+    readonly deferSimulation?: DeferSimulationReport;
+  };
 }
 
 /**
@@ -154,6 +171,31 @@ export async function documentSimulation(
     )
     .toBe(true);
   if (report === undefined) throw new Error(`tab ${String(tabId)} has no simulation report`);
+  return report;
+}
+
+/**
+ * The Defer JS simulation report of the tab's last intercepted document,
+ * polled until one exists.
+ *
+ * @param extension The driver.
+ * @param tabId The tab.
+ */
+export async function documentDeferSimulation(
+  extension: ExtensionDriver,
+  tabId: number
+): Promise<DeferSimulationReport> {
+  let report: DeferSimulationReport | undefined;
+  await expect
+    .poll(
+      async () => {
+        report = (await storedSession(extension, tabId))?.document?.deferSimulation;
+        return report !== undefined;
+      },
+      { timeout: 15_000, intervals: [100, 250, 500] }
+    )
+    .toBe(true);
+  if (report === undefined) throw new Error(`tab ${String(tabId)} has no Defer JS report`);
   return report;
 }
 
@@ -238,13 +280,19 @@ export async function openCapturedBuilder(
  * pointer off the page until their "nothing ran yet" reads are done).
  *
  * @param page The page with the overlay.
+ * @param groups The mode controls to set to Simulated (default: Delay JS's).
  * @returns The settled header indicator word.
  */
-export async function applySimulated(page: Page): Promise<string> {
-  const simulated = delayModeGroup(page).getByRole('radio', { name: 'Simulated', exact: true });
-  await simulated.focus();
-  await page.keyboard.press('Space');
-  await expect(simulated).toBeChecked();
+export async function applySimulated(
+  page: Page,
+  groups: readonly Locator[] = [delayModeGroup(page)]
+): Promise<string> {
+  for (const group of groups) {
+    const simulated = group.getByRole('radio', { name: 'Simulated', exact: true });
+    await simulated.focus();
+    await page.keyboard.press('Space');
+    await expect(simulated).toBeChecked();
+  }
   return await reloadThroughSession(page, async () => {
     await applyButton(page).focus();
     await page.keyboard.press('Enter');
@@ -314,13 +362,43 @@ const SIMULATION_DATA = path.resolve(
  * @throws {Error} When the file has no list for that version.
  */
 export function bundledExclusionList(version: string): string[] {
+  return bundledList(version, 'delayJsExclusions');
+}
+
+/**
+ * The bundled Defer JS exclusion lists of a WP Rocket version, from the
+ * shipped data file (a fetched latest list carries both beside the Delay
+ * JS rows).
+ *
+ * @param version The WP Rocket version (a key of the file's `versions`).
+ * @throws {Error} When the file has no such lists for that version.
+ */
+export function bundledDeferLists(version: string): { external: string[]; inline: string[] } {
+  return {
+    external: bundledList(version, 'deferJsExternalExclusions'),
+    inline: bundledList(version, 'deferJsInlineExclusions')
+  };
+}
+
+/** The data file's lists a version entry points at. */
+type BundledListName =
+  'delayJsExclusions' | 'deferJsExternalExclusions' | 'deferJsInlineExclusions';
+
+/**
+ * One bundled list of a WP Rocket version.
+ *
+ * @param version The WP Rocket version.
+ * @param name The version entry's list field.
+ * @throws {Error} When the file has no such list for that version.
+ */
+function bundledList(version: string, name: BundledListName): string[] {
   const data = JSON.parse(readFileSync(SIMULATION_DATA, 'utf8')) as {
-    versions: Record<string, { delayJsExclusions: { sha256: string } } | undefined>;
+    versions: Record<string, Partial<Record<BundledListName, { sha256: string }>> | undefined>;
     rowLists: Record<string, string[] | undefined>;
   };
-  const key = data.versions[version]?.delayJsExclusions.sha256;
+  const key = data.versions[version]?.[name]?.sha256;
   const rows = key === undefined ? undefined : data.rowLists[key];
-  if (rows === undefined) throw new Error(`simulation-data.json has no list for ${version}`);
+  if (rows === undefined) throw new Error(`simulation-data.json has no ${name} for ${version}`);
   return rows;
 }
 
@@ -336,11 +414,14 @@ export function bundledExclusionList(version: string): string[] {
  * @param extension The driver.
  * @param rows The copy's rows.
  * @param fetchedAt When the copy was "fetched" (epoch ms).
+ * @param defer The same document's Defer JS lists (a copy without them is
+ *   refreshed at once, as one kept before they existed).
  */
 export async function keepLatestList(
   extension: ExtensionDriver,
   rows: readonly string[],
-  fetchedAt: number
+  fetchedAt: number,
+  defer: { readonly external: readonly string[]; readonly inline: readonly string[] }
 ): Promise<void> {
   const sha256 = createHash('sha256').update(JSON.stringify(rows), 'utf8').digest('hex');
   await extension.evaluateInWorker(
@@ -349,7 +430,7 @@ export async function keepLatestList(
     },
     {
       key: LATEST_LIST_KEY,
-      record: { copy: { fetchedAt, sha256, rows }, attemptedAt: fetchedAt }
+      record: { copy: { fetchedAt, sha256, rows, defer }, attemptedAt: fetchedAt }
     }
   );
   await extension.relaunch();

@@ -18,7 +18,11 @@ import {
   type ExclusionSetRows
 } from '../../../lib/exclusion-builder/set';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import type { DelaySimulationReport } from '../../../lib/messaging/exclusion-simulation';
+import type {
+  DeferSimulationReport,
+  DelaySimulationReport,
+  DocumentSimulationReport
+} from '../../../lib/messaging/exclusion-simulation';
 import type {
   SimulationRuntimeUnavailableCause,
   SimulationStage
@@ -32,7 +36,8 @@ import type { PageMatch } from './page-match';
  * - `applied` — this page was rewritten; `unmatched` counts rows that
  *   matched nothing (the no-match warnings); `warnings` names the applied
  *   rows WP Rocket applies as-is that change the whole feature on the page;
- *   `simulation` is the simulation step's report when the session simulates.
+ *   `simulation` is the Delay JS simulation step's report and
+ *   `deferSimulation` the Defer JS one's, each when the session simulates it.
  * - `unmodified` — this page was intercepted but served unmodified.
  * - `not-intercepted` — the session is on, but this page is not the one it
  *   rewrote.
@@ -54,6 +59,7 @@ export type SessionView =
       readonly warnings: readonly AppliedWarning[];
       readonly served: ExclusionServedDocument | undefined;
       readonly simulation?: DelaySimulationReport;
+      readonly deferSimulation?: DeferSimulationReport;
     }
   | {
       readonly kind: 'unmodified';
@@ -152,7 +158,10 @@ export function sessionView(
         unmatched: unmatchedRows(document.reports),
         warnings: appliedWarnings(document.reports, status.set),
         served: document.served,
-        ...(document.simulation === undefined ? {} : { simulation: document.simulation })
+        ...(document.simulation === undefined ? {} : { simulation: document.simulation }),
+        ...(document.deferSimulation === undefined
+          ? {}
+          : { deferSimulation: document.deferSimulation })
       };
     case 'over-budget':
       return {
@@ -180,4 +189,18 @@ export function sessionView(
         served: document.served
       };
   }
+}
+
+/**
+ * An applied view's simulation reports in WP Rocket's buffer order (Defer
+ * JS, then Delay JS), each present only when the session simulates it.
+ *
+ * @param view The applied view.
+ */
+export function simulationReports(
+  view: Pick<Extract<SessionView, { kind: 'applied' }>, 'simulation' | 'deferSimulation'>
+): DocumentSimulationReport[] {
+  return [view.deferSimulation, view.simulation].filter(
+    (report): report is DocumentSimulationReport => report !== undefined
+  );
 }

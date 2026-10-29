@@ -5,11 +5,12 @@ import type {
 } from '../../../lib/messaging/exclusion-session';
 import { activeRecord } from '../../../lib/messaging/exclusion-session.fixtures';
 import {
+  deferSimulatedReport,
   delaySimulate,
   simulatedReport
 } from '../../../lib/messaging/exclusion-simulation.fixtures';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import { appliedWarnings, sessionView } from './session-view';
+import { appliedWarnings, sessionView, simulationReports } from './session-view';
 
 /** The fixture session with another document outcome. */
 function withDocument(document: ExclusionDocumentOutcome | null): ActiveExclusionSession {
@@ -171,6 +172,28 @@ describe('sessionView: simulation', () => {
       () => 'this-page'
     );
     expect(Object.hasOwn(plain, 'simulation')).toBe(false);
+  });
+
+  it('carries the Defer JS report beside the Delay JS one, listed in buffer order', () => {
+    const simulation = simulatedReport();
+    const deferSimulation = deferSimulatedReport();
+    const view = sessionView(
+      {
+        ...withDocument({ outcome: 'rewritten', reports: [REPORT], simulation, deferSimulation }),
+        simulate: { features: ['defer_all_js', 'delay_js'] }
+      },
+      () => 'this-page'
+    );
+    expect(view).toMatchObject({ kind: 'applied', simulation, deferSimulation });
+    if (view.kind !== 'applied') throw new Error('not applied');
+    expect(simulationReports(view)).toEqual([deferSimulation, simulation]);
+    expect(simulationReports({})).toEqual([]);
+    const deferOnly = sessionView(
+      withDocument({ outcome: 'rewritten', reports: [], deferSimulation }),
+      () => 'this-page'
+    );
+    expect(Object.hasOwn(deferOnly, 'simulation')).toBe(false);
+    expect(deferOnly).toMatchObject({ deferSimulation });
   });
 
   it('marks a row overrun of a simulating session (the simulation shares its budget)', () => {

@@ -83,16 +83,20 @@ function hostOf(origin: string): string {
 }
 
 /**
- * The "On" description's subject: the exclusions, plus the features the last
- * document was simulated with by their full names — only a document the
- * step actually simulated (one left as served names no simulation).
+ * The "On" description's opening, up to the colon: the exclusions, plus the
+ * features the last document was simulated with by their full names — only
+ * a document the step actually simulated (one left as served names no
+ * simulation). Several features read as simulated by the extension, never
+ * the site's configuration.
  *
  * @param simulated The features the last document was simulated with.
  */
-function appliedSubject(simulated: readonly SimulatedFeatureId[]): string {
-  if (simulated.length === 0) return 'Exclusions are';
-  const names = simulated.map((id) => hudFeatureOf(id)?.label ?? id).join(' and ');
-  return `Exclusions and a simulated ${names} are`;
+function appliedLead(simulated: readonly SimulatedFeatureId[]): string {
+  const names = simulated.map((id) => hudFeatureOf(id)?.label ?? id);
+  if (names.length === 0) return 'Exclusions are applied in this tab';
+  if (names.length === 1)
+    return `Exclusions and a simulated ${names.join('')} are applied in this tab`;
+  return `Exclusions are applied in this tab, with ${names.join(' and ')} simulated by the extension (not the site’s configuration)`;
 }
 
 /**
@@ -121,7 +125,7 @@ export function builderEntryView(state: BuilderSessionState): BuilderEntryView {
     case 'active':
       return {
         badge: { kind: 'ok', label: 'On' },
-        description: `${appliedSubject(summary.simulated ?? [])} applied in this tab: pages of ${hostOf(summary.origin)} load rewritten until Stop or the tab closes. Open the builder to see this page’s result.`
+        description: `${appliedLead(summary.simulated ?? [])}: pages of ${hostOf(summary.origin)} load rewritten until Stop or the tab closes. Open the builder to see this page’s result.`
       };
     case 'unavailable':
       return {

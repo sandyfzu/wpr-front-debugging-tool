@@ -12,7 +12,7 @@ import type { ClipboardWrite, ClipboardWriter } from '../clipboard';
 import { ROW_REASONS } from '../../../lib/exclusion-builder/row-reasons';
 import { SET_READING_DELAY_MS } from './set-readings';
 import { Lane } from './lane';
-import { PASTE_COPY, appliedRowWarningNote } from '../copy';
+import { LANE_COPY, PASTE_COPY, appliedRowWarningNote } from '../copy';
 import type { LaneKey } from './draft';
 
 /** Renders every row (happy-dom has no layout). */
@@ -533,13 +533,13 @@ describe('Lane', () => {
 
   it('keeps the disable switch on a lane without a mode control', async () => {
     const controller = await readyController();
-    mountLane(controller, undefined, undefined, undefined, 'deferJs');
+    mountLane(controller, undefined, undefined, undefined, 'lazyRender');
     fireEvent.click(
       screen.getByRole('switch', {
-        name: 'Disable feature: Load JavaScript deferred on this page'
+        name: `Disable feature: ${LANE_COPY.lazyRender.label} on this page`
       })
     );
-    expect(controller.draft().disable.deferJs).toBe(true);
+    expect(controller.draft().disable.lazyRender).toBe(true);
     expect(screen.queryByRole('radiogroup')).toBeNull();
   });
 
@@ -1215,9 +1215,8 @@ describe('Lane page-wide state (K.5b; a warning since K.5c)', () => {
     expect(screen.getByText(UNKNOWN)).toBeTruthy();
     expect(controller.invalidCount()).toBe(0);
     expect(pageOff()).toBeNull();
-    fireEvent.click(
-      screen.getByRole('switch', { name: 'Disable feature: Load JavaScript deferred on this page' })
-    );
+    // The Defer JS lane's mode control: Disabled is its feature-wide disable.
+    fireEvent.click(screen.getByText('Disabled'));
     expect(screen.queryByText(UNKNOWN)).toBeNull();
   });
 

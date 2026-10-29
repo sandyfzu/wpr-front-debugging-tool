@@ -41,9 +41,9 @@ import {
   removeRow,
   blankRowWarning,
   sameSet,
-  setDelayMode,
+  setLaneMode,
   setDisable,
-  draftDelayMode,
+  draftLaneMode,
   updateRow,
   type CandidateOutcome,
   type Committed,
@@ -68,14 +68,18 @@ import {
 import { rowVerdict, type LanePage, type RowVerdict } from './exclusions/lane-page';
 import { laneReport } from './exclusions/counts';
 import {
-  delayModeBlocks,
-  shownDelayMode,
-  realDelayState,
+  SIMULATION_LANES,
+  laneModeBlocks,
+  shownLaneMode,
+  realFeatureState,
+  runsSimulation,
   sameSimulate,
-  type DelayMode,
-  type DelayPageEvidence,
-  type RealDelayState
-} from './exclusions/delay-mode';
+  type ModeBlock,
+  type RealFeatureState,
+  type SimulationLane,
+  type SimulationMode,
+  type SimulationPageEvidence
+} from './exclusions/simulation-mode';
 import { createSetReadings } from './exclusions/set-readings';
 import { INITIAL_OVERLAY_STATE, canStart, overlayTransition } from './session/machine';
 import type { OverlayEvent, OverlayState, SessionAction } from './session/machine';
@@ -127,11 +131,23 @@ export interface OverlayControllerDeps {
    */
   readonly pasteAtOnce?: PasteBounds;
   /**
-   * What the live page shows of Delay JS (reactive): with the session's
-   * report, it decides which Delay JS modes the page allows. Absent (a host
-   * that cannot read the page): every mode is offered, none replaced.
+   * What the live page shows of each mode lane's feature (reactive): with
+   * the session's reports, it decides which modes the page allows. Absent
+   * (a host that cannot read the page): every mode is offered, none replaced.
    */
-  readonly delayEvidence?: Accessor<DelayPageEvidence>;
+  readonly simulationEvidence?: Accessor<SimulationPageEvidence>;
+}
+
+/** One mode lane's reading of the page (reactive). */
+interface LaneModel {
+  /** The page's real state of the lane's feature (null: not read). */
+  readonly state: Accessor<RealFeatureState | null>;
+  /** Why each mode is unavailable (null: every mode offered). */
+  readonly blocks: Accessor<Readonly<Record<SimulationMode, ModeBlock | null>> | null>;
+  /** The mode shown checked (null: none). */
+  readonly mode: Accessor<SimulationMode | null>;
+  /** The draft's mode the page does not allow (null: none). */
+  readonly replaced: Accessor<SimulationMode | null>;
 }
 
 /** What the draft saves: its set and what is simulated beside it. */
@@ -364,26 +380,30 @@ export interface OverlayController {
   removeRow(lane: LaneKey, id: string): void;
   setDisable(key: ToggleKey, value: boolean): void;
   /**
-   * The Delay JS lane's mode shown checked: the draft's, else none when the
-   * page does not allow it — the page runs as served, and As served stays a
-   * real choice (see {@link OverlayController.replacedDelayMode}).
+   * A mode lane's mode shown checked: the draft's, else none when the page
+   * does not allow it — the page runs as served, and As served stays a real
+   * choice (see {@link OverlayController.replacedLaneMode}).
    */
-  readonly delayMode: Accessor<DelayMode | null>;
+  laneMode(lane: SimulationLane): SimulationMode | null;
   /**
-   * The page's real Delay JS state — the session's report of this page
-   * first, then the extension's markers, then the live page (null: the host
-   * cannot read the page, so every mode is offered).
+   * The page's real state of a mode lane's feature — the session's report
+   * of this page first, then the extension's markers, then the live page
+   * (null: the host cannot read the page, so every mode is offered).
    */
-  readonly delayState: Accessor<RealDelayState | null>;
+  laneState(lane: SimulationLane): RealFeatureState | null;
+  /** Why each of a mode lane's modes is unavailable here (null: every mode is offered). */
+  laneBlocks(lane: SimulationLane): Readonly<Record<SimulationMode, ModeBlock | null>> | null;
   /**
-   * The draft's mode when the page does not allow it, so the lane checks
-   * nothing and says the page runs as served (null: none). Display only: the
-   * draft keeps the mode — not dirty, and an apply re-sends it — until the
-   * user picks another (As served included).
+   * The draft's mode of a lane when the page does not allow it, so the lane
+   * checks nothing and says the page runs as served (null: none). Display
+   * only: the draft keeps the mode — not dirty, and an apply re-sends it —
+   * until the user picks another (As served included).
    */
-  readonly replacedDelayMode: Accessor<DelayMode | null>;
-  /** Choose the Delay JS mode (ignored when not editable or when the page does not allow it). */
-  setDelayMode(mode: DelayMode): void;
+  replacedLaneMode(lane: SimulationLane): SimulationMode | null;
+  /** Choose a mode lane's mode (ignored when not editable or when the page does not allow it). */
+  setLaneMode(lane: SimulationLane, mode: SimulationMode): void;
+  /** The page on screen runs a simulation (any feature: the session's, or one kept). */
+  readonly runsSimulation: Accessor<boolean>;
   /** The page is a WordPress admin or login screen (a simulation there is warned about, never blocked). */
   readonly adminScreen: Accessor<boolean>;
   /**
@@ -496,33 +516,62 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     );
   });
 
-  const draftMode = createMemo(() => draftDelayMode(draft()));
-  const delayState = createMemo((): RealDelayState | null => {
-    const evidence = deps.delayEvidence;
-    if (evidence === undefined) return null;
-    const current = status();
-    const shown = view();
-    // The session speaks for the page only when its rewrite is the page on screen.
-    const session =
-      current?.state === 'active' && shown?.kind === 'applied'
-        ? {
-            simulation: shown.simulation,
-            disableDelayJs: current.set.disable.delayJs,
-            delayReport: laneReport(shown.reports, 'delayJs')
-          }
-        : null;
-    return realDelayState(session, evidence(), current?.state === 'active');
-  });
-  // A mode the page does not allow (restored, or applied on a page that
-  // turned out not to allow it) leaves the lane unchecked, said in the lane;
-  // the draft keeps it, so the session's mode for the site's other pages stays.
-  const shownMode = createMemo(() => {
-    const real = delayState();
-    const mode = draftMode();
-    return real === null ? { mode, replaced: null } : shownDelayMode(mode, real);
-  });
-  const delayMode = createMemo(() => shownMode().mode);
-  const replacedDelayMode = createMemo(() => shownMode().replaced);
+  /**
+   * One mode lane's reading of the page: its real state, why each mode is
+   * unavailable, and the mode shown for the draft's.
+   *
+   * @param lane The mode lane.
+   * @param delayState The real Delay JS state (the Defer JS lane reads it).
+   */
+  const laneModel = (
+    lane: SimulationLane,
+    delayState: Accessor<RealFeatureState | null>
+  ): LaneModel => {
+    const state = createMemo((): RealFeatureState | null => {
+      const evidence = deps.simulationEvidence;
+      if (evidence === undefined) return null;
+      const current = status();
+      const shown = view();
+      const feature = SIMULATION_LANES[lane];
+      // The session speaks for the page only when its rewrite is the page on screen.
+      const session =
+        current?.state === 'active' && shown?.kind === 'applied'
+          ? {
+              simulation: [shown.simulation, shown.deferSimulation].find(
+                (report) => report?.feature === feature
+              ),
+              disabled: current.set.disable[lane],
+              report: laneReport(shown.reports, lane)
+            }
+          : null;
+      return realFeatureState(session, evidence()[lane], current?.state === 'active');
+    });
+    const blocks = createMemo(() => {
+      const real = state();
+      return real === null ? null : laneModeBlocks(lane, real, delayState());
+    });
+    // A mode the page does not allow (restored, or applied on a page that
+    // turned out not to allow it) leaves the lane unchecked, said in the lane;
+    // the draft keeps it, so the session's mode for the site's other pages stays.
+    const shownMode = createMemo(() => {
+      const real = state();
+      const mode = draftLaneMode(draft(), lane);
+      return real === null
+        ? { mode, replaced: null }
+        : shownLaneMode(lane, mode, real, delayState());
+    });
+    const mode = createMemo(() => shownMode().mode);
+    const replaced = createMemo(() => shownMode().replaced);
+    return { state, blocks, mode, replaced };
+  };
+  const delayLane = laneModel('delayJs', () => null);
+  const laneModels: Readonly<Record<SimulationLane, LaneModel>> = {
+    delayJs: delayLane,
+    deferJs: laneModel('deferJs', delayLane.state)
+  };
+  const simulationRuns = createMemo(() =>
+    Object.values(laneModels).some((model) => runsSimulation(model.state()))
+  );
   const adminScreen = createMemo(() => isWordPressAdminScreen(deps.pageFacts().href));
 
   const editable = createMemo(() => {
@@ -967,7 +1016,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     const saved = savedReply.reply.set;
     const active = current.reply.state === 'active' ? current.reply : null;
     const set = saved ?? active?.set ?? EMPTY_EXCLUSION_SET;
-    // The Delay JS mode restores with its rows (never arming by itself).
+    // The mode lanes' modes restore with their rows (never arming by themselves).
     const simulate = saved === null ? active?.simulate : savedReply.reply.simulate;
     lastSaved = saved === null ? EMPTY_SAVED_DRAFT : { set: saved, simulate };
     // A set saved before rows were stored this way opens in the stored form.
@@ -1281,15 +1330,17 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (!editable()) return;
       setDraft(setDisable(draft(), key, value));
     },
-    delayMode,
-    delayState,
-    replacedDelayMode,
+    laneMode: (lane) => laneModels[lane].mode(),
+    laneState: (lane) => laneModels[lane].state(),
+    laneBlocks: (lane) => laneModels[lane].blocks(),
+    replacedLaneMode: (lane) => laneModels[lane].replaced(),
+    runsSimulation: simulationRuns,
     adminScreen,
-    setDelayMode: (mode) => {
+    setLaneMode: (lane, mode) => {
       if (!editable()) return;
-      const real = delayState();
-      if (real !== null && delayModeBlocks(real)[mode] !== null) return;
-      setDraft(setDelayMode(draft(), mode));
+      const blocks = laneModels[lane].blocks();
+      if (blocks !== null && blocks[mode] !== null) return;
+      setDraft(setLaneMode(draft(), lane, mode));
     },
     addCandidate: (lane, row, focus) => {
       if (!editable()) return 'held';
