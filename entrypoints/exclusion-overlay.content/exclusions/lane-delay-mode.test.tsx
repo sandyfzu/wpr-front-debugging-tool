@@ -74,8 +74,16 @@ async function ready(
   return controller;
 }
 
-/** Render the Delay JS lane. */
-function mount(controller: OverlayController, report?: TransformReport): void {
+/**
+ * Render the Delay JS lane.
+ *
+ * @param hold Whether an action holds the controls (its `locked` read live, a getter).
+ */
+function mount(
+  controller: OverlayController,
+  report?: TransformReport,
+  hold: { readonly locked: boolean } = { locked: false }
+): void {
   render(() => (
     <Lane
       lane="delayJs"
@@ -85,7 +93,7 @@ function mount(controller: OverlayController, report?: TransformReport): void {
       requestFrame={(run) => {
         run();
       }}
-      locked={false}
+      locked={hold.locked}
       announce={vi.fn()}
       createVirtualizer={noRows}
       now={() => 1_790_000_000_000 + 3 * 3_600_000}
@@ -124,6 +132,42 @@ describe('Delay JS lane mode control', () => {
     expect(controller.delayMode()).toBe('simulated');
     expect(radio('Simulated').checked).toBe(true);
     expect(screen.queryByText(DELAY_MODE_COPY.disabledChangesNothing)).toBeNull();
+  });
+
+  it('holds the whole control while an action is in flight: reachable, said why, picks refused', async () => {
+    const controller = await ready(NO_DELAY_EVIDENCE);
+    const [locked, setLocked] = createSignal(true);
+    mount(controller, undefined, {
+      get locked() {
+        return locked();
+      }
+    });
+    const group = screen.getByRole('radiogroup', { name: DELAY_MODE_COPY.groupName });
+    expect(group.getAttribute('aria-disabled')).toBe('true');
+    expect(group.getAttribute('title')).toBe(DELAY_MODE_COPY.held);
+    // Never native-disabled: the checked radio stays the group's Tab stop.
+    expect(radio('As served').disabled).toBe(false);
+    radio('As served').focus();
+    expect(document.activeElement).toBe(radio('As served'));
+    fireEvent.click(screen.getByText('Simulated'));
+    expect(controller.delayMode()).toBe('served');
+    expect(radio('As served').checked).toBe(true);
+    expect(radio('Simulated').checked).toBe(false);
+    // Released: the same radios take picks again, focus untouched.
+    setLocked(false);
+    expect(group.hasAttribute('aria-disabled')).toBe(false);
+    expect(group.hasAttribute('title')).toBe(false);
+    expect(document.activeElement).toBe(radio('As served'));
+    fireEvent.click(screen.getByText('Simulated'));
+    expect(controller.delayMode()).toBe('simulated');
+  });
+
+  it('keeps an option the page does not allow natively disabled while held', async () => {
+    const controller = await ready({ ...NO_DELAY_EVIDENCE, footprints: true });
+    mount(controller, undefined, { locked: true });
+    expect(radio('Simulated').disabled).toBe(true);
+    expect(radio('As served').disabled).toBe(false);
+    expect(radio('Disabled').disabled).toBe(false);
   });
 
   it('keeps a saved Disabled on a page without Delay JS (never replaced)', async () => {

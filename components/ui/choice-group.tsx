@@ -7,6 +7,11 @@
  * the wrapper's job is only guaranteeing that contract (same-group radios,
  * label-linked tiles, a verified focus ring, and checked styling from the
  * data attributes) on top of Kobalte's headless parts.
+ *
+ * Two ways to take the group out of play: `disabled` (native: off the Tab
+ * order) and `held` (a reason: reachable and announced as unavailable, the
+ * reason as its tooltip, every change refused) — the latter for a group an
+ * action holds for a moment, so keyboard focus never drops out of it.
  */
 import type { JSX } from 'solid-js';
 import { For } from 'solid-js';
@@ -55,6 +60,13 @@ export interface ChoiceGroupProps<T extends string> {
   /** Whether the whole group is disabled (dimmed, still hoverable). */
   disabled?: boolean;
   /**
+   * Why the whole group is held, or undefined when it is not: a held group
+   * stays focusable (`aria-disabled`, never native `disabled`), shows the
+   * reason as its tooltip, and refuses every selection change. An option's
+   * own `disabled` still applies on top.
+   */
+  held?: string;
+  /**
    * Extra classes on the group, appended last — joined, never
    * conflict-resolved: pass none that fights the group's own utilities.
    */
@@ -76,6 +88,7 @@ export interface ChoiceGroupProps<T extends string> {
  * @param props['aria-labelledby'] The naming element's id (by reference).
  * @param props['aria-describedby'] The describing element's id.
  * @param props.disabled Disables every option (an option's own `disabled` disables it alone).
+ * @param props.held Holds the group for that reason (focusable, changes refused).
  * @param props.class Extra classes on the group element.
  * @throws {@link Error} when the group is named neither by `aria-label` nor by
  *   an `aria-labelledby` reference (a wiring bug — the radios would be nameless).
@@ -95,6 +108,7 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>): JSX.E
     }
     return { 'aria-label': props['aria-label'], 'aria-labelledby': props['aria-labelledby'] };
   };
+  const held = (): boolean => props.held !== undefined;
   return (
     // No `name` prop: Kobalte falls back to its per-instance unique group id
     // (`radiogroup-<uid>`), the safe per-group contract — a hardcoded shared
@@ -107,12 +121,20 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>): JSX.E
       // would hand the selection to the group itself).
       value={props.value ?? ''}
       onChange={(value: string) => {
-        props.onChange(value as T);
+        // Refused while held: the group is controlled, so Kobalte re-syncs
+        // every native radio to `value` and the attempted pick leaves no trace.
+        if (!held()) props.onChange(value as T);
       }}
       {...naming()}
       aria-describedby={props['aria-describedby']}
+      // Overrides Kobalte's own (native-disabled-only) attribute when held.
+      aria-disabled={props.disabled === true || held() ? 'true' : undefined}
+      data-held={held() ? '' : undefined}
+      title={props.held}
       disabled={props.disabled}
-      class={clsx('flex flex-wrap items-center gap-1', props.class)}
+      // A held group dims once, on the group (never per tile: no compounding
+      // with a host stylesheet that dims every `aria-disabled` element).
+      class={clsx('flex flex-wrap items-center gap-1 data-held:opacity-50', props.class)}
     >
       <For each={props.options}>
         {(option) => {
@@ -141,14 +163,17 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>): JSX.E
               <KobalteRadioGroup.ItemInput />
               <KobalteRadioGroup.ItemLabel
                 class={clsx(
-                  'flex h-7 cursor-pointer select-none items-center justify-center whitespace-nowrap rounded border px-2 text-xs font-medium',
+                  'flex h-7 select-none items-center justify-center whitespace-nowrap rounded border px-2 text-xs font-medium',
                   checked()
                     ? 'border-transparent bg-accent-strong text-on-accent'
                     : 'border-line-2 bg-surface-2 text-fg-primary',
                   // Pointer feedback only while the group can change (a
                   // disabled tile keeps its resting look).
+                  // A held tile reads as unavailable under the pointer too.
+                  held() ? 'cursor-not-allowed' : 'cursor-pointer',
                   !checked() &&
                     props.disabled !== true &&
+                    !held() &&
                     option.disabled !== true &&
                     'hover:border-line-3 hover:bg-surface-3',
                   // The item label also carries `data-disabled` from Kobalte's

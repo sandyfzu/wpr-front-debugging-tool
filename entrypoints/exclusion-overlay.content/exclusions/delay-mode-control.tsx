@@ -74,7 +74,8 @@ export function DelayModeControl(props: DelayModeProps): JSX.Element {
       }}
       aria-label={DELAY_MODE_COPY.groupName}
       aria-describedby={DELAY_MODE_NOTES_ID}
-      disabled={props.locked}
+      // Locked like the overlay's other held controls: reachable, said why.
+      held={props.locked ? DELAY_MODE_COPY.held : undefined}
       class="xo-mode-choice"
     />
   );

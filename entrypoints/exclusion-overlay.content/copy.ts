@@ -1013,6 +1013,8 @@ export const DELAY_MODE_COPY = {
   /** Disabled is shown on a page WP Rocket does not delay (allowed: it is a no-op here). */
   disabledChangesNothing:
     'WP Rocket doesn’t delay scripts on this page, so Disabled changes nothing here.',
+  /** Why the control is held (its tooltip): an action is in flight. */
+  held: 'Wait for the current action to finish.',
   /** The page still runs a simulation the session no longer applies (e.g. after Stop). */
   kept: 'Simulated · reload to see the page without it.',
   /** The admin and login screens' warning (never blocks). */
