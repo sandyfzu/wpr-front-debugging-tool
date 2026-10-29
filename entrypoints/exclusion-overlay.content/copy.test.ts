@@ -26,12 +26,16 @@ import {
   sessionIndicator,
   unmodifiedCopy,
   runtimeUnavailableCopy,
+  simulationListCopy,
   viewCopy
 } from './copy';
 import type { StoredRowDiff } from '../../lib/exclusion-builder/field-text';
 import type { AppliedWarning, SessionView } from './session/session-view';
 import type { OverlayState } from './session/machine';
-import { SIMULATION_RUNTIME_UNAVAILABLE_CAUSES } from '../../lib/wp-rocket-simulation/spec';
+import {
+  LATEST_LIST_MISSES,
+  SIMULATION_RUNTIME_UNAVAILABLE_CAUSES
+} from '../../lib/wp-rocket-simulation/spec';
 
 /** Names applied rows by their text (the rows left the lane). */
 const textRefs = (rows: readonly string[]): readonly RowRef[] => rows.map((text) => ({ text }));
@@ -705,5 +709,34 @@ describe('unmodifiedCopy: runtime unavailable', () => {
     expect(runtimeUnavailableCopy('version-missing')).toBe(
       'The packaged simulation data has no entry for this WP Rocket version, so the page was served unmodified. Update the extension to simulate this version.'
     );
+  });
+});
+
+describe('simulationListCopy', () => {
+  const NOW = 1_790_000_000_000;
+
+  it('names the latest list with its age', () => {
+    expect(
+      simulationListCopy(
+        { listSource: 'latest', listFetchedAt: NOW - 3 * 3_600_000, wpRocketVersion: '3.24' },
+        NOW
+      )
+    ).toBe('Exclusion list: latest (fetched 3 h ago)');
+  });
+
+  it('names the bundled list with its version and why the latest one did not run', () => {
+    expect(
+      simulationListCopy(
+        { listSource: 'bundled', listMiss: 'never-fetched', wpRocketVersion: '3.23.5.1' },
+        NOW
+      )
+    ).toBe('Exclusion list: bundled with WP Rocket 3.23.5.1 (latest list not fetched yet)');
+    const words = LATEST_LIST_MISSES.map((listMiss) =>
+      simulationListCopy({ listSource: 'bundled', listMiss, wpRocketVersion: '3.24' }, NOW)
+    );
+    // Every miss has its own words.
+    expect(new Set(words).size).toBe(LATEST_LIST_MISSES.length);
+    for (const line of words)
+      expect(line).toMatch(/^Exclusion list: bundled with WP Rocket 3\.24 \(.+\)$/);
   });
 });

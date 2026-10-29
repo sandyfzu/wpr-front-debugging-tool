@@ -33,7 +33,13 @@ import {
   type LatestCommits
 } from './exclusions/row-notes';
 import type { SessionProblem } from './session/port';
-import type { SimulationRuntimeUnavailableCause } from '../../lib/wp-rocket-simulation/spec';
+import type {
+  LatestListMiss,
+  SimulationRuntimeUnavailableCause
+} from '../../lib/wp-rocket-simulation/spec';
+import type { SimulationListProvenance } from '../../lib/messaging/exclusion-simulation';
+import { LATEST_LIST_MAX_AGE_MS } from '../../lib/exclusion-session/latest-list-source';
+import { relativeAge } from '../../utils/relative-age';
 import type { OverlayState, SessionAction } from './session/machine';
 import type { AppliedWarning, SessionView, UnmodifiedReason } from './session/session-view';
 import type { CandidateAddOutcome, SaveState } from './controller';
@@ -681,6 +687,43 @@ const RUNTIME_UNAVAILABLE_COPY: Readonly<
 export function runtimeUnavailableCopy(cause: SimulationRuntimeUnavailableCause): string {
   const { what, remedy } = RUNTIME_UNAVAILABLE_COPY[cause];
   return `The packaged simulation data ${what}, so the page was served unmodified. ${remedy}`;
+}
+
+/** Days a kept latest list is trusted, for its expiry words. */
+const LATEST_LIST_MAX_AGE_DAYS = LATEST_LIST_MAX_AGE_MS / 86_400_000;
+
+/**
+ * Why the bundled list ran, per latest-list miss (draft words): the
+ * server's answer (`malformed`, `invalid`) is told apart from the saved
+ * copy (`unreadable`, `expired`).
+ */
+const LATEST_LIST_MISS_COPY: Readonly<Record<LatestListMiss, string>> = {
+  'never-fetched': 'latest list not fetched yet',
+  'network-error': 'latest list unreachable: network error',
+  timeout: 'latest list unreachable: the request timed out',
+  'http-error': 'latest list refused by the server',
+  oversize: 'latest list too large',
+  malformed: 'the server sent the latest list in an unexpected format',
+  invalid: 'latest list failed validation',
+  unreadable: 'the saved copy of the latest list could not be read',
+  expired: `the saved copy of the latest list is over ${String(LATEST_LIST_MAX_AGE_DAYS)} days old`
+};
+
+/**
+ * The lane detail naming the exclusion list a simulation ran with (draft
+ * words): the fetched latest list with its age, or the version's bundled
+ * list with why the latest one did not run.
+ *
+ * @param list The simulation's list provenance and its WP Rocket version.
+ * @param now The current time (epoch ms), for the fetched list's age.
+ */
+export function simulationListCopy(
+  list: SimulationListProvenance & { readonly wpRocketVersion: string },
+  now: number
+): string {
+  return list.listSource === 'latest'
+    ? `Exclusion list: latest (fetched ${relativeAge(now - list.listFetchedAt)})`
+    : `Exclusion list: bundled with WP Rocket ${list.wpRocketVersion} (${LATEST_LIST_MISS_COPY[list.listMiss]})`;
 }
 
 /**

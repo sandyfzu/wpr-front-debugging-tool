@@ -6,7 +6,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ExclusionValidationError } from '../exclusion-builder/errors';
-import { readForwardRows, simulateDelayJs, type DelayJsForwardInput } from './delay-js-forward';
+import {
+  firstUnreproducibleListRow,
+  readForwardRows,
+  simulateDelayJs,
+  type DelayJsForwardInput
+} from './delay-js-forward';
 import { metaCharsetCost } from './meta-charset-cost';
 import { UNREPRODUCED_STEP_CEILING } from './unreproduced-limits';
 import { byteView, type ByteMeasure } from './utf8';
@@ -183,6 +188,20 @@ describe('simulateDelayJs — rows', () => {
 
   it('refuses a list row it cannot reproduce', () => {
     expect(() => readForwardRows(['(?R)'], [])).toThrow(/list row 0 .* cannot be reproduced/);
+  });
+
+  it('names the first list row it cannot reproduce, as readForwardRows refuses it', () => {
+    expect(firstUnreproducibleListRow(['ok', 'jquery'])).toBeNull();
+    expect(firstUnreproducibleListRow([])).toBeNull();
+    const found = firstUnreproducibleListRow(['ok', '(?R)', '(?R)x']);
+    expect(found).toMatchObject({ index: 1, row: '(?R)' });
+    expect(found?.reason).not.toBe('');
+    expect(() => readForwardRows(['ok', '(?R)'], [])).toThrow(/list row 1 /);
+  });
+
+  it('takes a list row PCRE rejects as reproduced: it never matches, as on WP Rocket', () => {
+    expect(firstUnreproducibleListRow(['(unclosed'])).toBeNull();
+    expect(() => readForwardRows(['(unclosed'], [])).not.toThrow();
   });
 });
 

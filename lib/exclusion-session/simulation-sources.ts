@@ -97,7 +97,9 @@ export class SimulationPreparationError extends Error {
 /**
  * The sources, each awaited one under its own deadline
  * ({@link SIMULATION_SOURCE_TIMEOUTS_MS}): a runtime past it reads as
- * `asset-unreachable`, a list as the bundled rows (miss `timeout`); a
+ * `asset-unreachable`, a list as the bundled rows (miss `unreadable`: a
+ * list source reads only the kept copy, never the network, so a hang is a
+ * stuck read, not a fetch timeout); a
  * marker id past it rejects (no simulated page without its id — the
  * document is served unmodified). A source's own rejection passes through.
  *
@@ -128,7 +130,7 @@ export function deadlinedSources(
           () => sources.list(version, bundledRows),
           schedule
         ),
-        { listRows: bundledRows, listSource: 'bundled', listMiss: 'timeout' }
+        { listRows: bundledRows, listSource: 'bundled', listMiss: 'unreadable' }
       ),
     markerId: (document, simulate) =>
       withinDeadline(

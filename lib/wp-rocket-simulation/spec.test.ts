@@ -66,7 +66,9 @@ describe('simulation vocabulary', () => {
       'http-error',
       'oversize',
       'malformed',
-      'invalid'
+      'invalid',
+      'unreadable',
+      'expired'
     ]);
     expect(SIMULATION_RUNTIME_UNAVAILABLE_CAUSES).toEqual([
       'asset-unreachable',

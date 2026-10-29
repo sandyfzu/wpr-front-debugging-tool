@@ -151,6 +151,45 @@ function unreproducibleReason(row: TranslatedRow): string {
 }
 
 /**
+ * Whether the transform reproduces how WP Rocket applies a row: it has an
+ * exact matcher, or PCRE rejects it (it then never matches, as on WP Rocket).
+ *
+ * @param row The row's translation.
+ */
+function reproducible(row: TranslatedRow): boolean {
+  return row.matcher !== null || runtimeRejects(row.row);
+}
+
+/** An exclusion list row the transform cannot reproduce. */
+export interface UnreproducibleListRow {
+  /** Its index in the list. */
+  readonly index: number;
+  readonly row: string;
+  /** Why its matching is not reproduced. */
+  readonly reason: string;
+}
+
+/**
+ * The first exclusion list row the transform cannot reproduce — the check
+ * {@link readForwardRows} makes on the list rows it is given (a list row is
+ * translated the same alone or ahead of stored rows: the list comes first),
+ * for validating a list before it reaches the transform.
+ *
+ * @param listRows The list's rows.
+ * @returns The row, or null when every row is reproduced.
+ */
+export function firstUnreproducibleListRow(
+  listRows: readonly string[]
+): UnreproducibleListRow | null {
+  const rows = translateRegexRows('delay_js', listRows).rows;
+  const index = rows.findIndex((translated) => !reproducible(translated));
+  const translated = rows[index];
+  return translated === undefined
+    ? null
+    : { index, row: translated.row, reason: unreproducibleReason(translated) };
+}
+
+/**
  * Read the exclusion list and the stored rows for matching, in WP Rocket's
  * order (list first). A row PCRE rejects never matches, as on WP Rocket.
  *
@@ -169,7 +208,7 @@ export function readForwardRows(
   const translation = translateRegexRows('delay_js', [...listRows, ...rows]);
   const invalid: InvalidExclusionRow[] = [];
   translation.rows.forEach((translated, index) => {
-    if (translated.matcher !== null || runtimeRejects(translated.row)) return;
+    if (reproducible(translated)) return;
     if (index < listRows.length) {
       throw new Error(
         `Delay JS exclusion list row ${String(index)} (${JSON.stringify(translated.row)}) cannot be reproduced: ${unreproducibleReason(translated)}`

@@ -50,7 +50,7 @@ const STEPS = SESSION_STEP_TIMEOUTS_MS;
  * Deadlines (ms) for each awaited simulation input source while a document
  * is prepared: past one, that source's own fallback applies (runtime: the
  * document is not simulated, `asset-unreachable`; list: the bundled rows,
- * miss `timeout`; marker id: the document is served unmodified) — a hung
+ * miss `unreadable`; marker id: the document is served unmodified) — a hung
  * source never holds the release.
  */
 export const SIMULATION_SOURCE_TIMEOUTS_MS = {
@@ -59,7 +59,7 @@ export const SIMULATION_SOURCE_TIMEOUTS_MS = {
    * extension file: fetch, parse, hash — milliseconds), then a memory read.
    */
   runtime: 1_000,
-  /** The exclusion list choice (one stored-copy read). */
+  /** The exclusion list choice (the kept copy, read from storage once per background lifetime). */
   list: STEPS.store,
   /** The marker id (one memo write). */
   markerId: STEPS.store

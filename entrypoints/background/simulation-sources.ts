@@ -4,8 +4,9 @@
  * would share the Known Conflicts seed's bundled asset name) as the
  * runtime source, the marker id drawn from `crypto.getRandomValues`
  * and remembered in the tab's marker memo before the document is released,
- * and the page's CSP (captured header lines + head metas) for this build's
- * browser engine; every other source keeps its inert default until it lands.
+ * the page's CSP (captured header lines + head metas) for this build's
+ * browser engine, and the exclusion list (the kept latest list, else the
+ * version's bundled one).
  */
 import type { Logger } from '../../lib/logger';
 import { createPackagedRuntimeSource } from '../../lib/exclusion-session/packaged-simulation-data';
@@ -13,12 +14,10 @@ import { createMarkerIdSource } from '../../lib/exclusion-session/simulation-mar
 import { createCspSource } from '../../lib/exclusion-session/simulation-csp-source';
 import type { SimulationCspBrowser } from '../../lib/wp-rocket-simulation/spec';
 import { rememberSimulationMarker } from '../../lib/storage/simulation-markers';
-import {
-  INERT_SIMULATION_SOURCES,
-  type SimulationSources
-} from '../../lib/exclusion-session/simulation-sources';
+import type { SimulationSources } from '../../lib/exclusion-session/simulation-sources';
 import { SIMULATION_DATA_PATH } from '../../lib/wp-rocket-simulation/simulation-data';
 import { webSha256Hex } from '../../utils/web-sha256';
+import { latestListSource } from './latest-exclusion-list';
 
 /**
  * The browser engine this build renders pages with (one interception
@@ -37,7 +36,6 @@ export function cspBrowser(): SimulationCspBrowser {
  */
 export function createSimulationSources(log: Pick<Logger, 'error'>): SimulationSources {
   return {
-    ...INERT_SIMULATION_SOURCES,
     runtime: createPackagedRuntimeSource({
       fetch: (url) => fetch(url),
       url: browser.runtime.getURL(`/${SIMULATION_DATA_PATH}` as const),
@@ -48,6 +46,7 @@ export function createSimulationSources(log: Pick<Logger, 'error'>): SimulationS
       fill: (bytes) => crypto.getRandomValues(bytes),
       remember: rememberSimulationMarker
     }),
-    csp: createCspSource(cspBrowser())
+    csp: createCspSource(cspBrowser()),
+    list: latestListSource
   };
 }

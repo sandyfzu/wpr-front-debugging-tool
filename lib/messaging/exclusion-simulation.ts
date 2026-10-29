@@ -618,12 +618,13 @@ function inputCsp(
 }
 
 /**
- * Parse an exclusion list's rows: at most the list cap, each a string of
- * 1 to the row cap characters.
+ * Parse an exclusion list's rows as the engine contract takes them: at
+ * most the list cap, each a string of 1 to the row cap characters.
  *
+ * @param value The candidate rows.
  * @returns The rows rebuilt, or null on any violation.
  */
-function parseListRows(value: unknown): string[] | null {
+export function parseSimulationListRows(value: unknown): string[] | null {
   if (!Array.isArray(value) || value.length > SIMULATION_LIST_LIMITS.rows) return null;
   const rows: string[] = [];
   for (const row of value) {
@@ -675,7 +676,7 @@ export function parseDocumentSimulationInput(
   if (!isBoundedText(runtime, SIMULATION_WIRE_LIMITS.runtimeChars, 1)) return null;
   if (!isBoundedText(fallback, SIMULATION_WIRE_LIMITS.fallbackChars, 1)) return null;
   if (markerId !== undefined && !isSimulationMarkerId(markerId)) return null;
-  const listRows = parseListRows(ownValue(input, 'listRows'));
+  const listRows = parseSimulationListRows(ownValue(input, 'listRows'));
   const list = parseListProvenance(input);
   const csp = inputCsp(input, htmlLength);
   if (listRows === null || list === null || csp === null) return null;

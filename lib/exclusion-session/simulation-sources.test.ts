@@ -315,11 +315,11 @@ describe('prepareSimulation — source deadlines', () => {
     expect(answered).toBe(true);
   });
 
-  it('falls back to the bundled list (miss timeout) when the list source hangs', async () => {
+  it('falls back to the bundled list (miss unreadable) when the list source hangs', async () => {
     const settled = await preparedAfter({ list: hung }, SIMULATION_SOURCE_TIMEOUTS_MS.list);
     expect(settled).toMatchObject({
       ok: true,
-      input: { listRows: PACKAGE.bundledListRows, listSource: 'bundled', listMiss: 'timeout' }
+      input: { listRows: PACKAGE.bundledListRows, listSource: 'bundled', listMiss: 'unreadable' }
     });
   });
 

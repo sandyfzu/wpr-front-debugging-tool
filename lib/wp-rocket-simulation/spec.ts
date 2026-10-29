@@ -170,7 +170,11 @@ export const SIMULATION_LIST_LIMITS = { rows: 2_000, rowChars: 1_000 } as const;
  * Why no fetched latest list was usable (the bundled one ran instead):
  * never fetched yet, the network failed or timed out, a non-200 answer,
  * a body over the size cap, not JSON of the expected shape (`malformed`),
- * or rows outside the validator's bounds (`invalid`).
+ * rows outside the validator's bounds (`invalid`), the kept copy could
+ * not be read for this document (`unreadable`: its storage read failed or
+ * hung, or it failed re-validation — the network is never asked while a
+ * page loads), or the kept copy is too old to trust (`expired`: every
+ * refresh since its fetch missed).
  */
 export const LATEST_LIST_MISSES = [
   'never-fetched',
@@ -179,7 +183,9 @@ export const LATEST_LIST_MISSES = [
   'http-error',
   'oversize',
   'malformed',
-  'invalid'
+  'invalid',
+  'unreadable',
+  'expired'
 ] as const;
 
 /** One latest-list miss (see {@link LATEST_LIST_MISSES}). */
