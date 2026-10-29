@@ -26,6 +26,7 @@ import { prevalidateExclusionSet } from './validate';
 import type { DocumentBytes } from './libxml/charset';
 import { EXCLUSION_FEATURES, type ExclusionFeatureId, type ExclusionSet } from './set';
 import type { TransformReport, TransformResult } from './report';
+import type { SimulationStage } from '../wp-rocket-simulation/spec';
 
 /** One composition step: a named transform over the html so far. */
 export interface PipelineStep<R, Id extends string = string> {
@@ -229,26 +230,102 @@ export function pipelineSetProblems(set: ExclusionSet): readonly InvalidExclusio
   return notStored.length > 0 ? notStored : prevalidateExclusionSet(set).invalid;
 }
 
-/** Optional hooks a bounded host passes to {@link runExclusionPipeline}. */
-export interface PipelineRunHooks extends StepHooks<ExclusionFeatureId> {
-  /** How the session decoded the page, when known (see {@link exclusionPipelineSteps}). */
-  readonly bytes?: DocumentBytes;
+/**
+ * Steps a host runs before the exclusions, on the served page — WP Rocket
+ * features simulated on a page served without them, so the exclusion steps
+ * then act on what WP Rocket would serve — and the step that marks their
+ * work after the builder marker.
+ *
+ * @typeParam R One pre-step's report.
+ */
+export interface PreExclusionStage<R> {
+  /** The steps, in execution order, keyed by the feature each simulates. */
+  readonly steps: readonly PipelineStep<R, ExclusionFeatureId>[];
+  /**
+   * Runs last, after the builder marker, over the finished document and the
+   * pre-steps' reports (both returned, possibly updated — e.g. naming the
+   * marker it wrote). Unbudgeted like the builder marker: one linear scan.
+   */
+  readonly finish: (
+    html: string,
+    reports: readonly R[]
+  ) => { readonly html: string; readonly reports: readonly R[] };
 }
 
 /**
- * One pipeline run: completed (rewritten html, marker step included, and
- * one report per feature), or stopped by the host after a step.
+ * Optional hooks a bounded host passes to {@link runExclusionPipeline}. The
+ * step hooks see every step: a pre-exclusion step with `stage` =
+ * `'simulate'`, an exclusion step without one.
+ *
+ * @typeParam R One pre-step's report.
  */
-export type PipelineRun = Composition<TransformReport, ExclusionFeatureId>;
+export interface PipelineRunHooks<R = never> {
+  /** How the session decoded the page, when known (see {@link exclusionPipelineSteps}). */
+  readonly bytes?: DocumentBytes;
+  /** Called with each step's feature (and stage) as the step starts. */
+  readonly onStepStart?: (id: ExclusionFeatureId, stage?: SimulationStage) => void;
+  /** Called after each step ran: `true` discards its output and stops the run there. */
+  readonly stopAfter?: (id: ExclusionFeatureId, stage?: SimulationStage) => boolean;
+  /** The steps to run before the exclusions (absent: none — the output is exactly as without). */
+  readonly pre?: PreExclusionStage<R>;
+}
+
+/**
+ * One pipeline run: completed (rewritten html, marker steps included, one
+ * report per feature and — when a pre-exclusion stage ran — its reports),
+ * or stopped by the host after a step (`stage: 'simulate'` when that step
+ * was a pre-exclusion one).
+ *
+ * @typeParam R One pre-step's report.
+ */
+export type PipelineRun<R = never> =
+  | {
+      readonly completed: true;
+      readonly html: string;
+      readonly reports: readonly TransformReport[];
+      /** The pre-exclusion stage's reports, in step order (present iff a stage was given). */
+      readonly simulation?: readonly R[];
+    }
+  | {
+      readonly completed: false;
+      readonly stoppedAt: ExclusionFeatureId;
+      readonly stage?: SimulationStage;
+    };
+
+/**
+ * Run a pre-exclusion stage's steps under the host's hooks (each step seen
+ * with `stage: 'simulate'`).
+ *
+ * @returns The composition (completed, or the step the host stopped it at).
+ */
+function runPreSteps<R>(
+  html: string,
+  stage: PreExclusionStage<R>,
+  hooks: PipelineRunHooks<R>
+): Composition<R, ExclusionFeatureId> {
+  const { onStepStart, stopAfter } = hooks;
+  return composeSteps(html, stage.steps, {
+    ...(onStepStart === undefined
+      ? {}
+      : {
+          onStepStart: (id) => {
+            onStepStart(id, 'simulate');
+          }
+        }),
+    ...(stopAfter === undefined ? {} : { stopAfter: (id) => stopAfter(id, 'simulate') })
+  });
+}
 
 /**
  * The exclusion pipeline, the one path every caller runs: validate the
  * whole set up front (every invalid row named at once, before anything
- * runs: {@link pipelineSetProblems}), then the steps of
- * {@link exclusionPipelineSteps} in order, then the final step: the
- * builder marker for what they changed (`markBuilderEffects`). The marker
- * step is no feature's work (no feature to stop at), so `stopAfter` never
- * sees it: it is one linear scan of the document.
+ * runs: {@link pipelineSetProblems}), then the pre-exclusion stage's steps
+ * when given (the served page becomes what WP Rocket would serve), then the
+ * steps of {@link exclusionPipelineSteps} in order, then the final steps:
+ * the builder marker for what they changed (`markBuilderEffects`), then the
+ * pre-exclusion stage's `finish`. The marker steps are no feature's work
+ * (no feature to stop at), so `stopAfter` never sees them: each is one
+ * linear scan of the document.
  *
  * Each transform rescans the (linear) document, so the whole pipeline stays
  * linear in the document size times the feature count; pattern compilation
@@ -257,22 +334,31 @@ export type PipelineRun = Composition<TransformReport, ExclusionFeatureId>;
  * @param html The served document (decoded text; byte handling is the
  *   session backends' job, never the engine's).
  * @param set The exclusion set (rows + feature-wide disables).
- * @param hooks Decoding facts and the host's step hooks.
+ * @param hooks Decoding facts, the host's step hooks and the pre-exclusion stage.
  * @returns The completed run, or where the host stopped it.
  * @throws {@link ExclusionValidationError} naming every row outside the
  *   stored form, else every invalid row, before any step runs.
  */
-export function runExclusionPipeline(
+export function runExclusionPipeline<R = never>(
   html: string,
   set: ExclusionSet,
-  hooks: PipelineRunHooks = {}
-): PipelineRun {
+  hooks: PipelineRunHooks<R> = {}
+): PipelineRun<R> {
   const problems = pipelineSetProblems(set);
   if (problems.length > 0) throw new ExclusionValidationError(problems);
-  const run = composeSteps(html, exclusionPipelineSteps(set, hooks.bytes), hooks);
-  if (!run.completed) return run;
+  const stage = hooks.pre;
+  const pre = stage === undefined ? null : runPreSteps(html, stage, hooks);
+  if (pre !== null && !pre.completed) {
+    return { completed: false, stoppedAt: pre.stoppedAt, stage: 'simulate' };
+  }
+  // An exclusion step is announced without a stage (the hooks ignore the missing argument).
+  const run = composeSteps(pre?.html ?? html, exclusionPipelineSteps(set, hooks.bytes), hooks);
+  if (!run.completed) return { completed: false, stoppedAt: run.stoppedAt };
   const reports = featureReports(run.reports);
-  return { completed: true, html: markBuilderEffects(run.html, reports), reports };
+  const marked = markBuilderEffects(run.html, reports);
+  if (stage === undefined || pre === null) return { completed: true, html: marked, reports };
+  const finished = stage.finish(marked, pre.reports);
+  return { completed: true, html: finished.html, reports, simulation: finished.reports };
 }
 
 /**

@@ -40,6 +40,7 @@ import { createLogger, type Logger } from '../logger';
 import { notStoredRows } from '../exclusion-builder/field-text';
 import { prevalidateExclusionSet } from '../exclusion-builder/validate';
 import type { ExclusionSet } from '../exclusion-builder/set';
+import type { SimulateSpec } from '../wp-rocket-simulation/spec';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
 import {
   invalidApplyReply,
@@ -54,7 +55,6 @@ import {
   type ExclusionServedDocument,
   type ExclusionSessionRecord,
   type ExclusionSessionStatus,
-  type ExclusionSetPayload,
   type SavedExclusionSetReply
 } from '../messaging/exclusion-session';
 import { isNoReceiverError } from '../messaging/no-receiver';
@@ -82,6 +82,7 @@ import type {
 } from './backend';
 import {
   createInProcessTransformRunner,
+  DOCUMENT_TRANSFORM_BUDGET_MS,
   isRewritableResponse,
   rewriteDocument,
   type DocumentTransformRunner
@@ -90,11 +91,18 @@ import {
   INACTIVE,
   observableStatus,
   transition,
+  withSimulate,
   type SessionEffect,
   type SessionEvent,
   type SessionMachineState
 } from './machine';
 import { servedUrl } from './served-url';
+import {
+  INERT_SIMULATION_SOURCES,
+  SimulationPreparationError,
+  simulationPreparer,
+  type SimulationSources
+} from './simulation-sources';
 import {
   DeadlineExceededError,
   INTERCEPTION_HOST_BOUNDS_MS,
@@ -113,7 +121,8 @@ export interface SessionRecordStore {
 /** The per-origin saved sets (the `local:` helpers' shape). */
 export interface SavedSetStore {
   get(origin: string): Promise<ExclusionSet | null>;
-  save(origin: string, set: ExclusionSet): Promise<unknown>;
+  /** Save `set` with its simulation (absent: none — a stored one is replaced). */
+  save(origin: string, set: ExclusionSet, simulate?: SimulateSpec): Promise<unknown>;
 }
 
 /** Everything the controller needs from the browser, injected. */
@@ -136,6 +145,8 @@ export interface ExclusionSessionControllerDeps {
   readonly extensionId: string;
   /** The fallback engine runner; defaults to in-process. */
   readonly runner?: DocumentTransformRunner;
+  /** Where a simulating session's inputs come from; defaults to the inert sources. */
+  readonly simulation?: SimulationSources;
   /** The logger; defaults to the `exclusion-session` logger. */
   readonly log?: Logger;
   /** Timer seam for every deadline; defaults to `setTimeout`. */
@@ -215,20 +226,6 @@ function withServed(
   return served === null ? outcome : { ...outcome, served };
 }
 
-/**
- * Parse an apply/save payload the controller can honour: a payload asking
- * to simulate is refused like a malformed one, since nothing runs a
- * simulation yet — accepting it would drop the ask silently (and a save
- * would overwrite a stored simulation with none).
- *
- * @param data The untrusted payload.
- * @returns The payload (never carrying `simulate`), or null when refused.
- */
-function acceptedSetPayload(data: unknown): ExclusionSetPayload | null {
-  const payload = parseExclusionSetPayload(data);
-  return payload === null || payload.simulate !== undefined ? null : payload;
-}
-
 /** Whether a failure is a missed deadline. */
 function timedOut(cause: unknown): cause is DeadlineExceededError {
   return cause instanceof DeadlineExceededError;
@@ -245,6 +242,7 @@ export function createExclusionSessionController(
   const log = deps.log ?? createLogger('exclusion-session');
   const enqueue = createKeyedQueue();
   const fallbackRunner = deps.runner ?? createInProcessTransformRunner();
+  const simulationSources = deps.simulation ?? INERT_SIMULATION_SOURCES;
   /** Settles once the wake re-validation ran; asks and documents wait for it (bounded). */
   let ready: Promise<void> = Promise.resolve();
   let backend: InterceptionBackend | null = null;
@@ -317,8 +315,12 @@ export function createExclusionSessionController(
     bounded('Session removal', STEPS.store, () => deps.sessions.remove(tabId));
 
   /** Save an origin's set, bounded. */
-  const saveSet = (origin: string, set: ExclusionSet): Promise<unknown> =>
-    bounded('Saved-set write', STEPS.store, () => deps.savedSets.save(origin, set));
+  const saveSet = (
+    origin: string,
+    set: ExclusionSet,
+    simulate: SimulateSpec | undefined
+  ): Promise<unknown> =>
+    bounded('Saved-set write', STEPS.store, () => deps.savedSets.save(origin, set, simulate));
 
   /**
    * Queue an ask's task behind the tab's earlier events, giving up when it
@@ -423,6 +425,7 @@ export function createExclusionSessionController(
         state: 'active',
         origin: state.origin,
         set: state.set,
+        ...withSimulate(state.simulate),
         startedAt: state.startedAt,
         document: null
       };
@@ -473,7 +476,7 @@ export function createExclusionSessionController(
         return true;
       case 'save-set':
         try {
-          await saveSet(effect.origin, effect.set);
+          await saveSet(effect.origin, effect.set, effect.simulate);
         } catch (cause) {
           log.error('Applied set not saved for its origin', { tabId, cause });
         }
@@ -668,12 +671,22 @@ export function createExclusionSessionController(
     if (!isRewritableResponse(document)) return null;
     const session = await activeFor(document.tabId, document.documentUrl);
     if (session === null) return null;
-    const result = await rewriteDocument(document, session.set, boundedRunner);
+    const result = await rewriteDocument(
+      document,
+      session.set,
+      boundedRunner,
+      DOCUMENT_TRANSFORM_BUDGET_MS,
+      session.simulate === undefined
+        ? undefined
+        : simulationPreparer(session.simulate, document, simulationSources)
+    );
     if (result.cause !== undefined) {
-      log.error('Exclusion engine failed — document served unmodified', {
-        tabId: document.tabId,
-        cause: result.cause
-      });
+      log.error(
+        result.cause instanceof SimulationPreparationError
+          ? 'Simulation inputs could not be prepared — document served unmodified'
+          : 'Exclusion engine failed — document served unmodified',
+        { tabId: document.tabId, cause: result.cause }
+      );
     }
     // A copy-serving backend serves the original unless the exclusions
     // changed the document (a copy costs the page its real security state
@@ -860,7 +873,7 @@ export function createExclusionSessionController(
       await awaitReady('apply proceeds');
       const page = pageSender(sender, 'applyExclusionSession');
       if (page === null) return { outcome: 'unavailable', cause: 'unsupported-page' };
-      const payload = acceptedSetPayload(data);
+      const payload = parseExclusionSetPayload(data);
       if (payload === null) throw new Error('applyExclusionSession: malformed payload refused');
       const notStored = notStoredRows(payload.set);
       if (notStored.length > 0) return invalidApplyReply(notStored);
@@ -871,6 +884,7 @@ export function createExclusionSessionController(
           type: 'apply',
           origin: page.origin,
           set: payload.set,
+          ...withSimulate(payload.simulate),
           at: issueStart()
         })
       );
@@ -908,10 +922,10 @@ export function createExclusionSessionController(
     async save(sender, data) {
       const page = pageSender(sender, 'saveExclusionSet');
       if (page === null) return { outcome: 'not-saved', reason: 'unsupported-page' };
-      const payload = acceptedSetPayload(data);
+      const payload = parseExclusionSetPayload(data);
       if (payload === null) return { outcome: 'not-saved', reason: 'invalid-request' };
       try {
-        await saveSet(page.origin, payload.set);
+        await saveSet(page.origin, payload.set, payload.simulate);
         return { outcome: 'saved' };
       } catch (cause) {
         log.error('Exclusion set save failed', { cause });

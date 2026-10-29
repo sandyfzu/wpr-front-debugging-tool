@@ -70,11 +70,18 @@ export type SimulationState = (typeof SIMULATION_STATES)[number];
 
 /**
  * Why a step is `not-applicable`: an AMP document (WP Rocket never delays
- * one), or a page beyond exact reproduction — one of WP Rocket's regexes
+ * one); a page beyond exact reproduction — one of WP Rocket's regexes
  * could stop at PCRE's backtrack limit there, which the transform does not
- * reproduce (named by an {@link UnreproducedRegex}).
+ * reproduce (named by an {@link UnreproducedRegex}); or a page whose served
+ * bytes the transform cannot count exactly (`unsupported-charset`: served
+ * in a charset other than UTF-8 with non-ASCII text, or in UTF-16 — WP
+ * Rocket's patterns and rows run over those bytes).
  */
-export const SIMULATION_NOT_APPLICABLE_REASONS = ['amp', 'beyond-exact-reproduction'] as const;
+export const SIMULATION_NOT_APPLICABLE_REASONS = [
+  'amp',
+  'beyond-exact-reproduction',
+  'unsupported-charset'
+] as const;
 
 /** One not-applicable reason (see {@link SIMULATION_NOT_APPLICABLE_REASONS}). */
 export type SimulationNotApplicableReason = (typeof SIMULATION_NOT_APPLICABLE_REASONS)[number];

@@ -36,7 +36,11 @@ describe('simulation vocabulary', () => {
       'csp-blocked',
       'not-applicable'
     ]);
-    expect(SIMULATION_NOT_APPLICABLE_REASONS).toEqual(['amp', 'beyond-exact-reproduction']);
+    expect(SIMULATION_NOT_APPLICABLE_REASONS).toEqual([
+      'amp',
+      'beyond-exact-reproduction',
+      'unsupported-charset'
+    ]);
     expect(UNREPRODUCED_REGEXES).toEqual([
       'ie-conditionals',
       'ie-conditional-script',

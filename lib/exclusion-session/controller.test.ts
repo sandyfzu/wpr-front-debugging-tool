@@ -35,6 +35,7 @@ import {
 import { DOCUMENT_TRANSFORM_BUDGET_MS, type DocumentTransformRunner } from './document-transform';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
 import { INTERCEPTION_HOST_BOUNDS_MS, SESSION_STEP_TIMEOUTS_MS } from './timeouts';
+import { simulateDelayJs } from '../wp-rocket-simulation/delay-js-forward';
 
 const TAB = 3;
 const ORIGIN = 'https://site.test';
@@ -132,7 +133,7 @@ function rig(
     },
     savedSets: {
       get: getSavedExclusionSet,
-      save: (origin, set) => saveExclusionSet(origin, set, NOW)
+      save: (origin, set, simulate) => saveExclusionSet(origin, set, NOW, simulate)
     },
     pushToTab: (tabId, status) => {
       tabPushes.push([tabId, status]);
@@ -268,13 +269,33 @@ describe('apply', () => {
     expect(r.backend.calls).toEqual([]);
   });
 
-  it('refuses a payload asking to simulate as malformed (no simulation runs yet)', async () => {
+  it('arms a simulating payload: the record and the saved entry carry its spec', async () => {
     const r = rig();
     const simulating = { set: SET, simulate: { features: ['delay_js'] } };
-    await expect(r.controller.apply(page(), simulating)).rejects.toThrow(/malformed payload/);
+    await expect(r.controller.apply(page(), simulating)).resolves.toEqual({
+      outcome: 'applying'
+    });
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      state: 'active',
+      set: SET,
+      simulate: { features: ['delay_js'] }
+    });
+    await expect(getSavedExclusionEntry(ORIGIN)).resolves.toMatchObject({
+      set: SET,
+      simulate: { features: ['delay_js'] }
+    });
+  });
+
+  it('rejects a payload simulating a feature its set disables (contradictory pair)', async () => {
+    const r = rig();
+    const contradictory = {
+      set: { ...SET, disable: { ...SET.disable, delayJs: true } },
+      simulate: { features: ['delay_js'] }
+    };
+    await expect(r.controller.apply(page(), contradictory)).rejects.toThrow(/malformed payload/);
     expect(r.backend.calls).toEqual([]);
     await expect(getExclusionSessionRecords()).resolves.toEqual({});
-    await expect(getSavedExclusionSet(ORIGIN)).resolves.toBeNull();
   });
 
   it('answers invalid rows without arming or saving', async () => {
@@ -568,18 +589,16 @@ describe('saved sets', () => {
     });
   });
 
-  it('refuses a save asking to simulate as invalid-request, keeping the stored entry', async () => {
+  it('saves a simulating draft with its spec; a later plain save drops it', async () => {
     const r = rig();
-    await saveExclusionSet(ORIGIN, SET, NOW, { features: ['delay_js'] });
     const simulating = { set: EMPTY_EXCLUSION_SET, simulate: { features: ['delay_js'] } };
-    await expect(r.controller.save(page(), simulating)).resolves.toEqual({
-      outcome: 'not-saved',
-      reason: 'invalid-request'
-    });
+    await expect(r.controller.save(page(), simulating)).resolves.toEqual({ outcome: 'saved' });
     await expect(getSavedExclusionEntry(ORIGIN)).resolves.toMatchObject({
-      set: SET,
+      set: EMPTY_EXCLUSION_SET,
       simulate: { features: ['delay_js'] }
     });
+    await expect(r.controller.save(page(), { set: SET })).resolves.toEqual({ outcome: 'saved' });
+    await expect(getSavedExclusionEntry(ORIGIN)).resolves.not.toHaveProperty('simulate');
   });
 });
 
@@ -1701,5 +1720,126 @@ describe('served identity and session effects', () => {
     await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/new`), identity: copyIdentity(NOW) });
     await flush();
     expect((await recorded())?.served?.order).toBe(NOW + 5_000_001);
+  });
+});
+
+describe('host — simulating sessions', () => {
+  const PAGE = '<html><head></head><body><script src="/a.js"></script></body></html>';
+  const PACKAGE = {
+    runtime: '/*runtime*/RocketLazyLoadScripts.run();',
+    fallback: 'if(navigator.userAgent.match(/MSIE|Trident/i)){}',
+    bundledListRows: []
+  };
+  const doc = () => ({
+    tabId: TAB,
+    body: encoder.encode(PAGE),
+    contentType: 'text/html; charset=utf-8',
+    documentUrl: `${ORIGIN}/next`,
+    status: 200,
+    method: 'GET'
+  });
+
+  /** Seed an active session simulating Delay JS. */
+  const seedSimulating = () =>
+    putExclusionSessionRecord(TAB, {
+      state: 'active',
+      origin: ORIGIN,
+      set: SET,
+      simulate: { features: ['delay_js'] },
+      startedAt: NOW - 1000,
+      document: null
+    });
+
+  it('serves the page unchanged as runtime-unavailable with the inert sources', async () => {
+    const r = rig();
+    await seedSimulating();
+    await expect(r.host.rewriteDocument(doc())).resolves.toBeNull();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'runtime-unavailable', cause: 'asset-unreachable' }
+    });
+  });
+
+  it('simulates with an injected runtime, records the report, serves the excluded page', async () => {
+    const asked: string[] = [];
+    const r = rig({
+      simulation: {
+        runtime: (version) => {
+          asked.push(version);
+          return Promise.resolve({ ok: true, package: PACKAGE });
+        },
+        list: (_version, bundledRows) =>
+          Promise.resolve({
+            listRows: bundledRows,
+            listSource: 'bundled',
+            listMiss: 'never-fetched'
+          }),
+        markerId: () => Promise.resolve(undefined),
+        csp: () => undefined
+      }
+    });
+    await seedSimulating();
+    const body = await r.host.rewriteDocument(doc());
+    const simulated = simulateDelayJs({
+      html: PAGE,
+      runtime: PACKAGE.runtime,
+      ieFallback: PACKAGE.fallback,
+      listRows: [],
+      rows: []
+    });
+    const expected = applyPipeline(simulated.html, SET);
+    expect(asked).toEqual(['3.24']);
+    expect(body).toEqual(encoder.encode(expected.html));
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      simulate: { features: ['delay_js'] },
+      document: {
+        outcome: 'rewritten',
+        reports: expected.reports,
+        simulation: { feature: 'delay_js', state: 'simulated', delayed: 1, wpRocketVersion: '3.24' }
+      }
+    });
+  });
+
+  it('never asks a source for a session that does not simulate', async () => {
+    const touched: string[] = [];
+    const r = rig({
+      simulation: {
+        runtime: () => {
+          touched.push('runtime');
+          return Promise.resolve({ ok: false, cause: 'asset-unreachable' });
+        },
+        list: () => Promise.reject(new Error('unused')),
+        markerId: () => Promise.reject(new Error('unused')),
+        csp: () => undefined
+      }
+    });
+    await seedActive();
+    // Nothing to exclude on this page: served as received, recorded as rewritten.
+    await expect(r.host.rewriteDocument(doc())).resolves.toBeNull();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'rewritten' }
+    });
+    expect(touched).toEqual([]);
+  });
+
+  it('logs a preparation failure (not an engine one) and serves unchanged when a source throws (engine-failed)', async () => {
+    const r = rig({
+      simulation: {
+        runtime: () => Promise.reject(new Error('asset read exploded')),
+        list: () => Promise.reject(new Error('unused')),
+        markerId: () => Promise.reject(new Error('unused')),
+        csp: () => undefined
+      }
+    });
+    await seedSimulating();
+    await expect(r.host.rewriteDocument(doc())).resolves.toBeNull();
+    await flush();
+    expect(logged(r.log, 'error', /Simulation inputs could not be prepared/)).toBe(true);
+    expect(logged(r.log, 'error', /Exclusion engine failed/)).toBe(false);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'engine-failed' }
+    });
   });
 });

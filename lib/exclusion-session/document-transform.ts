@@ -24,6 +24,8 @@ import type { ExclusionDocumentOutcome } from '../messaging/exclusion-session';
 import type { DocumentSimulationInput } from '../messaging/exclusion-simulation';
 import type { SimulationStage } from '../wp-rocket-simulation/spec';
 import { decodeDocument, encodeDocument, extractMimeType } from './charset';
+import type { SimulationPreparer } from './simulation-sources';
+import { simulationStage } from './simulation-stage';
 import { removeSpeculationRules } from './speculation-rules';
 
 /**
@@ -123,24 +125,30 @@ export function engineFailed(cause: unknown): DocumentTransformResult {
   return { ok: false, outcome: { outcome: 'failed', reason: 'engine-failed' }, cause };
 }
 
+/** Called as each step starts: its feature, and `stage` for a simulation step. */
+export type StepStartListener = (feature: ExclusionFeatureId, stage?: SimulationStage) => void;
+
 /**
- * Run the exclusion pipeline (`runExclusionPipeline`), checking the cumulative wall
- * time after each step: the step that crosses the budget is the overrun
- * (its output is discarded, nothing is served rewritten). A run within the
- * budget ends with the builder marker step.
+ * Run the exclusion pipeline (`runExclusionPipeline`) — after the
+ * request's simulation steps when it simulates — checking the cumulative
+ * wall time after each step: the step that crosses the budget is the
+ * overrun (its output is discarded, nothing is served rewritten; a
+ * simulation step's overrun names `stage: 'simulate'`). A run within the
+ * budget ends with the marker steps.
  *
- * @param request The text, set, budget and decoding facts.
+ * @param request The text, set, budget, decoding facts and simulation input.
  * @param now A monotonic clock (ms).
- * @param onStepStart Called with each feature as its step starts (lets a
- *   preempting host know which feature a killed run was in).
- * @returns The rewritten text and reports, or the unmodified outcome:
- *   `over-budget`, or `engine-failed` (an invalid set — the apply gate
- *   should have refused it — or an engine throw).
+ * @param onStepStart Called with each feature (and stage) as its step
+ *   starts (lets a preempting host know which step a killed run was in).
+ * @returns The rewritten text and reports (with the simulation's report
+ *   when the request simulates), or the unmodified outcome: `over-budget`,
+ *   or `engine-failed` (an invalid set — the apply gate should have
+ *   refused it — or an engine throw).
  */
 export function runDocumentPipeline(
   request: DocumentTransformRequest,
   now: () => number,
-  onStepStart?: (feature: ExclusionFeatureId) => void
+  onStepStart?: StepStartListener
 ): DocumentTransformResult {
   try {
     const started = now();
@@ -148,17 +156,30 @@ export function runDocumentPipeline(
     const run = runExclusionPipeline(request.html, request.set, {
       ...(request.bytes === undefined ? {} : { bytes: request.bytes }),
       ...(onStepStart === undefined ? {} : { onStepStart }),
-      stopAfter: () => now() - started > request.budgetMs
+      stopAfter: () => now() - started > request.budgetMs,
+      ...(request.simulate === undefined
+        ? {}
+        : { pre: simulationStage(request.simulate, request.bytes) })
     });
     if (!run.completed) {
       return {
         ok: false,
-        outcome: overBudgetOutcome(request.set, run.stoppedAt, request.budgetMs)
+        outcome: overBudgetOutcome(request.set, run.stoppedAt, request.budgetMs, run.stage)
       };
     }
-    // The marker step ran after the last budget check, unbudgeted: one
-    // linear scan; only a preempting runner's deadline bounds it.
-    return { ok: true, html: run.html, outcome: { outcome: 'rewritten', reports: run.reports } };
+    // One simulation block per document: the registry simulates one feature today.
+    const simulation = run.simulation?.[0];
+    // The marker steps ran after the last budget check, unbudgeted: linear
+    // scans; only a preempting runner's deadline bounds them.
+    return {
+      ok: true,
+      html: run.html,
+      outcome: {
+        outcome: 'rewritten',
+        reports: run.reports,
+        ...(simulation === undefined ? {} : { simulation })
+      }
+    };
   } catch (cause) {
     return engineFailed(cause);
   }
@@ -287,6 +308,10 @@ function servedBytes(
  * @param set The session's exclusion set.
  * @param runner The engine runner (in-process or preempting).
  * @param budgetMs The engine budget; defaults to {@link DOCUMENT_TRANSFORM_BUDGET_MS}.
+ * @param simulate The session's simulation preparer (absent: nothing
+ *   simulated). A document it cannot give a runtime for is
+ *   `runtime-unavailable` (served without exclusions, never simulated
+ *   without one); a preparer that throws is `engine-failed`.
  * @returns The outcome and the bytes to serve. Never rejects: an oversized
  *   body is `body-unavailable` and a body that cannot be decoded in its
  *   charset (unsupported encoding, malformed bytes) `decode-failed` — both
@@ -301,7 +326,8 @@ export async function rewriteDocument(
   document: InterceptedDocumentBody,
   set: ExclusionSet,
   runner: DocumentTransformRunner,
-  budgetMs: number = DOCUMENT_TRANSFORM_BUDGET_MS
+  budgetMs: number = DOCUMENT_TRANSFORM_BUDGET_MS,
+  simulate?: SimulationPreparer
 ): Promise<DocumentRewrite> {
   if (document.body.length > DOCUMENT_BODY_BYTE_LIMIT) {
     return { outcome: { outcome: 'failed', reason: 'body-unavailable' }, body: null };
@@ -311,14 +337,19 @@ export async function rewriteDocument(
   let result: DocumentTransformResult;
   try {
     const bytes = { encoding: decoded.codec.encoding, bom: decoded.codec.bom.length > 0 };
-    result = await runner({
-      html: decoded.text,
-      set,
-      budgetMs,
-      bytes
-    });
+    const prepared = simulate === undefined ? undefined : await simulate(decoded.text);
+    result =
+      prepared?.ok === false
+        ? { ok: false, outcome: { outcome: 'runtime-unavailable', cause: prepared.cause } }
+        : await runner({
+            html: decoded.text,
+            set,
+            budgetMs,
+            bytes,
+            ...(prepared === undefined ? {} : { simulate: prepared.input })
+          });
   } catch (cause) {
-    // A runner must never reject; one that does is an engine failure.
+    // A runner (or preparer) must never reject; one that does is an engine failure.
     result = engineFailed(cause);
   }
   let outcome: ExclusionDocumentOutcome = result.outcome;

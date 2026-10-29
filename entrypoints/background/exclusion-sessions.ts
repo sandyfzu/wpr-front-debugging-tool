@@ -161,7 +161,10 @@ export function initExclusionSessions(
       put: putExclusionSessionRecord,
       remove: removeExclusionSessionRecord
     },
-    savedSets: { get: getSavedExclusionSet, save: (origin, set) => saveExclusionSet(origin, set) },
+    savedSets: {
+      get: getSavedExclusionSet,
+      save: (origin, set, simulate) => saveExclusionSet(origin, set, undefined, simulate)
+    },
     pushToTab: (tabId, status) =>
       sendMessage('exclusionSessionChanged', status, { tabId, frameId: 0 }),
     pushToPanels: (tabId, status) => sendMessage('exclusionSessionUpdated', { tabId, status }),
