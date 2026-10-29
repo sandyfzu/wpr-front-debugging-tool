@@ -52,8 +52,9 @@ import {
   clearDrafts,
   injectOverlay
 } from '../helpers/exclusion-overlay';
+import { chooseDelayMode } from '../helpers/simulation';
 import { openSitePage, SITE_URL } from '../helpers/site';
-import { expectPillHint, STRIP_HOST } from '../helpers/strip-pill';
+import { clearWidgetMap, expectPillHint, STRIP_HOST } from '../helpers/strip-pill';
 
 /** The rows a builder fact can sit on (the payload's contract). */
 const FACT_ROWS: readonly FactRow[] = [
@@ -63,9 +64,6 @@ const FACT_ROWS: readonly FactRow[] = [
   'lazyload'
 ];
 type FactRow = BuilderFactRow;
-
-/** `chrome.storage.sync` key of the per-origin widget map. */
-const ORIGINS_KEY = 'detection-widget-sites';
 
 /** The tab-level line's title. */
 const LINE_TITLE = 'Exclusion Builder rewrote this page';
@@ -131,12 +129,16 @@ const ALR_OFF: ChangedRow = {
 };
 
 /**
- * Flip a lane's feature-wide disable on.
+ * Turn a lane's feature off for the page (its switch; Delay JS: its Disabled mode).
  *
  * @param page The page with the overlay.
  * @param label The lane's label.
  */
 async function disable(page: Page, label: string): Promise<void> {
+  if (label === DELAY) {
+    await chooseDelayMode(page, 'Disabled');
+    return;
+  }
   const toggle = page.getByRole('switch', { name: `Disable feature: ${label} on this page` });
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
@@ -275,16 +277,6 @@ async function payloadFacts(
     if (fact !== undefined) facts[row] = fact;
   }
   return facts;
-}
-
-/**
- * Clear the per-origin widget map: every origin then follows the default
- * (the widget is on), whatever an earlier suite in this profile left.
- */
-async function clearWidgetMap(extension: ExtensionDriver): Promise<void> {
-  await extension.evaluateInWorker(async (key: string) => {
-    await chrome.storage.sync.remove([key]);
-  }, ORIGINS_KEY);
 }
 
 /** Open a case's page. */

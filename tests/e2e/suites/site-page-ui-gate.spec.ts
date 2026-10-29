@@ -35,15 +35,15 @@ import type { Page } from '@playwright/test';
 import { expect, type ExtensionDriver } from '../helpers/extension';
 import { OVERLAY_HOST as BUILDER_HOST, injectOverlay } from '../helpers/exclusion-overlay';
 import { SITE_ORIGIN, SITE_URL, openSitePage, siteTest } from '../helpers/site';
+import { WIDGET_ORIGINS_KEY } from '../helpers/strip-pill';
 
 /** The gated surfaces' shadow hosts. */
 const STRIP_HOST = 'wpr-fdt-inspector';
 const KC_HOST = 'wpr-fdt-known-conflicts';
 const SBS_HOST = 'wpr-fdt-side-by-side';
 const PALETTE_HOST = 'wpr-fdt-command-palette';
-/** The sync keys the suite drives. */
+/** The page-UI gate's sync key (the widget map's key is the shared `WIDGET_ORIGINS_KEY`). */
 const GATE_KEY = 'page-ui-gate';
-const ORIGINS_KEY = 'detection-widget-sites';
 /** The SBS reload-restore record (tab `sessionStorage`). */
 const SBS_RESTORE_KEY = 'wpr-fdt-sbs-open';
 /** A cached front-end page and the plugins screen (Known Conflicts' wp-admin mode). */
@@ -152,7 +152,7 @@ async function setSiteEntry(driver: ExtensionDriver, enabled: boolean | null): P
       if (arg.enabled === null) await chrome.storage.sync.remove(arg.key);
       else await chrome.storage.sync.set({ [arg.key]: { [arg.origin]: { enabled: arg.enabled } } });
     },
-    { key: ORIGINS_KEY, origin: SITE_ORIGIN, enabled }
+    { key: WIDGET_ORIGINS_KEY, origin: SITE_ORIGIN, enabled }
   );
 }
 

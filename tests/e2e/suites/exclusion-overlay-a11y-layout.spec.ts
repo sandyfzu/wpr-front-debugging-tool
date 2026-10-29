@@ -224,7 +224,8 @@ interface ContrastReading {
  * text nodes, filled inputs, and empty inputs' `::placeholder` — painted
  * over its stacked ancestor fills, its colour's alpha multiplied by every
  * ancestor's `opacity`, against its AA floor (4.5:1, 3:1 for large text).
- * Held (`aria-disabled`) controls are inactive UI, exempt as WCAG 1.4.3 says.
+ * Held (`aria-disabled`) and disabled (Kobalte's `data-disabled`, e.g. a mode
+ * the page does not offer) controls are inactive UI, exempt as WCAG 1.4.3 says.
  *
  * @returns The runs measured, and those under their floor.
  */
@@ -298,7 +299,11 @@ async function contrastMisses(page: Page): Promise<ContrastReading> {
       const style = getComputedStyle(run.element);
       // Not painted: hidden, folded away, or visually hidden words (1 px, clipped).
       if (rect.width <= 1 || rect.height <= 1 || style.visibility !== 'visible') continue;
-      if (run.element.closest('[aria-disabled="true"], [inert], [aria-hidden="true"] svg') !== null)
+      if (
+        run.element.closest(
+          '[aria-disabled="true"], [data-disabled], [inert], [aria-hidden="true"] svg'
+        ) !== null
+      )
         continue;
       const chain = lineage(run.element);
       const opacity = chain.reduce(
@@ -363,13 +368,19 @@ async function focusedControl(
     if (document.activeElement !== shadowHost || active === null || active === undefined) {
       return { inside: false, name: '', ring: false };
     }
-    const style = getComputedStyle(active);
+    // A choice group's radio input is visually hidden: its ring is painted on the
+    // option tile around it (`:has(input:focus-visible)`), where the user sees it.
+    const ringHost =
+      active instanceof HTMLInputElement && active.type === 'radio'
+        ? (active.closest('[data-fdt="choice"]') ?? active)
+        : active;
+    const style = getComputedStyle(ringHost);
     // The overlay's ring is a 2 px accent outline (`:focus-visible`), never transparent.
     const ring =
       style.outlineStyle === 'solid' &&
       Number.parseFloat(style.outlineWidth) >= 2 &&
       !/^rgba\(.*,\s*0\)$|transparent/.test(style.outlineColor);
-    const name = (active.getAttribute('aria-label') ?? active.textContent).trim();
+    const name = (active.getAttribute('aria-label') ?? ringHost.textContent).trim();
     return { inside: true, name: `${active.tagName.toLowerCase()} ${name}`, ring };
   }, OVERLAY_HOST);
 }
@@ -377,6 +388,18 @@ async function focusedControl(
 /** Every focusable, rendered control of the panel, in DOM order (the walk's expectation). */
 async function panelControls(page: Page): Promise<string[]> {
   return await page.evaluate((host) => {
+    /**
+     * A radio group is one Tab stop (native roving): its checked enabled
+     * radio, else its first enabled one. The input itself is visually hidden.
+     */
+    const isTabStopRadio = (element: Element): boolean => {
+      if (!(element instanceof HTMLInputElement) || element.type !== 'radio') return false;
+      const group = element.closest('[role="radiogroup"]');
+      const radios = Array.from(
+        group?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? [element]
+      ).filter((radio) => !radio.disabled);
+      return (radios.find((radio) => radio.checked) ?? radios[0]) === element;
+    };
     const panel = document.querySelector(host)?.shadowRoot?.querySelector('.xo-panel');
     return Array.from(
       panel?.querySelectorAll<HTMLElement>('button, input, [role="switch"], [tabindex="0"]') ?? []
@@ -386,13 +409,20 @@ async function panelControls(page: Page): Promise<string[]> {
           // Held controls stay reachable (`aria-disabled`, never `disabled`): their title says why.
           element.tabIndex >= 0 &&
           !(element as HTMLButtonElement).disabled &&
-          element.getClientRects().length > 0 &&
-          element.closest('[inert]') === null
+          (element.getClientRects().length > 0 || isTabStopRadio(element)) &&
+          element.closest('[inert]') === null &&
+          (!(element instanceof HTMLInputElement) ||
+            element.type !== 'radio' ||
+            isTabStopRadio(element))
       )
-      .map(
-        (element) =>
-          `${element.tagName.toLowerCase()} ${(element.getAttribute('aria-label') ?? element.textContent).trim()}`
-      );
+      .map((element) => {
+        // A radio is named by its option tile (its visible label).
+        const named =
+          element instanceof HTMLInputElement && element.type === 'radio'
+            ? (element.closest('[data-fdt="choice"]') ?? element)
+            : element;
+        return `${element.tagName.toLowerCase()} ${(element.getAttribute('aria-label') ?? named.textContent).trim()}`;
+      });
   }, OVERLAY_HOST);
 }
 

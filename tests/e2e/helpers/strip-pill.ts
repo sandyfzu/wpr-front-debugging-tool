@@ -8,10 +8,25 @@
  * after the DOM, so a single read right after a DOM match is a flake.
  */
 import type { Page } from '@playwright/test';
-import { expect } from './extension';
+import { expect, type ExtensionDriver } from './extension';
 
 /** The widget's shadow-root host. */
 export const STRIP_HOST = 'wpr-fdt-inspector';
+
+/** `chrome.storage.sync` key of the per-origin widget map. */
+export const WIDGET_ORIGINS_KEY = 'detection-widget-sites';
+
+/**
+ * Clear the per-origin widget map: every origin then follows the default
+ * (the widget is on), whatever an earlier suite in this profile left.
+ *
+ * @param extension The driver.
+ */
+export async function clearWidgetMap(extension: ExtensionDriver): Promise<void> {
+  await extension.evaluateInWorker(async (key: string) => {
+    await chrome.storage.sync.remove([key]);
+  }, WIDGET_ORIGINS_KEY);
+}
 
 /** The closed pill's accessible-name stem. */
 export const PILL_STEM = 'WP Rocket page analysis: ';

@@ -37,11 +37,9 @@ import {
   PILL_GLYPH,
   pillNames,
   STRIP_HOST,
+  WIDGET_ORIGINS_KEY,
   withPillHint
 } from '../helpers/strip-pill';
-
-/** The WXT storage key under `chrome.storage.sync` for the per-origin widget map. */
-const ORIGINS_KEY = 'detection-widget-sites';
 
 /** The accessibility engine, injected into the page under test. */
 const AXE_SOURCE = readFileSync(
@@ -171,7 +169,7 @@ async function setWidget(extension: ExtensionDriver, enabled: boolean | null): P
         [payload.key]: { [payload.origin]: { enabled: payload.enabled } }
       });
     },
-    { key: ORIGINS_KEY, origin: SITE_ORIGIN, enabled }
+    { key: WIDGET_ORIGINS_KEY, origin: SITE_ORIGIN, enabled }
   );
 }
 

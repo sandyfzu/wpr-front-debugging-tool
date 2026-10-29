@@ -93,6 +93,18 @@ function resolveFixturePath(urlPath) {
 }
 
 /**
+ * The CSP cases `/__e2e/csp/<case>` serves (each value: the policy header
+ * lines): `blocked` forbids WP Rocket's inline runtime; `limits` allows it
+ * but not eval (delayed handlers) nor `data:` scripts (Chromium's delayed
+ * inline path); `oversized` is past what the session evaluates.
+ */
+const CSP_CASES = {
+  blocked: ["script-src 'self'"],
+  limits: ["script-src 'self' 'unsafe-inline'"],
+  oversized: [`script-src 'self' 'unsafe-inline' ${'https://cdn.invalid '.repeat(2300)}`.trim()]
+};
+
+/**
  * Serve one request: the whole handler of every bound socket.
  *
  * @param {import('node:http').IncomingMessage} request The incoming request.
@@ -227,6 +239,23 @@ async function handle(request, response) {
     response.end(
       '<!doctype html><html><head><title>secret headers</title></head><body>secret headers</body></html>'
     );
+    return;
+  }
+  if (url.pathname.startsWith('/__e2e/csp/')) {
+    // The simulation fixture page served under one Content-Security-Policy
+    // case (header lines in order), so a session's CSP evaluation meets a
+    // real policy the browser also enforces.
+    const name = url.pathname.slice('/__e2e/csp/'.length);
+    const policies = Object.hasOwn(CSP_CASES, name) ? CSP_CASES[name] : undefined;
+    if (policies === undefined) {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+      response.end(`unknown CSP case: ${url.pathname}`);
+      return;
+    }
+    const headers = ['content-type', 'text/html; charset=utf-8', 'cache-control', 'no-store'];
+    for (const policy of policies) headers.push('content-security-policy', policy);
+    response.writeHead(200, headers);
+    response.end(await readFile(join(ROOT, 'simulation', 'plain.html')));
     return;
   }
   if (url.pathname === '/__e2e/windows-1252') {
