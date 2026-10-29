@@ -22,11 +22,17 @@ import {
   fitSiteVersion,
   parseDocumentSimulationInput,
   type DocumentSimulationInput,
+  type SimulationDeferLists,
   type SimulationListProvenance
 } from '../messaging/exclusion-simulation';
+import type { DeferJsLists } from '../wp-rocket-simulation/defer-js-forward';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
 import { selectWprVersion } from '../wp-rocket-simulation/select-version';
-import type { SimulateSpec, SimulationRuntimeUnavailableCause } from '../wp-rocket-simulation/spec';
+import type {
+  SimulateSpec,
+  SimulatedFeatureId,
+  SimulationRuntimeUnavailableCause
+} from '../wp-rocket-simulation/spec';
 import { DeadlineExceededError, SIMULATION_SOURCE_TIMEOUTS_MS, withinDeadline } from './timeouts';
 
 /** One supported WP Rocket version's packaged simulation texts and bundled list. */
@@ -37,6 +43,8 @@ export interface SimulationPackage {
   readonly fallback: string;
   /** The version's bundled `delay_js_exclusions` rows. */
   readonly bundledListRows: readonly string[];
+  /** The version's bundled Defer JS lists. */
+  readonly bundledDeferLists: DeferJsLists;
 }
 
 /** A runtime source's answer: the version's package, or why there is none. */
@@ -55,11 +63,23 @@ export interface SimulationSources {
   readonly runtime: (version: string) => Promise<SimulationPackageRead>;
   /** The exclusion list to use for a version, given its bundled rows. Resolves (never rejects). */
   readonly list: (version: string, bundledRows: readonly string[]) => Promise<SimulationListChoice>;
+  /** The Defer JS lists to use for a version, given its bundled ones. Resolves (never rejects). */
+  readonly deferLists: (version: string, bundled: DeferJsLists) => Promise<SimulationDeferLists>;
   /** The marker id for a document about to be simulated (undefined: none). */
   readonly markerId: (
     document: InterceptedDocument,
     simulate: SimulateSpec
   ) => Promise<string | undefined>;
+  /**
+   * Narrow a written marker's memo entry to the features that simulated on
+   * its document (called only when they differ from the requested ones).
+   * Rejects when it cannot: the document is then served unmodified.
+   */
+  readonly settleMarker: (
+    document: InterceptedDocument,
+    markerId: string,
+    simulated: readonly SimulatedFeatureId[]
+  ) => Promise<void>;
   /** The page's raw CSP inputs (undefined: none known), fitted before use. */
   readonly csp: (document: InterceptedDocument, html: string) => unknown;
 }
@@ -72,7 +92,10 @@ export const INERT_SIMULATION_SOURCES: SimulationSources = {
   runtime: () => Promise.resolve({ ok: false, cause: 'asset-unreachable' }),
   list: (_version, bundledRows) =>
     Promise.resolve({ listRows: bundledRows, listSource: 'bundled', listMiss: 'never-fetched' }),
+  deferLists: (_version, bundled) =>
+    Promise.resolve({ ...bundled, listSource: 'bundled', listMiss: 'never-fetched' }),
   markerId: () => Promise.resolve(undefined),
+  settleMarker: () => Promise.resolve(),
   csp: () => undefined
 };
 
@@ -97,7 +120,8 @@ export class SimulationPreparationError extends Error {
 /**
  * The sources, each awaited one under its own deadline
  * ({@link SIMULATION_SOURCE_TIMEOUTS_MS}): a runtime past it reads as
- * `asset-unreachable`, a list as the bundled rows (miss `unreadable`: a
+ * `asset-unreachable`, a list (Defer JS's under the list deadline too: both
+ * read the same kept record, at once) as the bundled rows (miss `unreadable`: a
  * list source reads only the kept copy, never the network, so a hang is a
  * stuck read, not a fetch timeout); a
  * marker id past it rejects (no simulated page without its id — the
@@ -132,11 +156,28 @@ export function deadlinedSources(
         ),
         { listRows: bundledRows, listSource: 'bundled', listMiss: 'unreadable' }
       ),
+    deferLists: (version, bundled) =>
+      orOnDeadline(
+        withinDeadline(
+          'Simulation Defer JS lists source',
+          limits.list,
+          () => sources.deferLists(version, bundled),
+          schedule
+        ),
+        { ...bundled, listSource: 'bundled', listMiss: 'unreadable' }
+      ),
     markerId: (document, simulate) =>
       withinDeadline(
         'Simulation marker id source',
         limits.markerId,
         () => sources.markerId(document, simulate),
+        schedule
+      ),
+    settleMarker: (document, markerId, simulated) =>
+      withinDeadline(
+        'Simulation marker settler',
+        limits.settleMarker,
+        () => sources.settleMarker(document, markerId, simulated),
         schedule
       ),
     csp: sources.csp
@@ -203,7 +244,13 @@ async function assembleSimulation(
   const { selected, siteVersion } = selectWprVersion(html);
   const read = await sources.runtime(selected.version);
   if (!read.ok) return read;
-  const list = await sources.list(selected.version, read.package.bundledListRows);
+  // Both lists read the same kept record: asked at once, so one list deadline bounds both.
+  const [list, deferLists] = await Promise.all([
+    sources.list(selected.version, read.package.bundledListRows),
+    simulate.features.includes('defer_all_js')
+      ? sources.deferLists(selected.version, read.package.bundledDeferLists)
+      : undefined
+  ]);
   const markerId = await sources.markerId(document, simulate);
   const rawCsp = sources.csp(document, html);
   const fitted = fitSiteVersion(siteVersion);
@@ -214,6 +261,7 @@ async function assembleSimulation(
     ...(fitted === undefined ? {} : { siteVersion: fitted }),
     runtime: read.package.runtime,
     fallback: read.package.fallback,
+    ...(deferLists === undefined ? {} : { deferLists }),
     ...(markerId === undefined ? {} : { markerId }),
     ...(rawCsp === undefined ? {} : fitSimulationCsp(rawCsp, html.length))
   };
@@ -221,7 +269,7 @@ async function assembleSimulation(
   const input = parseDocumentSimulationInput(draft, html.length);
   if (input === null) {
     throw new SimulationPreparationError(
-      `Simulation input for WP Rocket ${selected.version} fails the engine contract (runtime, fallback, list or marker id)`
+      `Simulation input for WP Rocket ${selected.version} fails the engine contract (runtime, fallback, lists or marker id)`
     );
   }
   return { ok: true, input };
@@ -241,3 +289,36 @@ export function simulationPreparer(
 ): SimulationPreparer {
   return (html) => prepareSimulation(html, simulate, document, sources);
 }
+
+/**
+ * Bind the marker settler to one document of a session, under its
+ * deadline (see {@link deadlinedSources}); a failure rejects as a
+ * {@link SimulationPreparationError} (the host logs it as one).
+ *
+ * @param document The intercepted document.
+ * @param sources The input sources.
+ * @param schedule Timer seam for the deadline.
+ */
+export function simulationMarkerSettler(
+  document: InterceptedDocument,
+  sources: SimulationSources,
+  schedule: ScheduleTimer = scheduleWithTimeout
+): MarkerSettler {
+  const deadlined = deadlinedSources(sources, schedule);
+  return async (markerId, simulated) => {
+    try {
+      await deadlined.settleMarker(document, markerId, simulated);
+    } catch (cause) {
+      throw new SimulationPreparationError(
+        'The simulation marker could not be narrowed to the simulated features',
+        { cause }
+      );
+    }
+  };
+}
+
+/** Narrows one document's written marker to the features that simulated on it (rejects when it cannot). */
+export type MarkerSettler = (
+  markerId: string,
+  simulated: readonly SimulatedFeatureId[]
+) => Promise<void>;

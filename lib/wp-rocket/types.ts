@@ -285,7 +285,7 @@ export type SimulationFact = 'simulated' | 'unverified';
  * The detection rows a simulation fact can annotate — exactly the
  * simulated features, whose ids are these row keys.
  */
-export type SimulationFactRow = 'delay_js';
+export type SimulationFactRow = 'delay_js' | 'defer_all_js';
 
 /**
  * The additive simulation field of a {@link SimulationFactRow}: absent
@@ -332,7 +332,8 @@ export interface WprDetections {
       source?: FeatureEvidenceSource;
     };
   defer_all_js: TruncationMark &
-    BuilderFactField & {
+    BuilderFactField &
+    SimulationFactField & {
       /** ≥ 1 script carries `data-rocket-defer` (inline/no-src scripts included). */
       present: boolean;
       /**

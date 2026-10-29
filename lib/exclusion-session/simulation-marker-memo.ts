@@ -49,7 +49,9 @@ export interface MarkerIdSourceDeps {
  * unmodified, never as a simulated page without a verifiable marker. An id
  * is drawn per prepared document, so one whose step ends up not simulating
  * (already served, not applicable) leaves an id no page carries: harmless,
- * it can only be guessed (128 bits).
+ * it can only be guessed (128 bits). It remembers the requested features;
+ * {@link createMarkerSettler} narrows them to the simulated ones before
+ * the document is released.
  *
  * @param deps The random source and the memo write.
  */
@@ -62,6 +64,29 @@ export function createMarkerIdSource(deps: MarkerIdSourceDeps): SimulationSource
     const markerId = drawSimulationMarkerId(deps.fill);
     await deps.remember(document.tabId, { markerId, origin, features: [...simulate.features] });
     return markerId;
+  };
+}
+
+/**
+ * The marker settler: once a document's run wrote its marker, narrow the
+ * memo entry to the features that actually simulated there (a requested
+ * feature may end already served, not applicable or CSP-blocked) — the
+ * memo then vouches for exactly what the page's marker names. Resolves once
+ * the memo holds the narrowed entry (re-remembering an id replaces it);
+ * rejects like the marker id source (the document is then served
+ * unmodified, never with a marker the memo over-vouches for).
+ *
+ * @param deps The memo write.
+ */
+export function createMarkerSettler(
+  deps: Pick<MarkerIdSourceDeps, 'remember'>
+): SimulationSources['settleMarker'] {
+  return async (document, markerId, simulated) => {
+    const origin = parseUrl(document.documentUrl)?.origin;
+    if (origin === undefined || !isHttpOrigin(origin)) {
+      throw new Error('Simulation marker: the document has no http(s) origin');
+    }
+    await deps.remember(document.tabId, { markerId, origin, features: [...simulated] });
   };
 }
 

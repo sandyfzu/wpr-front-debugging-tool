@@ -62,7 +62,9 @@ export const SIMULATION_SOURCE_TIMEOUTS_MS = {
   /** The exclusion list choice (the kept copy, read from storage once per background lifetime). */
   list: STEPS.store,
   /** The marker id (one memo write). */
-  markerId: STEPS.store
+  markerId: STEPS.store,
+  /** The marker's settling after the run (one memo write narrowing it to the simulated features). */
+  settleMarker: STEPS.store
 } as const;
 
 /**
@@ -73,11 +75,15 @@ export const SIMULATION_SOURCE_TIMEOUTS_MS = {
  */
 export const SIMULATION_PREPARATION_CPU_BOUND_MS = 600;
 
-/** The longest a document's simulation preparation takes (ms): every source deadline + its CPU. */
+/**
+ * The longest a document's simulation host work takes (ms): every source
+ * deadline — the marker's settling after the run included — + its CPU.
+ */
 export const SIMULATION_PREPARATION_BOUND_MS =
   SIMULATION_SOURCE_TIMEOUTS_MS.runtime +
   SIMULATION_SOURCE_TIMEOUTS_MS.list +
   SIMULATION_SOURCE_TIMEOUTS_MS.markerId +
+  SIMULATION_SOURCE_TIMEOUTS_MS.settleMarker +
   SIMULATION_PREPARATION_CPU_BOUND_MS;
 
 /**

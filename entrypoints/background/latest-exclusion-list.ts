@@ -19,7 +19,10 @@
  *   and refreshes at once.
  */
 import { createLogger, type Logger } from '../../lib/logger';
-import { createLatestListSource } from '../../lib/exclusion-session/latest-list-source';
+import {
+  createLatestDeferListsSource,
+  createLatestListSource
+} from '../../lib/exclusion-session/latest-list-source';
 import type { SimulationSources } from '../../lib/exclusion-session/simulation-sources';
 import {
   getLatestListRecord,
@@ -30,7 +33,8 @@ import {
 import {
   LATEST_LIST_ENDPOINT,
   LATEST_LIST_MAX_BYTES,
-  parseLatestList
+  parseLatestList,
+  type DeferListsValidation
 } from '../../lib/wp-rocket-simulation/latest-list';
 import { rowListKeyText } from '../../lib/wp-rocket-simulation/simulation-data';
 import { fetchFailureKind } from '../../utils/fetch-failure';
@@ -51,9 +55,17 @@ export const LATEST_LIST_RETRY_MS = 60 * 60 * 1_000;
 /** The due-check alarm's name and period (minutes). */
 export const LATEST_LIST_ALARM = { name: 'refresh-latest-exclusion-list', periodInMinutes: 60 };
 
-/** A fetch's answer: the validated rows with their digest, or the miss and what failed. */
+/**
+ * A fetch's answer: the validated Delay JS rows with their digest and the
+ * same document's Defer JS lists' outcome, or the miss and what failed.
+ */
 export type LatestListFetch =
-  | { readonly ok: true; readonly rows: readonly string[]; readonly sha256: string }
+  | {
+      readonly ok: true;
+      readonly rows: readonly string[];
+      readonly sha256: string;
+      readonly defer: DeferListsValidation;
+    }
   | { readonly ok: false; readonly miss: LatestListAttemptMiss; readonly detail: string };
 
 /** What a fetch needs from its platform. */
@@ -101,13 +113,20 @@ export async function fetchLatestList(deps: LatestListFetchDeps): Promise<Latest
   }
   const list = parseLatestList(body.text);
   if (!list.ok) return list;
-  return { ok: true, rows: list.rows, sha256: await deps.sha256(rowListKeyText(list.rows)) };
+  return {
+    ok: true,
+    rows: list.rows,
+    sha256: await deps.sha256(rowListKeyText(list.rows)),
+    defer: list.defer
+  };
 }
 
 /**
- * Whether a refresh is due: never attempted, the clock went back, or the
- * last attempt is older than {@link LATEST_LIST_REFRESH_MS} (success) or
- * {@link LATEST_LIST_RETRY_MS} (failure).
+ * Whether a refresh is due: never attempted, the clock went back, a kept
+ * copy whose Defer JS lists were never read after a successful attempt (a
+ * copy kept before they were), or the last attempt is older than
+ * {@link LATEST_LIST_REFRESH_MS} (success) or {@link LATEST_LIST_RETRY_MS}
+ * (failure).
  *
  * @param record The kept record.
  * @param now The current time (epoch ms).
@@ -115,9 +134,29 @@ export async function fetchLatestList(deps: LatestListFetchDeps): Promise<Latest
 export function latestListRefreshDue(record: LatestListRecord, now: number): boolean {
   const last = record.attemptedAt ?? record.copy?.fetchedAt;
   if (last === undefined || now < last) return true;
+  if (record.copy?.deferMiss === 'never-fetched' && record.lastMiss === undefined) return true;
   return (
     now - last >= (record.lastMiss === undefined ? LATEST_LIST_REFRESH_MS : LATEST_LIST_RETRY_MS)
   );
+}
+
+/**
+ * Whether a fetched document changed the kept copy: its Delay JS rows'
+ * digest, or its Defer JS lists (or their usability).
+ *
+ * @param copy The copy kept before the fetch.
+ * @param fetched The fetch's valid answer.
+ */
+export function copyChanged(
+  copy: LatestListRecord['copy'],
+  fetched: Extract<LatestListFetch, { ok: true }>
+): boolean {
+  if (copy?.sha256 !== fetched.sha256) return true;
+  const before = copy.defer === undefined ? null : [copy.defer.external, copy.defer.inline];
+  const after = fetched.defer.ok
+    ? [fetched.defer.lists.external, fetched.defer.lists.inline]
+    : null;
+  return JSON.stringify(before) !== JSON.stringify(after);
 }
 
 /**
@@ -134,8 +173,11 @@ export function nextLatestListRecord(
   now: number
 ): LatestListRecord {
   if (fetched.ok) {
+    const defer = fetched.defer.ok
+      ? { defer: fetched.defer.lists }
+      : { deferMiss: fetched.defer.miss };
     return {
-      copy: { fetchedAt: now, sha256: fetched.sha256, rows: fetched.rows },
+      copy: { fetchedAt: now, sha256: fetched.sha256, rows: fetched.rows, ...defer },
       attemptedAt: now
     };
   }
@@ -226,8 +268,14 @@ export function createLatestListService(deps: LatestListServiceDeps): LatestList
       deps.log.info('Latest exclusion list refreshed', {
         rows: fetched.rows.length,
         sha256: fetched.sha256,
-        changed: before.copy?.sha256 !== fetched.sha256
+        changed: copyChanged(before.copy, fetched)
       });
+      if (!fetched.defer.ok) {
+        deps.log.warn('Latest Defer JS lists unusable — Defer JS runs the bundled lists', {
+          miss: fetched.defer.miss,
+          detail: fetched.defer.detail
+        });
+      }
     } else {
       deps.log.warn('Latest exclusion list refresh missed', {
         miss: fetched.miss,
@@ -288,6 +336,13 @@ export const latestExclusionList = createLatestListService({
 
 /** The simulation's list source over the production service. */
 export const latestListSource: SimulationSources['list'] = createLatestListSource(
+  () => latestExclusionList.record(),
+  () => Date.now(),
+  log
+);
+
+/** The simulation's Defer JS lists source over the production service. */
+export const latestDeferListsSource: SimulationSources['deferLists'] = createLatestDeferListsSource(
   () => latestExclusionList.record(),
   () => Date.now(),
   log

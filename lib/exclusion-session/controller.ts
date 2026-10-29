@@ -100,6 +100,7 @@ import { servedUrl } from './served-url';
 import {
   INERT_SIMULATION_SOURCES,
   SimulationPreparationError,
+  simulationMarkerSettler,
   simulationPreparer,
   type SimulationSources
 } from './simulation-sources';
@@ -711,7 +712,8 @@ export function createExclusionSessionController(
       DOCUMENT_TRANSFORM_BUDGET_MS,
       session.simulate === undefined
         ? undefined
-        : simulationPreparer(session.simulate, document, simulationSources)
+        : simulationPreparer(session.simulate, document, simulationSources),
+      simulationMarkerSettler(document, simulationSources)
     );
     if (result.cause !== undefined) {
       log.error(

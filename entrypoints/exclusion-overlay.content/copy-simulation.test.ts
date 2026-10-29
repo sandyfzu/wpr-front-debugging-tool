@@ -4,7 +4,7 @@
  * forward, limits as notes, the Stop banner naming the simulation.
  */
 import { describe, expect, it } from 'vitest';
-import type { DocumentSimulationReport } from '../../lib/messaging/exclusion-simulation';
+import type { DelaySimulationReport } from '../../lib/messaging/exclusion-simulation';
 import { simulatedReport } from '../../lib/messaging/exclusion-simulation.fixtures';
 import {
   LATEST_LIST_MISSES,
@@ -29,9 +29,9 @@ import type { SessionView } from './session/session-view';
 
 /** A report in a non-simulated state. */
 function report(
-  state: Exclude<DocumentSimulationReport['state'], 'simulated'>,
-  extra: Partial<DocumentSimulationReport> = {}
-): DocumentSimulationReport {
+  state: Exclude<DelaySimulationReport['state'], 'simulated'>,
+  extra: Partial<DelaySimulationReport> = {}
+): DelaySimulationReport {
   return {
     feature: 'delay_js',
     state,
@@ -41,11 +41,11 @@ function report(
     listSource: 'bundled',
     listMiss: 'never-fetched',
     ...extra
-  } as DocumentSimulationReport;
+  } as DelaySimulationReport;
 }
 
 /** An applied view carrying a simulation. */
-function applied(simulation: DocumentSimulationReport): Extract<SessionView, { kind: 'applied' }> {
+function applied(simulation: DelaySimulationReport): Extract<SessionView, { kind: 'applied' }> {
   return {
     kind: 'applied',
     reports: [],
@@ -149,7 +149,7 @@ describe('simulation outcome words', () => {
       cspLimits: [...SIMULATION_CSP_LIMITS]
     });
     expect(new Set(all).size).toBe(all.length);
-    const unevaluated: DocumentSimulationReport = {
+    const unevaluated: DelaySimulationReport = {
       ...simulatedReport(),
       cspLimits: undefined,
       caveats: undefined,

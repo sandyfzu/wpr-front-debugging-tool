@@ -122,7 +122,7 @@ export function applySimulationFacts(
     // An unverifiable marker (copies disagree) is never vouched for, whatever the caller passes.
     if (marker.markerId !== null && verified.includes(feature)) {
       row.present = false;
-      row.version = null;
+      if ('version' in row) row.version = null;
       row.simulation = 'simulated';
     } else {
       row.simulation = 'unverified';

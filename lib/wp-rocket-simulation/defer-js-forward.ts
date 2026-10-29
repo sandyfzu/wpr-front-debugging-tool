@@ -17,18 +17,20 @@
  * Replacements are PHP's `str_replace`, in match order, over the whole page
  * (comments included) — done in one linear pass when that provably gives
  * the same text, else replayed call by call within a bounded amount of
- * work. A page that already defers, or is AMP, is returned as is; so is one
- * where PCRE's backtrack limit could stop a regex, or whose call-by-call
+ * work. A page that already defers, is AMP, or already delays (WP Rocket
+ * defers first, so its output cannot be rebuilt from the delayed page) is
+ * returned as is; so is one where PCRE's backtrack limit could stop a regex, or whose call-by-call
  * replay would pass that bound.
  */
 import { ExclusionValidationError, type InvalidExclusionRow } from '../exclusion-builder/errors';
 import { deferRowSet } from '../exclusion-builder/defer-js-rows';
+import { compiledSizeClaimed } from '../exclusion-builder/pcre/parse';
 import { JQUERY_CODE, LD_JSON, namesJqueryFile } from '../exclusion-builder/defer-inline-js';
 import { scanTags } from '../exclusion-builder/html-scan';
 import { pregQuote, unescapedDelimiterAt } from '../exclusion-builder/php/preg-quote';
 import { INLINE_WRAP_CLOSE, INLINE_WRAP_OPEN, WPR_DEFER_STAMP } from '../wp-rocket/constants';
 import type { DeferInlineQuoteDelimiter } from '../wp-rocket/versions';
-import { alreadyServesDeferJs } from './already-served';
+import { alreadyServesDeferJs, alreadyServesDelayJs } from './already-served';
 import { isAmpDocument } from './amp';
 import { replaceDisjoint, type KeyEnds } from './disjoint-replace';
 import {
@@ -51,7 +53,7 @@ import {
   UNREPRODUCED_STEP_CEILING,
   type UnreproducedRegex
 } from './unreproduced-limits';
-import { UTF8_MEASURE, type ByteMeasure } from './utf8';
+import { UTF8_MEASURE, utf8Length, type ByteMeasure } from './utf8';
 import type { SimulationNotApplicableReason, SimulationState } from './spec';
 
 /** The dynamic lists Defer JS reads (the simulated version's, or the latest). */
@@ -192,17 +194,79 @@ export function deferUrlMatcher(input: DeferJsPassInput): ((url: string) => numb
     invalid.push({ ...problem, index: input.rows.indexOf(problem.row) });
   }
   if (invalid.length > 0) throw new ExclusionValidationError(invalid);
-  if (set.page === 'unknown') {
+  if (set.page === 'unknown' || !joinedSizeClaimed(merged)) {
     throw new Error("WP Rocket's Defer JS pre-check cannot be replayed for these rows");
   }
   return set.compileMatcher();
+}
+
+/** The last joined pattern measured, and its verdict (one document's rows repeat across runs). */
+let lastJoinedSize: { readonly joined: string; readonly claimed: boolean } | undefined;
+
+/**
+ * Whether WP Rocket's joined file pattern `#(row|…)#i` is claimed to stay
+ * within PCRE's compiled-size cap. Past it the pre-check fails and WP
+ * Rocket defers nothing — a verdict the per-row checks never see, as only
+ * the join grows that large (a long list, or stored rows on top of it).
+ *
+ * @param rows The joined rows (list and stored, deduplicated).
+ */
+function joinedSizeClaimed(rows: readonly string[]): boolean {
+  const joined = `(${rows.join('|')})`;
+  if (lastJoinedSize?.joined !== joined) {
+    lastJoinedSize = { joined, claimed: compiledSizeClaimed(joined, true) };
+  }
+  return lastJoinedSize.claimed;
 }
 
 /** How the inline exclusion pattern treats every inline script. */
 type InlineExclusions =
   | { readonly kind: 'every' } // empty pattern (PHP `empty()`), or an empty alternative
   | { readonly kind: 'none' } // the pattern does not compile: `preg_match` fails
+  | { readonly kind: 'uncertain' } // its compiled size is too near PCRE's cap to tell
   | { readonly kind: 'rows'; readonly rows: readonly string[] }; // literal rows, ASCII caseless
+
+/**
+ * The largest inline pattern, in PCRE2 code units, that compiled — PHP
+ * 8.1.34 with PCRE2 10.49 (no UTF, link size 2): 65 521 compiles, 65 522
+ * fails ("regular expression is too large"), the same over row counts
+ * (1 to 13 104), lengths (1 to 32 760), multibyte, quoted and control bytes.
+ */
+export const INLINE_PATTERN_UNITS_LIMIT = 65_521;
+
+/**
+ * Units either side of {@link INLINE_PATTERN_UNITS_LIMIT} within which
+ * another PCRE2 build's fixed overhead could flip the verdict (only one
+ * build was measured): a pattern this near the cap is not reproduced.
+ */
+export const INLINE_PATTERN_UNITS_BAND = 512;
+
+/**
+ * The compiled size of the quoted rows' alternation, in PCRE2 code units:
+ * 2 per literal byte (`OP_CHAR`/`OP_CHARI` and the byte — a quoting
+ * escape adds none) and 3 per `|`, the fixed parts excluded (they are in
+ * {@link INLINE_PATTERN_UNITS_LIMIT}).
+ *
+ * @param rows The rows the joined pattern keeps (trailing empty ones trimmed).
+ */
+export function inlinePatternUnits(rows: readonly string[]): number {
+  let bytes = 0;
+  for (const row of rows) bytes += utf8Length(row);
+  return 2 * bytes + 3 * Math.max(0, rows.length - 1);
+}
+
+/**
+ * Whether the kept rows' pattern compiles: `true`, `false`, or `null`
+ * within {@link INLINE_PATTERN_UNITS_BAND} of the limit.
+ *
+ * @param rows The rows the joined pattern keeps.
+ */
+function inlinePatternCompiles(rows: readonly string[]): boolean | null {
+  const units = inlinePatternUnits(rows);
+  if (units <= INLINE_PATTERN_UNITS_LIMIT - INLINE_PATTERN_UNITS_BAND) return true;
+  if (units > INLINE_PATTERN_UNITS_LIMIT + INLINE_PATTERN_UNITS_BAND) return false;
+  return null;
+}
 
 /**
  * The inline exclusion pattern WP Rocket builds — each row `preg_quote`d
@@ -229,6 +293,10 @@ export function inlineExclusions(
   if ((/\\+$/.exec(joined)?.[0].length ?? 0) % 2 === 1) return { kind: 'none' };
   let last = quoted.length;
   while (last > 0 && quoted[last - 1] === '') last--;
+  const compiles = inlinePatternCompiles(rows.slice(0, last));
+  // Past PCRE's compiled-size cap `preg_match` fails: every script is evaluated as not excluded.
+  if (compiles === false) return { kind: 'none' };
+  if (compiles === null) return { kind: 'uncertain' };
   // An empty alternative before the last row matches every body.
   if (quoted.slice(0, last).includes('')) return { kind: 'every' };
   return { kind: 'rows', rows: rows.slice(0, last).map(asciiLower) };
@@ -245,7 +313,10 @@ function asciiLower(text: string): string {
  * @param exclusions The pattern's reading.
  * @param content The script body.
  */
-function inlineExcluded(exclusions: InlineExclusions, content: string): boolean {
+function inlineExcluded(
+  exclusions: Exclude<InlineExclusions, { readonly kind: 'uncertain' }>,
+  content: string
+): boolean {
   if (exclusions.kind !== 'rows') return exclusions.kind === 'every';
   const lower = asciiLower(content);
   return exclusions.rows.some((row) => lower.includes(row));
@@ -407,7 +478,10 @@ function wrapInlineScripts(
   const wraps = new Map<string, string>();
   let createsNone = true;
   for (const { element, content } of matches) {
-    if (content === '' || LD_JSON.test(element) || inlineExcluded(exclusions, content)) continue;
+    if (content === '' || LD_JSON.test(element)) continue;
+    // The pattern is evaluated here: a size too near the cap cannot be told.
+    if (exclusions.kind === 'uncertain') return { beyond: 'defer-inline-exclusions' };
+    if (inlineExcluded(exclusions, content)) continue;
     if (!JQUERY_CODE.test(content)) continue;
     order.push(element);
     if (wraps.has(element)) continue;
@@ -474,6 +548,11 @@ export function simulateDeferJs(input: DeferJsForwardInput): DeferJsForwardResul
     identity('not-applicable', { reason: 'beyond-exact-reproduction', unreproducedRegex: regex });
   if (isAmpDocument(input.html, tags)) return identity('not-applicable', { reason: 'amp' });
   if (alreadyServesDeferJs(tags)) return identity('already-served');
+  // WP Rocket defers before it delays: a delayed page no longer holds the
+  // scripts as Defer JS would read them, so its output cannot be rebuilt.
+  if (alreadyServesDelayJs(input.html, tags)) {
+    return identity('not-applicable', { reason: 'delay-js-served' });
+  }
   const conditionals = conditionalScan(input.html);
   if (ieConditionalsSteps(input.html, conditionals, measure) > UNREPRODUCED_STEP_CEILING) {
     return beyond('ie-conditionals');

@@ -3,21 +3,25 @@
  * through the extension's own URL — never a `?url` asset import, which
  * would share the Known Conflicts seed's bundled asset name) as the
  * runtime source, the marker id drawn from `crypto.getRandomValues`
- * and remembered in the tab's marker memo before the document is released,
+ * and remembered in the tab's marker memo before the document is released
+ * (narrowed there to the features that simulated),
  * the page's CSP (captured header lines + head metas) for this build's
  * browser engine, and the exclusion list (the kept latest list, else the
  * version's bundled one).
  */
 import type { Logger } from '../../lib/logger';
 import { createPackagedRuntimeSource } from '../../lib/exclusion-session/packaged-simulation-data';
-import { createMarkerIdSource } from '../../lib/exclusion-session/simulation-marker-memo';
+import {
+  createMarkerIdSource,
+  createMarkerSettler
+} from '../../lib/exclusion-session/simulation-marker-memo';
 import { createCspSource } from '../../lib/exclusion-session/simulation-csp-source';
 import type { SimulationCspBrowser } from '../../lib/wp-rocket-simulation/spec';
 import { rememberSimulationMarker } from '../../lib/storage/simulation-markers';
 import type { SimulationSources } from '../../lib/exclusion-session/simulation-sources';
 import { SIMULATION_DATA_PATH } from '../../lib/wp-rocket-simulation/simulation-data';
 import { webSha256Hex } from '../../utils/web-sha256';
-import { latestListSource } from './latest-exclusion-list';
+import { latestDeferListsSource, latestListSource } from './latest-exclusion-list';
 
 /**
  * The browser engine this build renders pages with (one interception
@@ -46,7 +50,9 @@ export function createSimulationSources(log: Pick<Logger, 'error'>): SimulationS
       fill: (bytes) => crypto.getRandomValues(bytes),
       remember: rememberSimulationMarker
     }),
+    settleMarker: createMarkerSettler({ remember: rememberSimulationMarker }),
     csp: createCspSource(cspBrowser()),
-    list: latestListSource
+    list: latestListSource,
+    deferLists: latestDeferListsSource
   };
 }

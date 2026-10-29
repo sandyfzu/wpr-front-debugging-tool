@@ -98,7 +98,7 @@ describe('parseSimulateSpec', () => {
 
   it.each([
     ['an empty list', { features: [] }],
-    ['an unknown feature', { features: ['defer_all_js'] }],
+    ['an unknown feature', { features: ['lazyload'] }],
     ['a repeated feature', { features: ['delay_js', 'delay_js'] }],
     ['a non-array', { features: 'delay_js' }],
     ['a sparse hole', { features: new Array<unknown>(1) }],
@@ -536,7 +536,8 @@ describe('marker verification row', () => {
 describe('closed-value predicates', () => {
   it('recognize their vocabularies only', () => {
     expect(isSimulatedFeatureId('delay_js')).toBe(true);
-    expect(isSimulatedFeatureId('defer_all_js')).toBe(false);
+    expect(isSimulatedFeatureId('defer_all_js')).toBe(true);
+    expect(isSimulatedFeatureId('lazyload')).toBe(false);
     expect(isSimulationMarkerId(MARKER_ID)).toBe(true);
     expect(isSimulationMarkerId(`${MARKER_ID}0`)).toBe(false);
     expect(isSimulationMarkerId(1)).toBe(false);

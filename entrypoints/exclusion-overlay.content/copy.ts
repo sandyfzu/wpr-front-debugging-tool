@@ -1058,7 +1058,9 @@ const UNREPRODUCED_REGEX_NAMES: Readonly<Record<UnreproducedRegex, string>> = {
   'html-comments': 'Defer JS comment stripping',
   'defer-script-src': 'Defer JS script matching',
   'defer-inline-scripts': 'Defer JS inline script matching',
-  'defer-replacements': 'Defer JS script rewriting'
+  'defer-replacements': 'Defer JS script rewriting',
+  'defer-inline-exclusions': 'Defer JS inline exclusion',
+  'defer-file-exclusions': 'Defer JS file exclusion'
 };
 
 /** What to do when a page could not be simulated: the forward actions. */
@@ -1104,6 +1106,11 @@ function notApplicableCopy(simulation: DocumentSimulationReport): StateCopy {
         title: 'Not simulated: AMP page',
         body: `WP Rocket never delays scripts on AMP pages, so ${served} Choose As served to stop asking for the simulation.`
       };
+    case 'delay-js-served':
+      return {
+        title: 'Not simulated: WP Rocket already delays scripts here',
+        body: `WP Rocket defers scripts before it delays them, and this page is already delayed, so Defer JS can’t be reproduced and ${served} ${NOT_SIMULATED_REMEDY}`
+      };
     case 'unsupported-charset':
       return {
         title: 'Not simulated: page isn’t UTF-8',
@@ -1126,12 +1133,12 @@ function notApplicableCopy(simulation: DocumentSimulationReport): StateCopy {
 /**
  * What a simulated page cannot show as the site would, one line each:
  * the CSP's limits (or why it was not evaluated) and the caveats. Empty
- * for any other state.
+ * for any other state, and for a feature that injects no runtime (Defer JS).
  *
  * @param simulation The simulation step's report.
  */
 export function simulationLimitLines(simulation: DocumentSimulationReport): string[] {
-  if (simulation.state !== 'simulated') return [];
+  if (simulation.state !== 'simulated' || simulation.feature !== 'delay_js') return [];
   const lines = (simulation.cspLimits ?? []).map((limit) => CSP_LIMIT_COPY[limit]);
   if (simulation.cspUnavailable !== undefined)
     lines.push(CSP_UNAVAILABLE_COPY[simulation.cspUnavailable]);

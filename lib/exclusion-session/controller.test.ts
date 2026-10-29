@@ -41,8 +41,8 @@ import {
 } from './timeouts';
 import { simulateDelayJs } from '../wp-rocket-simulation/delay-js-forward';
 import type { SimulationMarkerEntry } from '../storage/simulation-markers';
-import { createMarkerIdSource } from './simulation-marker-memo';
-import type { SimulationSources } from './simulation-sources';
+import { createMarkerIdSource, createMarkerSettler } from './simulation-marker-memo';
+import { INERT_SIMULATION_SOURCES, type SimulationSources } from './simulation-sources';
 
 const TAB = 3;
 const ORIGIN = 'https://site.test';
@@ -1748,7 +1748,8 @@ describe('host — simulating sessions', () => {
   const PACKAGE = {
     runtime: '/*runtime*/RocketLazyLoadScripts.run();',
     fallback: 'if(navigator.userAgent.match(/MSIE|Trident/i)){}',
-    bundledListRows: []
+    bundledListRows: [],
+    bundledDeferLists: { external: [], inline: [] }
   };
   const doc = () => ({
     tabId: TAB,
@@ -1794,6 +1795,8 @@ describe('host — simulating sessions', () => {
             listSource: 'bundled',
             listMiss: 'never-fetched'
           }),
+        deferLists: INERT_SIMULATION_SOURCES.deferLists,
+        settleMarker: INERT_SIMULATION_SOURCES.settleMarker,
         markerId: () => Promise.resolve(undefined),
         csp: () => undefined
       }
@@ -1842,6 +1845,8 @@ describe('host — simulating sessions', () => {
             };
           }),
         list: () => Promise.reject(new Error('unused')),
+        deferLists: () => Promise.reject(new Error('unused')),
+        settleMarker: () => Promise.reject(new Error('unused')),
         markerId: () => Promise.reject(new Error('unused')),
         csp: () => undefined
       }
@@ -1873,6 +1878,8 @@ describe('host — simulating sessions', () => {
           return Promise.resolve({ ok: false, cause: 'asset-unreachable' });
         },
         list: () => Promise.reject(new Error('unused')),
+        deferLists: () => Promise.reject(new Error('unused')),
+        settleMarker: () => Promise.reject(new Error('unused')),
         markerId: () => Promise.reject(new Error('unused')),
         csp: () => undefined
       }
@@ -1892,6 +1899,8 @@ describe('host — simulating sessions', () => {
     runtime: () => Promise.resolve({ ok: true, package: PACKAGE }),
     list: (_version, bundledRows) =>
       Promise.resolve({ listRows: bundledRows, listSource: 'bundled', listMiss: 'never-fetched' }),
+    deferLists: INERT_SIMULATION_SOURCES.deferLists,
+    settleMarker: INERT_SIMULATION_SOURCES.settleMarker,
     markerId,
     csp: () => undefined
   });
@@ -1952,11 +1961,94 @@ describe('host — simulating sessions', () => {
     });
   });
 
+  describe('with Defer JS requested on a page that already defers', () => {
+    const DEFERRING =
+      '<html><head></head><body><script src="/a.js" data-rocket-defer defer></script></body></html>';
+    const deferringDoc = () => ({ ...doc(), body: encoder.encode(DEFERRING) });
+    const seedBoth = () =>
+      putExclusionSessionRecord(TAB, {
+        state: 'active',
+        origin: ORIGIN,
+        set: SET,
+        simulate: { features: ['defer_all_js', 'delay_js'] },
+        startedAt: NOW - 1000,
+        document: null
+      });
+    const remembered: SimulationMarkerEntry[] = [];
+    /** Sources writing the memo through `remember`, the id 0xcd…. */
+    const bothSources = (
+      remember: (tabId: number, entry: SimulationMarkerEntry) => Promise<unknown>
+    ): SimulationSources => ({
+      ...markedSources(createMarkerIdSource({ fill: (bytes) => bytes.fill(0xcd), remember })),
+      settleMarker: createMarkerSettler({ remember })
+    });
+
+    it('narrows the memo and the marker to the features that simulated', async () => {
+      remembered.length = 0;
+      const r = rig({
+        simulation: bothSources((_tabId, entry) => {
+          remembered.push(entry);
+          return Promise.resolve();
+        })
+      });
+      await seedBoth();
+      const body = await r.host.rewriteDocument(deferringDoc());
+      const markerId = 'cd'.repeat(16);
+      expect(remembered).toEqual([
+        { markerId, origin: ORIGIN, features: ['defer_all_js', 'delay_js'] },
+        { markerId, origin: ORIGIN, features: ['delay_js'] }
+      ]);
+      expect(new TextDecoder().decode(body ?? new Uint8Array())).toContain(
+        `<meta name="wpr-fdt-simulation" content="v1 delay_js=simulated id=${markerId}">`
+      );
+      await flush();
+      await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+        document: {
+          outcome: 'rewritten',
+          simulation: { state: 'simulated', markerId },
+          deferSimulation: { state: 'already-served' }
+        }
+      });
+    });
+
+    it('serves the page unmodified when the memo cannot be narrowed', async () => {
+      let writes = 0;
+      const r = rig({
+        simulation: bothSources(() =>
+          ++writes === 1 ? Promise.resolve() : Promise.reject(new Error('session storage quota'))
+        )
+      });
+      await seedBoth();
+      await expect(r.host.rewriteDocument(deferringDoc())).resolves.toBeNull();
+      await flush();
+      expect(writes).toBe(2);
+      expect(logged(r.log, 'error', /Simulation inputs could not be prepared/)).toBe(true);
+      await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+        document: { outcome: 'failed', reason: 'engine-failed' }
+      });
+    });
+
+    it('writes the memo once when every requested feature simulated', async () => {
+      remembered.length = 0;
+      const r = rig({
+        simulation: bothSources((_tabId, entry) => {
+          remembered.push(entry);
+          return Promise.resolve();
+        })
+      });
+      await seedBoth();
+      await r.host.rewriteDocument(doc());
+      expect(remembered.map((entry) => entry.features)).toEqual([['defer_all_js', 'delay_js']]);
+    });
+  });
+
   it('logs a preparation failure (not an engine one) and serves unchanged when a source throws (engine-failed)', async () => {
     const r = rig({
       simulation: {
         runtime: () => Promise.reject(new Error('asset read exploded')),
         list: () => Promise.reject(new Error('unused')),
+        deferLists: () => Promise.reject(new Error('unused')),
+        settleMarker: () => Promise.reject(new Error('unused')),
         markerId: () => Promise.reject(new Error('unused')),
         csp: () => undefined
       }

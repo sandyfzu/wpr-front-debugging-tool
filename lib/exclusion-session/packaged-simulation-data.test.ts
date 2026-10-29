@@ -213,7 +213,12 @@ describe('createPackagedRuntimeSource', () => {
     for (const read of reads) {
       expect(read).toEqual({
         ok: true,
-        package: { runtime: RUNTIME, fallback: FALLBACK, bundledListRows: ROWS }
+        package: {
+          runtime: RUNTIME,
+          fallback: FALLBACK,
+          bundledListRows: ROWS,
+          bundledDeferLists: { external: ROWS, inline: ROWS }
+        }
       });
     }
   });

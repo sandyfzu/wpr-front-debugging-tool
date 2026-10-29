@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import type { DocumentSimulationReport } from '../../../lib/messaging/exclusion-simulation';
+import type { DelaySimulationReport } from '../../../lib/messaging/exclusion-simulation';
 import { simulatedReport } from '../../../lib/messaging/exclusion-simulation.fixtures';
 import {
   DELAY_MODES,
@@ -35,9 +35,9 @@ function delayReport(candidates: number): TransformReport {
 
 /** A simulation report in a given state. */
 function simulation(
-  state: DocumentSimulationReport['state'],
-  reason?: DocumentSimulationReport['reason']
-): DocumentSimulationReport {
+  state: DelaySimulationReport['state'],
+  reason?: DelaySimulationReport['reason']
+): DelaySimulationReport {
   if (state === 'simulated') return simulatedReport();
   return {
     feature: 'delay_js',

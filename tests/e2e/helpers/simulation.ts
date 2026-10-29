@@ -14,7 +14,7 @@ import path from 'node:path';
 
 import type { Locator, Page, Response } from '@playwright/test';
 
-import type { DocumentSimulationReport } from '../../../lib/messaging/exclusion-simulation';
+import type { DelaySimulationReport } from '../../../lib/messaging/exclusion-simulation';
 import { SIMULATION_MARKER_META_NAME } from '../../../lib/wp-rocket/constants';
 import { expect, type DriverPage, type ExtensionDriver } from './extension';
 import { DELAY, applyButton, injectOverlay, lane, reloadThroughSession } from './exclusion-overlay';
@@ -108,7 +108,7 @@ export async function simulationMarkers(page: Page): Promise<(string | null)[] |
 interface StoredSession {
   readonly state?: string;
   readonly simulate?: { readonly features?: readonly string[] };
-  readonly document?: { readonly outcome?: string; readonly simulation?: DocumentSimulationReport };
+  readonly document?: { readonly outcome?: string; readonly simulation?: DelaySimulationReport };
 }
 
 /**
@@ -142,8 +142,8 @@ export async function storedSession(
 export async function documentSimulation(
   extension: ExtensionDriver,
   tabId: number
-): Promise<DocumentSimulationReport> {
-  let report: DocumentSimulationReport | undefined;
+): Promise<DelaySimulationReport> {
+  let report: DelaySimulationReport | undefined;
   await expect
     .poll(
       async () => {

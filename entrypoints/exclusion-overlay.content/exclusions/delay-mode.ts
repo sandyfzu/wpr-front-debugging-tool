@@ -13,7 +13,7 @@
  * live page alone would misread both.
  */
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import type { DocumentSimulationReport } from '../../../lib/messaging/exclusion-simulation';
+import type { DelaySimulationReport } from '../../../lib/messaging/exclusion-simulation';
 import {
   SIMULATED_FEATURES,
   type SimulateSpec,
@@ -118,7 +118,7 @@ export type RealDelayState =
 /** What the session's rewrite of the page on screen says (only when it is this page's). */
 export interface DelaySessionFacts {
   /** The simulation step's report (absent: the session simulated nothing). */
-  readonly simulation: DocumentSimulationReport | undefined;
+  readonly simulation: DelaySimulationReport | undefined;
   /** The applied set disables Delay JS. */
   readonly disableDelayJs: boolean;
   /** The Delay JS transform's report on this document. */

@@ -12,7 +12,10 @@ import {
   LATEST_LIST_MAX_BYTES
 } from '../../lib/wp-rocket-simulation/latest-list';
 import { rowListKeyText } from '../../lib/wp-rocket-simulation/simulation-data';
-import type { LatestListRecord } from '../../lib/storage/latest-exclusion-list';
+import {
+  parseLatestListRecord,
+  type LatestListRecord
+} from '../../lib/storage/latest-exclusion-list';
 import { sha256Hex } from '../../utils/sha256';
 import {
   createLatestListService,
@@ -35,8 +38,11 @@ beforeEach(() => {
 
 const ROWS = ['jquery', 'gtag'];
 const ROWS_SHA = sha256Hex(rowListKeyText(ROWS));
+const DEFER = { external: ['jquery.js'], inline: ['lazyLoadOptions'] };
 const BODY = JSON.stringify({
   delay_js_exclusions: ROWS,
+  defer_js_external_exclusions: DEFER.external,
+  defer_js_inline_exclusions: DEFER.inline,
   rocket_insights_add_homepage_expiry_interval: 266
 });
 const NOW = 1_790_000_000_000;
@@ -56,7 +62,8 @@ describe('fetchLatestList', () => {
     await expect(fetchLatestList({ fetch, sha256 })).resolves.toEqual({
       ok: true,
       rows: ROWS,
-      sha256: ROWS_SHA
+      sha256: ROWS_SHA,
+      defer: { ok: true, lists: DEFER }
     });
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url, init] = fetch.mock.calls[0] ?? [];
@@ -157,6 +164,14 @@ describe('latestListRefreshDue', () => {
     expect(latestListRefreshDue({ copy }, NOW + LATEST_LIST_REFRESH_MS)).toBe(true);
   });
 
+  it('is due at once for a copy whose Defer JS lists were never read, then as after a miss', () => {
+    const old = { ...copy, deferMiss: 'never-fetched' as const };
+    expect(latestListRefreshDue({ copy: old, attemptedAt: NOW }, NOW + 1)).toBe(true);
+    const missed = { copy: old, attemptedAt: NOW, lastMiss: 'timeout' as const };
+    expect(latestListRefreshDue(missed, NOW + LATEST_LIST_RETRY_MS - 1)).toBe(false);
+    expect(latestListRefreshDue(missed, NOW + LATEST_LIST_RETRY_MS)).toBe(true);
+  });
+
   it('is due when the clock went back (one fetch re-anchors it)', () => {
     expect(latestListRefreshDue({ copy, attemptedAt: NOW }, NOW - 1)).toBe(true);
   });
@@ -164,12 +179,31 @@ describe('latestListRefreshDue', () => {
 
 describe('nextLatestListRecord', () => {
   const old = { fetchedAt: NOW - 5, sha256: 'b'.repeat(64), rows: ['old'] };
-  const fetched: LatestListFetch = { ok: true, rows: ROWS, sha256: ROWS_SHA };
+  const fetched: LatestListFetch = {
+    ok: true,
+    rows: ROWS,
+    sha256: ROWS_SHA,
+    defer: { ok: true, lists: DEFER }
+  };
 
   it('replaces the copy on success and clears the miss', () => {
     expect(
       nextLatestListRecord({ copy: old, attemptedAt: 1, lastMiss: 'timeout' }, fetched, NOW)
-    ).toEqual({ copy: { fetchedAt: NOW, sha256: ROWS_SHA, rows: ROWS }, attemptedAt: NOW });
+    ).toEqual({
+      copy: { fetchedAt: NOW, sha256: ROWS_SHA, rows: ROWS, defer: DEFER },
+      attemptedAt: NOW
+    });
+  });
+
+  it("keeps the Delay JS copy with the Defer JS lists' miss when only they were unusable", () => {
+    const deferMissed: LatestListFetch = {
+      ...fetched,
+      defer: { ok: false, miss: 'invalid', detail: 'x' }
+    };
+    expect(nextLatestListRecord({ copy: old }, deferMissed, NOW)).toEqual({
+      copy: { fetchedAt: NOW, sha256: ROWS_SHA, rows: ROWS, deferMiss: 'invalid' },
+      attemptedAt: NOW
+    });
   });
 
   it('keeps the last valid copy on a miss and records it', () => {
@@ -211,10 +245,27 @@ function service(overrides: Partial<LatestListServiceDeps> & { stored?: LatestLi
 }
 
 describe('createLatestListService', () => {
+  it('keeps the Delay JS list and warns when only the Defer JS lists are unusable', async () => {
+    const body = JSON.stringify({ delay_js_exclusions: ROWS, defer_js_external_exclusions: [] });
+    const { service: s, deps, log } = service({ fetch: answering(() => ok(body)) });
+    await s.refreshIfDue();
+    expect(deps.write).toHaveBeenCalledWith({
+      copy: { fetchedAt: NOW, sha256: ROWS_SHA, rows: ROWS, deferMiss: 'invalid' },
+      attemptedAt: NOW
+    });
+    expect(log.warn).toHaveBeenCalledWith(
+      'Latest Defer JS lists unusable — Defer JS runs the bundled lists',
+      { miss: 'invalid', detail: 'defer_js_external_exclusions is empty' }
+    );
+  });
+
   it('refreshes when due: keeps the copy in storage and memory', async () => {
     const { service: s, deps, log } = service();
     await s.refreshIfDue();
-    const kept = { copy: { fetchedAt: NOW, sha256: ROWS_SHA, rows: ROWS }, attemptedAt: NOW };
+    const kept = {
+      copy: { fetchedAt: NOW, sha256: ROWS_SHA, rows: ROWS, defer: DEFER },
+      attemptedAt: NOW
+    };
     expect(deps.write).toHaveBeenCalledWith(kept);
     await expect(s.record()).resolves.toEqual(kept);
     expect(deps.read).toHaveBeenCalledTimes(1);
@@ -257,14 +308,51 @@ describe('createLatestListService', () => {
     });
   });
 
+  it('refreshes at once a stored copy kept before the Defer JS lists were read', async () => {
+    // As storage reads it back: no Defer JS field at all.
+    const stored = parseLatestListRecord({
+      copy: { fetchedAt: NOW - 1, sha256: ROWS_SHA, rows: ROWS },
+      attemptedAt: NOW - 1
+    });
+    expect(stored.copy?.deferMiss).toBe('never-fetched');
+    const fetch = vi.fn<typeof globalThis.fetch>(() => Promise.resolve(ok()));
+    const { service: s } = service({ fetch, stored });
+    await s.refreshIfDue();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await expect(s.record()).resolves.toMatchObject({ copy: { defer: DEFER } });
+  });
+
   it('logs an unchanged list as unchanged', async () => {
-    const copy = { fetchedAt: NOW - LATEST_LIST_REFRESH_MS, sha256: ROWS_SHA, rows: ROWS };
+    // The kept copy holds the Defer JS lists the document serves: nothing changed.
+    const copy = {
+      fetchedAt: NOW - LATEST_LIST_REFRESH_MS,
+      sha256: ROWS_SHA,
+      rows: ROWS,
+      defer: DEFER
+    };
     const { service: s, log } = service({ stored: { copy } });
     await s.refreshIfDue();
     expect(log.info).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ changed: false })
     );
+  });
+
+  it('logs a list whose Defer JS lists alone changed as changed (a copy kept before them included)', async () => {
+    for (const defer of [{ defer: { ...DEFER, inline: ['other'] } }, {}]) {
+      const copy = {
+        fetchedAt: NOW - LATEST_LIST_REFRESH_MS,
+        sha256: ROWS_SHA,
+        rows: ROWS,
+        ...defer
+      };
+      const { service: s, log } = service({ stored: { copy } });
+      await s.refreshIfDue();
+      expect(log.info).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ changed: true })
+      );
+    }
   });
 
   it('runs one refresh at a time (single flight)', async () => {
@@ -370,7 +458,10 @@ describe('dropPreviousBuildCopy', () => {
     await s.dropPreviousBuildCopy();
     expect(deps.write).toHaveBeenNthCalledWith(1, {});
     expect(deps.fetch).toHaveBeenCalledTimes(1);
-    const fresh = { copy: { fetchedAt: NOW, sha256: ROWS_SHA, rows: ROWS }, attemptedAt: NOW };
+    const fresh = {
+      copy: { fetchedAt: NOW, sha256: ROWS_SHA, rows: ROWS, defer: DEFER },
+      attemptedAt: NOW
+    };
     expect(deps.write).toHaveBeenLastCalledWith(fresh);
     await expect(s.record()).resolves.toEqual(fresh);
   });

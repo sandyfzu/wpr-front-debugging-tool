@@ -25,9 +25,13 @@ import type {
   DocumentSimulationInput,
   SimulationCspHeader
 } from '../messaging/exclusion-simulation';
-import type { SimulationStage } from '../wp-rocket-simulation/spec';
+import {
+  SIMULATED_FEATURES,
+  type SimulatedFeatureId,
+  type SimulationStage
+} from '../wp-rocket-simulation/spec';
 import { decodeDocument, encodeDocument, extractMimeType } from './charset';
-import type { SimulationPreparer } from './simulation-sources';
+import type { MarkerSettler, SimulationPreparer } from './simulation-sources';
 import { simulationStage } from './simulation-stage';
 import { removeSpeculationRules } from './speculation-rules';
 
@@ -162,7 +166,7 @@ export function runDocumentPipeline(
       stopAfter: () => now() - started > request.budgetMs,
       ...(request.simulate === undefined
         ? {}
-        : { pre: simulationStage(request.simulate, request.bytes) })
+        : { pre: simulationStage(request.simulate, request.bytes, request.set.rows.deferJs) })
     });
     if (!run.completed) {
       return {
@@ -170,8 +174,9 @@ export function runDocumentPipeline(
         outcome: overBudgetOutcome(request.set, run.stoppedAt, request.budgetMs, run.stage)
       };
     }
-    // One simulation block per document: the registry simulates one feature today.
-    const simulation = run.simulation?.[0];
+    // One report per simulated feature, each in its own outcome field.
+    const simulation = run.simulation?.find((report) => report.feature === 'delay_js');
+    const deferSimulation = run.simulation?.find((report) => report.feature === 'defer_all_js');
     // The marker steps ran after the last budget check, unbudgeted: linear
     // scans; only a preempting runner's deadline bounds them.
     return {
@@ -180,7 +185,8 @@ export function runDocumentPipeline(
       outcome: {
         outcome: 'rewritten',
         reports: run.reports,
-        ...(simulation === undefined ? {} : { simulation })
+        ...(simulation === undefined ? {} : { simulation }),
+        ...(deferSimulation === undefined ? {} : { deferSimulation })
       }
     };
   } catch (cause) {
@@ -308,6 +314,40 @@ function servedBytes(
 }
 
 /**
+ * The features whose report names the marker the run wrote, in registry
+ * order (empty: no marker written).
+ *
+ * @param outcome The run's `rewritten` outcome.
+ */
+export function markedFeatures(outcome: RewrittenDocumentOutcome): SimulatedFeatureId[] {
+  const reports = [outcome.deferSimulation, outcome.simulation];
+  return SIMULATED_FEATURES.map(({ id }) => id).filter((id) =>
+    reports.some((report) => report?.feature === id && report.markerId !== undefined)
+  );
+}
+
+/**
+ * After a run that wrote a marker, narrow its memo entry to the features
+ * that simulated (only when they differ from the requested ones).
+ *
+ * @param input The run's simulation input.
+ * @param result The run's result.
+ * @param settle The session's marker settler.
+ * @throws Whatever the settler rejects with.
+ */
+async function settleMarker(
+  input: DocumentSimulationInput,
+  result: DocumentTransformResult,
+  settle: MarkerSettler
+): Promise<void> {
+  if (!result.ok || input.markerId === undefined) return;
+  const marked = markedFeatures(result.outcome);
+  const requested = new Set(input.features);
+  const narrowed = marked.length < requested.size || marked.some((id) => !requested.has(id));
+  if (marked.length > 0 && narrowed) await settle(input.markerId, marked);
+}
+
+/**
  * Rewrite one intercepted document: guard the size, decode in its charset,
  * run the engine through `runner`, remove the document's speculation rules
  * (a session effect, applied whatever the engine did — see
@@ -321,6 +361,9 @@ function servedBytes(
  *   simulated). A document it cannot give a runtime for is
  *   `runtime-unavailable` (served without exclusions, never simulated
  *   without one); a preparer that throws is `engine-failed`.
+ * @param settle The session's marker settler, run after a simulating run
+ *   whose marker names fewer features than requested, before the document
+ *   is released; one that rejects is `engine-failed`.
  * @returns The outcome and the bytes to serve. Never rejects: an oversized
  *   body is `body-unavailable` and a body that cannot be decoded in its
  *   charset (unsupported encoding, malformed bytes) `decode-failed` — both
@@ -336,7 +379,8 @@ export async function rewriteDocument(
   set: ExclusionSet,
   runner: DocumentTransformRunner,
   budgetMs: number = DOCUMENT_TRANSFORM_BUDGET_MS,
-  simulate?: SimulationPreparer
+  simulate?: SimulationPreparer,
+  settle?: MarkerSettler
 ): Promise<DocumentRewrite> {
   if (document.body.length > DOCUMENT_BODY_BYTE_LIMIT) {
     return { outcome: { outcome: 'failed', reason: 'body-unavailable' }, body: null };
@@ -357,6 +401,9 @@ export async function rewriteDocument(
             bytes,
             ...(prepared === undefined ? {} : { simulate: prepared.input })
           });
+    if (prepared?.ok === true && settle !== undefined) {
+      await settleMarker(prepared.input, result, settle);
+    }
   } catch (cause) {
     // A runner (or preparer) must never reject; one that does is an engine failure.
     result = engineFailed(cause);

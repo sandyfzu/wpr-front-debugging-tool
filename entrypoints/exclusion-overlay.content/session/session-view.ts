@@ -18,7 +18,7 @@ import {
   type ExclusionSetRows
 } from '../../../lib/exclusion-builder/set';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import type { DocumentSimulationReport } from '../../../lib/messaging/exclusion-simulation';
+import type { DelaySimulationReport } from '../../../lib/messaging/exclusion-simulation';
 import type {
   SimulationRuntimeUnavailableCause,
   SimulationStage
@@ -53,7 +53,7 @@ export type SessionView =
       readonly unmatched: number;
       readonly warnings: readonly AppliedWarning[];
       readonly served: ExclusionServedDocument | undefined;
-      readonly simulation?: DocumentSimulationReport;
+      readonly simulation?: DelaySimulationReport;
     }
   | {
       readonly kind: 'unmodified';

@@ -16,7 +16,7 @@ import type {
   ExclusionSessionStatus
 } from '../../lib/messaging/exclusion-session';
 import { simulatedReport } from '../../lib/messaging/exclusion-simulation.fixtures';
-import type { DocumentSimulationReport } from '../../lib/messaging/exclusion-simulation';
+import type { DelaySimulationReport } from '../../lib/messaging/exclusion-simulation';
 import type { SimulateSpec } from '../../lib/wp-rocket-simulation/spec';
 import { AUTOSAVE_DELAY_MS, createOverlayController, type OverlayController } from './controller';
 import { NO_DELAY_EVIDENCE, type DelayPageEvidence } from './exclusions/delay-mode';
@@ -56,7 +56,7 @@ function served(): ExclusionServedDocument {
 function session(
   set: ExclusionSet,
   simulate: SimulateSpec | undefined,
-  simulation?: DocumentSimulationReport,
+  simulation?: DelaySimulationReport,
   candidates = 0
 ): ActiveExclusionSession {
   return {
@@ -318,7 +318,7 @@ describe('Delay JS mode: the page’s real state', () => {
   });
 
   it('applied Simulated on a page WP Rocket already delays: nothing checked, said', async () => {
-    const already: DocumentSimulationReport = {
+    const already: DelaySimulationReport = {
       feature: 'delay_js',
       state: 'already-served',
       delayed: 0,
@@ -338,7 +338,7 @@ describe('Delay JS mode: the page’s real state', () => {
   });
 
   it('navigating in a Simulated session to a page WP Rocket delays: nothing checked, the session’s mode kept', async () => {
-    const already: DocumentSimulationReport = {
+    const already: DelaySimulationReport = {
       feature: 'delay_js',
       state: 'already-served',
       delayed: 0,
@@ -370,7 +370,7 @@ describe('Delay JS mode: the page’s real state', () => {
   });
 
   it('an AMP page (simulation not applicable) allows only As served', async () => {
-    const amp: DocumentSimulationReport = {
+    const amp: DelaySimulationReport = {
       feature: 'delay_js',
       state: 'not-applicable',
       reason: 'amp',
@@ -391,7 +391,7 @@ describe('Delay JS mode: the page’s real state', () => {
   });
 
   it('page-local stand-in for the session’s Simulated: As served drops the simulation, Disabled disables', async () => {
-    const already: DocumentSimulationReport = {
+    const already: DelaySimulationReport = {
       feature: 'delay_js',
       state: 'already-served',
       delayed: 0,

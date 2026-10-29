@@ -22,8 +22,8 @@ import {
 } from './spec';
 
 describe('simulation vocabulary', () => {
-  it('registers Delay JS only, by its exclusion-builder id', () => {
-    expect(SIMULATED_FEATURES.map((feature) => feature.id)).toEqual(['delay_js']);
+  it("registers Defer JS then Delay JS (WP Rocket's buffer order), by their exclusion-builder ids", () => {
+    expect(SIMULATED_FEATURES.map((feature) => feature.id)).toEqual(['defer_all_js', 'delay_js']);
     for (const feature of SIMULATED_FEATURES) {
       expect(EXCLUSION_FEATURES.some((spec) => spec.id === feature.id)).toBe(true);
     }
@@ -38,6 +38,7 @@ describe('simulation vocabulary', () => {
     ]);
     expect(SIMULATION_NOT_APPLICABLE_REASONS).toEqual([
       'amp',
+      'delay-js-served',
       'beyond-exact-reproduction',
       'unsupported-charset'
     ]);
@@ -50,7 +51,9 @@ describe('simulation vocabulary', () => {
       'html-comments',
       'defer-script-src',
       'defer-inline-scripts',
-      'defer-replacements'
+      'defer-replacements',
+      'defer-inline-exclusions',
+      'defer-file-exclusions'
     ]);
     expect(SIMULATION_CAVEATS).toEqual(['combined-js']);
     expect(SIMULATION_CSP_LIMITS).toEqual([

@@ -1,5 +1,6 @@
 /**
- * The kept latest Delay JS exclusion list and its refresh record
+ * The kept latest Delay JS exclusion list (with the Defer JS lists read
+ * from the same document) and its refresh record
  * (`local:` — it outlives browser restarts, so a copy fetched once keeps
  * serving offline). The background is the only writer.
  *
@@ -12,7 +13,12 @@
 import { storage } from 'wxt/utils/storage';
 import { isCount } from '../messaging/guard-policy';
 import { isRecord, ownValue } from '../../utils/is-record';
-import { validateLatestListRows } from '../wp-rocket-simulation/latest-list';
+import type { DeferJsLists } from '../wp-rocket-simulation/defer-js-forward';
+import {
+  validateDeferLists,
+  validateLatestListRows,
+  type LatestListValidationMiss
+} from '../wp-rocket-simulation/latest-list';
 import { LATEST_LIST_MISSES, type LatestListMiss } from '../wp-rocket-simulation/spec';
 
 /** The store key. */
@@ -25,6 +31,15 @@ export interface LatestListCopy {
   /** SHA-256 (lowercase hex) of the rows' JSON text — tells a changed list from a re-fetched one. */
   readonly sha256: string;
   readonly rows: readonly string[];
+  /** The same document's Defer JS lists (absent: they were unusable — see `deferMiss`). */
+  readonly defer?: DeferJsLists;
+  /**
+   * Why the document's Defer JS lists are unusable (never with `defer`):
+   * their validation's miss, `unreadable` when the kept lists fail
+   * re-validation, or `never-fetched` for a copy kept before the Defer JS
+   * lists were read (a refresh is then due at once).
+   */
+  readonly deferMiss?: LatestListValidationMiss | 'unreadable' | 'never-fetched';
 }
 
 /** The kept state: the last valid copy and the last refresh attempt. */
@@ -63,7 +78,44 @@ function parseCopy(value: unknown): LatestListCopy | undefined {
     return undefined;
   }
   const rows = validateLatestListRows(ownValue(value, 'rows'));
-  return rows.ok ? { fetchedAt, sha256, rows: rows.rows } : undefined;
+  return rows.ok ? { fetchedAt, sha256, rows: rows.rows, ...parseCopyDefer(value) } : undefined;
+}
+
+/** The misses a kept copy may name for its Defer JS lists. */
+const DEFER_MISSES: readonly NonNullable<LatestListCopy['deferMiss']>[] = [
+  'oversize',
+  'malformed',
+  'invalid',
+  'unreadable',
+  'never-fetched'
+];
+
+/**
+ * Read a stored copy's Defer JS part back: valid lists, else a known miss.
+ * A copy holding neither field was kept before the Defer JS lists were
+ * read: `never-fetched`. Damage costs only the Defer JS part (its kept
+ * Delay JS list stays usable): lists that fail re-validation, an unknown
+ * miss, or both fields read as `unreadable`.
+ *
+ * @param value The stored copy.
+ * @returns The copy's Defer JS fields.
+ */
+function parseCopyDefer(
+  value: Record<string, unknown>
+): Pick<LatestListCopy, 'defer' | 'deferMiss'> {
+  const defer = ownValue(value, 'defer');
+  const deferMiss = ownValue(value, 'deferMiss');
+  if (defer === undefined) {
+    if (deferMiss === undefined) return { deferMiss: 'never-fetched' };
+    const miss = DEFER_MISSES.find((known) => known === deferMiss);
+    return { deferMiss: miss ?? 'unreadable' };
+  }
+  const lists = isRecord(defer)
+    ? validateDeferLists(ownValue(defer, 'external'), ownValue(defer, 'inline'))
+    : null;
+  return lists?.ok === true && deferMiss === undefined
+    ? { defer: lists.lists }
+    : { deferMiss: 'unreadable' };
 }
 
 /**

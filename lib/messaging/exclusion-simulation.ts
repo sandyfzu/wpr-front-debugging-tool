@@ -30,10 +30,8 @@ import {
   SIMULATION_LIST_LIMITS,
   SIMULATION_LIST_SOURCES,
   SIMULATION_MARKER_ID_PATTERN,
-  SIMULATION_NOT_APPLICABLE_REASONS,
   SIMULATION_RUNTIME_UNAVAILABLE_CAUSES,
-  SIMULATION_STATES,
-  UNREPRODUCED_REGEXES,
+  SIMULATION_REPORT_VOCABULARY,
   type LatestListMiss,
   type SimulateSpec,
   type SimulatedFeatureId,
@@ -42,12 +40,14 @@ import {
   type SimulationCspLimit,
   type SimulationCspUnavailableReason,
   type SimulationListSource,
+  type SimulationReportVocabulary,
   type SimulationNotApplicableReason,
   type SimulationRuntimeUnavailableCause,
   type SimulationState,
   type UnreproducedRegex
 } from '../wp-rocket-simulation/spec';
 import { WPR_VERSION_NUMBER_SOURCE } from '../wp-rocket/constants';
+import { supportedWprVersion } from '../wp-rocket/versions';
 import { isRecord, ownValue } from '../../utils/is-record';
 import { isPrintable } from './error-words';
 import { isCount, keysAllowed, type UnknownKeyPolicy } from './guard-policy';
@@ -87,14 +87,24 @@ export type SimulationListProvenance = {
   [Source in SimulationListSource]: { readonly listSource: Source } & ListSourceFacts[Source];
 }[SimulationListSource];
 
-/** One document's simulation, as the `rewritten` outcome reports it. */
-export type DocumentSimulationReport = SimulationListProvenance & {
-  readonly feature: SimulatedFeatureId;
+/** What every simulated feature's report carries. */
+type SimulationReportBase = SimulationListProvenance & {
   readonly state: SimulationState;
   /** With `not-applicable` only (required there). */
   readonly reason?: SimulationNotApplicableReason;
   /** With `beyond-exact-reproduction` only (required there): the regex that could stop. */
   readonly unreproducedRegex?: UnreproducedRegex;
+  /** The WP Rocket version simulated. */
+  readonly wpRocketVersion: string;
+  /** The version the page's generator meta serves, when it has one. */
+  readonly siteVersion?: string;
+  /** The simulation marker's id written into the page (`simulated` only). */
+  readonly markerId?: string;
+};
+
+/** One document's Delay JS simulation (its feature's values: {@link SIMULATION_REPORT_VOCABULARY}). */
+export type DelaySimulationReport = SimulationReportBase & {
+  readonly feature: 'delay_js';
   /** Scripts the step delayed (0 unless `simulated`). */
   readonly delayed: number;
   /** Scripts left as served because their verdict depends on WP Rocket's random ids (positive; `simulated` only). */
@@ -103,12 +113,6 @@ export type DocumentSimulationReport = SimulationListProvenance & {
   readonly regexLimitHit?: true;
   /** Whether the runtime and IE fallback were injected (false unless `simulated`). */
   readonly runtimeInjected: boolean;
-  /** The WP Rocket version simulated. */
-  readonly wpRocketVersion: string;
-  /** The version the page's generator meta serves, when it has one. */
-  readonly siteVersion?: string;
-  /** The simulation marker's id written into the page (`simulated` only). */
-  readonly markerId?: string;
   /** Runtime work the page's CSP blocks, each once (non-empty; `simulated` only). */
   readonly cspLimits?: readonly SimulationCspLimit[];
   /** Why the page's CSP was not evaluated (`simulated` only; never with `cspLimits`). */
@@ -116,6 +120,21 @@ export type DocumentSimulationReport = SimulationListProvenance & {
   /** What the simulation cannot reproduce here, each once (non-empty; `simulated` only). */
   readonly caveats?: readonly SimulationCaveat[];
 };
+
+/**
+ * One document's Defer JS simulation: no runtime, so no CSP facts (its
+ * feature's values: {@link SIMULATION_REPORT_VOCABULARY}).
+ */
+export type DeferSimulationReport = SimulationReportBase & {
+  readonly feature: 'defer_all_js';
+  /** External scripts it deferred (0 unless `simulated`). */
+  readonly deferred: number;
+  /** Inline jQuery scripts it wrapped (0 unless `simulated`). */
+  readonly wrapped: number;
+};
+
+/** One document's simulation of one feature, as the `rewritten` outcome reports it. */
+export type DocumentSimulationReport = DelaySimulationReport | DeferSimulationReport;
 
 /** One CSP response header line as received (Firefox may join repeated lines with `, `). */
 export interface SimulationCspHeader {
@@ -139,6 +158,17 @@ export interface SimulationCspInput {
 }
 
 /**
+ * The Defer JS lists a run uses — both from one source, so one provenance
+ * (echoed into the Defer JS report).
+ */
+export type SimulationDeferLists = SimulationListProvenance & {
+  /** `defer_js_external_exclusions`: script URL parts Defer JS never defers. */
+  readonly external: readonly string[];
+  /** `defer_js_inline_exclusions`: inline texts Defer JS never wraps. */
+  readonly inline: readonly string[];
+};
+
+/**
  * What one engine run needs to simulate: the session's features, the
  * selected WP Rocket version's packaged runtime and IE fallback texts,
  * the exclusion list rows in use with their provenance (echoed into the
@@ -156,6 +186,8 @@ export type DocumentSimulationInput = SimulationListProvenance & {
   readonly fallback: string;
   /** The exclusion list's rows. */
   readonly listRows: readonly string[];
+  /** The Defer JS lists — present exactly when the run simulates Defer JS. */
+  readonly deferLists?: SimulationDeferLists;
   /** The id the marker carries when the step simulates. */
   readonly markerId?: string;
   /** Absent (and no `cspUnavailable`): no policy is known (the runtime is taken as allowed). */
@@ -334,83 +366,114 @@ function parseListProvenance(input: Record<string, unknown>): SimulationListProv
   }
 }
 
-/** The keys a document simulation report carries. */
-const REPORT_KEYS = [
+/** The keys every simulated feature's report may carry. */
+const REPORT_BASE_KEYS = [
   'feature',
   'state',
   'reason',
   'unreproducedRegex',
-  'delayed',
-  'undetermined',
-  'regexLimitHit',
-  'runtimeInjected',
   'wpRocketVersion',
   'siteVersion',
   'listSource',
   'listFetchedAt',
   'listMiss',
-  'markerId',
-  'cspLimits',
-  'cspUnavailable',
-  'caveats'
+  'markerId'
 ] as const;
+
+/** Per feature, the keys only its report carries (another feature's report naming one is malformed). */
+const REPORT_FEATURE_KEYS = {
+  defer_all_js: ['deferred', 'wrapped'],
+  delay_js: [
+    'delayed',
+    'undetermined',
+    'regexLimitHit',
+    'runtimeInjected',
+    'cspLimits',
+    'cspUnavailable',
+    'caveats'
+  ]
+} as const satisfies Record<SimulatedFeatureId, readonly string[]>;
+
+/** Every key some report carries. */
+const REPORT_KEYS: readonly string[] = [
+  ...REPORT_BASE_KEYS,
+  ...Object.values(REPORT_FEATURE_KEYS).flat()
+];
+
+/**
+ * Whether a record names a key only another feature's report carries.
+ *
+ * @param input The report record.
+ * @param feature The report's feature.
+ */
+function namesOtherFeatureKey(
+  input: Record<string, unknown>,
+  feature: SimulatedFeatureId
+): boolean {
+  return SIMULATED_FEATURES.some(
+    ({ id }) =>
+      id !== feature &&
+      REPORT_FEATURE_KEYS[id].some((key: string) => ownValue(input, key) !== undefined)
+  );
+}
 
 /** A report's identity-state why: the reason and regex pairing. */
 type ReportWhy = Pick<DocumentSimulationReport, 'reason' | 'unreproducedRegex'>;
 
 /**
- * A report's `reason` + `unreproducedRegex`: a reason with `not-applicable`
- * only (required there), a regex with `beyond-exact-reproduction` only
- * (required there).
+ * A report's `reason` + `unreproducedRegex`, each from its feature's
+ * vocabulary: a reason with `not-applicable` only (required there), a
+ * regex with `beyond-exact-reproduction` only (required there).
  *
  * @returns The pair present, or null when invalid.
  */
-function parseReportWhy(input: Record<string, unknown>, state: SimulationState): ReportWhy | null {
+function parseReportWhy(
+  input: Record<string, unknown>,
+  state: SimulationState,
+  vocabulary: SimulationReportVocabulary
+): ReportWhy | null {
   const rawReason = ownValue(input, 'reason');
   const rawRegex = ownValue(input, 'unreproducedRegex');
   if (state !== 'not-applicable') {
     return rawReason === undefined && rawRegex === undefined ? {} : null;
   }
-  const reason = oneOf(SIMULATION_NOT_APPLICABLE_REASONS, rawReason);
+  const reason = oneOf(vocabulary.reasons, rawReason);
   if (reason === undefined) return null;
   if (reason !== 'beyond-exact-reproduction') return rawRegex === undefined ? { reason } : null;
-  const regex = oneOf(UNREPRODUCED_REGEXES, rawRegex);
+  const regex = oneOf(vocabulary.regexes, rawRegex);
   return regex === undefined ? null : { reason, unreproducedRegex: regex };
 }
 
-/** A report's `simulated`-only facts, parsed (see {@link parseSimulatedFacts}). */
-type SimulatedFacts = Pick<
-  DocumentSimulationReport,
-  'undetermined' | 'regexLimitHit' | 'markerId' | 'cspLimits' | 'cspUnavailable' | 'caveats'
+/** A Delay JS report's `simulated`-only facts, parsed (see {@link parseDelayFacts}). */
+type DelayFacts = Pick<
+  DelaySimulationReport,
+  'undetermined' | 'regexLimitHit' | 'cspLimits' | 'cspUnavailable' | 'caveats'
 >;
 
 /**
- * A report's optional facts that only a step that ran can carry: each
- * absent or valid (a positive `undetermined`, `regexLimitHit` exactly
- * `true` — and then nothing delayed nor undetermined —, a marker id,
- * non-empty distinct CSP limits or a CSP-unavailable reason (not both: an
- * unevaluated policy names no limit), non-empty distinct caveats); on an
- * identity state, none.
+ * A Delay JS report's optional facts that only a step that ran can carry:
+ * each absent or valid (a positive `undetermined`, `regexLimitHit` exactly
+ * `true` — and then nothing delayed nor undetermined —, non-empty distinct
+ * CSP limits or a CSP-unavailable reason (not both: an unevaluated policy
+ * names no limit), non-empty distinct caveats); on an identity state, none.
  *
  * @returns The facts present, or null when invalid.
  */
-function parseSimulatedFacts(
+function parseDelayFacts(
   input: Record<string, unknown>,
   state: SimulationState,
   delayed: number
-): SimulatedFacts | null {
+): DelayFacts | null {
   const undetermined = ownValue(input, 'undetermined');
   const limitHit = ownValue(input, 'regexLimitHit');
-  const markerId = ownValue(input, 'markerId');
   const rawLimits = ownValue(input, 'cspLimits');
   const rawUnavailable = ownValue(input, 'cspUnavailable');
   const rawCaveats = ownValue(input, 'caveats');
-  const present = [undetermined, limitHit, markerId, rawLimits, rawUnavailable, rawCaveats];
+  const present = [undetermined, limitHit, rawLimits, rawUnavailable, rawCaveats];
   if (state !== 'simulated') return present.every((fact) => fact === undefined) ? {} : null;
   if (undetermined !== undefined && (!isCount(undetermined) || undetermined < 1)) return null;
   if (limitHit !== undefined && limitHit !== true) return null;
   if (limitHit === true && (delayed > 0 || undetermined !== undefined)) return null;
-  if (markerId !== undefined && !isSimulationMarkerId(markerId)) return null;
   const cspLimits =
     rawLimits === undefined ? undefined : distinctList(rawLimits, SIMULATION_CSP_LIMITS);
   const caveats =
@@ -426,7 +489,6 @@ function parseSimulatedFacts(
   return {
     ...(undetermined === undefined ? {} : { undetermined }),
     ...(limitHit === undefined ? {} : { regexLimitHit: true as const }),
-    ...(markerId === undefined ? {} : { markerId }),
     ...(cspLimits === undefined ? {} : { cspLimits }),
     ...(cspUnavailable === undefined ? {} : { cspUnavailable }),
     ...(caveats === undefined ? {} : { caveats })
@@ -434,12 +496,47 @@ function parseSimulatedFacts(
 }
 
 /**
+ * A Delay JS report's own fields: the counts (nothing delayed and no
+ * runtime on an identity state) and its `simulated`-only facts.
+ *
+ * @returns The fields, or null on any violation.
+ */
+function parseDelayFields(
+  input: Record<string, unknown>,
+  state: SimulationState
+): Omit<DelaySimulationReport, keyof SimulationReportBase | 'feature'> | null {
+  const delayed = ownValue(input, 'delayed');
+  const runtimeInjected = ownValue(input, 'runtimeInjected');
+  if (!isCount(delayed) || typeof runtimeInjected !== 'boolean') return null;
+  if (state !== 'simulated' && (delayed > 0 || runtimeInjected)) return null;
+  const facts = parseDelayFacts(input, state, delayed);
+  return facts === null ? null : { delayed, runtimeInjected, ...facts };
+}
+
+/**
+ * A Defer JS report's own fields: both counts (0 unless `simulated`).
+ *
+ * @returns The counts, or null when invalid.
+ */
+function parseDeferFields(
+  input: Record<string, unknown>,
+  state: SimulationState
+): Pick<DeferSimulationReport, 'deferred' | 'wrapped'> | null {
+  const deferred = ownValue(input, 'deferred');
+  const wrapped = ownValue(input, 'wrapped');
+  if (!isCount(deferred) || !isCount(wrapped)) return null;
+  if (state !== 'simulated' && (deferred > 0 || wrapped > 0)) return null;
+  return { deferred, wrapped };
+}
+
+/**
  * Parse one document's simulation report against the session's spec: a
- * feature the session simulates, a known state with its why, the counts
- * (nothing delayed and no runtime on an identity state), the versions,
- * the list provenance pairing, and the `simulated`-only facts. The
- * served version is page-derived: an unfit string is omitted, never failing
- * the report (and with it the document's outcome); a non-string fails it.
+ * feature the session simulates, a state, reason and regex of that
+ * feature's vocabulary, no field of another feature's report, the
+ * feature's own fields, the versions, the list provenance pairing and the
+ * marker id (`simulated` only). The served version is page-derived: an
+ * unfit string is omitted, never failing the report (and with it the
+ * document's outcome); a non-string fails it.
  *
  * @param input The untrusted value.
  * @param simulate The session's simulate spec (absent: no report can be valid).
@@ -455,31 +552,34 @@ export function parseDocumentSimulationReport(
     return null;
   }
   const feature = ownValue(input, 'feature');
-  const state = oneOf(SIMULATION_STATES, ownValue(input, 'state'));
-  const delayed = ownValue(input, 'delayed');
-  const runtimeInjected = ownValue(input, 'runtimeInjected');
+  if (!isSimulatedFeatureId(feature) || !simulate.features.includes(feature)) return null;
+  if (namesOtherFeatureKey(input, feature)) return null;
+  const vocabulary: SimulationReportVocabulary = SIMULATION_REPORT_VOCABULARY[feature];
+  const state = oneOf(vocabulary.states, ownValue(input, 'state'));
   const wpRocketVersion = ownValue(input, 'wpRocketVersion');
   const siteVersion = siteVersionField(ownValue(input, 'siteVersion'));
-  if (siteVersion === null) return null;
-  if (!isSimulatedFeatureId(feature) || !simulate.features.includes(feature)) return null;
-  if (state === undefined || !isCount(delayed) || typeof runtimeInjected !== 'boolean') return null;
-  if (state !== 'simulated' && (delayed > 0 || runtimeInjected)) return null;
-  if (!isWireVersion(wpRocketVersion)) return null;
-  const why = parseReportWhy(input, state);
+  const markerId = ownValue(input, 'markerId');
+  if (state === undefined || siteVersion === null || !isWireVersion(wpRocketVersion)) return null;
+  if (markerId !== undefined && (state !== 'simulated' || !isSimulationMarkerId(markerId))) {
+    return null;
+  }
+  const why = parseReportWhy(input, state, vocabulary);
   const list = parseListProvenance(input);
-  const facts = parseSimulatedFacts(input, state, delayed);
-  if (why === null || list === null || facts === null) return null;
-  return {
-    feature,
+  if (why === null || list === null) return null;
+  const base = {
     state,
     ...why,
-    delayed,
-    runtimeInjected,
     wpRocketVersion,
     ...siteVersion,
     ...list,
-    ...facts
+    ...(markerId === undefined ? {} : { markerId })
   };
+  if (feature === 'defer_all_js') {
+    const fields = parseDeferFields(input, state);
+    return fields === null ? null : { feature, ...base, ...fields };
+  }
+  const fields = parseDelayFields(input, state);
+  return fields === null ? null : { feature, ...base, ...fields };
 }
 
 /** Whether a value is a runtime-unavailable cause. */
@@ -642,6 +742,7 @@ const INPUT_KEYS = [
   'runtime',
   'fallback',
   'listRows',
+  'deferLists',
   'listSource',
   'listFetchedAt',
   'listMiss',
@@ -650,9 +751,49 @@ const INPUT_KEYS = [
   'cspUnavailable'
 ] as const;
 
+/** The keys the Defer JS lists carry. */
+const DEFER_LISTS_KEYS = ['external', 'inline', 'listSource', 'listFetchedAt', 'listMiss'] as const;
+
+/**
+ * Parse the Defer JS lists (exact keys): both lists within the list caps,
+ * and their provenance.
+ *
+ * @param input The untrusted value.
+ * @returns The lists rebuilt, or null on any violation.
+ */
+export function parseSimulationDeferLists(input: unknown): SimulationDeferLists | null {
+  if (!isRecord(input) || !keysAllowed(input, DEFER_LISTS_KEYS, 'reject')) return null;
+  const external = parseSimulationListRows(ownValue(input, 'external'));
+  const inline = parseSimulationListRows(ownValue(input, 'inline'));
+  const list = parseListProvenance(input);
+  return external === null || inline === null || list === null
+    ? null
+    : { ...list, external, inline };
+}
+
+/**
+ * The input's Defer JS lists: present exactly when the run simulates Defer
+ * JS, and then only for a supported WP Rocket version (its inline-list
+ * quoting is version-keyed).
+ *
+ * @returns The field to spread (empty when absent), or null when invalid.
+ */
+function inputDeferLists(
+  input: Record<string, unknown>,
+  features: readonly SimulatedFeatureId[],
+  wpRocketVersion: string
+): Pick<DocumentSimulationInput, 'deferLists'> | null {
+  const raw = ownValue(input, 'deferLists');
+  if (!features.includes('defer_all_js')) return raw === undefined ? {} : null;
+  if (supportedWprVersion(wpRocketVersion) === undefined) return null;
+  const deferLists = parseSimulationDeferLists(raw);
+  return deferLists === null ? null : { deferLists };
+}
+
 /**
  * Parse an engine request's simulation input (exact keys — host and
- * engine ship in one build). Page-derived parts degrade instead of failing
+ * engine ship in one build; Defer JS lists exactly with Defer JS, for a
+ * supported version). Page-derived parts degrade instead of failing
  * the request: an unfit `siteVersion` string is omitted, an unfit `csp`
  * becomes `cspUnavailable`; a non-string `siteVersion` or a `csp` beside a
  * `cspUnavailable` is our own bug and fails it.
@@ -679,7 +820,8 @@ export function parseDocumentSimulationInput(
   const listRows = parseSimulationListRows(ownValue(input, 'listRows'));
   const list = parseListProvenance(input);
   const csp = inputCsp(input, htmlLength);
-  if (listRows === null || list === null || csp === null) return null;
+  const defer = inputDeferLists(input, spec.features, wpRocketVersion);
+  if (listRows === null || list === null || csp === null || defer === null) return null;
   return {
     features: spec.features,
     wpRocketVersion,
@@ -687,6 +829,7 @@ export function parseDocumentSimulationInput(
     runtime,
     fallback,
     listRows,
+    ...defer,
     ...list,
     ...(markerId === undefined ? {} : { markerId }),
     ...csp

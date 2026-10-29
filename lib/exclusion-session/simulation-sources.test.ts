@@ -5,6 +5,7 @@ import {
   INERT_SIMULATION_SOURCES,
   prepareSimulation,
   SimulationPreparationError,
+  simulationMarkerSettler,
   simulationPreparer,
   type SimulationPackage,
   type SimulationSources
@@ -25,7 +26,8 @@ const DOCUMENT: InterceptedDocument = {
 const PACKAGE: SimulationPackage = {
   runtime: 'RocketLazyLoadScripts.run();',
   fallback: 'if(navigator.userAgent.match(/MSIE|Trident/i)){}',
-  bundledListRows: ['lazyLoadOptions', 'wpr-beacon']
+  bundledListRows: ['lazyLoadOptions', 'wpr-beacon'],
+  bundledDeferLists: { external: ['jquery'], inline: ['lazyLoadOptions'] }
 };
 
 /** A page whose head holds `head`. */
@@ -66,6 +68,12 @@ describe('INERT_SIMULATION_SOURCES', () => {
     });
     await expect(INERT_SIMULATION_SOURCES.markerId(DOCUMENT, SIMULATE)).resolves.toBeUndefined();
     expect(INERT_SIMULATION_SOURCES.csp(DOCUMENT, page())).toBeUndefined();
+  });
+
+  it('settles no marker (none was drawn)', async () => {
+    await expect(
+      INERT_SIMULATION_SOURCES.settleMarker(DOCUMENT, MARKER_ID, ['delay_js'])
+    ).resolves.toBeUndefined();
   });
 
   it('makes every simulating document runtime-unavailable', async () => {
@@ -326,6 +334,28 @@ describe('prepareSimulation — source deadlines', () => {
   it('fails the preparation when the marker id source hangs (never simulated without its id)', async () => {
     const settled = await preparedAfter({ markerId: hung }, SIMULATION_SOURCE_TIMEOUTS_MS.markerId);
     const { rejected } = settled as { rejected: unknown };
+    expect(rejected).toBeInstanceOf(SimulationPreparationError);
+    expect((rejected as Error).cause).toBeInstanceOf(DeadlineExceededError);
+  });
+
+  it('settles a marker through the source, and rejects a hung settler at its deadline as a preparation failure', async () => {
+    const asked: unknown[] = [];
+    const settle = simulationMarkerSettler(
+      DOCUMENT,
+      sources({
+        settleMarker: (document, markerId, simulated) => {
+          asked.push([document, markerId, simulated]);
+          return Promise.resolve();
+        }
+      })
+    );
+    await expect(settle(MARKER_ID, ['delay_js'])).resolves.toBeUndefined();
+    expect(asked).toEqual([[DOCUMENT, MARKER_ID, ['delay_js']]]);
+    const stuck = simulationMarkerSettler(DOCUMENT, sources({ settleMarker: hung }))(MARKER_ID, [
+      'delay_js'
+    ]).catch((cause: unknown) => cause);
+    await vi.advanceTimersByTimeAsync(SIMULATION_SOURCE_TIMEOUTS_MS.settleMarker);
+    const rejected = await stuck;
     expect(rejected).toBeInstanceOf(SimulationPreparationError);
     expect((rejected as Error).cause).toBeInstanceOf(DeadlineExceededError);
   });

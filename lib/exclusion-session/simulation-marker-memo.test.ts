@@ -4,6 +4,7 @@ import type { SimulationMarkerEntry } from '../storage/simulation-markers';
 import {
   answerSimulationMarkerVerify,
   createMarkerIdSource,
+  createMarkerSettler,
   drawSimulationMarkerId
 } from './simulation-marker-memo';
 
@@ -169,5 +170,28 @@ describe('answerSimulationMarkerVerify', () => {
         Promise.reject(new Error('storage unavailable'))
       )
     ).rejects.toThrow('storage unavailable');
+  });
+});
+
+describe('createMarkerSettler', () => {
+  it('re-remembers the id for the document’s tab and origin with the simulated features only', async () => {
+    const written: [number, SimulationMarkerEntry][] = [];
+    const settle = createMarkerSettler({
+      remember: (tabId, entry) => {
+        written.push([tabId, entry]);
+        return Promise.resolve();
+      }
+    });
+    await settle(documentAt(4, `${ORIGIN}/a?q=1`), ID, ['delay_js']);
+    expect(written).toEqual([[4, { markerId: ID, origin: ORIGIN, features: ['delay_js'] }]]);
+  });
+
+  it('rejects a document without an http(s) origin, and passes a failed write through', async () => {
+    const settle = createMarkerSettler({ remember: () => Promise.resolve() });
+    await expect(settle(documentAt(4, 'file:///x.html'), ID, ['delay_js'])).rejects.toThrow(
+      /no http\(s\) origin/
+    );
+    const failing = createMarkerSettler({ remember: () => Promise.reject(new Error('quota')) });
+    await expect(failing(documentAt(4, `${ORIGIN}/a`), ID, ['delay_js'])).rejects.toThrow('quota');
   });
 });

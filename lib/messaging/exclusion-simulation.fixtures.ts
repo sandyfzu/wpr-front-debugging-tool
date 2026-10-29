@@ -4,7 +4,7 @@
  * drift between suites.
  */
 import type { SimulateSpec } from '../wp-rocket-simulation/spec';
-import type { DocumentSimulationInput, DocumentSimulationReport } from './exclusion-simulation';
+import type { DocumentSimulationInput, DelaySimulationReport } from './exclusion-simulation';
 
 /** A marker id (32 lowercase hex). */
 export const MARKER_ID = '0123456789abcdef0123456789abcdef';
@@ -15,7 +15,7 @@ export function delaySimulate(): SimulateSpec {
 }
 
 /** A simulated document's report: every optional `simulated` fact present, a latest list. */
-export function simulatedReport(): DocumentSimulationReport {
+export function simulatedReport(): DelaySimulationReport {
   return {
     feature: 'delay_js',
     state: 'simulated',

@@ -22,10 +22,12 @@ export interface SimulatedFeatureSpec {
 }
 
 /**
- * The simulated-feature registry, in the order the simulation steps run:
- * Delay JS today (adding a feature is one row here plus its step).
+ * The simulated-feature registry, in the order the simulation steps run —
+ * WP Rocket's own buffer order: Defer JS, then Delay JS on its output
+ * (adding a feature is one row here plus its step).
  */
 export const SIMULATED_FEATURES = [
+  { id: 'defer_all_js' },
   { id: 'delay_js' }
 ] as const satisfies readonly SimulatedFeatureSpec[];
 
@@ -70,7 +72,10 @@ export type SimulationState = (typeof SIMULATION_STATES)[number];
 
 /**
  * Why a step is `not-applicable`: an AMP document (WP Rocket never delays
- * one); a page beyond exact reproduction — one of WP Rocket's regexes
+ * or defers one); Defer JS on a page WP Rocket already delays
+ * (`delay-js-served`: WP Rocket defers before it delays, and the served
+ * page no longer holds the scripts as Defer JS would read them); a page
+ * beyond exact reproduction — one of WP Rocket's regexes
  * could stop at PCRE's backtrack limit there, which the transform does not
  * reproduce (named by an {@link UnreproducedRegex}); or a page whose served
  * bytes the transform cannot count exactly (`unsupported-charset`: served
@@ -79,6 +84,7 @@ export type SimulationState = (typeof SIMULATION_STATES)[number];
  */
 export const SIMULATION_NOT_APPLICABLE_REASONS = [
   'amp',
+  'delay-js-served',
   'beyond-exact-reproduction',
   'unsupported-charset'
 ] as const;
@@ -89,7 +95,11 @@ export type SimulationNotApplicableReason = (typeof SIMULATION_NOT_APPLICABLE_RE
 /**
  * The WP Rocket regexes whose backtrack-limit failure is not reproduced —
  * and `defer-replacements`: Defer JS's `str_replace` rescans of a page past
- * a bounded amount of work (WP Rocket's own run would take seconds there).
+ * a bounded amount of work (WP Rocket's own run would take seconds there);
+ * `defer-inline-exclusions`: Defer JS's inline exclusion pattern, whose
+ * size is too near PCRE's compiled-size cap to tell whether it compiles;
+ * `defer-file-exclusions`: Defer JS's file exclusion pattern joined with
+ * the stored rows, whose pre-check verdict the list alone does not tell.
  */
 export const UNREPRODUCED_REGEXES = [
   'ie-conditionals',
@@ -100,11 +110,45 @@ export const UNREPRODUCED_REGEXES = [
   'html-comments',
   'defer-script-src',
   'defer-inline-scripts',
-  'defer-replacements'
+  'defer-replacements',
+  'defer-inline-exclusions',
+  'defer-file-exclusions'
 ] as const;
 
 /** One unreproduced regex (see {@link UNREPRODUCED_REGEXES}). */
 export type UnreproducedRegex = (typeof UNREPRODUCED_REGEXES)[number];
+
+/** The closed values one simulated feature's report can carry (see {@link SIMULATION_REPORT_VOCABULARY}). */
+export interface SimulationReportVocabulary {
+  /** The states it reaches. */
+  readonly states: readonly SimulationState[];
+  /** Its not-applicable reasons. */
+  readonly reasons: readonly SimulationNotApplicableReason[];
+  /** The regexes it can name as beyond exact reproduction. */
+  readonly regexes: readonly UnreproducedRegex[];
+}
+
+/**
+ * Per feature, what its report can say — a report naming another
+ * feature's value is malformed. Defer JS injects no runtime, so it is
+ * never `csp-blocked`, and never names Delay JS's masks or its meta move;
+ * `delay-js-served` is Defer JS's alone. Delay JS can name Defer JS's
+ * regexes: with both on, Defer JS's passes run inside its buffer.
+ */
+export const SIMULATION_REPORT_VOCABULARY = {
+  defer_all_js: {
+    states: SIMULATION_STATES.filter((state) => state !== 'csp-blocked'),
+    reasons: SIMULATION_NOT_APPLICABLE_REASONS,
+    regexes: UNREPRODUCED_REGEXES.filter(
+      (regex) => regex !== 'xmp-mask' && regex !== 'svg-mask' && regex !== 'meta-charset'
+    )
+  },
+  delay_js: {
+    states: SIMULATION_STATES,
+    reasons: SIMULATION_NOT_APPLICABLE_REASONS.filter((reason) => reason !== 'delay-js-served'),
+    regexes: UNREPRODUCED_REGEXES
+  }
+} as const satisfies Record<SimulatedFeatureId, SimulationReportVocabulary>;
 
 /**
  * What a simulation cannot reproduce on a page, named so the UI can say

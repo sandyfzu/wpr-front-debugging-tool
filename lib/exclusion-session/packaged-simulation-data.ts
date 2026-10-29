@@ -102,11 +102,24 @@ export function packagedVersion(data: SimulationData, version: string): Simulati
   const fallback = ownValue(data.texts, entry.ieFallback.sha256) as string | undefined;
   const rows = ownValue(data.rowLists, entry.delayJsExclusions.sha256) as
     readonly string[] | undefined;
+  const external = ownValue(data.rowLists, entry.deferJsExternalExclusions.sha256) as
+    readonly string[] | undefined;
+  const inline = ownValue(data.rowLists, entry.deferJsInlineExclusions.sha256) as
+    readonly string[] | undefined;
   // The reader resolved every key already; a miss here means the data was not read by it.
-  if (runtime === undefined || fallback === undefined || rows === undefined) {
+  if (
+    runtime === undefined ||
+    fallback === undefined ||
+    rows === undefined ||
+    external === undefined ||
+    inline === undefined
+  ) {
     return { ok: false, cause: 'asset-malformed' };
   }
-  return { ok: true, package: { runtime, fallback, bundledListRows: rows } };
+  return {
+    ok: true,
+    package: { runtime, fallback, bundledListRows: rows, bundledDeferLists: { external, inline } }
+  };
 }
 
 /**

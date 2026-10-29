@@ -250,11 +250,16 @@ describe('declared bounds', () => {
   it('bounds a simulation preparation by every awaited source deadline plus its CPU', () => {
     const sources = SIMULATION_SOURCE_TIMEOUTS_MS;
     expect(SIMULATION_PREPARATION_BOUND_MS).toBe(
-      sources.runtime + sources.list + sources.markerId + SIMULATION_PREPARATION_CPU_BOUND_MS
+      sources.runtime +
+        sources.list +
+        sources.markerId +
+        sources.settleMarker +
+        SIMULATION_PREPARATION_CPU_BOUND_MS
     );
-    // The stored-copy read and the memo write are one store step each.
+    // The stored-copy read and the memo writes are one store step each.
     expect(sources.list).toBe(SESSION_STEP_TIMEOUTS_MS.store);
     expect(sources.markerId).toBe(SESSION_STEP_TIMEOUTS_MS.store);
+    expect(sources.settleMarker).toBe(SESSION_STEP_TIMEOUTS_MS.store);
     // ≥ 10× the ~58 ms measured on a 4 MiB page.
     expect(SIMULATION_PREPARATION_CPU_BOUND_MS).toBeGreaterThanOrEqual(580);
   });

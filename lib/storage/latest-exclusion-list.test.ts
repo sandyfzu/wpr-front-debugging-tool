@@ -19,7 +19,8 @@ beforeEach(() => {
 });
 
 const SHA = 'a'.repeat(64);
-const COPY = { fetchedAt: 1_790_000_000_000, sha256: SHA, rows: ['jquery', 'gtag'] };
+const DEFER = { external: ['jquery.js', 'gtag'], inline: ['lazyLoadOptions'] };
+const COPY = { fetchedAt: 1_790_000_000_000, sha256: SHA, rows: ['jquery', 'gtag'], defer: DEFER };
 
 describe('parseLatestListRecord', () => {
   it('reads a whole record', () => {
@@ -67,6 +68,37 @@ describe('parseLatestListRecord', () => {
   it('drops an unknown miss and a non-count attempt time alone', () => {
     expect(parseLatestListRecord({ copy: COPY, attemptedAt: '5', lastMiss: 'gone' })).toEqual({
       copy: COPY
+    });
+  });
+
+  it.each(['oversize', 'malformed', 'invalid', 'unreadable', 'never-fetched'] as const)(
+    "keeps a copy whose document's Defer JS lists missed (%s)",
+    (miss) => {
+      const delayOnly = { fetchedAt: COPY.fetchedAt, sha256: COPY.sha256, rows: COPY.rows };
+      const copy = { ...delayOnly, deferMiss: miss };
+      expect(parseLatestListRecord({ copy })).toEqual({ copy });
+    }
+  );
+
+  it('reads a copy kept before the Defer JS lists were read (neither field) as never fetched', () => {
+    const delayOnly = { fetchedAt: COPY.fetchedAt, sha256: COPY.sha256, rows: COPY.rows };
+    expect(parseLatestListRecord({ copy: delayOnly, attemptedAt: 9 })).toEqual({
+      copy: { ...delayOnly, deferMiss: 'never-fetched' },
+      attemptedAt: 9
+    });
+  });
+
+  it.each([
+    ['an unknown miss', { deferMiss: 'gone' }],
+    ['a miss beside lists', { defer: DEFER, deferMiss: 'invalid' }],
+    ['non-record lists', { defer: 'x' }],
+    ['an empty external list', { defer: { ...DEFER, external: [] } }],
+    ['a missing inline list', { defer: { external: DEFER.external } }],
+    ['an external row the transform cannot reproduce', { defer: { ...DEFER, external: ['(?R)'] } }]
+  ])('reads Defer JS lists with %s as unreadable, keeping the Delay JS copy', (_name, part) => {
+    const delayOnly = { fetchedAt: COPY.fetchedAt, sha256: COPY.sha256, rows: COPY.rows };
+    expect(parseLatestListRecord({ copy: { ...delayOnly, ...part } })).toEqual({
+      copy: { ...delayOnly, deferMiss: 'unreadable' }
     });
   });
 

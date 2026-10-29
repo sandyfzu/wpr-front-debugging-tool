@@ -39,10 +39,12 @@ import {
   isSimulationRuntimeUnavailableCause,
   optionalSimulateFor,
   parseDocumentSimulationReport,
-  type DocumentSimulationReport
+  type DeferSimulationReport,
+  type DelaySimulationReport
 } from './exclusion-simulation';
 import type {
   SimulateSpec,
+  SimulatedFeatureId,
   SimulationRuntimeUnavailableCause,
   SimulationStage
 } from '../wp-rocket-simulation/spec';
@@ -143,15 +145,19 @@ const MAX_BUDGET_MS = 600_000;
  *   not be loaded or verified: served unmodified (never simulated without
  *   it), for a {@link SimulationRuntimeUnavailableCause}.
  *
- * A simulating session's `rewritten` outcome carries its `simulation`
- * report, and an overrun of the simulation step names `stage: 'simulate'`
+ * A simulating session's `rewritten` outcome carries its Delay JS
+ * `simulation` report and its Defer JS `deferSimulation` report (each when
+ * that feature is simulated), and an overrun of the simulation step names `stage: 'simulate'`
  * (its feature the simulated one, no row — the step is feature-wide).
  */
 export type ExclusionDocumentOutcome = (
   | {
       readonly outcome: 'rewritten';
       readonly reports: readonly TransformReport[];
-      readonly simulation?: DocumentSimulationReport;
+      /** The Delay JS simulation's report (feature `delay_js`). */
+      readonly simulation?: DelaySimulationReport;
+      /** The Defer JS simulation's report (feature `defer_all_js`). */
+      readonly deferSimulation?: DeferSimulationReport;
     }
   | {
       readonly outcome: 'over-budget';
@@ -791,10 +797,16 @@ function withServed(
   return served === null ? null : { ...outcome, served };
 }
 
+/** A `rewritten` outcome's simulation report fields → the feature each one reports. */
+const SIMULATION_REPORT_FIELDS = [
+  ['simulation', 'delay_js'],
+  ['deferSimulation', 'defer_all_js']
+] as const satisfies readonly (readonly [string, SimulatedFeatureId])[];
+
 /**
- * Parse a `rewritten` outcome's optional simulation report (absent stays
- * absent; a malformed one, or one from a session that simulates nothing,
- * fails the whole outcome).
+ * Parse a `rewritten` outcome's optional simulation reports (absent stays
+ * absent; a malformed one, one for another feature than its field's, or
+ * one from a session that does not simulate it, fails the whole outcome).
  */
 function withSimulation(
   outcome: Extract<ExclusionDocumentOutcome, { outcome: 'rewritten' }>,
@@ -802,10 +814,15 @@ function withSimulation(
   simulate: SimulateSpec | undefined,
   policy: UnknownKeyPolicy
 ): ExclusionDocumentOutcome | null {
-  const raw = ownValue(input, 'simulation');
-  if (raw === undefined) return outcome;
-  const simulation = parseDocumentSimulationReport(raw, simulate, policy);
-  return simulation === null ? null : { ...outcome, simulation };
+  let parsed: Extract<ExclusionDocumentOutcome, { outcome: 'rewritten' }> = outcome;
+  for (const [field, feature] of SIMULATION_REPORT_FIELDS) {
+    const raw = ownValue(input, field);
+    if (raw === undefined) continue;
+    const report = parseDocumentSimulationReport(raw, simulate, policy);
+    if (report?.feature !== feature) return null;
+    parsed = { ...parsed, [field]: report };
+  }
+  return parsed;
 }
 
 /**
@@ -841,7 +858,8 @@ function parseDocumentOutcome(
   if (!isRecord(input)) return null;
   switch (ownValue(input, 'outcome')) {
     case 'rewritten': {
-      if (!keysAllowed(input, ['outcome', 'reports', 'simulation', 'served'], policy)) {
+      const keys = ['outcome', 'reports', 'simulation', 'deferSimulation', 'served'];
+      if (!keysAllowed(input, keys, policy)) {
         return null;
       }
       const raw = ownValue(input, 'reports');
