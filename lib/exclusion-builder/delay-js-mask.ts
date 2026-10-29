@@ -35,14 +35,25 @@ const SVG: RegionPattern = {
   close: new RegExp(`<${SPACE}*\\\\?\\/${SPACE}*[Ss][Vv][Gg]${SPACE}*>`, 'g')
 };
 
+/** A region pattern's matches over a text. */
+interface RegionScan {
+  /** `[start, end)` per match, left to right, not overlapping. */
+  readonly found: [number, number][];
+  /**
+   * Where the regex's first failing attempt that reads to the end of the
+   * text starts — an opening with a `>` after it but no close after that —
+   * or `-1`: the attempt PCRE spends the most on after the last match.
+   */
+  readonly unclosed: number;
+}
+
 /**
  * Every match of a region pattern, left to right, not overlapping.
  *
  * @param text The text.
  * @param pattern The pattern.
- * @returns `[start, end)` per match.
  */
-function regionMatches(text: string, pattern: RegionPattern): [number, number][] {
+function regionMatches(text: string, pattern: RegionPattern): RegionScan {
   const found: [number, number][] = [];
   pattern.open.lastIndex = 0;
   for (let open = pattern.open.exec(text); open !== null; open = pattern.open.exec(text)) {
@@ -51,12 +62,12 @@ function regionMatches(text: string, pattern: RegionPattern): [number, number][]
     pattern.close.lastIndex = gt + 1;
     const close = pattern.close.exec(text);
     // No close after this opening's `>`: none after any later opening's either.
-    if (close === null) break;
+    if (close === null) return { found, unclosed: open.index };
     const end = close.index + close[0].length;
     found.push([open.index, end]);
     pattern.open.lastIndex = end;
   }
-  return found;
+  return { found, unclosed: -1 };
 }
 
 /** A region Delay JS hides, as offsets into the served page. */
@@ -84,6 +95,32 @@ export function maskPlaceholder(kind: MaskedRegion['kind'], id: string): string 
  */
 export const MASK_ID_SENTINEL = '\0'.repeat(13);
 
+/**
+ * Every xmp region of a page (`replace_xmp_tags`' matches), in page order —
+ * those inside svg regions included, which {@link delayMaskedRegions} lists
+ * with their svg region.
+ *
+ * @param html The page Delay JS read.
+ */
+export function delayXmpRegions(html: string): readonly MaskedRegion[] {
+  return xmpScan(html).regions;
+}
+
+/**
+ * The xmp regex over a page.
+ *
+ * @param html The page.
+ */
+function xmpScan(html: string): {
+  readonly regions: readonly MaskedRegion[];
+  readonly unclosed: number;
+} {
+  if (!/xmp/i.test(html)) return { regions: [], unclosed: -1 };
+  const scan = regionMatches(html, XMP);
+  const regions = scan.found.map(([start, end]): MaskedRegion => ({ start, end, kind: 'xmp' }));
+  return { regions, unclosed: scan.unclosed };
+}
+
 /** The id the xmp placeholders get while the svg regex reads the page (it reads past them). */
 const XMP_ID_WHILE_MASKING = '0000000000000';
 
@@ -96,12 +133,30 @@ const XMP_ID_WHILE_MASKING = '0000000000000';
  * @param html The page Delay JS read (the served page).
  */
 export function delayMaskedRegions(html: string): readonly MaskedRegion[] {
-  if (!/svg|xmp/i.test(html)) return [];
-  const xmp = regionMatches(html, XMP).map(([start, end]): MaskedRegion => ({
-    start,
-    end,
-    kind: 'xmp'
-  }));
+  return delayMaskScan(html).regions;
+}
+
+/** The masking regexes' reading of a page. */
+export interface DelayMaskScan {
+  /** As {@link delayMaskedRegions}. */
+  readonly regions: readonly MaskedRegion[];
+  /**
+   * Each regex's first failing attempt that reads to the end of its text
+   * (see `RegionScan.unclosed`), as a page offset, or `-1`.
+   */
+  readonly unclosed: { readonly xmp: number; readonly svg: number };
+}
+
+/**
+ * {@link delayMaskedRegions}, plus where each regex gives up after its last
+ * match — what PCRE's backtracking spends the most on.
+ *
+ * @param html The page Delay JS read (the served page).
+ */
+export function delayMaskScan(html: string): DelayMaskScan {
+  if (!/svg|xmp/i.test(html)) return { regions: [], unclosed: { xmp: -1, svg: -1 } };
+  const xmpRead = xmpScan(html);
+  const xmp = xmpRead.regions;
   // The svg regex reads the page with each xmp region already a placeholder.
   const pieces: string[] = [];
   /** Masked-text offset → page offset, at each piece start. */
@@ -130,7 +185,8 @@ export function delayMaskedRegions(html: string): readonly MaskedRegion[] {
     // `<!--`, their `>` a `-->`): only plain text maps by offset.
     return at.page + (at.placeholder ? 0 : offset - at.masked);
   };
-  const svg = regionMatches(text, SVG).map(([start, end]): MaskedRegion => ({
+  const svgRead = regionMatches(text, SVG);
+  const svg = svgRead.found.map(([start, end]): MaskedRegion => ({
     start: toPage(start),
     end: toPage(end - 1) + 1,
     kind: 'svg'
@@ -143,7 +199,14 @@ export function delayMaskedRegions(html: string): readonly MaskedRegion[] {
     const outer = svg[cover];
     if (outer === undefined || outer.start > region.start) kept.push(region);
   }
-  return [...kept, ...svg].sort((left, right) => left.start - right.start);
+  return {
+    regions: [...kept, ...svg].sort((left, right) => left.start - right.start),
+    // An svg opening is never inside a placeholder: it maps by offset.
+    unclosed: {
+      xmp: xmpRead.unclosed,
+      svg: svgRead.unclosed === -1 ? -1 : toPage(svgRead.unclosed)
+    }
+  };
 }
 
 /**

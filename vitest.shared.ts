@@ -1,9 +1,9 @@
 /**
- * Shared vitest runtime pieces for the root and bench configs — declared once
- * so the two runners cannot drift: happy-dom runs fully offline (parsed URLs
- * are data, not network requests; the fixture corpus is offline), and its
- * expected "disabled load" console noise is filtered from the gate signal
- * instead of failing it.
+ * Shared vitest runtime pieces for the root and bench configs (and the test
+ * files that need them) — declared once so the runners and tests cannot drift:
+ * happy-dom runs fully offline (parsed URLs are data, not network requests;
+ * the fixture corpus is offline), and its expected "disabled load" console
+ * noise is filtered from the gate signal instead of failing it.
  */
 
 /** happy-dom environment settings: all resource loading disabled. */
@@ -32,3 +32,12 @@ export function filterDisabledLoadNoise(log: string, type: string): boolean | un
   }
   return undefined;
 }
+
+/**
+ * Wall-clock ceiling (ms) for a 4 MiB hostile input in the linear-scan tests:
+ * those scans take 10–200 ms alone; the quadratic/backtracking ones they
+ * replaced took seconds to minutes at that size. Generous on purpose —
+ * coverage instrumentation and parallel workers slow the same linear run
+ * several-fold, and a tight ceiling would flake.
+ */
+export const HOSTILE_CEILING_MS = 1_000;

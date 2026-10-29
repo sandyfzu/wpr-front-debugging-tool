@@ -7,7 +7,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   MASK_ID_SENTINEL,
+  delayMaskScan,
   delayMaskedRegions,
+  delayXmpRegions,
   firstRegionFrom,
   maskPlaceholder,
   maskedForMatching,
@@ -144,5 +146,44 @@ describe('maskedSlice', () => {
 
   it('writes the sentinel id as 13 NULs, an id’s length', () => {
     expect(MASK_ID_SENTINEL).toBe('\0'.repeat(13));
+  });
+});
+
+describe('delayXmpRegions', () => {
+  it('lists every xmp region, those inside svg regions included', () => {
+    const html = '<xmp>a</xmp><svg><xmp>b</xmp></svg><XMP x>c</XMP>';
+    expect(delayXmpRegions(html)).toEqual([
+      { start: 0, end: 12, kind: 'xmp' },
+      { start: 17, end: 29, kind: 'xmp' },
+      { start: 35, end: 49, kind: 'xmp' }
+    ]);
+    expect(delayMaskedRegions(html).map((region) => region.kind)).toEqual(['xmp', 'svg', 'xmp']);
+  });
+
+  it('finds none without an xmp', () => {
+    expect(delayXmpRegions('<svg></svg>')).toEqual([]);
+  });
+});
+
+describe('delayMaskScan', () => {
+  it('lists the regions as delayMaskedRegions does', () => {
+    const html = '<svg><xmp>a</xmp></svg><xmp>b</xmp><svg>c</svg>';
+    expect(delayMaskScan(html).regions).toEqual(delayMaskedRegions(html));
+  });
+
+  it('names where each regex gives up reading to the end (an opening with a `>`, no close)', () => {
+    const html = '<xmp>a</xmp><svg>b</svg><svg x>c<xmp>d';
+    // 12 + 12 + 7 + 1: the last `<xmp` has a `>` and no close; so has the `<svg x>`.
+    expect(delayMaskScan(html).unclosed).toEqual({ xmp: 32, svg: 24 });
+  });
+
+  it('maps an unclosed svg opening read past xmp placeholders back to the page', () => {
+    const html = '<xmp>long xmp text</xmp><svg>';
+    expect(delayMaskScan(html).unclosed).toEqual({ xmp: -1, svg: 24 });
+  });
+
+  it('names none for an opening with no `>` after it (that attempt ends at once)', () => {
+    expect(delayMaskScan('<svg').unclosed).toEqual({ xmp: -1, svg: -1 });
+    expect(delayMaskScan('<p>plain</p>').unclosed).toEqual({ xmp: -1, svg: -1 });
   });
 });

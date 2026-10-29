@@ -259,21 +259,13 @@ export function readDelayRows(rows: readonly string[]): DelayRowSet {
     translationRowProblems('delay_js', translation)
   );
   throwIfBlocking(entries);
-  // Only whether a row matches is asked: its free edges are dropped (a
-  // leading `.*` costs a backtracking regex quadratic time; same answers).
-  const matchers = translation.rows.map((row): PcreMatcher | null =>
-    row.matcher === null || row.matcher.source === ''
-      ? row.matcher
-      : { source: existenceSource('delay_js', row.row) ?? row.matcher.source, flags: '' }
-  );
-  const first = compileFirstMatch(matchers);
-  const masked = maskedFirstMatch(translation.rows, matchers);
+  const lookup = compileDelayRowLookup(translation.rows);
   const match: DelayRowMatch = (region, ids = [], budget = scriptProbeBudget()) => {
     // Only the caller's placeholders hold ids: a page spelling one itself is page text.
     const firstOf = (text: string): number | null => {
-      if (ids.length === 0) return first(text);
+      if (ids.length === 0) return lookup(text, [], budget);
       const at = idsIn(region, text, ids);
-      return at === null ? null : masked(text, at, budget);
+      return at === null ? null : lookup(text, at, budget);
     };
     const reading = undoDelayRenames(region);
     if (reading.kind === 'approximate' || reading.kind === 'not-delayed') {
@@ -283,6 +275,39 @@ export function readDelayRows(rows: readonly string[]): DelayRowSet {
     return agreedVerdict(reading.texts.map(firstOf));
   };
   return { match, matchAllRows: matchAllRows(entries) };
+}
+
+/**
+ * The first matching row over a script element's text as WP Rocket's
+ * Delay JS tests it (`preg_match("#{$row}#i", $match)`, each row alone, in
+ * order); `ids` = where mask placeholder ids (the sentinel,
+ * `MASK_ID_SENTINEL`) were written into the text — the row index, `-1`
+ * for none, `null` when the answer depends on those unknowable ids.
+ */
+export type DelayRowLookup = (
+  text: string,
+  ids: readonly number[],
+  budget: ProbeBudget
+) => number | null;
+
+/**
+ * Compile translated Delay JS rows into a {@link DelayRowLookup} over the
+ * text as given (no rename undoing — see {@link readDelayRows} for served
+ * scripts). Rows without a matcher never match.
+ *
+ * @param rows The translated rows, in order.
+ */
+export function compileDelayRowLookup(rows: readonly TranslatedRow[]): DelayRowLookup {
+  // Only whether a row matches is asked: its free edges are dropped (a
+  // leading `.*` costs a backtracking regex quadratic time; same answers).
+  const matchers = rows.map((row): PcreMatcher | null =>
+    row.matcher === null || row.matcher.source === ''
+      ? row.matcher
+      : { source: existenceSource('delay_js', row.row) ?? row.matcher.source, flags: '' }
+  );
+  const first = compileFirstMatch(matchers);
+  const masked = maskedFirstMatch(rows, matchers);
+  return (text, ids, budget) => (ids.length === 0 ? first(text) : masked(text, ids, budget));
 }
 
 /**

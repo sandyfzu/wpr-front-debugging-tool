@@ -11,9 +11,12 @@ import {
   idsIn,
   readDelayRows,
   compileDelayRows,
+  compileDelayRowLookup,
   undoDelayRenames
 } from './delay-js-match';
 import { MASK_ID_SENTINEL } from './delay-js-mask';
+import { scriptProbeBudget } from './pcre/id-probe';
+import { translateRegexRows } from './pcre/rows';
 
 describe('idsIn — mask ids carried through a rebuilt opening tag', () => {
   const placeholder = `<!-- WPR_SVG_${MASK_ID_SENTINEL} -->`;
@@ -230,5 +233,31 @@ describe('compileDelayRows', () => {
     expect(read.matchAllRows).toEqual(['(?a)', '']);
     expect(read.match(SCRIPT)).toEqual({ row: 1, approximate: false });
     expect(readDelayRows(['src']).matchAllRows).toEqual([]);
+  });
+});
+
+describe('compileDelayRowLookup — rows over the text as given', () => {
+  const lookup = compileDelayRowLookup(
+    translateRegexRows('delay_js', ['(unclosed', 'B\\.JS', 'WPR_SVG_[0-7]']).rows
+  );
+
+  it('returns the first matching row, skipping rows without a matcher', () => {
+    expect(lookup('<script src="/b.js"></script>', [], scriptProbeBudget())).toBe(1);
+    expect(lookup('<script src="/c.js"></script>', [], scriptProbeBudget())).toBe(-1);
+  });
+
+  it('never undoes Delay JS renames (the text is not a served script)', () => {
+    expect(
+      lookup(
+        '<script type="text/rocketlazyloadscript" data-rocket-src="/b.js"></script>',
+        [],
+        scriptProbeBudget()
+      )
+    ).toBe(1);
+  });
+
+  it('is undetermined when the answer depends on the placeholder ids', () => {
+    const text = `<script><!-- WPR_SVG_${MASK_ID_SENTINEL} --></script>`;
+    expect(lookup(text, [text.indexOf(MASK_ID_SENTINEL)], scriptProbeBudget())).toBeNull();
   });
 });

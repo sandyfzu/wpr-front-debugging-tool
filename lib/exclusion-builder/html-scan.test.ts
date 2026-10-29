@@ -166,6 +166,26 @@ describe('scanTags — hostile inputs terminate cleanly', () => {
     expect(tag?.attrs[0]).toEqual(expect.objectContaining({ value: 'after-bang.jpg' }));
   });
 
+  it('closes each comment on its own nearest closer, `-->` and `--!>` interleaved', () => {
+    const html =
+      '<!-- a --!><i id="1"><!-- b --><i id="2"><!-- c --><!-- d --!><i id="3"><!-- e --!> -->' +
+      '<i id="4"><!-- f';
+    expect(scanTags(html).map((tag) => tag.attrs[0]?.value)).toEqual(['1', '2', '3', '4']);
+  });
+
+  it('scans a comment-heavy 4 MiB page in linear time (no closer re-search per comment)', () => {
+    let html = '<html><head></head><body>';
+    for (let index = 0; html.length < 4 * 1024 * 1024; index++) {
+      html += `<!-- c${String(index)} --><p>t</p><script>var a=1;</script>\n`;
+    }
+    const started = performance.now();
+    const tags = scanTags(`${html}</body></html>`);
+    const elapsed = performance.now() - started;
+    expect(tags.length).toBeGreaterThan(100_000);
+    // Measured ~0.1 s; re-searching the absent `--!>` per comment took seconds.
+    expect(elapsed).toBeLessThan(1_000);
+  });
+
   it('closes the empty-comment spellings `<!-->` and `<!--->` immediately', () => {
     for (const [closer, source] of [
       ['<!-->', '<!--><img src="after-empty.jpg">'],

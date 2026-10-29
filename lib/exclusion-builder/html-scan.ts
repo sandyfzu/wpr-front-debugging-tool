@@ -15,6 +15,7 @@
  * serves whole documents (`scanTags`) and single tag texts (the tag editor
  * re-parsing after each edit).
  */
+import { nextOccurrenceFinder, type NextOccurrence } from '../../utils/next-occurrence';
 
 /** One parsed attribute; spans are offsets into the string that was parsed. */
 export interface ScannedAttribute {
@@ -139,6 +140,26 @@ function isWhitespaceAt(text: string, index: number): boolean {
   return char !== undefined && HTML_WHITESPACE.has(char);
 }
 
+/** The two comment closers' finders over one scanned document. */
+interface CommentClosers {
+  /** Next `-->`. */
+  readonly close: NextOccurrence;
+  /** Next `--!>`. */
+  readonly bang: NextOccurrence;
+}
+
+/**
+ * Finders for both comment closers of a document. The scan only moves
+ * forward, so each closer's text is searched once overall — a closer a
+ * page never spells (`--!>`, usually) is not looked for again at every
+ * comment, which made comment-heavy pages quadratic.
+ *
+ * @param html The document scanned.
+ */
+function commentClosers(html: string): CommentClosers {
+  return { close: nextOccurrenceFinder(html, '-->'), bang: nextOccurrenceFinder(html, '--!>') };
+}
+
 /**
  * Skip one comment region: from the `<` of `<!--` to past its closer, per
  * the tokenizer's comment states. `-->` ends the comment; `--!>` ends it
@@ -146,14 +167,17 @@ function isWhitespaceAt(text: string, index: number): boolean {
  * `<!-->` and `<!--->` close immediately. Anything after the closer is
  * markup again; an unclosed comment runs to the end of input.
  *
+ * @param html The document scanned.
+ * @param start Offset of the comment's `<`.
+ * @param closers The document's closer finders ({@link commentClosers}).
  * @returns The offset just past the closer, or the end of input.
  */
-function skipComment(html: string, start: number): number {
+function skipComment(html: string, start: number, closers: CommentClosers): number {
   if (html.startsWith('<!-->', start)) return start + 5;
   if (html.startsWith('<!--->', start)) return start + 6;
   // The first of the two closers wins — they cannot overlap into ambiguity.
-  const close = html.indexOf('-->', start + 4);
-  const bang = html.indexOf('--!>', start + 4);
+  const close = closers.close(start + 4);
+  const bang = closers.bang(start + 4);
   if (close === -1) return bang === -1 ? html.length : bang + 4;
   if (bang === -1) return close + 3;
   return Math.min(close + 3, bang + 4);
@@ -396,6 +420,7 @@ function scanMarkup(
   model: RawTextModel
 ): readonly ScannedToken[] {
   const rawTextTags = RAW_TEXT_TAGS[model];
+  const closers = commentClosers(html);
   const tags: ScannedToken[] = [];
   const length = html.length;
   let pos = 0;
@@ -405,7 +430,7 @@ function scanMarkup(
     pos = lt;
     const next = html.charAt(lt + 1);
     if (html.startsWith('<!--', lt)) {
-      pos = skipComment(html, lt);
+      pos = skipComment(html, lt, closers);
       continue;
     }
     if (withEndTags && next === '/' && TAG_NAME_START.test(html.charAt(lt + 2))) {
