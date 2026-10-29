@@ -13,7 +13,9 @@
  * amber why sentence — visible text, never hover-only — and, when the
  * Exclusion Builder changed the feature in this tab, its modifier: an
  * at-a-glance badge (icon + short text) plus the full sentence as a visible
- * line, spoken once. The verdict badge stays WP Rocket's served verdict.
+ * line, spoken once; likewise when the extension simulated the feature in
+ * this tab (or the page's simulation marker went unverified). The verdict
+ * badge stays WP Rocket's served verdict.
  *
  * Tooltips appear only where data would otherwise be hidden — the Cached
  * card's absolute UTC time and the Known Platform card's matching header —
@@ -25,7 +27,9 @@ import { Match, Show, Switch } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import ChevronRight from 'lucide-solid/icons/chevron-right';
 import CircleOff from 'lucide-solid/icons/circle-off';
+import FlaskConical from 'lucide-solid/icons/flask-conical';
 import ListX from 'lucide-solid/icons/list-x';
+import ShieldQuestionMark from 'lucide-solid/icons/shield-question-mark';
 import type { LucideIcon } from 'lucide-solid';
 import { Badge } from '../../../../components/ui/badge';
 import { CARD_LEVEL_CLASSES } from '../../../../components/ui/card';
@@ -43,6 +47,7 @@ import {
 } from '../../../../lib/detection/hud';
 import { STATUS_LABELS } from '../../../../lib/panel/detections-summary';
 import type { StatusItem } from '../../../../lib/panel/detections-view-model';
+import type { SimulationFact } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
 import { navRoute, type RouteId } from '../../routes';
 import { cacheAgeText, STATUS_TONES } from './card-presentation';
@@ -195,9 +200,58 @@ function ModifierLine(props: { item: StatusItem }): JSX.Element {
   );
 }
 
+/** The simulation badge's icon per fact (the shape carries the meaning, not the color). */
+const SIMULATION_BADGE_ICONS: Readonly<Record<SimulationFact, LucideIcon>> = {
+  simulated: FlaskConical,
+  unverified: ShieldQuestionMark
+};
+
 /**
- * The evidence line: source chip, the builder modifier (badge + sentence)
- * and/or the unsure verdict's why. Renders nothing for a card with none (non-feature
+ * The simulation badge's tone per fact: a verified simulation is information
+ * (the info blue the overlay's "Simulated" indicator wears); an unverified
+ * marker is a caution worth noticing.
+ */
+const SIMULATION_BADGE_TONES: Readonly<Record<SimulationFact, 'info' | 'warn'>> = {
+  simulated: 'info',
+  unverified: 'warn'
+};
+
+/**
+ * The simulation modifier: badge (icon + short text, hidden from assistive
+ * tech) and the full sentence as a visible line, spoken once — the builder
+ * modifier's pattern ({@link ModifierBadge}, {@link ModifierLine}).
+ *
+ * @param props.item The card (carrying `simulation`, its chip and sentence).
+ * @returns The badge + line, or nothing for a card without a simulation fact.
+ */
+function SimulationModifier(props: { item: StatusItem }): JSX.Element {
+  return (
+    <Show when={props.item.simulation}>
+      {(fact) => (
+        <>
+          <Badge kind={SIMULATION_BADGE_TONES[fact()]} class="shrink-0">
+            <span
+              data-fdt-card-simulation={fact()}
+              aria-hidden="true"
+              class="inline-flex items-center gap-1"
+            >
+              <Dynamic component={SIMULATION_BADGE_ICONS[fact()]} size={11} class="shrink-0" />
+              {props.item.simulationChip}
+            </span>
+          </Badge>
+          <p data-fdt-card-simulation-line class="min-w-0 text-fg-secondary">
+            <span class="sr-only">, </span>
+            {props.item.simulationSentence}
+          </p>
+        </>
+      )}
+    </Show>
+  );
+}
+
+/**
+ * The evidence line: source chip, the simulation and builder modifiers
+ * (badge + sentence each) and/or the unsure verdict's why. Renders nothing for a card with none (non-feature
  * cards, undecided rows whose absence is an honest "not active").
  *
  * @param props.item The card.
@@ -209,7 +263,10 @@ function CardEvidence(props: { item: StatusItem }): JSX.Element {
   return (
     <Show
       when={
-        source() !== undefined || props.item.why !== undefined || props.item.builder !== undefined
+        source() !== undefined ||
+        props.item.why !== undefined ||
+        props.item.builder !== undefined ||
+        props.item.simulation !== undefined
       }
     >
       <div
@@ -227,6 +284,7 @@ function CardEvidence(props: { item: StatusItem }): JSX.Element {
             </Badge>
           )}
         </Show>
+        <SimulationModifier item={props.item} />
         <ModifierBadge item={props.item} />
         <ModifierLine item={props.item} />
         <Show when={props.item.why}>

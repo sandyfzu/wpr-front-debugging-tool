@@ -24,7 +24,12 @@
 
 import { formatCacheTimestamp } from '../detection/describe';
 import { cacheCopy, cacheLayerCopy } from '../detection/cache-context';
-import { builderOffSummary, LIST_JOINER, SOURCE_REPORT_TEXT } from '../detection/hud';
+import {
+  builderOffSummary,
+  LIST_JOINER,
+  simulationSummary,
+  SOURCE_REPORT_TEXT
+} from '../detection/hud';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../wp-rocket/constants';
 import type { FdtData } from '../wp-rocket/types';
 import {
@@ -110,8 +115,8 @@ function cellText(value: string): string {
 
 /**
  * The "Details" cell of one card: its facts ({@link factsCell}), then the
- * unsure verdict's why, then the Exclusion Builder's in-tab modifier — each
- * when the card carries it. The Status cell stays the served verdict; the
+ * unsure verdict's why, then the simulation modifier, then the Exclusion
+ * Builder's in-tab modifier — each when the card carries it. The Status cell stays the served verdict; the
  * modifier here also explains a fact the rewrite emptied (Delay JS's
  * library version goes with its controller).
  *
@@ -121,7 +126,7 @@ function cellText(value: string): string {
 function detailsCell(item: StatusItem): string {
   const facts = factsCell(item);
   // The facts are already cell markdown; the two sentences are our own copy.
-  const notes = [item.why, item.modifier]
+  const notes = [item.why, item.simulationSentence, item.modifier]
     .filter((note): note is string => note !== undefined)
     .map(cellText);
   const parts = facts === NONE ? notes : [facts, ...notes];
@@ -223,9 +228,12 @@ function summaryLines(summary: DetectionsSummary): string[] {
     );
   }
   if (summary.server !== null) lines.push(`- **Server:** ${codeSpan(summary.server)}`);
-  const offInTab = builderOffSummary(summary.optimizations.offInTab);
+  const { active, total, offInTab, simulated, unverified } = summary.optimizations;
+  const suffixes = [builderOffSummary(offInTab), simulationSummary(simulated, unverified)].filter(
+    (part): part is string => part !== null
+  );
   lines.push(
-    `- **Optimizations:** ${summary.optimizations.active.toString()} of ${summary.optimizations.total.toString()} active${offInTab === null ? '' : `${LIST_JOINER}${offInTab}`}`
+    `- **Optimizations:** ${active.toString()} of ${total.toString()} active${suffixes.map((part) => `${LIST_JOINER}${part}`).join('')}`
   );
   return lines;
 }

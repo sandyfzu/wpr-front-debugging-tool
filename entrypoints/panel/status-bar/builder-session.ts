@@ -16,6 +16,8 @@ import type {
 } from '../../../lib/messaging/exclusion-panel';
 import type { StatusKind } from '../../../components/ui/status-badge';
 import { PAGE_UI_MENU_RESCUE, PAGE_UI_OPTIONS_RESCUE } from '../../../lib/page-commands/commands';
+import { hudFeatureOf } from '../../../lib/detection/hud';
+import type { SimulatedFeatureId } from '../../../lib/wp-rocket-simulation/spec';
 
 /**
  * - `checking` — the first answer has not arrived.
@@ -81,6 +83,19 @@ function hostOf(origin: string): string {
 }
 
 /**
+ * The "On" description's subject: the exclusions, plus the features the last
+ * document was simulated with by their full names — only a document the
+ * step actually simulated (one left as served names no simulation).
+ *
+ * @param simulated The features the last document was simulated with.
+ */
+function appliedSubject(simulated: readonly SimulatedFeatureId[]): string {
+  if (simulated.length === 0) return 'Exclusions are';
+  const names = simulated.map((id) => hudFeatureOf(id)?.label ?? id).join(' and ');
+  return `Exclusions and a simulated ${names} are`;
+}
+
+/**
  * The entry's words for a state.
  *
  * @param state The session state.
@@ -106,7 +121,7 @@ export function builderEntryView(state: BuilderSessionState): BuilderEntryView {
     case 'active':
       return {
         badge: { kind: 'ok', label: 'On' },
-        description: `Exclusions are applied in this tab: pages of ${hostOf(summary.origin)} load rewritten until Stop or the tab closes. Open the builder to see this page’s result.`
+        description: `${appliedSubject(summary.simulated ?? [])} applied in this tab: pages of ${hostOf(summary.origin)} load rewritten until Stop or the tab closes. Open the builder to see this page’s result.`
       };
     case 'unavailable':
       return {

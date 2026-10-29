@@ -123,7 +123,9 @@ export function scriptStateBadges(row: JsScriptResource): ScriptBadge[] {
  */
 export function delaySummaryBadge(present: boolean, simulated: boolean): ScriptBadge {
   if (present) return { label: 'Detected', kind: 'ok' };
-  if (simulated) return { label: 'Simulated', kind: 'neutral' };
+  // Info, as every other "Simulated" badge: its glyph sets it apart from
+  // "Not detected" (never the word alone).
+  if (simulated) return { label: 'Simulated', kind: 'info' };
   return { label: 'Not detected', kind: 'neutral' };
 }
 

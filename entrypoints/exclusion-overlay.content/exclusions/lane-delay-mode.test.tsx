@@ -269,7 +269,7 @@ describe('Delay JS lane mode control', () => {
     expect(screen.queryByText(/delayed scripts restored/)).toBeNull();
     expect(screen.getByText('Simulated · WP Rocket 3.24 (the site serves 3.12.1)')).toBeTruthy();
     expect(screen.getByText('Exclusion list: latest (fetched 3 h ago)')).toBeTruthy();
-    expect(screen.getByText(/1 left undelayed by the simulation/)).toBeTruthy();
+    expect(screen.getByText(/1 left as served: WP Rocket decides it/)).toBeTruthy();
     expect(radio('Simulated').checked).toBe(true);
   });
 });

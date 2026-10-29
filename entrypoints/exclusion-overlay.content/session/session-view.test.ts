@@ -173,6 +173,22 @@ describe('sessionView: simulation', () => {
     expect(Object.hasOwn(plain, 'simulation')).toBe(false);
   });
 
+  it('marks a row overrun of a simulating session (the simulation shares its budget)', () => {
+    const document = {
+      outcome: 'over-budget',
+      feature: 'delay_js',
+      row: '.*x',
+      budgetMs: 2000
+    } as const;
+    const simulating = sessionView(
+      { ...withDocument(document), simulate: delaySimulate() },
+      () => 'this-page'
+    );
+    expect(simulating).toMatchObject({ reason: { kind: 'over-budget', simulating: true } });
+    const plain = sessionView(withDocument(document), () => 'this-page');
+    expect(plain.kind === 'unmodified' && Object.hasOwn(plain.reason, 'simulating')).toBe(false);
+  });
+
   it('names a simulation-step overrun by its stage', () => {
     const view = sessionView(
       withDocument({

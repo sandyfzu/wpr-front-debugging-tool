@@ -47,7 +47,7 @@ function script(overrides: Partial<JsScriptResource> = {}): JsScriptResource {
 describe('delaySummaryBadge', () => {
   it('served, simulated (never "Not detected"), absent', () => {
     expect(delaySummaryBadge(true, false)).toEqual({ label: 'Detected', kind: 'ok' });
-    expect(delaySummaryBadge(false, true)).toEqual({ label: 'Simulated', kind: 'neutral' });
+    expect(delaySummaryBadge(false, true)).toEqual({ label: 'Simulated', kind: 'info' });
     expect(delaySummaryBadge(false, false)).toEqual({ label: 'Not detected', kind: 'neutral' });
   });
 });

@@ -53,12 +53,16 @@ export interface DetectionsSummary {
   /**
    * How many optimization cards are active in this tab ({@link isActiveInTab}),
    * of how many, and how many WP Rocket served that the Exclusion Builder
-   * turned off here (`builderTurnsOff`) — the gap's reason.
+   * turned off here (`builderTurnsOff`) — the gap's reason — plus how many
+   * the extension simulated here (verified; never counted active: WP Rocket
+   * did not serve them) and how many carry an unverified simulation marker.
    */
   readonly optimizations: {
     readonly active: number;
     readonly total: number;
     readonly offInTab: number;
+    readonly simulated: number;
+    readonly unverified: number;
   };
   /** The WordPress core version the page declared; null when undeclared. */
   readonly wordpressVersion: string | null;
@@ -164,9 +168,13 @@ export function summarizeDetections(
   let active = 0;
   let total = 0;
   let offInTab = 0;
+  let simulated = 0;
+  let unverified = 0;
   for (const item of items) {
     if (!isOptimizationCard(item.id)) continue;
     total += 1;
+    if (item.simulation === 'simulated') simulated += 1;
+    else if (item.simulation === 'unverified') unverified += 1;
     if (isActiveInTab(item)) active += 1;
     // Served, yet not counted active only because the builder turned it off.
     else if (item.status === 'active' && builderTurnsOff(item.builder)) offInTab += 1;
@@ -180,7 +188,7 @@ export function summarizeDetections(
       platformDetail?.kind === 'platform'
         ? { name: platformDetail.name, header: platformDetail.header }
         : null,
-    optimizations: { active, total, offInTab },
+    optimizations: { active, total, offInTab, simulated, unverified },
     wordpressVersion: facts.wordpressVersion ?? null,
     // A host layer is a cache question only on a page WP Rocket handled.
     cacheLayer: wpr.present ? (facts.cacheLayer ?? null) : null

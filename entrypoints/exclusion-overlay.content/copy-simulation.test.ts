@@ -1,5 +1,5 @@
 /**
- * The simulation's words (draft wording, pinned so every change is
+ * The simulation's words (owner-approved, pinned so every change is
  * deliberate) and the banners that carry them: each state titled with a way
  * forward, limits as notes, the Stop banner naming the simulation.
  */
@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { DocumentSimulationReport } from '../../lib/messaging/exclusion-simulation';
 import { simulatedReport } from '../../lib/messaging/exclusion-simulation.fixtures';
 import {
+  LATEST_LIST_MISSES,
   SIMULATION_CSP_LIMITS,
   SIMULATION_NOT_APPLICABLE_REASONS,
   UNREPRODUCED_REGEXES
@@ -17,6 +18,7 @@ import {
   SIMULATED_INDICATOR,
   SIMULATION_LANE_COPY,
   simulationLimitLines,
+  simulationListCopy,
   simulationOutcomeCopy,
   stoppedBody,
   unmodifiedCopy,
@@ -77,7 +79,7 @@ describe('Delay JS mode words', () => {
       checking: 'Checking whether WP Rocket delays scripts on this page…'
     });
     expect(DELAY_MODE_COPY.replaced('simulated')).toBe(
-      'Simulated isn’t available on this page, so the page runs as served — Simulated stays set for other pages.'
+      'Simulated doesn’t apply here, so this page runs as served (Simulated stays set for other pages).'
     );
     expect(DELAY_MODE_COPY.disabledChangesNothing).toBe(
       'WP Rocket doesn’t delay scripts on this page, so Disabled changes nothing here.'
@@ -113,7 +115,7 @@ describe('simulation outcome words', () => {
     });
     expect(
       simulationOutcomeCopy(report('not-applicable', { reason: 'unsupported-charset' }))?.title
-    ).toBe('Not simulated: character encoding');
+    ).toBe('Not simulated: page isn’t UTF-8');
     expect(
       simulationOutcomeCopy(
         report('not-applicable', {
@@ -182,6 +184,17 @@ describe('simulation outcome words', () => {
     ).toBe('Served unmodified: simulation data unavailable');
   });
 
+  it('says a row billed over budget shares the budget with the simulation', () => {
+    const row = { kind: 'over-budget', feature: 'defer_all_js', row: 'x', budgetMs: 2000 } as const;
+    expect(unmodifiedCopy({ ...row, simulating: true })).toBe(
+      'Load JavaScript deferred (row x) ran past the 2000 ms budget, so the page was served unmodified. The simulation’s time counts toward that budget, so the row may not be slow on its own. Simplify the row, or choose As served, then apply again.'
+    );
+    // Without a simulation the row alone spent the budget: the plain words.
+    expect(unmodifiedCopy(row)).toBe(
+      'Load JavaScript deferred (row x) took longer than 2000 ms, so the page was served unmodified. Simplify the row, then apply again.'
+    );
+  });
+
   it('pins the lane lines', () => {
     expect(SIMULATION_LANE_COPY.line(5, 2)).toBe(
       '5 delayed by the simulation · 2 excluded by your rows'
@@ -193,7 +206,10 @@ describe('simulation outcome words', () => {
       'Simulated · WP Rocket 3.24'
     );
     expect(SIMULATION_LANE_COPY.undetermined(1)).toBe(
-      '1 left undelayed by the simulation: whether WP Rocket delays it depends on ids it draws at random.'
+      '1 left as served: WP Rocket decides it with random ids, so the simulation can’t.'
+    );
+    expect(SIMULATION_LANE_COPY.undetermined(2)).toBe(
+      '2 left as served: WP Rocket decides them with random ids, so the simulation can’t.'
     );
     expect(SIMULATION_LANE_COPY.regexLimit).toContain('nothing is delayed — as on the site');
   });
@@ -226,5 +242,31 @@ describe('simulation banners', () => {
     expect(noticeBanner({ kind: 'stopped' }).body).toBe(
       'Reload to see the page without exclusions.'
     );
+  });
+});
+
+describe('owner words: the latest-list misses and the inline-after-fallback limit', () => {
+  it('starts every miss with "latest list", one voice', () => {
+    const misses = LATEST_LIST_MISSES.map((listMiss) =>
+      simulationListCopy({ listSource: 'bundled', listMiss, wpRocketVersion: '3.24' }, 0)
+    );
+    for (const line of misses) {
+      expect(line).toMatch(/^Exclusion list: bundled with WP Rocket 3\.24 \(latest list .+\)$/);
+    }
+    expect(
+      simulationListCopy({ listSource: 'bundled', listMiss: 'expired', wpRocketVersion: '3.24' }, 0)
+    ).toBe('Exclusion list: bundled with WP Rocket 3.24 (latest list copy over 14 days old)');
+  });
+
+  it('words the inline-after-fallback limit from the earlier page’s fallback', () => {
+    expect(
+      simulationLimitLines({
+        ...simulatedReport(),
+        cspLimits: ['inline-after-fallback'],
+        caveats: undefined
+      })
+    ).toEqual([
+      'If WP Rocket switched to its inline fallback on an earlier page of this tab, this page’s CSP blocks those inline scripts — as it would live.'
+    ]);
   });
 });

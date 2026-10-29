@@ -701,9 +701,9 @@ export function runtimeUnavailableCopy(cause: SimulationRuntimeUnavailableCause)
 const LATEST_LIST_MAX_AGE_DAYS = LATEST_LIST_MAX_AGE_MS / 86_400_000;
 
 /**
- * Why the bundled list ran, per latest-list miss (draft words): the
- * server's answer (`malformed`, `invalid`) is told apart from the saved
- * copy (`unreadable`, `expired`).
+ * Why the bundled list ran, per latest-list miss — every one opens with
+ * "latest list"; the server's answer (`malformed`, `invalid`) is told apart
+ * from the kept copy (`unreadable`, `expired`).
  */
 const LATEST_LIST_MISS_COPY: Readonly<Record<LatestListMiss, string>> = {
   'never-fetched': 'latest list not fetched yet',
@@ -711,15 +711,15 @@ const LATEST_LIST_MISS_COPY: Readonly<Record<LatestListMiss, string>> = {
   timeout: 'latest list unreachable: the request timed out',
   'http-error': 'latest list refused by the server',
   oversize: 'latest list too large',
-  malformed: 'the server sent the latest list in an unexpected format',
+  malformed: 'latest list in an unexpected format',
   invalid: 'latest list failed validation',
-  unreadable: 'the saved copy of the latest list could not be read',
-  expired: `the saved copy of the latest list is over ${String(LATEST_LIST_MAX_AGE_DAYS)} days old`
+  unreadable: 'latest list copy unreadable',
+  expired: `latest list copy over ${String(LATEST_LIST_MAX_AGE_DAYS)} days old`
 };
 
 /**
- * The lane detail naming the exclusion list a simulation ran with (draft
- * words): the fetched latest list with its age, or the version's bundled
+ * The lane detail naming the exclusion list a simulation ran with: the
+ * fetched latest list with its age, or the version's bundled
  * list with why the latest one did not run.
  *
  * @param list The simulation's list provenance and its WP Rocket version.
@@ -746,6 +746,9 @@ export function unmodifiedCopy(reason: UnmodifiedReason): string {
     return `Simulating ${FEATURE_NAMES[reason.feature]} took longer than ${String(reason.budgetMs)} ms (the simulation counts toward the time budget), so the page was served unmodified. Reload to try again, or choose As served to apply your exclusions without the simulation.`;
   }
   const row = reason.row === null ? '' : ` (row ${reason.row})`;
+  if (reason.simulating === true) {
+    return `${FEATURE_NAMES[reason.feature]}${row} ran past the ${String(reason.budgetMs)} ms budget, so the page was served unmodified. The simulation’s time counts toward that budget, so the row may not be slow on its own. Simplify the row, or choose As served, then apply again.`;
+  }
   return `${FEATURE_NAMES[reason.feature]}${row} took longer than ${String(reason.budgetMs)} ms, so the page was served unmodified. Simplify the row, then apply again.`;
 }
 
@@ -1006,7 +1009,7 @@ export const DELAY_MODE_COPY = {
    * @param mode The replaced mode.
    */
   replaced: (mode: DelayMode): string =>
-    `${DELAY_MODE_COPY.labels[mode]} isn’t available on this page, so the page runs as served — ${DELAY_MODE_COPY.labels[mode]} stays set for other pages.`,
+    `${DELAY_MODE_COPY.labels[mode]} doesn’t apply here, so this page runs as served (${DELAY_MODE_COPY.labels[mode]} stays set for other pages).`,
   /** Disabled is shown on a page WP Rocket does not delay (allowed: it is a no-op here). */
   disabledChangesNothing:
     'WP Rocket doesn’t delay scripts on this page, so Disabled changes nothing here.',
@@ -1024,7 +1027,7 @@ const CSP_LIMIT_COPY: Readonly<Record<SimulationCspLimit, string>> = {
   inline:
     'This page’s Content Security Policy blocks inline scripts: delayed inline scripts fail here as they would on the site.',
   'inline-after-fallback':
-    'This page’s Content Security Policy allows WP Rocket’s data: scripts but not inline ones — if an earlier page in this tab switched Delay JS to its inline fallback, delayed inline scripts fail here as they would live.',
+    'If WP Rocket switched to its inline fallback on an earlier page of this tab, this page’s CSP blocks those inline scripts — as it would live.',
   'trusted-types':
     'This page requires Trusted Types — WP Rocket’s Delay JS cannot load delayed scripts under it; they fail here as they would on the site.'
 };
@@ -1097,7 +1100,7 @@ function notApplicableCopy(simulation: DocumentSimulationReport): StateCopy {
       };
     case 'unsupported-charset':
       return {
-        title: 'Not simulated: character encoding',
+        title: 'Not simulated: page isn’t UTF-8',
         body: `Only UTF-8 pages (or pages whose text is plain ASCII) can be simulated, so ${served} ${NOT_SIMULATED_REMEDY}`
       };
     case 'beyond-exact-reproduction':
@@ -1156,7 +1159,7 @@ export const SIMULATION_LANE_COPY = {
    * @param count The count (≥ 1).
    */
   undetermined: (count: number): string =>
-    `${String(count)} left undelayed by the simulation: whether WP Rocket delays ${countNoun(count, COUNT_WORDS.it)} depends on ids it draws at random.`,
+    `${String(count)} left as served: WP Rocket decides ${countNoun(count, COUNT_WORDS.it)} with random ids, so the simulation can’t.`,
   /** WP Rocket's own pattern stops on the page: it would delay nothing either. */
   regexLimit:
     'WP Rocket’s Delay JS pattern stops on this page (PHP’s backtracking limit), so nothing is delayed — as on the site.'

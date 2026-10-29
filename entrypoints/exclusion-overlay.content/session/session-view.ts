@@ -73,6 +73,11 @@ export type UnmodifiedReason =
       readonly budgetMs: number;
       /** `simulate`: the feature's simulation step overran (then no row). */
       readonly stage?: SimulationStage;
+      /**
+       * The session simulates (present only then): its simulation step's
+       * time counts toward the same cumulative budget a row is billed for.
+       */
+      readonly simulating?: true;
     }
   | { readonly kind: 'runtime-unavailable'; readonly cause: SimulationRuntimeUnavailableCause };
 
@@ -157,7 +162,8 @@ export function sessionView(
           feature: document.feature,
           row: document.row,
           budgetMs: document.budgetMs,
-          ...(document.stage === undefined ? {} : { stage: document.stage })
+          ...(document.stage === undefined ? {} : { stage: document.stage }),
+          ...(status.simulate === undefined ? {} : { simulating: true as const })
         },
         served: document.served
       };

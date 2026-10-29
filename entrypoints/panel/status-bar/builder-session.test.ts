@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { ExclusionSessionSummary } from '../../../lib/messaging/exclusion-panel';
+import {
+  parseExclusionSessionSummary,
+  type ExclusionSessionSummary
+} from '../../../lib/messaging/exclusion-panel';
 import {
   BUILDER_SESSION_CHECKING,
   builderEntryView,
@@ -72,6 +75,44 @@ describe('builderEntryView', () => {
       kind: 'error',
       label: 'Unavailable'
     });
+  });
+
+  it('names the simulation only when the last document was simulated', () => {
+    const view = builderEntryView({
+      kind: 'known',
+      summary: { ...ACTIVE, simulated: ['delay_js'] }
+    });
+    expect(view.badge).toEqual({ kind: 'ok', label: 'On' });
+    expect(view.description).toBe(
+      'Exclusions and a simulated Delay JavaScript execution are applied in this tab: pages of example.com:8443 load rewritten until Stop or the tab closes. Open the builder to see this page’s result.'
+    );
+    // A document left as served (or none yet): the plain words, no simulation.
+    expect(builderEntryView({ kind: 'known', summary: ACTIVE }).description).not.toMatch(
+      /simulat/i
+    );
+  });
+
+  it('words each document state through the parsed summary (simulated only names it)', () => {
+    const record = (state: string) => ({
+      state: 'active',
+      origin: 'https://example.com:8443',
+      simulate: { features: ['delay_js'] },
+      document: { outcome: 'rewritten', reports: [], simulation: { feature: 'delay_js', state } }
+    });
+    const words = (input: unknown) => {
+      const summary = parseExclusionSessionSummary(input);
+      if (summary === null) throw new Error('summary refused');
+      return builderEntryView({ kind: 'known', summary }).description;
+    };
+    expect(words(record('simulated'))).toMatch(/^Exclusions and a simulated Delay JavaScript/);
+    for (const state of ['already-served', 'csp-blocked', 'not-applicable']) {
+      expect(words(record(state)), state).toMatch(/^Exclusions are applied in this tab: /);
+    }
+    const unmodified = {
+      ...record('simulated'),
+      document: { outcome: 'failed', reason: 'engine-failed' }
+    };
+    expect(words(unmodified)).toMatch(/^Exclusions are applied in this tab: /);
   });
 
   it('says an active session persists for the tab until Stop or close, naming the host', () => {

@@ -29,7 +29,7 @@ import {
 } from './strip-state';
 import type { InspectorMood } from './strip-state';
 import type { StripIconGlyph } from './icons';
-import { BUILDER_ICONS, PRESENT_ICON_PATHS } from './icons';
+import { MODIFIER_ICONS, PRESENT_ICON_PATHS } from './icons';
 import { StrokeIcon, CLOSE_ICON_PATHS } from '../ui/icons';
 import { TOOL_EYEBROW } from '../ui/copies';
 
@@ -113,7 +113,7 @@ const BuilderLine = (props: { line: BuilderTabLine }): JSXElement => (
 );
 
 /**
- * A row's Exclusion Builder modifier: the badge (icon + short words, the
+ * A row's in-tab modifier (Exclusion Builder or simulation): the badge (icon + short words, the
  * at-a-glance cue; hidden from assistive tech) and the full sentence as
  * visible text on its own line (never hover-only), spoken once.
  *
@@ -124,7 +124,7 @@ const RowModifier = (props: { modifier: StripRowModifier }): JSXElement => (
   <>
     <span class="ins-mod" data-fdt-strip-modifier={props.modifier.kind} aria-hidden="true">
       <span class="ins-mod-icon">
-        <GroupGlyph glyph={BUILDER_ICONS[props.modifier.kind]} />
+        <GroupGlyph glyph={MODIFIER_ICONS[props.modifier.kind]} />
       </span>
       {props.modifier.chip}
     </span>
@@ -239,13 +239,18 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
                         class="ins-row"
                         // A modified row already shows its sentence; the tooltip would
                         // repeat it as the row's accessible description.
-                        title={row.modifier === null ? row.tooltip : undefined}
+                        title={
+                          row.modifier === null && row.simulation === null ? row.tooltip : undefined
+                        }
                       >
                         <span class={`ins-chip ins-chip-${row.chipState}`}>{row.label}</span>
                         <Show when={row.count !== null && row.unit !== null}>
                           <span class="ins-value">
                             {String(row.count)} {row.unit}
                           </span>
+                        </Show>
+                        <Show when={row.simulation}>
+                          {(simulation) => <RowModifier modifier={simulation()} />}
                         </Show>
                         <Show when={row.modifier}>
                           {(modifier) => <RowModifier modifier={modifier()} />}
@@ -306,11 +311,11 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
             </span>
           </Show>
         </span>
-        {/* The builder hint's glyph after the version: a shape, not colour alone. */}
+        {/* The in-tab change's glyph after the version: a shape, not colour alone. */}
         <Show when={props.model().builderPill}>
           {(kind) => (
             <span class="ins-pill-builder" data-fdt-strip-pill-builder={kind()} aria-hidden="true">
-              <GroupGlyph glyph={BUILDER_ICONS[kind()]} />
+              <GroupGlyph glyph={MODIFIER_ICONS[kind()]} />
             </span>
           )}
         </Show>

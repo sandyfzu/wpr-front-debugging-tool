@@ -21,6 +21,7 @@ import {
 import {
   builderModifierCopy,
   HUD_FEATURES,
+  simulationModifierCopy,
   hudFeatureOf,
   readHudFeature,
   type HudFeature,
@@ -33,6 +34,7 @@ import type {
   FdtData,
   FeatureEvidenceSource,
   PageHeader,
+  SimulationFact,
   WprDetections
 } from '../wp-rocket/types';
 import { getRealOptionName } from '../options-map/get-real-option-name';
@@ -90,6 +92,16 @@ export interface StatusItem {
   readonly modifier?: string;
   /** The modifier's chip text (the shared builder copy), beside `builder`. */
   readonly modifierChip?: string;
+  /**
+   * The extension's simulation of this feature in this tab (`simulated`:
+   * verified, so `status` is not served; `unverified`: `status` reads the
+   * page as served) — a second modifier, present only when the page states one.
+   */
+  readonly simulation?: SimulationFact;
+  /** The simulation modifier's sentence (the shared simulation copy), beside `simulation`. */
+  readonly simulationSentence?: string;
+  /** The simulation modifier's chip text (the shared simulation copy), beside `simulation`. */
+  readonly simulationChip?: string;
 }
 
 /** The measurement beacon's verified label (the one non-feature row the option map lacks). */
@@ -155,7 +167,7 @@ function featureFacts(
   row: DetectionRow,
   report: PageAnalysisReport,
   detections: WprDetections
-): Pick<StatusItem, 'status' | 'source' | 'why' | 'builder' | 'modifier' | 'modifierChip'> {
+): Pick<StatusItem, 'status' | 'source' | 'why' | FeatureModifierField> {
   const feature = hudFeatureOf(row);
   if (feature === undefined) {
     // A row outside the registry (a future row): its presence is the answer.
@@ -166,8 +178,25 @@ function featureFacts(
     status: CARD_STATUS[reading.verdict],
     ...(reading.source === null ? {} : { source: reading.source }),
     ...(reading.why === null ? {} : { why: capitalize(reading.why) }),
-    ...(reading.builder === undefined ? {} : builderFacts(feature, reading.builder))
+    ...(reading.builder === undefined ? {} : builderFacts(feature, reading.builder)),
+    ...(reading.simulation === undefined ? {} : simulationFacts(reading.simulation))
   };
+}
+
+/** The card fields the two in-tab modifiers (builder, simulation) fill. */
+type FeatureModifierField =
+  'builder' | 'modifier' | 'modifierChip' | 'simulation' | 'simulationSentence' | 'simulationChip';
+
+/**
+ * A feature card's simulation fields: the fact plus its shared copy.
+ *
+ * @param fact The row's simulation fact.
+ */
+function simulationFacts(
+  fact: SimulationFact
+): Pick<StatusItem, 'simulation' | 'simulationSentence' | 'simulationChip'> {
+  const copy = simulationModifierCopy(fact);
+  return { simulation: fact, simulationSentence: copy.sentence, simulationChip: copy.chip };
 }
 
 /**

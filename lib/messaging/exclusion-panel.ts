@@ -6,6 +6,7 @@
  * so the panel validates exactly what it reads without bundling the rest —
  * a tolerant read: every other field of a status is ignored.
  */
+import { SIMULATED_FEATURES, type SimulatedFeatureId } from '../wp-rocket-simulation/spec';
 import { numericTabId } from './sender';
 import { isHttpOrigin } from '../../utils/urls';
 import { isRecord, ownValue } from '../../utils/is-record';
@@ -39,7 +40,16 @@ export type ExclusionOverlayOpenOutcome = (typeof EXCLUSION_OVERLAY_OPEN_OUTCOME
 /** A session's state, as a status display reads it. */
 export type ExclusionSessionSummary =
   | { readonly state: 'inactive' }
-  | { readonly state: 'active'; readonly origin: string }
+  | {
+      readonly state: 'active';
+      readonly origin: string;
+      /**
+       * The features the last intercepted document was simulated with
+       * (absent: none — no document yet, a session that simulates nothing,
+       * or a step that left the page as served).
+       */
+      readonly simulated?: readonly SimulatedFeatureId[];
+    }
   | { readonly state: 'unavailable' };
 
 /** A push about one tab, as a status display reads it. */
@@ -73,7 +83,27 @@ export function parseExclusionSessionSummary(input: unknown): ExclusionSessionSu
   if (state === 'inactive' || state === 'unavailable') return { state };
   if (state !== 'active') return null;
   const origin = ownValue(input, 'origin');
-  return typeof origin === 'string' && isHttpOrigin(origin) ? { state, origin } : null;
+  if (typeof origin !== 'string' || !isHttpOrigin(origin)) return null;
+  const simulated = simulatedFeatures(ownValue(input, 'document'));
+  return simulated.length === 0 ? { state, origin } : { state, origin, simulated };
+}
+
+/**
+ * The known feature an untrusted document outcome reports as simulated —
+ * tolerant: a malformed outcome, an unknown feature or any other step state
+ * (`already-served`, `csp-blocked`, `not-applicable`, an unmodified document)
+ * reads as no simulation (the summary only words the session; the record's
+ * own guard owns the outcome).
+ *
+ * @param input The status's `document` value.
+ * @returns The simulated feature (one per document today), or empty.
+ */
+function simulatedFeatures(input: unknown): SimulatedFeatureId[] {
+  if (!isRecord(input)) return [];
+  const simulation = ownValue(input, 'simulation');
+  if (!isRecord(simulation) || ownValue(simulation, 'state') !== 'simulated') return [];
+  const feature = ownValue(simulation, 'feature');
+  return SIMULATED_FEATURES.filter((row) => row.id === feature).map((row) => row.id);
 }
 
 /**
