@@ -521,3 +521,22 @@ describe('presence propagation — the Priority Elements rows imply WP Rocket', 
     expect(result.detections.wpr.present).toBe(true);
   });
 });
+
+describe('detectBeacon — served URL on Delay JS-rewritten tags', () => {
+  // No `data-name`: the URL fallback alone decides (a tag whose marker
+  // attribute another optimizer dropped).
+  const path = '/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js';
+  it.each([
+    ['delayed', `data-rocket-src="https://s.com${path}"`, true],
+    ['plain', `src="https://s.com${path}"`, true],
+    ['both attributes: the delayed URL wins', `src="/other.js" data-rocket-src="${path}"`, true],
+    ['both attributes: a foreign delayed URL', `src="${path}" data-rocket-src="/other.js"`, false],
+    ['empty data-rocket-src falls back to src', `data-rocket-src="" src="${path}"`, true],
+    ['valueless data-rocket-src falls back to src', `data-rocket-src src="${path}"`, true],
+    ['empty data-rocket-src alone', 'data-rocket-src=""', false],
+    ['relative delayed URL', `data-rocket-src="${path}"`, true]
+  ])('%s', (_case, attrs, matches) => {
+    const parsed = page(`<body><script type="rocketlazyloadscript" ${attrs}></script></body>`);
+    expect(detectBeacon(parsed, null).present).toBe(matches);
+  });
+});
