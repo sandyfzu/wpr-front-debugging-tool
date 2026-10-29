@@ -21,6 +21,7 @@ import { isScriptSnapshotId } from './script-source';
 import type {
   BeaconFeatureStatus,
   BuilderFact,
+  SimulationFact,
   DiagnoserDocData,
   FdtData,
   FeatureEvidenceSource,
@@ -595,6 +596,20 @@ function builderOf(builder: BuilderFact | undefined): { builder?: BuilderFact } 
   return builder === undefined ? {} : { builder };
 }
 
+/**
+ * A simulated row's optional `simulation` field: absent (the document
+ * states no simulation of the feature — every payload predating the
+ * field), `'simulated'` or `'unverified'`. Anything else is not engine
+ * output.
+ *
+ * @param value The raw `simulation` value.
+ * @returns The fact, `undefined` when absent, or null when invalid.
+ */
+function parseOptionalSimulation(value: unknown): SimulationFact | undefined | null {
+  if (value === undefined) return undefined;
+  return value === 'simulated' || value === 'unverified' ? value : null;
+}
+
 /** `{ present }`-shaped row with exactly that key, own keys only. */
 function parsePresenceRow(
   input: unknown
@@ -621,10 +636,16 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
   if (source === null) return reject('source');
   const builder = parseOptionalBuilder(row['builder'], 'delay_js');
   if (builder === null) return reject('builder');
-  if (Object.keys(row).length !== featureRowKeyCount(4, source) + mark + builderKeys(builder))
+  const simulation = parseOptionalSimulation(row['simulation']);
+  if (simulation === null) return reject('simulation');
+  const optionalKeys = builderKeys(builder) + (simulation === undefined ? 0 : 1);
+  if (Object.keys(row).length !== featureRowKeyCount(4, source) + mark + optionalKeys)
     return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
   if (!isBoundedNullableString(row['version'], LIMITS.versions)) return reject('version');
+  // A simulated row is never served: the engine clears both.
+  if (simulation === 'simulated' && (row['present'] || row['version'] !== null))
+    return reject('simulation');
   const delayedScripts = row['delayedScripts'];
   if (
     typeof delayedScripts !== 'number' ||
@@ -690,7 +711,8 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
     delayedScripts,
     ...truncationOf(mark),
     ...(source === undefined ? {} : { source }),
-    ...builderOf(builder)
+    ...builderOf(builder),
+    ...(simulation === undefined ? {} : { simulation })
   };
 }
 

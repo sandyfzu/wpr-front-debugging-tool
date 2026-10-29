@@ -270,6 +270,34 @@ export interface BuilderFactField {
 }
 
 /**
+ * Whether the displayed document's simulation of a feature is vouched for:
+ * `simulated` — the page carries this extension's simulation marker and
+ * the background confirmed it wrote that marker for this tab and origin, so
+ * the feature's footprints are the extension's work, not WP Rocket's
+ * (verdict not applied, version unknown, inventory kept); `unverified` —
+ * the page carries a well-formed marker the background did not confirm
+ * (forged, saved copy, another tab's, or no answer), so the verdicts stay
+ * as served and only this annotation says so.
+ */
+export type SimulationFact = 'simulated' | 'unverified';
+
+/**
+ * The detection rows a simulation fact can annotate — exactly the
+ * simulated features, whose ids are these row keys.
+ */
+export type SimulationFactRow = 'delay_js';
+
+/**
+ * The additive simulation field of a {@link SimulationFactRow}: absent
+ * unless the document carries a well-formed simulation marker naming the
+ * feature and WP Rocket's generator meta does not declare it.
+ */
+export interface SimulationFactField {
+  /** Whether the feature was simulated in this tab (see {@link SimulationFact}). */
+  simulation?: SimulationFact;
+}
+
+/**
  * The complete page classification. Structural keys are fixed; extend only
  * additively (new optimizations ship with their own key + validators + tests).
  */
@@ -294,7 +322,8 @@ export interface WprDetections {
     source?: FeatureEvidenceSource;
   };
   delay_js: TruncationMark &
-    BuilderFactField & {
+    BuilderFactField &
+    SimulationFactField & {
       present: boolean;
       scripts: DelayedScriptRecord[];
       version: string | null;

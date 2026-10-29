@@ -26,6 +26,16 @@ export const FDT_EXCLUDED_RESOURCE = 'data-wpr-fdt-excluded';
  */
 export const BUILDER_MARKER_META_NAME = 'wpr-fdt-exclusion-builder';
 
+/**
+ * `name` of the one `<meta>` a simulation adds to a document it simulated a
+ * WP Rocket feature on, naming the features and the id the background drew
+ * for that document (content grammar:
+ * `lib/wp-rocket-simulation/simulation-marker`). Page markup is untrusted:
+ * detection treats it as an authority only once the background vouches for
+ * its id. Never WP Rocket's `generator` meta nor any `data-wpr-features` token.
+ */
+export const SIMULATION_MARKER_META_NAME = 'wpr-fdt-simulation';
+
 /** Attribute WP Rocket adds to scripts it defers. */
 export const WPR_DEFER_ATTRIBUTE = 'data-rocket-defer';
 

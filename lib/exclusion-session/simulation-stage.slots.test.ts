@@ -1,7 +1,8 @@
 /**
- * The stage's slots with something plugged in (the CSP evaluator and the
- * marker writer are inert in the product today): what the stage does with
- * a blocking or limiting verdict and with a written marker.
+ * The stage's slots with a stand-in plugged in (the CSP evaluator is inert
+ * in the product today; the marker writer is replaced to isolate the
+ * stage): what the stage does with a blocking or limiting verdict and with
+ * a written marker.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { composeSteps } from '../exclusion-builder/pipeline';
@@ -20,8 +21,12 @@ vi.mock('../wp-rocket-simulation/csp-evaluation', () => ({
 }));
 
 vi.mock('../wp-rocket-simulation/marker-write', () => ({
-  writeSimulationMarker: (html: string, markerId: string | undefined, simulated: boolean) =>
-    slots.written && markerId !== undefined && simulated
+  writeSimulationMarker: (
+    html: string,
+    markerId: string | undefined,
+    simulated: readonly string[]
+  ) =>
+    slots.written && markerId !== undefined && simulated.length > 0
       ? { html: `${html}<!--marker ${markerId}-->`, written: true }
       : { html, written: false }
 }));

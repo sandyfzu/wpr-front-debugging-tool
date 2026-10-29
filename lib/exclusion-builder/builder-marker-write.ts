@@ -17,10 +17,11 @@
 import { BUILDER_MARKER_META_NAME } from '../wp-rocket/constants';
 import type { BuilderFact } from '../wp-rocket/types';
 import { serializeBuilderNote, type BuilderNote } from './builder-marker';
-import { isEndTag, scanTokens, type ScannedTag, type ScannedToken } from './html-scan';
+import { scanTokens } from './html-scan';
+import { headEnd, isOwnMetaTag, readsAsOwnMetaName } from './own-meta';
 import type { TransformReport } from './report';
 import type { ExclusionFeatureId } from './set';
-import { applyPatches, findAttribute, type TextPatch } from './tag-edit';
+import { applyPatches, type TextPatch } from './tag-edit';
 
 /**
  * What one feature step did, as a builder fact: nothing when it changed no
@@ -54,69 +55,14 @@ export function builderNoteOf(reports: readonly TransformReport[]): BuilderNote 
   return note;
 }
 
-/** A numeric character reference: decimal or hex, `;` optional (the tokenizer decodes both). */
-const NUMERIC_REFERENCE = /&#(?:[xX]([0-9a-fA-F]+)|([0-9]+));?/g;
-
-/**
- * Decode a raw attribute value's numeric character references, as far as
- * matching an ASCII name needs: an ASCII code point becomes its character;
- * any other (non-ASCII, NUL, out of range — the tokenizer maps those to
- * non-ASCII text too) becomes U+FFFD, which no ASCII name contains.
- *
- * @param raw The raw value text.
- */
-function decodeNumericReferences(raw: string): string {
-  return raw.replace(NUMERIC_REFERENCE, (_whole, hex?: string, decimal?: string) => {
-    const codePoint =
-      hex !== undefined ? Number.parseInt(hex, 16) : Number.parseInt(decimal ?? '', 10);
-    return codePoint > 0 && codePoint < 0x80 ? String.fromCharCode(codePoint) : '\uFFFD';
-  });
-}
-
 /**
  * Whether a raw `name` value reads as the marker's name once the DOM
- * decodes it (`name` compares case-sensitively). Only numeric character
- * references need decoding: of the 2,231 WHATWG named references (both
- * spellings, with and without `;`), the only one whose text contains any
- * of the name's characters (`a`–`z`, `-`) is `&fjlig;` ("fj"), and "fj"
- * does not occur in the name — so a value with a named reference can never
- * be the name, decoded or not (an undecoded one keeps its `&`, which the
- * name lacks). Numeric references decode in one pass, never re-read: a
- * `&#38;` stays the `&` the DOM gives.
+ * decodes it (see {@link readsAsOwnMetaName}).
  *
  * @param raw The raw `name` value, as served.
  */
 export function namesBuilderMarker(raw: string): boolean {
-  return decodeNumericReferences(raw) === BUILDER_MARKER_META_NAME;
-}
-
-/**
- * Whether a token is a builder marker: a `meta` start tag whose (first)
- * `name` attribute reads as the marker's name — the DOM's own reading
- * (duplicate attributes drop, character references decode).
- *
- * @param token One scanned token.
- */
-function isMarkerTag(token: ScannedToken): token is ScannedTag {
-  if (isEndTag(token) || token.name !== 'meta') return false;
-  const name = findAttribute(token, 'name')?.value;
-  return name !== undefined && name !== null && namesBuilderMarker(name);
-}
-
-/**
- * Where the end of `<head>` is: the first `</head>`, or the `<body>` start
- * tag when the head is never closed explicitly (the parser closes it
- * there). Null when the document spells neither — no marker is written
- * then.
- *
- * @param tokens The document's tokens, in order.
- */
-function headEnd(tokens: readonly ScannedToken[]): number | null {
-  const end = tokens.find(
-    (token) =>
-      (isEndTag(token) && token.name === 'head') || (!isEndTag(token) && token.name === 'body')
-  );
-  return end === undefined ? null : end.start;
+  return readsAsOwnMetaName(raw, BUILDER_MARKER_META_NAME);
 }
 
 /**
@@ -141,7 +87,7 @@ function markerTag(content: string): string {
 export function writeBuilderMarker(html: string, note: BuilderNote): string {
   const tokens = scanTokens(html, 'browser');
   const patches: TextPatch[] = tokens
-    .filter(isMarkerTag)
+    .filter((token) => isOwnMetaTag(token, BUILDER_MARKER_META_NAME))
     .map((tag) => ({ start: tag.start, end: tag.openingEnd, text: '' }));
   const content = serializeBuilderNote(note);
   const at = content === null ? null : headEnd(tokens);

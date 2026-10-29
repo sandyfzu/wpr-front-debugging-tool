@@ -137,6 +137,28 @@ describe('nav live-state selectors', () => {
     ).toBeNull();
   });
 
+  it("counts a verified simulation's delay inventory (not served, runtime on page)", () => {
+    const delay_js = {
+      present: false,
+      scripts: [makeDelayScript(), makeDelayScript({ delayed: false })],
+      version: null,
+      delayedScripts: 1
+    };
+    const rows = (simulation?: 'simulated' | 'unverified') =>
+      makeFdtData({
+        wprDetections: {
+          ...makeFdtData().wprDetections,
+          delay_js: simulation === undefined ? delay_js : { ...delay_js, simulation }
+        }
+      });
+    expect(liveStateOf('javascript', rows('simulated'))).toEqual({
+      text: 'delayed 1/2',
+      tone: 'info'
+    });
+    expect(liveStateOf('javascript', rows('unverified'))).toBeNull();
+    expect(liveStateOf('javascript', rows())).toBeNull();
+  });
+
   it('marks cut lists as a floor ("5,000+") and never shows delayed > shown unmarked', () => {
     const base = makeFdtData().wprDetections;
     const many = (n: number) => Array.from({ length: n }, () => makeDelayScript());

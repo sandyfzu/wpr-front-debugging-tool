@@ -51,6 +51,11 @@ import { detectPreloadedResources } from '../../lib/detection/detect-optimizatio
 import { detectWordPressVersion } from '../../lib/detection/wordpress-version';
 import { extractDiagnoserData } from '../../lib/diagnostics/extract';
 import { createLogger } from '../../lib/logger';
+import {
+  createSimulationMarkerVerifier,
+  UNVERIFIED_MARKERS,
+  type SimulationMarkerVerifier
+} from './simulation-verify';
 
 const log = createLogger('');
 
@@ -170,18 +175,28 @@ export function pageDataFor(ctx: ContentScriptContext): PageDataRead | null {
  *
  * The page parses once (`parsePage`) and every consumer reads that same tree —
  * the single-`DOMParser` shape of the pass minus the engine's repeated document
- * scans. Near-pure (string in → results out, no extension APIs) so tests run
- * it against fixtures with the real engine; the wall time the caller logs
- * covers this whole body, which is the honest comparison baseline.
+ * scans. Near-pure (string in → results out; the only extension call is the
+ * injected marker verifier) so tests run it against fixtures with the real
+ * engine; the wall time the caller logs covers this whole body, which is the
+ * honest comparison baseline.
  *
  * @param pageHTML The serialized document.
+ * @param verify Verifies the page's simulation marker — asked only when the
+ *   page carries a well-formed one (default: vouches for nothing, so a
+ *   marker reads as unverified and changes no verdict).
  * @returns The results; diagnoser data nulls per element when its content is
  *   unreliable. Throws only for impossible callers (engine checks branch on
  *   anything a page can contain).
  */
-export async function processSerializedPage(pageHTML: string): Promise<PageData> {
+export async function processSerializedPage(
+  pageHTML: string,
+  verify: SimulationMarkerVerifier = UNVERIFIED_MARKERS
+): Promise<PageData> {
   const page = parsePage(pageHTML);
-  const detections = runChecks(page);
+  // No marker, or copies that disagree (no id): unverified, never asked.
+  const markerId = page.simulationMarker?.markerId ?? null;
+  const verified = markerId === null ? [] : await verify(markerId);
+  const detections = runChecks(page, verified);
   const preloadedResources = detectPreloadedResources(page);
   applyPresencePropagation(detections);
   // Bounded once at collection: the strip (same-context read) and the panel
@@ -383,6 +398,13 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   /** The live context's invalidation, read without control-flow narrowing. */
   const invalidated = (): boolean => ctx.isInvalid;
 
+  /** The page's simulation marker, vouched for by the background only. */
+  const verifyMarker = createSimulationMarkerVerifier({
+    send: (markerId) => sendMessage('verifySimulationMarker', { markerId }),
+    isInvalid: invalidated,
+    log
+  });
+
   /**
    * Process the serialized page exactly once, single-flight. On failure the
    * cached result stays null (logged; the panel shows its error state) and no
@@ -396,7 +418,7 @@ export function setupDataHub(ctx: ContentScriptContext): void {
       const source = pageHTML;
       const started = performance.now();
       try {
-        const result = await processSerializedPage(source);
+        const result = await processSerializedPage(source, verifyMarker);
         if (ctx.isInvalid) return;
         data = result;
       } catch (error) {

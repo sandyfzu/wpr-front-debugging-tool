@@ -20,6 +20,7 @@ import type {
   BuilderFact,
   FeatureEvidenceSource,
   FeatureMetaRow,
+  SimulationFact,
   WprDetections
 } from '../wp-rocket/types';
 import type { FeatureState, PageAnalysisReport } from './describe';
@@ -310,6 +311,13 @@ export interface HudReading {
    * verdict, never part of it. Present only when the document states one.
    */
   readonly builder?: BuilderFact;
+  /**
+   * Whether the extension simulated this feature in this tab (`simulated`:
+   * the background vouched for the page's marker, so the verdict is not
+   * served) or the page's marker went unverified (verdict as served) — a
+   * modifier on top of the verdict. Present only when the document states one.
+   */
+  readonly simulation?: SimulationFact;
 }
 
 /** A builder fact that turns its feature off in this tab (feature-wide, or Defer for the page). */
@@ -360,13 +368,16 @@ export function readHudFeature(
 ): HudReading {
   const state = report[feature.label].state;
   const source = detections[feature.row].source ?? null;
+  const simulation = simulationFactOf(detections, feature.row);
   // Unknown needs a page WP Rocket handled: on a plugin-absent page every
-  // feature is honestly not applied.
+  // feature is honestly not applied. A verified simulation is no unknown
+  // either: the extension only simulates a feature the page was served without.
   const unknown =
     detections.wpr.present &&
     state === 'not applied' &&
     source === null &&
-    feature.undecided !== null;
+    feature.undecided !== null &&
+    simulation !== 'simulated';
   const verdict: HudVerdict = unknown ? 'unknown' : state;
   const builder = builderFactOf(detections, feature.row);
   return {
@@ -374,8 +385,21 @@ export function readHudFeature(
     count: feature.count === null ? null : feature.count(report),
     source,
     why: unknown ? feature.undecided : verdict === 'collecting' ? COLLECTING_WHY : null,
-    ...(builder === null ? {} : { builder })
+    ...(builder === null ? {} : { builder }),
+    ...(simulation === null ? {} : { simulation })
   };
+}
+
+/**
+ * A row's simulation fact, or null (only the simulated features' rows can
+ * carry one).
+ *
+ * @param detections The engine rows.
+ * @param row The detection row.
+ */
+function simulationFactOf(detections: WprDetections, row: FeatureMetaRow): SimulationFact | null {
+  const entry = detections[row];
+  return 'simulation' in entry && entry.simulation !== undefined ? entry.simulation : null;
 }
 
 /**
@@ -398,6 +422,19 @@ function builderFactOf(detections: WprDetections, row: FeatureMetaRow): BuilderF
  * @param reading The feature's reading.
  */
 export function hudStateLine(feature: HudFeature, reading: HudReading): string {
+  const line = builderStateLine(feature, reading);
+  return reading.simulation === undefined
+    ? line
+    : `${line} ${simulationModifierCopy(feature, reading.simulation).sentence}`;
+}
+
+/**
+ * The verdict's line with the builder modifier (no simulation modifier).
+ *
+ * @param feature The HUD row.
+ * @param reading The feature's reading.
+ */
+function builderStateLine(feature: HudFeature, reading: HudReading): string {
   const served = servedStateLine(feature, reading);
   if (reading.builder === undefined) return served;
   const sentence = builderModifierCopy(feature, reading.builder).sentence;
@@ -430,8 +467,12 @@ function servedStateLine(feature: HudFeature, reading: HudReading): string {
     case 'not applied':
       // A meta refutation is the plugin's own statement for this render; only
       // an absent footprint can mean a page served before the plugin's work.
-      return reading.source === 'meta'
-        ? "WP Rocket's generator meta does not declare it on this page."
+      if (reading.source === 'meta') {
+        return "WP Rocket's generator meta does not declare it on this page.";
+      }
+      // A verified simulation is only run on a page served without the feature.
+      return reading.simulation === 'simulated'
+        ? SIMULATED_SERVED_LINE
         : "nothing matched on this page (the page may predate the plugin's work).";
   }
 }
@@ -529,6 +570,51 @@ export function builderModifierCopy(feature: HudFeature, fact: BuilderFact): Bui
         sentence: 'Off in this tab: an Exclusion Builder row stops WP Rocket deferring.',
         hint: `${feature.shortLabel} off on this page`
       };
+}
+
+/** The served line of a feature the extension simulated (WP Rocket served it off). */
+export const SIMULATED_SERVED_LINE = 'not served by WP Rocket on this page.';
+
+/**
+ * The modifier copy of one simulation fact — the single declaring site the
+ * cards, the strip and the support report render from, beside
+ * {@link builderModifierCopy}. Never claims WP Rocket served the feature.
+ *
+ * @param feature The HUD row (its compact name).
+ * @param fact The row's simulation fact.
+ */
+export function simulationModifierCopy(
+  feature: HudFeature,
+  fact: SimulationFact
+): BuilderModifierCopy {
+  return fact === 'simulated'
+    ? {
+        chip: 'Simulated in this tab',
+        sentence: 'Simulated in this tab by the extension, not by WP Rocket.',
+        hint: `${feature.shortLabel} simulated`
+      }
+    : {
+        chip: 'Marker not verified',
+        sentence: 'Simulation marker not verified: read as served.',
+        hint: `${feature.shortLabel}: simulation marker not verified`
+      };
+}
+
+/**
+ * The summary's (and the report's Optimizations line's) simulation suffix,
+ * appended like {@link builderOffSummary}: how many features the extension
+ * simulated in this tab, then whether any marker went unverified.
+ *
+ * @param simulated The features with a verified simulation.
+ * @param unverified The features whose marker went unverified.
+ * @returns e.g. "1 simulated in this tab", or null for neither.
+ */
+export function simulationSummary(simulated: number, unverified: number): string | null {
+  const parts = [
+    ...(simulated > 0 ? [`${formatCount(simulated)} simulated in this tab`] : []),
+    ...(unverified > 0 ? ['simulation marker not verified'] : [])
+  ];
+  return parts.length === 0 ? null : parts.join(LIST_JOINER);
 }
 
 /** The strip's tab-level line: the title and one hint per feature the builder changed. */

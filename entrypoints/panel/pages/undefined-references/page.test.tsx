@@ -180,6 +180,28 @@ describe('UndefinedReferencesPage — states', () => {
     expect(reads).toHaveLength(0);
   });
 
+  it('waits for interaction on a simulated page too (the injected runtime holds the scripts)', () => {
+    const base = makeFdtData();
+    const simulated = { ...delayJs(false), delayedScripts: 1, simulation: 'simulated' as const };
+    const { reads } = mount({
+      data: makeFdtData({
+        undefinedReferencesOnPage: ['alpha'],
+        wprDetections: { ...base.wprDetections, delay_js: simulated }
+      })
+    });
+    expect(screen.getByText('Waiting for page interaction')).toBeTruthy();
+    expect(reads).toHaveLength(0);
+  });
+
+  it('an unverified marker on a page without a runtime does not wait', () => {
+    const base = makeFdtData();
+    const unverified = { ...delayJs(false), simulation: 'unverified' as const };
+    mount({
+      data: makeFdtData({ wprDetections: { ...base.wprDetections, delay_js: unverified } })
+    });
+    expect(screen.queryByText('Waiting for page interaction')).toBeNull();
+  });
+
   it('shows skeleton cards while the real read is in flight, then the results', async () => {
     const { reads } = mount({ data: pageData({ delay: true, loaded: true, words: ['alpha'] }) });
     const processing = document.querySelector('[data-fdt="undefined-refs-processing"]');

@@ -31,6 +31,8 @@ import {
 } from './detect-optimizations';
 import { applyBuilderFacts } from './builder-fact';
 import { applyFeatureMetaAuthority } from './feature-meta';
+import { applySimulationFacts } from './simulation-fact';
+import type { SimulatedFeatureId } from '../wp-rocket-simulation/spec';
 import {
   detectAutoPreloadFonts,
   detectAutomaticLazyRendering,
@@ -50,7 +52,8 @@ export interface DetectionResult {
 }
 
 /**
- * Run the complete detection pass over a page's HTML.
+ * Run the complete detection pass over a page's HTML. Extension-free: no
+ * simulation marker is verified here (a page's marker reads as unverified).
  *
  * @param html The page HTML (as serialized/loaded) — parsed internally, so
  *   callers must not reuse documents across runs.
@@ -66,15 +69,26 @@ export function runDetection(html: string): DetectionResult {
 }
 
 /**
- * Run every check once over an already-parsed page, then apply the generator
- * declaration's authority (it rewrites mapped rows and stamps `source`),
- * then the Exclusion Builder's facts (the additive `builder` field).
- * Single-sourced so the bench and the orchestrator can never drift apart. The
- * beacon config is parsed once here and fed to the beacon row's check
+ * Run every check once over an already-parsed page, then the simulation
+ * facts (a verified simulated row is not served; an unverified marker only
+ * annotates), then the generator declaration's authority (it rewrites
+ * mapped rows and stamps `source`), then the Exclusion Builder's facts (the
+ * additive `builder` field). Single-sourced so the bench and the
+ * orchestrator can never drift apart — and both callers' presence
+ * propagation, which always runs after this, never counts a simulated row.
+ * The beacon config is parsed once here and fed to the beacon row's check
  * (pending-state composition stays out of the engine entirely — the four
  * feature checks read page markup only).
+ *
+ * @param page The parsed page.
+ * @param verified The features the background vouched for the page's
+ *   simulation marker (default none: a marker reads as unverified; a page
+ *   without one is unaffected either way).
  */
-export function runChecks(page: ParsedPage): WprDetections {
+export function runChecks(
+  page: ParsedPage,
+  verified: readonly SimulatedFeatureId[] = []
+): WprDetections {
   // Registry order matches the reference engine's (it is also output key
   // order, so serialized payloads compare shape-for-shape). The Priority
   // Elements rows sit together: the four feature checks, then the family's
@@ -101,6 +115,7 @@ export function runChecks(page: ParsedPage): WprDetections {
     preload_links: detectPreloadLinks(page),
     rocket_cdn: detectRocketCdn(page)
   };
+  applySimulationFacts(detections, page.simulationMarker, verified, page.featureMeta);
   applyFeatureMetaAuthority(detections, page.featureMeta);
   // The builder's in-tab facts annotate the served verdicts, never change them.
   applyBuilderFacts(detections, page.builderNote);

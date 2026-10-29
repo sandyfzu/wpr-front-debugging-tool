@@ -112,6 +112,21 @@ export function scriptStateBadges(row: JsScriptResource): ScriptBadge[] {
   return badges;
 }
 
+/**
+ * The summary strip's Delay JS state: served by WP Rocket, run by a verified
+ * simulation (never "Not detected" while a runtime holds scripts back), or
+ * absent.
+ *
+ * @param present WP Rocket served Delay JS on the page.
+ * @param simulated A verified simulation runs Delay JS here instead.
+ * @returns The badge's word and tone.
+ */
+export function delaySummaryBadge(present: boolean, simulated: boolean): ScriptBadge {
+  if (present) return { label: 'Detected', kind: 'ok' };
+  if (simulated) return { label: 'Simulated', kind: 'neutral' };
+  return { label: 'Not detected', kind: 'neutral' };
+}
+
 /** The Delay JS badge (see {@link scriptStateBadges}). */
 function delayBadge(row: JsScriptResource): ScriptBadge {
   if (row.delayed) return { label: 'Delayed', kind: 'info' };

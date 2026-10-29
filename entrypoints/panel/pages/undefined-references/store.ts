@@ -57,7 +57,7 @@ export const SCAN_TIMEOUT_MS = 15_000;
 
 /** The page data the store reads (accessors, so it follows pushes). */
 export interface UndefinedReferencesInput {
-  /** Delay JavaScript execution is present on the page. */
+  /** A Delay JavaScript execution runtime holds scripts on the page (served or simulated). */
   readonly delayJsPresent: Accessor<boolean>;
   /** Delay JS reported every held script as loaded. */
   readonly allScriptsLoaded: Accessor<boolean>;

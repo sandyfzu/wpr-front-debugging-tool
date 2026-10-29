@@ -133,9 +133,25 @@ describe('simulationStage', () => {
     expect(out.reports.every(crossesContract)).toBe(true);
   });
 
-  it('names no marker while the marker step writes none', () => {
-    const out = run(PAGE, input({ markerId: '0123456789abcdef0123456789abcdef' }));
+  it('writes the marker and names its id on a simulated page', () => {
+    const markerId = '0123456789abcdef0123456789abcdef';
+    const out = run(PAGE, input({ markerId }));
+    expect(out.reports[0]).toMatchObject({ state: 'simulated', markerId });
+    expect(out.html).toContain(
+      `<meta name="wpr-fdt-simulation" content="v1 delay_js=simulated id=${markerId}"></head>`
+    );
+    expect(out.reports.every(crossesContract)).toBe(true);
+  });
+
+  it('names no marker when no id was drawn, and removes a served copy either way', () => {
+    const served = PAGE.replace(
+      '</head>',
+      '<meta name="wpr-fdt-simulation" content="v1 delay_js=simulated id=ffffffffffffffffffffffffffffffff"></head>'
+    );
+    const out = run(served, input());
+    expect(out.reports[0]).toMatchObject({ state: 'simulated' });
     expect(out.reports[0]).not.toHaveProperty('markerId');
+    expect(out.html).not.toContain('wpr-fdt-simulation');
   });
 });
 

@@ -130,7 +130,7 @@ export function searchableAssets(state: ScanState): readonly ScriptAsset[] | nul
 
 /** The facts the page body is chosen from. */
 export interface PageViewInput {
-  /** The page runs WP Rocket's Delay JavaScript execution. */
+  /** A Delay JavaScript execution runtime holds scripts on the page (served or simulated). */
   readonly delayJsPresent: boolean;
   /** Delay JS reported every held script as loaded. */
   readonly allScriptsLoaded: boolean;

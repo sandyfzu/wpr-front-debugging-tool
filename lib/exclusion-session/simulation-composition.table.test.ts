@@ -24,7 +24,11 @@ import { describe, expect, it } from 'vitest';
 import { pipelineSetProblems } from '../exclusion-builder/pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import type { DocumentSimulationInput } from '../messaging/exclusion-simulation';
-import { BUILDER_MARKER_META_NAME, FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
+import {
+  BUILDER_MARKER_META_NAME,
+  FDT_EXCLUDED_RESOURCE,
+  SIMULATION_MARKER_META_NAME
+} from '../wp-rocket/constants';
 import { SIMULATION_DATA_PATH, readSimulationData } from '../wp-rocket-simulation/simulation-data';
 import {
   parseSimulationTable,
@@ -137,6 +141,20 @@ function rewritten(result: DocumentTransformResult) {
   return { html: result.html, outcome: rest, simulation };
 }
 
+/**
+ * Remove exactly the one marker the step wrote (string-exact), failing when
+ * the document does not hold exactly one.
+ *
+ * @param html The simulated document.
+ * @param markerId The id the step was given.
+ */
+function stripSimulationMarker(html: string, markerId: string): string {
+  const tag = `<meta name="${SIMULATION_MARKER_META_NAME}" content="v1 delay_js=simulated id=${markerId}">`;
+  const at = html.indexOf(tag);
+  if (at < 0 || html.indexOf(tag, at + 1) >= 0) throw new Error('not exactly one marker written');
+  return html.slice(0, at) + html.slice(at + tag.length);
+}
+
 /** The rows WP Rocket served with no stored rows: O1's oracle cases. */
 const O1_ROWS = TABLE.rows.filter((row) => row.rows.length === 0);
 
@@ -168,6 +186,29 @@ describe.each(ENGINES)('O1 — %s engine', (_engine, run) => {
       expect(real.simulation).toBeUndefined();
       expect(simulated.simulation).toMatchObject({ feature: 'delay_js' });
     }
+  });
+
+  it('with a marker id: the page minus exactly the marker it wrote is the served page', () => {
+    const markerId = '0123456789abcdef0123456789abcdef';
+    let marked = 0;
+    for (const row of O1_ROWS) {
+      for (const set of [EMPTY_EXCLUSION_SET, SET_MATRIX[1]]) {
+        if (set === undefined) continue;
+        const simulate = { ...simulationInput(row), markerId };
+        const simulated = rewritten(run({ html: row.html, set, budgetMs: BUDGET_MS, simulate }));
+        const real = rewritten(run({ html: row.served, set, budgetMs: BUDGET_MS }));
+        if (simulated.simulation?.state !== 'simulated') {
+          expect(simulated.simulation).not.toHaveProperty('markerId');
+          expect(simulated.html === real.html, row.id).toBe(true);
+          continue;
+        }
+        expect(simulated.simulation.markerId).toBe(markerId);
+        const stripped = stripSimulationMarker(simulated.html, markerId);
+        expect(stripped === real.html, `${row.id} × ${JSON.stringify(set.rows)}`).toBe(true);
+        marked++;
+      }
+    }
+    expect(marked).toBeGreaterThan(30);
   });
 
   it('disable arm: the real Delay-on page with Delay JS disabled drops the sentinels', () => {

@@ -2,11 +2,14 @@
  * The background's simulation input sources: the packaged data file (read
  * through the extension's own URL — never a `?url` asset import, which
  * would share the Known Conflicts seed's bundled asset name) as the
- * runtime source; every other source keeps its inert default until it
- * lands.
+ * runtime source, and the marker id drawn from `crypto.getRandomValues`
+ * and remembered in the tab's marker memo before the document is released;
+ * every other source keeps its inert default until it lands.
  */
 import type { Logger } from '../../lib/logger';
 import { createPackagedRuntimeSource } from '../../lib/exclusion-session/packaged-simulation-data';
+import { createMarkerIdSource } from '../../lib/exclusion-session/simulation-marker-memo';
+import { rememberSimulationMarker } from '../../lib/storage/simulation-markers';
 import {
   INERT_SIMULATION_SOURCES,
   type SimulationSources
@@ -28,6 +31,10 @@ export function createSimulationSources(log: Pick<Logger, 'error'>): SimulationS
       url: browser.runtime.getURL(`/${SIMULATION_DATA_PATH}` as const),
       sha256: webSha256Hex,
       log
+    }),
+    markerId: createMarkerIdSource({
+      fill: (bytes) => crypto.getRandomValues(bytes),
+      remember: rememberSimulationMarker
     })
   };
 }

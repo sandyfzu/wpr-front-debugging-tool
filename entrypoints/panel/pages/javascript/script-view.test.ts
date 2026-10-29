@@ -17,6 +17,7 @@ import {
   codeCaption,
   codeToggleLabel,
   collapsedPreview,
+  delaySummaryBadge,
   countLines,
   estimateRowSize,
   expandedCutNote,
@@ -42,6 +43,14 @@ function script(overrides: Partial<JsScriptResource> = {}): JsScriptResource {
     ...overrides
   };
 }
+
+describe('delaySummaryBadge', () => {
+  it('served, simulated (never "Not detected"), absent', () => {
+    expect(delaySummaryBadge(true, false)).toEqual({ label: 'Detected', kind: 'ok' });
+    expect(delaySummaryBadge(false, true)).toEqual({ label: 'Simulated', kind: 'neutral' });
+    expect(delaySummaryBadge(false, false)).toEqual({ label: 'Not detected', kind: 'neutral' });
+  });
+});
 
 describe('scriptStateBadges', () => {
   it.each([

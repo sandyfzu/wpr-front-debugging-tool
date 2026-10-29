@@ -40,6 +40,9 @@ import {
   SESSION_STEP_TIMEOUTS_MS
 } from './timeouts';
 import { simulateDelayJs } from '../wp-rocket-simulation/delay-js-forward';
+import type { SimulationMarkerEntry } from '../storage/simulation-markers';
+import { createMarkerIdSource } from './simulation-marker-memo';
+import type { SimulationSources } from './simulation-sources';
 
 const TAB = 3;
 const ORIGIN = 'https://site.test';
@@ -1872,6 +1875,71 @@ describe('host — simulating sessions', () => {
       document: { outcome: 'rewritten' }
     });
     expect(touched).toEqual([]);
+  });
+
+  /** Sources with the injected runtime and the given marker id source. */
+  const markedSources = (markerId: SimulationSources['markerId']): SimulationSources => ({
+    runtime: () => Promise.resolve({ ok: true, package: PACKAGE }),
+    list: (_version, bundledRows) =>
+      Promise.resolve({ listRows: bundledRows, listSource: 'bundled', listMiss: 'never-fetched' }),
+    markerId,
+    csp: () => undefined
+  });
+
+  it('releases a simulated page only once its marker id is in the memo, and the page carries it', async () => {
+    const written: SimulationMarkerEntry[] = [];
+    let finishWrite: () => void = () => undefined;
+    const r = rig({
+      simulation: markedSources(
+        createMarkerIdSource({
+          fill: (bytes) => bytes.fill(0xab),
+          remember: (_tabId, entry) =>
+            new Promise((resolve) => {
+              finishWrite = () => {
+                written.push(entry);
+                resolve(undefined);
+              };
+            })
+        })
+      )
+    });
+    await seedSimulating();
+    let body: Uint8Array | null | undefined;
+    const rewrite = r.host.rewriteDocument(doc()).then((value) => {
+      body = value;
+    });
+    await flush();
+    // The memo write is pending: the backend has nothing to release yet.
+    expect(body).toBeUndefined();
+    finishWrite();
+    await rewrite;
+    const markerId = 'ab'.repeat(16);
+    expect(written).toEqual([{ markerId, origin: ORIGIN, features: ['delay_js'] }]);
+    expect(new TextDecoder().decode(body ?? new Uint8Array())).toContain(
+      `<meta name="wpr-fdt-simulation" content="v1 delay_js=simulated id=${markerId}">`
+    );
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'rewritten', simulation: { state: 'simulated', markerId } }
+    });
+  });
+
+  it('serves the page unmodified when the marker memo cannot be written', async () => {
+    const r = rig({
+      simulation: markedSources(
+        createMarkerIdSource({
+          fill: (bytes) => bytes.fill(1),
+          remember: () => Promise.reject(new Error('session storage quota'))
+        })
+      )
+    });
+    await seedSimulating();
+    await expect(r.host.rewriteDocument(doc())).resolves.toBeNull();
+    await flush();
+    expect(logged(r.log, 'error', /Simulation inputs could not be prepared/)).toBe(true);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'engine-failed' }
+    });
   });
 
   it('logs a preparation failure (not an engine one) and serves unchanged when a source throws (engine-failed)', async () => {

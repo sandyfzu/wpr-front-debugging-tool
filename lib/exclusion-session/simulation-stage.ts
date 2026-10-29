@@ -189,8 +189,9 @@ function simulationStep(
 }
 
 /**
- * The marker step: write the marker when a step simulated, and name its id
- * on the simulated reports only when it was written.
+ * The marker step: remove every served marker, write this document's when
+ * a step simulated (naming the simulated features), and name its id on the
+ * simulated reports only when it was written.
  *
  * @param input The simulation input (its marker id).
  */
@@ -198,7 +199,9 @@ function markerStep(
   input: DocumentSimulationInput
 ): PreExclusionStage<DocumentSimulationReport>['finish'] {
   return (html, reports) => {
-    const simulated = reports.some((report) => report.state === 'simulated');
+    const simulated = reports
+      .filter((report) => report.state === 'simulated')
+      .map((report) => report.feature);
     const marker = writeSimulationMarker(html, input.markerId, simulated);
     const markerId = input.markerId;
     if (!marker.written || markerId === undefined) return { html: marker.html, reports };
