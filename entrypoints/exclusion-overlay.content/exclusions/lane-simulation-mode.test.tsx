@@ -3,8 +3,8 @@
  * (unavailable ones dimmed, the reason said; a no-op Disabled said, never
  * dimmed), the replaced-mode note, focus kept across state changes, the
  * admin-screen warning that never blocks, the kept-simulation note, and the
- * simulated page's count, version and list lines — then the Defer JS and
- * LazyLoad lanes' own options, notes and lines.
+ * simulated page's count, version and list lines and its limits disclosure
+ * — then the Defer JS and LazyLoad lanes' own options, notes and lines.
  */
 import { createHash } from 'node:crypto';
 import { createRoot, createSignal } from 'solid-js';
@@ -21,6 +21,7 @@ import {
   lazyloadSimulatedReport,
   simulatedReport
 } from '../../../lib/messaging/exclusion-simulation.fixtures';
+import type { DelaySimulationReport } from '../../../lib/messaging/exclusion-simulation';
 import type { SimulateSpec } from '../../../lib/wp-rocket-simulation/spec';
 import type { VirtualizerFactory } from '../../../components/ui/virtual-list';
 import { createOverlayController, type OverlayController } from '../controller';
@@ -36,13 +37,15 @@ import { Lane } from './lane';
 
 const PAGE = 'https://example.com/';
 
-/** The note a lane whose simulation applied carries (LazyLoad adds its row scope). */
-const SITE_NOTE =
-  'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.';
-const SITE_NOTE_LAZYLOAD =
-  'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).';
-/** Any form of that note. */
-const ANY_SITE_NOTE = /site’s own WP Rocket exclusions/;
+/** The version-line tail every lane whose simulation applied carries (the site-exclusions note in short). */
+const SITE_TAIL = ' · without the site’s own exclusions';
+/** Any form of the site-exclusions note (the banner's sentence or the lane's tail). */
+const ANY_SITE_NOTE = /site’s own (WP Rocket )?exclusions/;
+/** The banner's full sentence: never on a lane. */
+const FULL_SITE_NOTE = /site’s own WP Rocket exclusions aren’t included/;
+
+/** The lane's limits disclosure toggle, by its "N limit(s)" name. */
+const limitsToggle = (): HTMLElement => screen.getByRole('button', { name: /^\d+ limits?$/ });
 const SIMULATE: SimulateSpec = { features: ['delay_js'] };
 
 const noRows: VirtualizerFactory = () => ({
@@ -313,18 +316,12 @@ describe('Delay JS lane mode control', () => {
     expect(screen.getByText(DELAY_MODE_COPY.blocks.checking)).toBeTruthy();
   });
 
-  it('counts a simulated page’s scripts and names the version and the list', async () => {
-    const digest = createHash('sha256').update(PAGE, 'utf8').digest('hex');
-    const report: TransformReport = {
-      feature: 'delay_js',
-      featureWide: false,
-      candidates: 4,
-      rewritten: 1,
-      regionRemovals: 0,
-      matchedRows: [{ row: 'gtag', rowKind: 'pattern', matches: 1 }],
-      unmatchedRows: []
-    };
-    const session: ActiveExclusionSession = {
+  /** A rewritten document of this page carrying the given Delay JS simulation and lane report. */
+  function delaySession(
+    simulation: DelaySimulationReport,
+    report: TransformReport
+  ): ActiveExclusionSession {
+    return {
       state: 'active',
       origin: 'https://example.com',
       set: { ...EMPTY_EXCLUSION_SET, rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['gtag'] } },
@@ -333,10 +330,10 @@ describe('Delay JS lane mode control', () => {
       document: {
         outcome: 'rewritten',
         reports: [report],
-        simulation: simulatedReport(),
+        simulation,
         served: {
           urlPath: PAGE,
-          urlDigest: digest,
+          urlDigest: createHash('sha256').update(PAGE, 'utf8').digest('hex'),
           token: 't',
           order: 1,
           receivedAt: 40,
@@ -346,13 +343,55 @@ describe('Delay JS lane mode control', () => {
         }
       }
     };
+  }
+
+  /** A Delay JS lane report restoring one of four scripts. */
+  const delayReport: TransformReport = {
+    feature: 'delay_js',
+    featureWide: false,
+    candidates: 4,
+    rewritten: 1,
+    regionRemovals: 0,
+    matchedRows: [{ row: 'gtag', rowKind: 'pattern', matches: 1 }],
+    unmatchedRows: []
+  };
+
+  it('says a stopped Delay JS pattern as a visible lane line, never a limit', async () => {
+    const stopped: DelaySimulationReport = {
+      ...simulatedReport(),
+      delayed: 0,
+      regexLimitHit: true
+    };
+    delete (stopped as { undetermined?: number }).undetermined;
+    mount(
+      await ready(
+        { ...NO_PAGE_EVIDENCE, footprints: true },
+        { status: delaySession(stopped, delayReport) }
+      ),
+      delayReport
+    );
+    const line = screen.getByText(
+      'Delay JS’s pattern stops here (PHP backtracking limit): nothing delayed, as on the site.'
+    );
+    expect(line.className).toBe('xo-lane-caveat');
+    expect(screen.queryByRole('button', { name: /^\d+ limits?$/ })).toBeNull();
+  });
+
+  it('counts a simulated page’s scripts and names the version and the list', async () => {
+    const report = delayReport;
+    const session = delaySession(simulatedReport(), report);
     mount(await ready({ ...NO_PAGE_EVIDENCE, footprints: true }, { status: session }), report);
     expect(screen.getByText('4 delayed by the simulation · 1 excluded by your rows')).toBeTruthy();
     expect(screen.queryByText(/delayed scripts restored/)).toBeNull();
-    expect(screen.getByText('Simulated · WP Rocket 3.24 (the site serves 3.12.1)')).toBeTruthy();
-    expect(screen.getByText(SITE_NOTE)).toBeTruthy();
+    expect(
+      screen.getByText(`Simulated · WP Rocket 3.24 (the site serves 3.12.1)${SITE_TAIL}`)
+    ).toBeTruthy();
+    expect(screen.queryByText(FULL_SITE_NOTE)).toBeNull();
     expect(screen.getByText('Exclusion list: latest (fetched 3 h ago)')).toBeTruthy();
-    expect(screen.getByText(/1 left as served: WP Rocket decides it/)).toBeTruthy();
+    // The scripts left as served are an outcome: a visible line, no disclosure.
+    const line = screen.getByText('1 left as served: WP Rocket decides it with random ids.');
+    expect(line.className).toBe('xo-lane-caveat');
+    expect(screen.queryByRole('button', { name: /^\d+ limits?$/ })).toBeNull();
     expect(radio('Simulated').checked).toBe(true);
   });
 });
@@ -425,9 +464,11 @@ describe('Defer JS lane mode control', () => {
         '4 deferred and 1 inline wrapped by the simulation · 1 excluded by your rows'
       )
     ).toBeTruthy();
-    expect(screen.getByText('Simulated · WP Rocket 3.24')).toBeTruthy();
-    expect(screen.getByText(SITE_NOTE)).toBeTruthy();
+    expect(screen.getByText(`Simulated · WP Rocket 3.24${SITE_TAIL}`)).toBeTruthy();
+    expect(screen.queryByText(FULL_SITE_NOTE)).toBeNull();
     expect(screen.getByText(/^Exclusion list: bundled with WP Rocket 3.24/)).toBeTruthy();
+    // Defer JS has no lane limits: no disclosure.
+    expect(screen.queryByRole('button', { name: /^\d+ limits?$/ })).toBeNull();
     expect(radio('Simulated').checked).toBe(true);
     expect(radio('Simulated').disabled).toBe(false);
   });
@@ -499,7 +540,8 @@ describe('LazyLoad lane mode control', () => {
     expect(screen.queryByText(LAZYLOAD_MODE_COPY.adminScreen)).toBeNull();
   });
 
-  it('shows the simulation’s counts, version, script address, fallbacks and every-page caveats', async () => {
+  /** The simulated LazyLoad lane, mounted with rows that restored 2 images. */
+  async function mountSimulatedLazyload(): Promise<void> {
     const report: TransformReport = {
       feature: 'lazyload',
       featureWide: false,
@@ -514,33 +556,57 @@ describe('LazyLoad lane mode control', () => {
       lazyload: { ...NO_PAGE_EVIDENCE, footprints: true }
     });
     mount(controller, report, undefined, 'lazyload');
+  }
+
+  it('shows the simulation’s counts and version, its limits collapsed', async () => {
+    await mountSimulatedLazyload();
     expect(
       screen.getByText(
         '5 images, 1 picture and 2 background images lazy loaded by the simulation · 2 excluded by your rows'
       )
     ).toBeTruthy();
     expect(screen.queryByText(/lazy images restored/)).toBeNull();
-    expect(screen.getByText('Simulated · WP Rocket 3.24')).toBeTruthy();
-    expect(screen.getByText(SITE_NOTE_LAZYLOAD)).toBeTruthy();
+    expect(screen.getByText(`Simulated · WP Rocket 3.24${SITE_TAIL}`)).toBeTruthy();
+    // The long note is the banner's alone now.
+    expect(screen.queryByText(FULL_SITE_NOTE)).toBeNull();
     // No exclusion list: LazyLoad's exclusions ship with the version.
     expect(screen.queryByText(/^Exclusion list:/)).toBeNull();
-    const script = screen.getByText(/^LazyLoad script:/);
-    expect(script.querySelector('code')?.textContent).toBe(
-      'https://example.com/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js'
-    );
-    expect(
-      screen.getByText(
-        'This page has several </body> tags: LazyLoad’s scripts went before the last one.'
-      ).className
-    ).toBe('xo-lane-caveat');
-    // The rows restored images: their noscript copies stay, unlike on the site.
-    expect(
-      screen.getByText('Images your rows restore keep their noscript copy, unlike on the site.')
-        .className
-    ).toBe('xo-lane-caveat');
-    expect(screen.getByText(/^WP Rocket skips lazy loading above-the-fold/).className).toBe(
-      'xo-lane-hint'
-    );
+    const toggle = limitsToggle();
+    expect(toggle.classList.contains('xo-disclosure')).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.hasAttribute('aria-controls')).toBe(false);
+    expect(toggle.querySelector('.xo-chevron')?.getAttribute('aria-hidden')).toBe('true');
+    // Script line + one fallback + the noscript note + 3 every-page caveats.
+    expect(toggle.textContent).toBe('6 limits');
+    expect(screen.queryByText(/^Script address guessed/)).toBeNull();
+    expect(document.querySelector('.xo-lane-limit')).toBeNull();
+  });
+
+  it('opens in place onto exactly the page’s limit lines, and closes again', async () => {
+    await mountSimulatedLazyload();
+    const toggle = limitsToggle();
+    toggle.focus();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const list = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    expect(list?.tagName.toLowerCase()).toBe('ul');
+    const URL =
+      'https://example.com/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js';
+    expect([...(list?.querySelectorAll('li') ?? [])].map((item) => item.textContent)).toEqual([
+      `Script address guessed from WordPress’s default folders; your folders or CDN may differ: ${URL}`,
+      'Several </body> tags: LazyLoad’s scripts went before the last.',
+      // The rows restored images: their noscript copies stay, unlike on the site.
+      'Images your rows restore keep their noscript copy, unlike on the site.',
+      'Style and scripts placed where most themes print them.',
+      'Above-the-fold and LCP images aren’t skipped (needs WP Rocket’s site data).',
+      'Site filters, options and DONOTLAZYLOAD aren’t applied.'
+    ]);
+    expect(list?.querySelector('code')?.textContent).toBe(URL);
+    expect(document.activeElement).toBe(toggle);
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.hasAttribute('aria-controls')).toBe(false);
+    expect(document.querySelector('.xo-lane-limit')).toBeNull();
     expect(radio('Simulated').checked).toBe(true);
     expect(radio('Simulated').disabled).toBe(false);
   });
@@ -590,6 +656,8 @@ describe('site-exclusions note on a mixed page', () => {
     expect(screen.queryByText(ANY_SITE_NOTE)).toBeNull();
     cleanup();
     mount(controller);
-    expect(screen.getByText(SITE_NOTE)).toBeTruthy();
+    expect(
+      screen.getByText(`Simulated · WP Rocket 3.24 (the site serves 3.12.1)${SITE_TAIL}`)
+    ).toBeTruthy();
   });
 });

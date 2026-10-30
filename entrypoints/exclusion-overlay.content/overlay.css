@@ -687,7 +687,8 @@
 }
 
 /* A URL in a lane hint is information: neutral ground, never the error tint. */
-.xo-lane-hint .xo-code {
+.xo-lane-hint .xo-code,
+.xo-lane-limit .xo-code {
   background: var(--surface-3);
   color: var(--fg-secondary);
 }
@@ -704,6 +705,40 @@
   font-size: 11px;
   color: var(--fg-secondary);
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* A simulated lane's limits disclosure: a compact toggle under its version
+ * line, opening in place onto one line per limit. */
+.xo-lane-limits {
+  align-self: flex-start;
+  min-height: 24px;
+  margin-top: 2px;
+  padding: 0 8px;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.xo-lane-limit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin-top: 2px;
+  /* Revealed content: a fade on insert (reduced motion collapses it). */
+  transition: opacity var(--motion-base) var(--ease-entrance);
+}
+
+@starting-style {
+  .xo-lane-limit-list {
+    opacity: 0;
+  }
+}
+
+.xo-lane-limit {
+  font-size: 11px;
+  color: var(--fg-secondary);
+  /* Page-derived URLs (LazyLoad's script address) wrap instead of widening the lane. */
   overflow-wrap: anywhere;
 }
 

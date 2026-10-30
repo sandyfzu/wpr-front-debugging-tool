@@ -58,6 +58,7 @@ import {
   type WprSettings
 } from '../helpers/site-wpcli';
 import { clearWidgetMap, STRIP_HOST } from '../helpers/strip-pill';
+import type { LazyloadAssetsUrlSource } from '../../../lib/wp-rocket-simulation/spec';
 
 /** The suite's page slug (its URL path). */
 const SLUG = 'fdt-e2e-lazyload';
@@ -116,14 +117,33 @@ const WORDS = {
   search:
     'WP Rocket never lazy loads images on search results, so LazyLoad can’t be simulated here.',
   preview: 'WP Rocket never lazy loads images on a preview, so LazyLoad can’t be simulated here.',
+  /** The banner's site-exclusions sentence: never a lane line (the version line says it in short). */
   siteExclusions:
     'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).',
+  versionTail: ' · without the site’s own exclusions',
+  /** The lane's every-page limits (behind its disclosure). */
+  everyPageLimits: [
+    'Style and scripts placed where most themes print them.',
+    'Above-the-fold and LCP images aren’t skipped (needs WP Rocket’s site data).',
+    'Site filters, options and DONOTLAZYLOAD aren’t applied.'
+  ],
   badge: 'Simulated in this tab',
   stripHint: 'Lazyload Images simulated',
   panelNote:
     "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included.",
   panelRow: 'Lazyloaded (Simulated)'
 } as const;
+
+/** The lane's script-address line lead, by where the address came from. */
+const INFERRED_LEAD =
+  /^Script address inferred from this page; your plugin folder or CDN may differ: /;
+const SCRIPT_LEADS: Readonly<Record<LazyloadAssetsUrlSource, RegExp>> = {
+  beacon: /^Script address from WP Rocket’s beacon tag; a CDN may serve another: /,
+  'plugin-asset': INFERRED_LEAD,
+  'theme-asset': INFERRED_LEAD,
+  default:
+    /^Script address guessed from WordPress’s default folders; your folders or CDN may differ: /
+};
 
 /** The settings found before the suite wrote any (restored after every leg and in `afterAll`). */
 let found: WprSettings | null = null;
@@ -377,12 +397,29 @@ test.describe('LazyLoad simulation over real sessions', () => {
       await expect(simulatedChip(page, 'header')).toHaveText('Simulated');
       const banners = await readBanners(page);
       expect(banners[0]).toMatchObject({ title: 'Applied', body: WORDS.appliedBody });
-      expect(await lazyloadLaneLines(page)).toEqual(
+      const laneLines = await lazyloadLaneLines(page);
+      expect(laneLines).toEqual(
         expect.arrayContaining([
-          `${String(report.images)} images, 1 picture and 1 background image lazy loaded by the simulation · 0 excluded by your rows`,
-          WORDS.siteExclusions
+          `${String(report.images)} images, 1 picture and 1 background image lazy loaded by the simulation · 0 excluded by your rows`
         ])
       );
+      expect(laneLines.filter((line) => line.endsWith(WORDS.versionTail))).toHaveLength(1);
+      expect(laneLines).not.toContain(WORDS.siteExclusions);
+      // The lane's limits: collapsed, then exactly the page's lines, its script address first.
+      const toggle = lane(page, LAZYLOAD).getByRole('button', { name: /^\d+ limits?$/ });
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(lane(page, LAZYLOAD).locator('.xo-lane-limit')).toHaveCount(0);
+      await toggle.click();
+      const limits = await lane(page, LAZYLOAD).locator('.xo-lane-limit').allTextContents();
+      expect(limits).toEqual(expect.arrayContaining([...WORDS.everyPageLimits]));
+      const source = report.assetsUrlSource;
+      if (source === undefined)
+        throw new Error('The simulated report names no script address source');
+      expect(limits[0]).toMatch(SCRIPT_LEADS[source]);
+      await expect(toggle).toHaveText(
+        `${String(limits.length)} ${limits.length === 1 ? 'limit' : 'limits'}`
+      );
+      await toggle.click();
       await expect(lazyloadModeGroup(page).getByRole('radio', { name: 'Simulated' })).toBeChecked();
 
       // The detection widget: the verified marker as the LazyLoad row's modifier + the tab hint.

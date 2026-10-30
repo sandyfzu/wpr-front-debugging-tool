@@ -5,7 +5,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { DelaySimulationReport } from '../../lib/messaging/exclusion-simulation';
-import { simulatedReport } from '../../lib/messaging/exclusion-simulation.fixtures';
+import {
+  deferSimulatedReport,
+  lazyloadSimulatedReport,
+  simulatedReport
+} from '../../lib/messaging/exclusion-simulation.fixtures';
 import {
   LATEST_LIST_MISSES,
   SIMULATION_CSP_LIMITS,
@@ -17,6 +21,7 @@ import {
   DELAY_MODE_COPY,
   SIMULATED_INDICATOR,
   SIMULATION_LANE_COPY,
+  simulationLaneLimits,
   simulationLimitLines,
   simulationListCopy,
   simulationOutcomeCopy,
@@ -183,9 +188,9 @@ describe('simulation outcome words', () => {
 
   it('lists the CSP limits, an unevaluated CSP and the caveats of a simulated page only', () => {
     expect(simulationLimitLines(simulatedReport())).toEqual([
-      'This page’s Content Security Policy blocks eval: event handlers of delayed elements fail here as they would on the site.',
-      'This page’s Content Security Policy blocks inline scripts: delayed inline scripts fail here as they would on the site.',
-      'This page serves WP Rocket’s combined JavaScript files: with Delay JS on, WP Rocket would serve them uncombined, which the simulation can’t reproduce.'
+      'CSP blocks eval: delayed elements’ event handlers fail, as on the site.',
+      'CSP blocks inline scripts: delayed inline scripts fail, as on the site.',
+      'Combined JS served here; with Delay JS, WP Rocket serves it uncombined, which the simulation can’t.'
     ]);
     const all = simulationLimitLines({
       ...simulatedReport(),
@@ -199,7 +204,10 @@ describe('simulation outcome words', () => {
       cspUnavailable: 'oversized'
     };
     expect(simulationLimitLines(unevaluated)).toEqual([
-      'CSP not evaluated: this page’s Content Security Policy is too large to check, so scripts it blocks aren’t named.'
+      'CSP not evaluated (too large to check): Delay JS scripts it blocks aren’t named.'
+    ]);
+    expect(simulationLimitLines({ ...unevaluated, cspUnavailable: 'unreadable' })).toEqual([
+      'CSP not evaluated (unreadable): Delay JS scripts it blocks aren’t named.'
     ]);
     expect(simulationLimitLines(report('csp-blocked'))).toEqual([]);
   });
@@ -242,19 +250,46 @@ describe('simulation outcome words', () => {
     expect(SIMULATION_LANE_COPY.line(5, 2)).toBe(
       '5 delayed by the simulation · 2 excluded by your rows'
     );
-    expect(SIMULATION_LANE_COPY.version(simulatedReport())).toBe(
-      'Simulated · WP Rocket 3.24 (the site serves 3.12.1)'
-    );
-    expect(SIMULATION_LANE_COPY.version({ ...simulatedReport(), siteVersion: '3.24' })).toBe(
-      'Simulated · WP Rocket 3.24'
-    );
     expect(SIMULATION_LANE_COPY.undetermined(1)).toBe(
-      '1 left as served: WP Rocket decides it with random ids, so the simulation can’t.'
+      '1 left as served: WP Rocket decides it with random ids.'
     );
     expect(SIMULATION_LANE_COPY.undetermined(2)).toBe(
-      '2 left as served: WP Rocket decides them with random ids, so the simulation can’t.'
+      '2 left as served: WP Rocket decides them with random ids.'
     );
-    expect(SIMULATION_LANE_COPY.regexLimit).toContain('nothing is delayed — as on the site');
+    expect(SIMULATION_LANE_COPY.regexLimit).toBe(
+      'Delay JS’s pattern stops here (PHP backtracking limit): nothing delayed, as on the site.'
+    );
+    expect(SIMULATION_LANE_COPY.limits(1)).toBe('1 limit');
+    expect(SIMULATION_LANE_COPY.limits(3)).toBe('3 limits');
+  });
+
+  it('ends every simulated lane’s version line with the site-exclusions note in short', () => {
+    const TAIL = ' · without the site’s own exclusions';
+    expect(SIMULATION_LANE_COPY.version(simulatedReport())).toBe(
+      `Simulated · WP Rocket 3.24 (the site serves 3.12.1)${TAIL}`
+    );
+    for (const report of [
+      { ...simulatedReport(), siteVersion: '3.24' },
+      deferSimulatedReport(),
+      lazyloadSimulatedReport()
+    ])
+      expect(SIMULATION_LANE_COPY.version(report)).toBe(`Simulated · WP Rocket 3.24${TAIL}`);
+    expect(
+      SIMULATION_LANE_COPY.version({ ...lazyloadSimulatedReport(), siteVersion: '3.12.1' })
+    ).toBe(`Simulated · WP Rocket 3.24 (the site serves 3.12.1)${TAIL}`);
+  });
+
+  it('puts nothing of Delay JS or Defer JS behind a lane disclosure', () => {
+    // Scripts left as served and a stopped pattern are outcomes (visible lane lines), never limits.
+    expect(simulationLaneLimits(simulatedReport(), 0)).toEqual([]);
+    const stopped: DelaySimulationReport = {
+      ...simulatedReport(),
+      delayed: 0,
+      regexLimitHit: true
+    };
+    delete (stopped as { undetermined?: number }).undetermined;
+    expect(simulationLaneLimits(stopped, 0)).toEqual([]);
+    expect(simulationLaneLimits(deferSimulatedReport(), 2)).toEqual([]);
   });
 });
 
@@ -309,7 +344,7 @@ describe('owner words: the latest-list misses and the inline-after-fallback limi
         caveats: undefined
       })
     ).toEqual([
-      'If WP Rocket switched to its inline fallback on an earlier page of this tab, this page’s CSP blocks those inline scripts — as it would live.'
+      'If Delay JS switched to inline copies on an earlier page in this tab, CSP blocks them here, as on the site.'
     ]);
   });
 });

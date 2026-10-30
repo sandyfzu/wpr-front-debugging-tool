@@ -628,8 +628,8 @@ describe('lane counts and hints (K.5a.2)', () => {
     expect(LANE_COPY.lazyRender.rowHint).toBe(
       `Text, matched against the element’s opening tag ${ascii}`
     );
-    expect(LANE_COPY.lazyload.rowHint).toMatch(
-      /image’s attributes; upper and lower case must match/
+    expect(LANE_COPY.lazyload.rowHint).toBe(
+      'Text matched against image attributes · case-sensitive · images only'
     );
     for (const lane of ['delayJs', 'deferJs', 'lazyload', 'lazyRender'] as const)
       expect(LANE_COPY[lane].rowHint).not.toMatch(/case-(in)?sensitively/);

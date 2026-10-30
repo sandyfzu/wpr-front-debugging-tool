@@ -203,8 +203,8 @@ test.describe('Delay JS simulation on fixture pages', () => {
       });
       expect(await bannerNotes(page)).toEqual(
         expect.arrayContaining([
-          'This page’s Content Security Policy blocks eval: event handlers of delayed elements fail here as they would on the site.',
-          'This page’s Content Security Policy blocks data: scripts: WP Rocket’s runtime falls back to inline copies of the delayed scripts, as it would on the site.'
+          'CSP blocks eval: delayed elements’ event handlers fail, as on the site.',
+          'CSP blocks data: scripts: Delay JS falls back to inline copies, as on the site.'
         ])
       );
       // Eval refused: the runtime could not take the handler over, as on the site.
@@ -230,7 +230,7 @@ test.describe('Delay JS simulation on fixture pages', () => {
       expect(report).toMatchObject({ state: 'simulated', cspUnavailable: 'oversized' });
       expect(report.cspLimits).toBeUndefined();
       expect(await bannerNotes(page)).toContain(
-        'CSP not evaluated: this page’s Content Security Policy is too large to check, so scripts it blocks aren’t named.'
+        'CSP not evaluated (too large to check): Delay JS scripts it blocks aren’t named.'
       );
       await page.getByRole('button', { name: 'Stop' }).click();
     } finally {

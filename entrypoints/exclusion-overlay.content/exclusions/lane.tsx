@@ -39,11 +39,7 @@ import {
   trimExclusionRow
 } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
-import type {
-  DelaySimulationReport,
-  DocumentSimulationReport,
-  LazyloadSimulationReport
-} from '../../../lib/messaging/exclusion-simulation';
+import type { DocumentSimulationReport } from '../../../lib/messaging/exclusion-simulation';
 import { createLogger } from '../../../lib/logger';
 import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
 import {
@@ -58,18 +54,18 @@ import {
   ROW_NOTE_COPY,
   SIMULATION_LANE_COPY,
   appliedRowWarningNote,
-  lazyloadLaneLines,
+  simulationLaneLimits,
   simulationListCopy,
-  siteExclusionsNote,
   rowWarningNote,
   type LanePageCopy,
-  type NoteText,
   type RowRef
 } from '../copy';
 import { countNoun } from '../../../utils/format-count';
 import type { OverlayController, SettledPasteOutcome } from '../controller';
 import { capText } from '../../../utils/cap-text';
 import { CopyAll } from './copy-all';
+import { LaneLimits } from './lane-limits';
+import { NoteRuns } from './note-runs';
 import { SimulationModeControl, SimulationModeNotes } from './simulation-mode-control';
 import { SIMULATION_LANES, isSimulationLane, type SimulationLane } from './simulation-mode';
 import { simulationReports } from '../session/session-view';
@@ -191,21 +187,24 @@ function listLine(simulation: DocumentSimulationReport, now: number): string | n
 }
 
 /**
- * The LazyLoad report's own facts, or null for another feature.
+ * Whether WP Rocket's own Delay JS pattern stopped on the page (an outcome
+ * the lane shows, never a limit).
  *
  * @param simulation The lane's simulation report.
  */
-function lazyloadFacts(simulation: DocumentSimulationReport): LazyloadSimulationReport | null {
-  return simulation.feature === 'lazyload' ? simulation : null;
+function regexLimitHit(simulation: DocumentSimulationReport): boolean {
+  return simulation.feature === 'delay_js' && simulation.regexLimitHit === true;
 }
 
 /**
- * The Delay JS report's own facts, or null for another feature.
+ * Delay JS's scripts left as served because WP Rocket decides them with
+ * random ids (an outcome the lane shows, never a limit).
  *
  * @param simulation The lane's simulation report.
+ * @returns The count (positive), else `undefined`.
  */
-function delayFacts(simulation: DocumentSimulationReport): DelaySimulationReport | null {
-  return simulation.feature === 'delay_js' ? simulation : null;
+function undeterminedScripts(simulation: DocumentSimulationReport): number | undefined {
+  return simulation.feature === 'delay_js' ? simulation.undetermined : undefined;
 }
 
 /**
@@ -476,42 +475,21 @@ export function Lane(props: LaneProps): JSX.Element {
                   {simulationCountLine(simulated(), props.report?.rewritten ?? 0)}
                 </span>
                 <span class="xo-lane-hint">{SIMULATION_LANE_COPY.version(simulated())}</span>
-                <span class="xo-lane-hint">{siteExclusionsNote([simulated().feature])}</span>
                 <Show when={listLine(simulated(), (props.now ?? Date.now)())}>
                   {(line) => <span class="xo-lane-hint">{line()}</span>}
                 </Show>
-                <Show when={lazyloadFacts(simulated())}>
-                  {(lazyload) => {
-                    const lines = createMemo(() =>
-                      lazyloadLaneLines(lazyload(), props.report?.rewritten ?? 0)
-                    );
-                    return (
-                      <>
-                        <Show when={lines().runtime}>
-                          {(runtime) => (
-                            <span class="xo-lane-hint">
-                              <NoteRuns note={runtime()} />
-                            </span>
-                          )}
-                        </Show>
-                        <For each={lines().caveats}>
-                          {(caveat) => <span class="xo-lane-caveat">{caveat}</span>}
-                        </For>
-                        <For each={lines().hints}>
-                          {(hint) => <span class="xo-lane-hint">{hint}</span>}
-                        </For>
-                      </>
-                    );
-                  }}
-                </Show>
-                <Show when={delayFacts(simulated())?.undetermined}>
+                <Show when={undeterminedScripts(simulated())}>
                   {(count) => (
                     <span class="xo-lane-caveat">{SIMULATION_LANE_COPY.undetermined(count())}</span>
                   )}
                 </Show>
-                <Show when={delayFacts(simulated())?.regexLimitHit}>
+                <Show when={regexLimitHit(simulated())}>
                   <span class="xo-lane-caveat">{SIMULATION_LANE_COPY.regexLimit}</span>
                 </Show>
+                <LaneLimits
+                  id={`${headingId()}-limits`}
+                  lines={simulationLaneLimits(simulated(), props.report?.rewritten ?? 0)}
+                />
               </>
             )}
           </Show>
@@ -733,21 +711,6 @@ function withCode(text: string): JSX.Element {
           <code class="xo-code">{part}</code>
         </Show>
       )}
-    </For>
-  );
-}
-
-/**
- * A note's runs: row texts as code (whatever characters they hold).
- *
- * @param props The note.
- */
-function NoteRuns(props: { readonly note: NoteText }): JSX.Element {
-  return (
-    <For each={props.note}>
-      {(segment) =>
-        typeof segment === 'string' ? segment : <code class="xo-code">{segment.code}</code>
-      }
     </For>
   );
 }

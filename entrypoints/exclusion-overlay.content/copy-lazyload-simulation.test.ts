@@ -1,7 +1,7 @@
 /**
  * The LazyLoad simulation's words (pinned so every change is deliberate):
- * its mode control, its lane lines (counts, script address, end-tag
- * fallbacks, every-page caveats), the banner's warnings (CSP, the caveats
+ * its mode control, its lane lines (counts, then the limits disclosure:
+ * script address, end-tag fallbacks, every-page caveats), the banner's warnings (CSP, the caveats
  * this page shows), its outcome banners, and the banners of three
  * features at once.
  */
@@ -17,8 +17,8 @@ import {
   DELAY_MODE_COPY,
   LAZYLOAD_MODE_COPY,
   SIMULATION_LANE_COPY,
-  lazyloadLaneLines,
   noteToText,
+  simulationLaneLimits,
   simulationLimitLines,
   simulationOutcomeCopy,
   siteExclusionsNote,
@@ -117,43 +117,81 @@ describe('LazyLoad mode words', () => {
 });
 
 describe('LazyLoad lane lines', () => {
+  /** The URL the fixture's runtime loads from. */
+  const URL =
+    'https://example.com/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js';
+  /** The inferred-address limit line (another plugin's or a theme's asset). */
+  const INFERRED_SCRIPT = `Script address inferred from this page; your plugin folder or CDN may differ: ${URL}`;
+  /** The guessed-address limit line (the fixture's source: WordPress's default folders). */
+  const GUESSED_SCRIPT = `Script address guessed from WordPress’s default folders; your folders or CDN may differ: ${URL}`;
+  /** The every-page caveats after it, in vocabulary order. */
+  const EVERY_PAGE = [
+    'Style and scripts placed where most themes print them.',
+    'Above-the-fold and LCP images aren’t skipped (needs WP Rocket’s site data).',
+    'Site filters, options and DONOTLAZYLOAD aren’t applied.'
+  ];
+
+  /** A lane's limits as plain text. */
+  function limitsText(report: LazyloadSimulationReport, restored = 0): string[] {
+    return simulationLaneLimits(report, restored).map(noteToText);
+  }
+
   it('counts images, pictures and background images, each agreeing with its count', () => {
     expect(SIMULATION_LANE_COPY.lazyloadLine(lazyloadSimulatedReport(), 3)).toBe(
       '5 images, 1 picture and 2 background images lazy loaded by the simulation · 3 excluded by your rows'
     );
-    expect(SIMULATION_LANE_COPY.lazyloadLine({ images: 1, pictures: 0, backgrounds: 1 }, 0)).toBe(
-      '1 image, 0 pictures and 1 background image lazy loaded by the simulation · 0 excluded by your rows'
+  });
+
+  it('leaves out the kinds it lazy loaded none of', () => {
+    const line = (images: number, pictures: number, backgrounds: number): string =>
+      SIMULATION_LANE_COPY.lazyloadLine({ images, pictures, backgrounds }, 0);
+    const TAIL = ' lazy loaded by the simulation · 0 excluded by your rows';
+    expect(line(43, 0, 0)).toBe(`43 images${TAIL}`);
+    expect(line(1, 0, 0)).toBe(`1 image${TAIL}`);
+    expect(line(43, 2, 0)).toBe(`43 images and 2 pictures${TAIL}`);
+    expect(line(1, 0, 1)).toBe(`1 image and 1 background image${TAIL}`);
+    expect(line(0, 1, 0)).toBe(`1 picture${TAIL}`);
+    expect(line(0, 0, 3)).toBe(`3 background images${TAIL}`);
+    expect(line(43, 2, 1)).toBe(`43 images, 2 pictures and 1 background image${TAIL}`);
+  });
+
+  it('says every kind when it lazy loaded nothing', () => {
+    expect(SIMULATION_LANE_COPY.lazyloadLine({ images: 0, pictures: 0, backgrounds: 0 }, 0)).toBe(
+      '0 images, 0 pictures and 0 background images lazy loaded by the simulation · 0 excluded by your rows'
     );
   });
 
-  it('names the script address as code, and where it came from', () => {
-    const lines = lazyloadLaneLines(lazyloadSimulatedReport(), 0);
-    expect(lines.runtime).toEqual([
-      'LazyLoad script: ',
-      {
-        code: 'https://example.com/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js'
-      },
-      ' (address WordPress’s default folders (nothing on this page shows the real one))'
+  it('says a script address guessed from WordPress’s defaults as the first limit, address as code', () => {
+    // The fixture's source: WordPress's default folders.
+    expect(simulationLaneLimits(lazyloadSimulatedReport(), 0)[0]).toEqual([
+      'Script address guessed from WordPress’s default folders; your folders or CDN may differ: ',
+      { code: URL }
     ]);
-    const source = (assetsUrlSource: LazyloadSimulationReport['assetsUrlSource']): string =>
-      noteToText(
-        lazyloadLaneLines({ ...lazyloadSimulatedReport(), assetsUrlSource }, 0).runtime ?? []
+  });
+
+  it('says a script address inferred from a plugin’s or theme’s asset as the first limit', () => {
+    for (const assetsUrlSource of ['plugin-asset', 'theme-asset'] as const) {
+      expect(limitsText({ ...lazyloadSimulatedReport(), assetsUrlSource })[0]).toBe(
+        INFERRED_SCRIPT
       );
-    expect(source('beacon')).toMatch(
-      /\(address from WP Rocket’s own beacon script on this page\)$/
+    }
+  });
+
+  it('says a beacon-given script address as a limit too (a CDN rewrite isn’t visible from it)', () => {
+    const lines = simulationLaneLimits(
+      { ...lazyloadSimulatedReport(), assetsUrlSource: 'beacon' },
+      0
     );
-    expect(source('plugin-asset')).toMatch(
-      /\(address worked out from another plugin’s files on this page\)$/
-    );
-    expect(source('theme-asset')).toMatch(
-      /\(address worked out from the theme’s files on this page\)$/
-    );
+    expect(lines[0]).toEqual([
+      'Script address from WP Rocket’s beacon tag; a CDN may serve another: ',
+      { code: URL }
+    ]);
+    expect(lines.slice(1).map(noteToText)).toEqual(EVERY_PAGE);
   });
 
   it('cuts a long script address (it comes from the page)', () => {
     const runtimeUrl = `https://example.com/${'a'.repeat(400)}/lazyload.min.js`;
-    const runtime = lazyloadLaneLines({ ...lazyloadSimulatedReport(), runtimeUrl }, 0).runtime;
-    const code = runtime?.[1];
+    const code = simulationLaneLimits({ ...lazyloadSimulatedReport(), runtimeUrl }, 0)[0]?.[1];
     expect(typeof code === 'object' && code.code.length).toBe(161);
     expect(typeof code === 'object' && code.code.endsWith('…')).toBe(true);
   });
@@ -161,10 +199,10 @@ describe('LazyLoad lane lines', () => {
   it('says no address when the report names none', () => {
     const withoutUrl: LazyloadSimulationReport = { ...lazyloadSimulatedReport() };
     delete (withoutUrl as { runtimeUrl?: string }).runtimeUrl;
-    expect(lazyloadLaneLines(withoutUrl, 0).runtime).toBeNull();
+    expect(limitsText(withoutUrl)).toEqual(EVERY_PAGE);
   });
 
-  it('words each end tag chosen among several, as a caveat of this page', () => {
+  it('words each end tag chosen among several, after the script line', () => {
     const report: LazyloadSimulationReport = {
       ...lazyloadSimulatedReport(),
       placement: {
@@ -173,17 +211,18 @@ describe('LazyLoad lane lines', () => {
         fallbacks: ['first-of-several-head-ends', 'last-of-several-body-ends']
       }
     };
-    expect(lazyloadLaneLines(report, 0).caveats).toEqual([
-      'This page has several </head> tags: LazyLoad’s style went before the first one.',
-      'This page has several </body> tags: LazyLoad’s scripts went before the last one.'
+    expect(limitsText(report)).toEqual([
+      GUESSED_SCRIPT,
+      'Several </head> tags: LazyLoad’s style went before the first.',
+      'Several </body> tags: LazyLoad’s scripts went before the last.',
+      ...EVERY_PAGE
     ]);
-    expect(lazyloadLaneLines(lazyloadSimulatedReport(), 0).caveats).toEqual([]);
   });
 
   it('says the restored images keep their noscript copy, only when rows restored some', () => {
     const NOTE = 'Images your rows restore keep their noscript copy, unlike on the site.';
-    expect(lazyloadLaneLines(lazyloadSimulatedReport(), 2).caveats).toEqual([NOTE]);
-    expect(lazyloadLaneLines(lazyloadSimulatedReport(), 0).caveats).not.toContain(NOTE);
+    expect(limitsText(lazyloadSimulatedReport(), 2)).toEqual([GUESSED_SCRIPT, NOTE, ...EVERY_PAGE]);
+    expect(limitsText(lazyloadSimulatedReport(), 0)).not.toContain(NOTE);
     const report: LazyloadSimulationReport = {
       ...lazyloadSimulatedReport(),
       placement: {
@@ -193,19 +232,17 @@ describe('LazyLoad lane lines', () => {
       }
     };
     // After the page's own placement caveat.
-    expect(lazyloadLaneLines(report, 1).caveats).toEqual([
-      'This page has several </head> tags: LazyLoad’s style went before the first one.',
-      NOTE
+    expect(limitsText(report, 1)).toEqual([
+      GUESSED_SCRIPT,
+      'Several </head> tags: LazyLoad’s style went before the first.',
+      NOTE,
+      ...EVERY_PAGE
     ]);
   });
 
-  it('says the every-page caveats in the lane, in vocabulary order', () => {
-    expect(lazyloadLaneLines(lazyloadSimulatedReport(), 0).hints).toEqual([
-      'LazyLoad’s style and scripts were placed where most themes print them; your theme may place them elsewhere.',
-      'LazyLoad’s script address was worked out from this page; your site’s plugin folder or CDN may give another.',
-      'WP Rocket skips lazy loading above-the-fold and LCP images from its own site data, which the simulation can’t read.',
-      'Site code and server settings that change or turn off LazyLoad (filters, options, DONOTLAZYLOAD…) aren’t known to the simulation.'
-    ]);
+  it('says only the every-page caveats in the lane (the page-found ones are the banner’s)', () => {
+    // The fixture carries `core-lazy-loading` too: a banner line, never a lane limit.
+    expect(limitsText(lazyloadSimulatedReport())).toEqual([GUESSED_SCRIPT, ...EVERY_PAGE]);
   });
 });
 
@@ -224,22 +261,22 @@ describe('LazyLoad banner warnings', () => {
       ]
     };
     expect(simulationLimitLines(report)).toEqual([
-      'WordPress marked some images loading="lazy" here; with LazyLoad on it wouldn’t, so their fallback copies differ slightly from the site’s. Chromium-based browsers also ignore the sizes="auto, …" WordPress wrote, so such an image with a srcset may load a larger file here than on the site.',
-      'This page shows WordPress image smilies, which WP Rocket prints slightly differently with LazyLoad on.',
-      'This page already holds another plugin’s lazy-load markup, lazy loaded again here as WP Rocket would.'
+      'WordPress added loading="lazy" here, which it skips with LazyLoad on: fallback copies differ slightly. Chromium ignores WordPress’s sizes="auto, …": srcset images may load larger files here.',
+      'WordPress image smilies here: WP Rocket prints them slightly differently with LazyLoad on.',
+      'Another plugin’s lazy-load markup here is lazy loaded again, as WP Rocket would.'
     ]);
     expect(simulationLimitLines(cleanLazyload())).toEqual([]);
   });
 
   it('warns of the placeholders a CSP blocks, and of a CSP it could not evaluate', () => {
     expect(simulationLimitLines({ ...cleanLazyload(), cspLimits: ['placeholders'] })).toEqual([
-      'This page’s Content Security Policy blocks data: images: LazyLoad’s placeholders show as broken images until each image loads, as they would on the site.'
+      'CSP blocks data: images: placeholders look broken until images load, as on the site.'
     ]);
     expect(simulationLimitLines({ ...cleanLazyload(), cspUnavailable: 'oversized' })).toEqual([
-      'CSP not evaluated for LazyLoad: this page’s Content Security Policy is too large to check, so whether it blocks LazyLoad’s script, options or placeholders isn’t known.'
+      'CSP not evaluated (too large to check): may block LazyLoad’s script, options or placeholders.'
     ]);
     expect(simulationLimitLines({ ...cleanLazyload(), cspUnavailable: 'unreadable' })).toEqual([
-      'CSP not evaluated for LazyLoad: this page’s Content Security Policy couldn’t be read, so whether it blocks LazyLoad’s script, options or placeholders isn’t known.'
+      'CSP not evaluated (unreadable): may block LazyLoad’s script, options or placeholders.'
     ]);
   });
 
@@ -254,7 +291,7 @@ describe('LazyLoad banner warnings', () => {
     });
     const banner = stateBanner(READY, applied({ lazyloadSimulation: lazyloadSimulatedReport() }));
     expect(banner).toMatchObject({ tone: 'warn', glyph: 'alert' });
-    expect(banner?.notes[0]).toMatch(/^WordPress marked some images loading="lazy"/);
+    expect(banner?.notes[0]).toMatch(/^WordPress added loading="lazy" here/);
   });
 });
 

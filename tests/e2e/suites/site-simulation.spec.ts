@@ -107,7 +107,8 @@ const WORDS = {
   appliedBody:
     'This page was rendered with your exclusions and WP Rocket’s Delay JavaScript execution simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.',
   bundledList: `Exclusion list: bundled with WP Rocket ${SIMULATED_VERSION} (latest list unreachable: network error)`,
-  version: `Simulated · WP Rocket ${SIMULATED_VERSION}`,
+  version: `Simulated · WP Rocket ${SIMULATED_VERSION} · without the site’s own exclusions`,
+  /** The banner's site-exclusions sentence: never a lane line (the version line says it in short). */
   siteExclusions:
     'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.',
   alreadyDelayed: 'WP Rocket already delays scripts on this page — exclusions apply to its output.',
@@ -266,14 +267,11 @@ test.describe('Delay JS simulation over real sessions', () => {
       expect(banners.map(({ title, body }) => ({ title, body }))).toEqual([
         { title: 'Applied', body: WORDS.appliedBody }
       ]);
-      expect(await delayLaneLines(page)).toEqual(
-        expect.arrayContaining([
-          countLine(SCENARIO_DELAYED, 0),
-          WORDS.version,
-          WORDS.siteExclusions,
-          WORDS.bundledList
-        ])
+      const laneLines = await delayLaneLines(page);
+      expect(laneLines).toEqual(
+        expect.arrayContaining([countLine(SCENARIO_DELAYED, 0), WORDS.version, WORDS.bundledList])
       );
+      expect(laneLines).not.toContain(WORDS.siteExclusions);
 
       // The detection widget: the verified marker as the Delay JS row's modifier + the tab line.
       const glyph = page.locator(`${STRIP_HOST} [data-fdt-strip-pill-builder]`);

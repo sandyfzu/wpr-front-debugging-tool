@@ -80,7 +80,8 @@ export const COUNT_WORDS = {
   match: { one: 'match', other: 'matches' },
   image: { one: 'image', other: 'images' },
   picture: { one: 'picture', other: 'pictures' },
-  backgroundImage: { one: 'background image', other: 'background images' }
+  backgroundImage: { one: 'background image', other: 'background images' },
+  limit: { one: 'limit', other: 'limits' }
 } as const satisfies Readonly<Record<string, CountNoun>>;
 
 /** The tool's name (the overlay's heading). */
@@ -211,8 +212,7 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
   },
   lazyload: {
     label: LABEL_IMAGE_LAZYLOAD,
-    rowHint:
-      'Text, matched against the image’s attributes; upper and lower case must match (images only: pictures, iframes and background images aren’t previewed)',
+    rowHint: 'Text matched against image attributes · case-sensitive · images only',
     placeholder: 'hero.jpg',
     noun: 'lazy images',
     absent: 'No lazy images on this page.',
@@ -886,8 +886,8 @@ const ROW_SCOPE: Readonly<Partial<Record<SimulatedFeatureId, string>>> = {
 
 /**
  * The site-exclusions note for a page whose given features were simulated —
- * said once in the Applied banner and on each lane whose simulation applied,
- * never where nothing was simulated.
+ * said once in the Applied banner (each simulated lane's version line says
+ * it in short, {@link SIMULATION_LANE_COPY}), never where nothing was simulated.
  *
  * @param features The simulated features (any order; repeats ignored).
  * @returns The note, with each feature's narrower row scope in parentheses.
@@ -1177,16 +1177,15 @@ export const MODE_LANE_COPY: Readonly<Record<SimulationLane, LaneModeCopy>> = {
 
 /** Each CSP limit of a simulated page: what fails, as it would on the site. */
 const CSP_LIMIT_COPY: Readonly<Record<SimulationCspLimit, string>> = {
-  eval: 'This page’s Content Security Policy blocks eval: event handlers of delayed elements fail here as they would on the site.',
-  data: 'This page’s Content Security Policy blocks data: scripts: WP Rocket’s runtime falls back to inline copies of the delayed scripts, as it would on the site.',
-  inline:
-    'This page’s Content Security Policy blocks inline scripts: delayed inline scripts fail here as they would on the site.',
+  eval: 'CSP blocks eval: delayed elements’ event handlers fail, as on the site.',
+  data: 'CSP blocks data: scripts: Delay JS falls back to inline copies, as on the site.',
+  inline: 'CSP blocks inline scripts: delayed inline scripts fail, as on the site.',
   'inline-after-fallback':
-    'If WP Rocket switched to its inline fallback on an earlier page of this tab, this page’s CSP blocks those inline scripts — as it would live.',
+    'If Delay JS switched to inline copies on an earlier page in this tab, CSP blocks them here, as on the site.',
   'trusted-types':
-    'This page requires Trusted Types — WP Rocket’s Delay JS cannot load delayed scripts under it; they fail here as they would on the site.',
+    'Page requires Trusted Types: Delay JS can’t load delayed scripts, as on the site.',
   placeholders:
-    'This page’s Content Security Policy blocks data: images: LazyLoad’s placeholders show as broken images until each image loads, as they would on the site.'
+    'CSP blocks data: images: placeholders look broken until images load, as on the site.'
 };
 
 /** What a page's CSP forbids when it blocks a feature's runtime, and what then did not happen. */
@@ -1198,38 +1197,41 @@ const CSP_BLOCKED_COPY: Readonly<Record<'delay_js' | 'lazyload', string>> = {
 
 /** Why a page's CSP was not evaluated (never said as "no CSP"), Delay JS's words. */
 const CSP_UNAVAILABLE_COPY: Readonly<Record<SimulationCspUnavailableReason, string>> = {
-  oversized:
-    'CSP not evaluated: this page’s Content Security Policy is too large to check, so scripts it blocks aren’t named.',
-  unreadable:
-    'CSP not evaluated: this page’s Content Security Policy couldn’t be read, so scripts it blocks aren’t named.'
+  oversized: 'CSP not evaluated (too large to check): Delay JS scripts it blocks aren’t named.',
+  unreadable: 'CSP not evaluated (unreadable): Delay JS scripts it blocks aren’t named.'
 };
 
 /** Why a page's CSP was not evaluated for LazyLoad (its runtime, options and placeholders). */
 const LAZYLOAD_CSP_UNAVAILABLE_COPY: Readonly<Record<SimulationCspUnavailableReason, string>> = {
   oversized:
-    'CSP not evaluated for LazyLoad: this page’s Content Security Policy is too large to check, so whether it blocks LazyLoad’s script, options or placeholders isn’t known.',
+    'CSP not evaluated (too large to check): may block LazyLoad’s script, options or placeholders.',
   unreadable:
-    'CSP not evaluated for LazyLoad: this page’s Content Security Policy couldn’t be read, so whether it blocks LazyLoad’s script, options or placeholders isn’t known.'
+    'CSP not evaluated (unreadable): may block LazyLoad’s script, options or placeholders.'
 };
 
+/**
+ * The caveats said as a line of their own: `runtime-url` is said by the
+ * script line instead, whose lead names the address's source
+ * ({@link SCRIPT_ADDRESS_LEAD}).
+ */
+type LineCaveat = Exclude<SimulationCaveat, 'runtime-url'>;
+
 /** What a simulation cannot reproduce on a page. */
-const CAVEAT_COPY: Readonly<Record<SimulationCaveat, string>> = {
+const CAVEAT_COPY: Readonly<Record<LineCaveat, string>> = {
+  // Page-found caveats: banner limit lines (they warn).
   'combined-js':
-    'This page serves WP Rocket’s combined JavaScript files: with Delay JS on, WP Rocket would serve them uncombined, which the simulation can’t reproduce.',
+    'Combined JS served here; with Delay JS, WP Rocket serves it uncombined, which the simulation can’t.',
   'core-lazy-loading':
-    'WordPress marked some images loading="lazy" here; with LazyLoad on it wouldn’t, so their fallback copies differ slightly from the site’s. Chromium-based browsers also ignore the sizes="auto, …" WordPress wrote, so such an image with a srcset may load a larger file here than on the site.',
+    'WordPress added loading="lazy" here, which it skips with LazyLoad on: fallback copies differ slightly. Chromium ignores WordPress’s sizes="auto, …": srcset images may load larger files here.',
   'image-smilies':
-    'This page shows WordPress image smilies, which WP Rocket prints slightly differently with LazyLoad on.',
+    'WordPress image smilies here: WP Rocket prints them slightly differently with LazyLoad on.',
   'foreign-lazy-markup':
-    'This page already holds another plugin’s lazy-load markup, lazy loaded again here as WP Rocket would.',
-  'hook-text-placement':
-    'LazyLoad’s style and scripts were placed where most themes print them; your theme may place them elsewhere.',
-  'runtime-url':
-    'LazyLoad’s script address was worked out from this page; your site’s plugin folder or CDN may give another.',
+    'Another plugin’s lazy-load markup here is lazy loaded again, as WP Rocket would.',
+  // LazyLoad's every-page caveats: lane limit lines, short (behind the lane's disclosure).
+  'hook-text-placement': 'Style and scripts placed where most themes print them.',
   'above-the-fold-exclusions':
-    'WP Rocket skips lazy loading above-the-fold and LCP images from its own site data, which the simulation can’t read.',
-  'site-filters':
-    'Site code and server settings that change or turn off LazyLoad (filters, options, DONOTLAZYLOAD…) aren’t known to the simulation.'
+    'Above-the-fold and LCP images aren’t skipped (needs WP Rocket’s site data).',
+  'site-filters': 'Site filters, options and DONOTLAZYLOAD aren’t applied.'
 };
 
 /** The WP Rocket pattern a page may stop, named for the not-reproduced reason. */
@@ -1459,21 +1461,33 @@ function notApplicableCopy(simulation: DocumentSimulationReport, served: string)
   }
 }
 
+/** A LazyLoad caveat every simulated page carries (see {@link LAZYLOAD_PAGE_INDEPENDENT_CAVEATS}). */
+type PageIndependentCaveat = (typeof LAZYLOAD_PAGE_INDEPENDENT_CAVEATS)[number];
+
 /**
  * Whether a LazyLoad caveat holds on every simulated page (said in the
  * lane, never as a banner warning).
  *
  * @param caveat The caveat.
  */
-function isPageIndependent(caveat: LazyloadCaveat): boolean {
+function isPageIndependent(caveat: LazyloadCaveat): caveat is PageIndependentCaveat {
   return (LAZYLOAD_PAGE_INDEPENDENT_CAVEATS as readonly LazyloadCaveat[]).includes(caveat);
+}
+
+/**
+ * Whether a caveat is said as a line of its own (see {@link LineCaveat}).
+ *
+ * @param caveat The caveat.
+ */
+function isLineCaveat(caveat: SimulationCaveat): caveat is LineCaveat {
+  return caveat !== 'runtime-url';
 }
 
 /**
  * What a simulated page cannot show as the site would, one line each (the
  * banner's warnings): the CSP's limits (or why it was not evaluated) and
  * the caveats this page shows — LazyLoad's every-page caveats are said in
- * its lane instead ({@link lazyloadLaneLines}), so they never turn every
+ * its lane instead ({@link simulationLaneLimits}), so they never turn every
  * banner into a warning. Empty for any other state, and for a feature that
  * injects no runtime (Defer JS).
  *
@@ -1485,43 +1499,25 @@ export function simulationLimitLines(simulation: DocumentSimulationReport): stri
   if (simulation.feature === 'lazyload') {
     if (simulation.cspUnavailable !== undefined)
       lines.push(LAZYLOAD_CSP_UNAVAILABLE_COPY[simulation.cspUnavailable]);
-    const found = (simulation.caveats ?? []).filter((caveat) => !isPageIndependent(caveat));
+    const found = (simulation.caveats ?? []).filter(
+      (caveat): caveat is Exclude<LazyloadCaveat, PageIndependentCaveat> =>
+        !isPageIndependent(caveat)
+    );
     return [...lines, ...found.map((caveat) => CAVEAT_COPY[caveat])];
   }
   if (simulation.cspUnavailable !== undefined)
     lines.push(CSP_UNAVAILABLE_COPY[simulation.cspUnavailable]);
-  lines.push(...(simulation.caveats ?? []).map((caveat) => CAVEAT_COPY[caveat]));
+  lines.push(
+    ...(simulation.caveats ?? []).filter(isLineCaveat).map((caveat) => CAVEAT_COPY[caveat])
+  );
   return lines;
 }
 
-/** Where LazyLoad's script address came from, after "address ". */
-const ASSETS_URL_SOURCE_COPY: Readonly<Record<LazyloadAssetsUrlSource, string>> = {
-  beacon: 'from WP Rocket’s own beacon script on this page',
-  'plugin-asset': 'worked out from another plugin’s files on this page',
-  'theme-asset': 'worked out from the theme’s files on this page',
-  default: 'WordPress’s default folders (nothing on this page shows the real one)'
-};
-
 /** An end tag the simulation chose among several (the theme's own one is not knowable). */
 const PLACEMENT_FALLBACK_COPY: Readonly<Record<LazyloadPlacementFallback, string>> = {
-  'first-of-several-head-ends':
-    'This page has several </head> tags: LazyLoad’s style went before the first one.',
-  'last-of-several-body-ends':
-    'This page has several </body> tags: LazyLoad’s scripts went before the last one.'
+  'first-of-several-head-ends': 'Several </head> tags: LazyLoad’s style went before the first.',
+  'last-of-several-body-ends': 'Several </body> tags: LazyLoad’s scripts went before the last.'
 };
-
-/** A simulated LazyLoad page's lane lines (see {@link lazyloadLaneLines}). */
-export interface LazyloadLaneLines {
-  /** The runtime's address and where it came from (null: not reported). */
-  readonly runtime: NoteText | null;
-  /**
-   * Where this page differs from the site: the end tags the simulation chose
-   * among several, and the noscript copies of the images the rows restored.
-   */
-  readonly caveats: readonly string[];
-  /** The caveats every simulated page carries. */
-  readonly hints: readonly string[];
-}
 
 /**
  * What a simulated page shows where the rows restored images: WP Rocket
@@ -1531,33 +1527,78 @@ export interface LazyloadLaneLines {
 const RESTORED_NOSCRIPT_COPY =
   'Images your rows restore keep their noscript copy, unlike on the site.';
 
+/** The script line's lead for an address inferred from another plugin's or a theme's asset. */
+const INFERRED_SCRIPT_LEAD =
+  'Script address inferred from this page; your plugin folder or CDN may differ: ';
+
 /**
- * A simulated LazyLoad page's lane lines under its count and version.
+ * LazyLoad's script line lead (the address follows), by where the address
+ * came from: WP Rocket's beacon tag gives the exact folder (but not a CDN
+ * rewrite of the runtime tag), a plugin's or theme's asset assumes the
+ * folder names, WordPress's defaults assume every folder.
+ */
+const SCRIPT_ADDRESS_LEAD: Readonly<Record<LazyloadAssetsUrlSource, string>> = {
+  beacon: 'Script address from WP Rocket’s beacon tag; a CDN may serve another: ',
+  'plugin-asset': INFERRED_SCRIPT_LEAD,
+  'theme-asset': INFERRED_SCRIPT_LEAD,
+  default:
+    'Script address guessed from WordPress’s default folders; your folders or CDN may differ: '
+};
+
+/**
+ * A simulated lane's limit lines, behind its "N limits" disclosure —
+ * LazyLoad's script address, the end tags it chose among several, the
+ * noscript copies of the images the rows restored and its every-page
+ * caveats; none for Delay JS or Defer JS. Outcomes stay visible lines
+ * instead ({@link SIMULATION_LANE_COPY}'s `undetermined` and `regexLimit`),
+ * and the banner says the page-found caveats and CSP limits
+ * ({@link simulationLimitLines}).
+ *
+ * @param simulation The lane's report (`simulated`).
+ * @param restored What the rows restored on the page (the lane transform's rewrites).
+ * @returns One line per limit (the disclosure's count).
+ */
+export function simulationLaneLimits(
+  simulation: DocumentSimulationReport,
+  restored: number
+): NoteText[] {
+  return simulation.feature === 'lazyload' ? lazyloadLaneLimits(simulation, restored) : [];
+}
+
+/**
+ * LazyLoad's lane limits (see {@link simulationLaneLimits}): the script line
+ * first (its lead names where the address came from), then the page's own
+ * caveats, then the other every-page ones.
  *
  * @param simulation The LazyLoad report (`simulated`).
- * @param restored What the rows restored on the page (the lane transform's rewrites).
+ * @param restored What the rows restored on the page.
  */
-export function lazyloadLaneLines(
-  simulation: LazyloadSimulationReport,
-  restored: number
-): LazyloadLaneLines {
-  return {
-    runtime:
-      simulation.runtimeUrl === undefined || simulation.assetsUrlSource === undefined
-        ? null
-        : SIMULATION_LANE_COPY.runtime(simulation.runtimeUrl, simulation.assetsUrlSource),
-    caveats: [
-      ...(simulation.placement?.fallbacks ?? []).map(
-        (fallback) => PLACEMENT_FALLBACK_COPY[fallback]
-      ),
-      ...(restored > 0 ? [RESTORED_NOSCRIPT_COPY] : [])
-    ],
-    hints: (simulation.caveats ?? []).filter(isPageIndependent).map((caveat) => CAVEAT_COPY[caveat])
-  };
+function lazyloadLaneLimits(simulation: LazyloadSimulationReport, restored: number): NoteText[] {
+  const { runtimeUrl, assetsUrlSource } = simulation;
+  const everyPage = (simulation.caveats ?? []).filter(
+    (caveat): caveat is Exclude<PageIndependentCaveat, 'runtime-url'> =>
+      isPageIndependent(caveat) && isLineCaveat(caveat)
+  );
+  return [
+    // Present on every simulated report (validated at the message boundary).
+    ...(runtimeUrl === undefined || assetsUrlSource === undefined
+      ? []
+      : [
+          [SCRIPT_ADDRESS_LEAD[assetsUrlSource], { code: capText(runtimeUrl, LAZYLOAD_URL_SHOWN) }]
+        ]),
+    ...(simulation.placement?.fallbacks ?? []).map((fallback) => [
+      PLACEMENT_FALLBACK_COPY[fallback]
+    ]),
+    ...(restored > 0 ? [[RESTORED_NOSCRIPT_COPY]] : []),
+    ...everyPage.map((caveat) => [CAVEAT_COPY[caveat]])
+  ];
 }
 
 /** Characters of LazyLoad's script address the lane shows before it is cut (`…`). */
 const LAZYLOAD_URL_SHOWN = 160;
+
+/** Every simulated lane's version-line tail: the site-exclusions note in short. */
+const WITHOUT_SITE_EXCLUSIONS = ' · without the site’s own exclusions';
 
 /** A mode lane's lines about the simulation on the page it applied to. */
 export const SIMULATION_LANE_COPY = {
@@ -1589,45 +1630,46 @@ export const SIMULATION_LANE_COPY = {
   lazyloadLine: (
     counts: Pick<LazyloadSimulationReport, 'images' | 'pictures' | 'backgrounds'>,
     excluded: number
-  ): string =>
-    `${joinWords([
-      `${String(counts.images)} ${countNoun(counts.images, COUNT_WORDS.image)}`,
-      `${String(counts.pictures)} ${countNoun(counts.pictures, COUNT_WORDS.picture)}`,
-      `${String(counts.backgrounds)} ${countNoun(counts.backgrounds, COUNT_WORDS.backgroundImage)}`
-    ])} lazy loaded by the simulation · ${String(excluded)} excluded by your rows`,
+  ): string => {
+    const all = [
+      [counts.images, COUNT_WORDS.image],
+      [counts.pictures, COUNT_WORDS.picture],
+      [counts.backgrounds, COUNT_WORDS.backgroundImage]
+    ] as const;
+    // Zero kinds are left out, unless every kind is zero (then all say so).
+    const some = all.filter(([count]) => count > 0);
+    const words = (some.length === 0 ? all : some).map(
+      ([count, noun]) => `${String(count)} ${countNoun(count, noun)}`
+    );
+    return `${joinWords(words)} lazy loaded by the simulation · ${String(excluded)} excluded by your rows`;
+  },
   /**
-   * The runtime's address the simulated page requests (answered by the
-   * extension), cut to a readable length and shown as code, and where it
-   * came from.
-   *
-   * @param url The requested URL.
-   * @param source Where its assets URL came from.
-   */
-  runtime: (url: string, source: LazyloadAssetsUrlSource): NoteText => [
-    'LazyLoad script: ',
-    { code: capText(url, LAZYLOAD_URL_SHOWN) },
-    ` (address ${ASSETS_URL_SOURCE_COPY[source]})`
-  ],
-  /**
-   * The simulated version, and the site's when it serves another one.
+   * The simulated version, and the site's when it serves another one, then
+   * the site-exclusions note in short (the banner says it in full).
    *
    * @param simulation The simulation step's report.
    */
   version: (simulation: DocumentSimulationReport): string =>
     simulation.siteVersion === undefined || simulation.siteVersion === simulation.wpRocketVersion
-      ? `Simulated · WP Rocket ${simulation.wpRocketVersion}`
-      : `Simulated · WP Rocket ${simulation.wpRocketVersion} (the site serves ${simulation.siteVersion})`,
+      ? `Simulated · WP Rocket ${simulation.wpRocketVersion}${WITHOUT_SITE_EXCLUSIONS}`
+      : `Simulated · WP Rocket ${simulation.wpRocketVersion} (the site serves ${simulation.siteVersion})${WITHOUT_SITE_EXCLUSIONS}`,
+  /**
+   * A simulated lane's limits disclosure label, e.g. "3 limits".
+   *
+   * @param count The limit lines (≥ 1).
+   */
+  limits: (count: number): string => `${String(count)} ${countNoun(count, COUNT_WORDS.limit)}`,
   /**
    * Scripts left as served because WP Rocket's verdict on them depends on
-   * ids it draws at random.
+   * ids it draws at random (an outcome, shown in the lane).
    *
    * @param count The count (≥ 1).
    */
   undetermined: (count: number): string =>
-    `${String(count)} left as served: WP Rocket decides ${countNoun(count, COUNT_WORDS.it)} with random ids, so the simulation can’t.`,
-  /** WP Rocket's own pattern stops on the page: it would delay nothing either. */
+    `${String(count)} left as served: WP Rocket decides ${countNoun(count, COUNT_WORDS.it)} with random ids.`,
+  /** WP Rocket's own pattern stops on the page: it would delay nothing either (an outcome, shown in the lane). */
   regexLimit:
-    'WP Rocket’s Delay JS pattern stops on this page (PHP’s backtracking limit), so nothing is delayed — as on the site.'
+    'Delay JS’s pattern stops here (PHP backtracking limit): nothing delayed, as on the site.'
 } as const;
 
 /**

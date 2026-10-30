@@ -60,7 +60,7 @@ const MIXED_PAGE =
 /** The words the overlay carries. */
 const WORDS = {
   placeholders:
-    'This page’s Content Security Policy blocks data: images: LazyLoad’s placeholders show as broken images until each image loads, as they would on the site.',
+    'CSP blocks data: images: placeholders look broken until images load, as on the site.',
   blockedTitle: 'Not simulated: blocked by this page’s Content Security Policy',
   blockedBody:
     'The policy forbids WP Rocket’s LazyLoad script or its inline options, as it would on the site, so no image was lazy loaded',
