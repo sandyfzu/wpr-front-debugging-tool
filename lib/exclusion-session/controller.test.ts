@@ -1273,10 +1273,22 @@ describe('generations', () => {
     const r = rig();
     const arm = vi.spyOn(r.backend, 'arm');
     await r.controller.apply(page(), { set: SET });
-    expect(arm).toHaveBeenCalledWith(TAB, NOW, ORIGIN);
+    // No simulation applied: the seam's trailing `simulate` is undefined.
+    expect(arm).toHaveBeenCalledWith(TAB, NOW, ORIGIN, undefined);
     const resume = vi.spyOn(r.backend, 'resume');
     await r.controller.revalidate();
-    expect(resume).toHaveBeenCalledWith(TAB, NOW, ORIGIN);
+    expect(resume).toHaveBeenCalledWith(TAB, NOW, ORIGIN, undefined);
+  });
+
+  it('hands the session’s simulation to arm and the stored one to resume', async () => {
+    const r = rig();
+    const arm = vi.spyOn(r.backend, 'arm');
+    const simulate = { features: ['lazyload' as const] };
+    await r.controller.apply(page(), { set: SET, simulate });
+    expect(arm).toHaveBeenCalledWith(TAB, NOW, ORIGIN, simulate);
+    const resume = vi.spyOn(r.backend, 'resume');
+    await r.controller.revalidate();
+    expect(resume).toHaveBeenCalledWith(TAB, NOW, ORIGIN, simulate);
   });
 
   it('issues a fresh start after stop → apply on a fixed clock: the old document never lands', async () => {
@@ -2068,5 +2080,105 @@ describe('host — simulating sessions', () => {
     await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
       document: { outcome: 'failed', reason: 'engine-failed' }
     });
+  });
+});
+
+describe('host — simulated runtime requests', () => {
+  const PAGE = '<html><head></head><body><img src="/a.png" width="1" height="1"></body></html>';
+  /** The runtime URL the step writes for {@link PAGE} (no page evidence: the default assets URL). */
+  const RUNTIME_URL = `${ORIGIN}/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js`;
+  const FILE = { url: 'chrome-extension://id/runtime.js', bytes: new Uint8Array([1, 2]) };
+  /** The simulated page's URL. */
+  const PAGE_URL = `${ORIGIN}/next`;
+  /** The page as an identity-giving backend hands it over (records its origin + path). */
+  const doc = () => ({
+    ...htmlDoc(PAGE_URL, PAGE),
+    identity: {
+      token: 'req-1',
+      receivedAt: NOW,
+      speculationRulesHeader: false,
+      servedAsCopy: false,
+      speculationGuard: false,
+      serviceWorkersBypassed: false
+    }
+  });
+
+  /** A rig whose sources serve the fixture package and a sound runtime file. */
+  const simulating = () =>
+    rig({
+      simulation: {
+        ...INERT_SIMULATION_SOURCES,
+        runtime: () =>
+          Promise.resolve({
+            ok: true,
+            package: {
+              runtime: 'RocketLazyLoadScripts.run();',
+              fallback: 'if(0){}',
+              bundledListRows: [],
+              bundledDeferLists: { external: [], inline: [] },
+              lazyload: LAZYLOAD_PACKAGE_FIXTURE
+            }
+          }),
+        lazyloadRuntime: () => Promise.resolve({ ok: true, file: FILE })
+      }
+    });
+
+  const seedLazyload = () =>
+    putExclusionSessionRecord(TAB, {
+      state: 'active',
+      origin: ORIGIN,
+      set: SET,
+      simulate: { features: ['lazyload'] },
+      startedAt: NOW - 1000,
+      document: null
+    });
+
+  it('names the packaged file for the served page’s exact runtime URL — queued behind its record', async () => {
+    const r = simulating();
+    await seedLazyload();
+    await expect(r.host.rewriteDocument(doc())).resolves.not.toBeNull();
+    // Asked at once (no flush): the answer still reads the page's record.
+    await expect(r.host.simulatedRuntime(TAB, RUNTIME_URL, PAGE_URL)).resolves.toEqual(FILE);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { lazyloadSimulation: { state: 'simulated', runtimeUrl: RUNTIME_URL } }
+    });
+  });
+
+  it('names nothing for another URL, another tab, after Stop, or without a simulated page', async () => {
+    const r = simulating();
+    await seedLazyload();
+    await expect(r.host.simulatedRuntime(TAB, RUNTIME_URL, PAGE_URL)).resolves.toBeNull();
+    await r.host.rewriteDocument(doc());
+    await expect(r.host.simulatedRuntime(TAB, `${RUNTIME_URL}?v=1`, PAGE_URL)).resolves.toBeNull();
+    await expect(r.host.simulatedRuntime(4, RUNTIME_URL, PAGE_URL)).resolves.toBeNull();
+    await r.controller.stop(page());
+    await expect(r.host.simulatedRuntime(TAB, RUNTIME_URL, PAGE_URL)).resolves.toBeNull();
+  });
+
+  it('names nothing for the same URL asked by another origin’s page or another page of the origin', async () => {
+    const r = simulating();
+    await seedLazyload();
+    await r.host.rewriteDocument(doc());
+    await expect(
+      r.host.simulatedRuntime(TAB, RUNTIME_URL, 'https://elsewhere.test/next')
+    ).resolves.toBeNull();
+    await expect(r.host.simulatedRuntime(TAB, RUNTIME_URL, `${ORIGIN}/other`)).resolves.toBeNull();
+    await expect(r.host.simulatedRuntime(TAB, RUNTIME_URL, PAGE_URL)).resolves.toEqual(FILE);
+  });
+
+  it('names nothing (logged) when the packaged runtime is unusable', async () => {
+    const r = simulating();
+    await seedLazyload();
+    await r.host.rewriteDocument(doc());
+    await flush();
+    // Another background lifetime over the same record, its runtime file damaged.
+    const broken = rig({
+      simulation: {
+        ...(r.deps.simulation ?? INERT_SIMULATION_SOURCES),
+        lazyloadRuntime: () => Promise.resolve({ ok: false, cause: 'hash-mismatch' })
+      }
+    });
+    await expect(broken.host.simulatedRuntime(TAB, RUNTIME_URL, PAGE_URL)).resolves.toBeNull();
+    expect(logged(broken.log, 'warn', /packaged runtime unusable/)).toBe(true);
   });
 });

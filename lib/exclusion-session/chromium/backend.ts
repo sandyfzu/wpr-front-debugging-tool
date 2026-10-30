@@ -5,8 +5,10 @@
  * document step and serves the result (`fulfillRequest` — a substituted
  * copy, so only when the exclusions changed the document) or the original
  * (`continueRequest`, or `continueResponse` to drop a `Speculation-Rules`
- * header — the real response, connection and security state kept). Runs
- * over an injected {@link DebuggerPort}.
+ * header — the real response, connection and security state kept). A
+ * simulated page's runtime request is paused before it leaves and
+ * answered with the packaged file the host names (`no-store`), or
+ * continued. Runs over an injected {@link DebuggerPort}.
  *
  * Rules it owns (on top of the seam's, `../backend`):
  * - **Every paused request is released exactly once** — fulfilled or
@@ -66,6 +68,7 @@ import type {
 import { DOCUMENT_BODY_BYTE_LIMIT, type InterceptedResponseFacts } from '../document-transform';
 import { speculationRulesGuardSource } from '../speculation-rules';
 import { createMonotonicStamp } from '../../../utils/monotonic-stamp';
+import { LAZYLOAD_RUNTIME_FILE } from '../../wp-rocket-simulation/simulation-data';
 import { parseUrl } from '../../../utils/urls';
 import { DeadlineExceededError, SESSION_STEP_TIMEOUTS_MS, withinDeadline } from '../timeouts';
 import {
@@ -85,7 +88,9 @@ import {
   headerValue,
   parsePausedRequest,
   pausedRequestId,
+  frameTreeDocumentUrl,
   responseBodyBytes,
+  runtimeFulfillParams,
   SPECULATION_RULES_HEADER,
   type PausedRequest
 } from './paused-request';
@@ -139,8 +144,17 @@ export const CHROMIUM_OPERATION_BUDGETS_MS = {
   disarm: SESSION_STEP_TIMEOUTS_MS.disarm - OPERATION_MARGIN_MS
 } as const;
 
-/** The interception patterns: every document response, paused once its headers arrive. */
-const FETCH_PATTERNS = [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Response' }];
+/**
+ * The interception patterns: every document response, paused once its
+ * headers arrive; and every script request named like a simulated
+ * runtime, paused before it leaves (`*` and `?` are the protocol's
+ * wildcards; the name holds neither) — answered only when the host
+ * names its packaged file, continued to the site otherwise.
+ */
+export const FETCH_PATTERNS = [
+  { urlPattern: '*', resourceType: 'Document', requestStage: 'Response' },
+  { urlPattern: `*/${LAZYLOAD_RUNTIME_FILE}`, resourceType: 'Script', requestStage: 'Request' }
+] as const;
 
 /**
  * The session's commands after attaching, in order, each idempotent:
@@ -571,6 +585,50 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     }
   };
 
+  /**
+   * The URL of the tab's top-level document (the one making a top-frame
+   * request), or null (logged) when unreadable.
+   */
+  const topDocumentUrl = async (target: DebuggerTarget): Promise<string | null> => {
+    try {
+      const tree = await call('Page.getFrameTree', () => port.send(target, 'Page.getFrameTree'));
+      const url = frameTreeDocumentUrl(tree);
+      if (url === null) log.warn('Top document URL missing — runtime request left to the site');
+      return url;
+    } catch (cause) {
+      log.warn('Top document unknown — runtime request left to the site', { cause });
+      return null;
+    }
+  };
+
+  /**
+   * Answer a paused script request with the simulated runtime the host
+   * names (its packaged bytes — the site never sees the request), else
+   * continue it to the site. A refused answer is logged and the request
+   * continued: the page then runs without the runtime, as on the site.
+   */
+  const handleScriptRequest = async (
+    target: DebuggerTarget,
+    pause: PausedRequest,
+    release: PauseRelease
+  ): Promise<void> => {
+    if (!mayRewrite(attachmentOf(target.tabId))) return release.pass('stopping');
+    if (!(await isTopFrame(target, pause.frameId))) return release.pass('sub-frame');
+    const documentUrl = await topDocumentUrl(target);
+    if (documentUrl === null) return release.pass('document-unknown');
+    const file = await host.simulatedRuntime(target.tabId, pause.url, documentUrl);
+    if (file === null) return release.pass('not-a-simulated-runtime');
+    const answered = await release.fulfill(runtimeFulfillParams(pause.requestId, file.bytes));
+    if (answered === 'fulfilled') return;
+    const details = { tabId: target.tabId, result: answered };
+    if (answered === 'gone') {
+      log.info('Simulated runtime not delivered — its request was already gone', details);
+      return;
+    }
+    log.warn('Simulated runtime not delivered — answer refused, request left to the site', details);
+    await release.pass('runtime-refused');
+  };
+
   /** Handle one validated paused request; every path ends in its release. */
   const handlePause = async (
     target: DebuggerTarget,
@@ -579,6 +637,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     arrival: Arrival
   ): Promise<void> => {
     const disposition = classifyPause(pause);
+    if (disposition.kind === 'script-request') return handleScriptRequest(target, pause, release);
     if (disposition.kind === 'pass') {
       // A session document the engine never rewrites (e.g. XHTML) still
       // loses its rules header — a cheap check, for documents carrying one.

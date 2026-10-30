@@ -39,6 +39,8 @@ import type {
   InterceptedDocumentBody,
   InterceptedResponseFacts
 } from './document-transform';
+import type { PackagedRuntimeFile } from './simulation-sources';
+import type { SimulateSpec } from '../wp-rocket-simulation/spec';
 
 /** Why arming failed — every cause but the live-session cap (the controller's own check). */
 export type ArmUnavailableCause = Exclude<InterceptionUnavailableCause, 'session-limit'>;
@@ -184,6 +186,22 @@ export interface InterceptionHost {
     identity?: InterceptedResponseIdentity
   ): Promise<void>;
   /**
+   * The packaged file answering a script request of the tab's top-level
+   * page for a simulated runtime — non-null only when `requestUrl` is the
+   * runtime URL of the tab's latest recorded document's simulation (its
+   * runtime simulated there) in the live session, and the requesting
+   * document (`documentUrl`: the tab's top-level document as the browser
+   * reports it) is that recorded document on the session's origin.
+   * Nothing is answered once the session ends, the tab's next document is
+   * recorded without it, or the tab shows another page; never for any
+   * other URL: those requests go to the site as made.
+   */
+  simulatedRuntime(
+    tabId: number,
+    requestUrl: string,
+    documentUrl: string
+  ): Promise<PackagedRuntimeFile | null>;
+  /**
    * The browser ended the tab's interception tagged `generation` (the
    * value the backend was armed or resumed with). An end whose generation
    * is not the live session's is dropped.
@@ -205,8 +223,15 @@ export interface InterceptionBackend {
    *
    * @param origin Optional: the session's origin — scopes the backend's
    *   per-origin session effects (e.g. a page guard) to its documents.
+   * @param simulate Optional: what the session simulates — lets a backend
+   *   hold per-feature request hooks only for the tabs that need them.
    */
-  arm(tabId: number, generation: number, origin?: string): Promise<ArmResult>;
+  arm(
+    tabId: number,
+    generation: number,
+    origin?: string,
+    simulate?: SimulateSpec
+  ): Promise<ArmResult>;
   /** Drop the tab's interception and any bookkeeping; a no-op when unarmed. */
   disarm(tabId: number): Promise<void>;
   /**
@@ -217,8 +242,14 @@ export interface InterceptionBackend {
    * (the host waits for the re-validation `resume` is part of).
    *
    * @param origin Optional: the stored session's origin (see {@link arm}).
+   * @param simulate Optional: the stored session's simulation (see {@link arm}).
    */
-  resume(tabId: number, generation: number, origin?: string): Promise<boolean>;
+  resume(
+    tabId: number,
+    generation: number,
+    origin?: string,
+    simulate?: SimulateSpec
+  ): Promise<boolean>;
   /** A preempting engine runner (e.g. worker-hosted); absent → in-process. */
   readonly runner?: DocumentTransformRunner;
 }

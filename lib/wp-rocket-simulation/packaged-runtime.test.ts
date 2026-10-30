@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { SUPPORTED_WPR_VERSIONS } from '../wp-rocket/versions';
-import { SIMULATION_DATA_PATH, readSimulationData } from './simulation-data';
+import { LAZYLOAD_RUNTIME_FILE, SIMULATION_DATA_PATH, readSimulationData } from './simulation-data';
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), '../../public');
 
@@ -32,6 +32,12 @@ describe.each(SUPPORTED_WPR_VERSIONS.map((pin) => [pin.version] as const))(
       const file = readFileSync(join(PUBLIC, dirname(SIMULATION_DATA_PATH), runtime.jsPath));
       expect(file.byteLength).toBe(runtime.bytes);
       expect(createHash('sha256').update(file).digest('hex')).toBe(runtime.sha256);
+    });
+
+    it('is named as the session interception expects (a request for it is matched by name)', () => {
+      expect(DATA.versions[version]?.lazyload.runtime.jsPath.split('/').at(-1)).toBe(
+        LAZYLOAD_RUNTIME_FILE
+      );
     });
   }
 );

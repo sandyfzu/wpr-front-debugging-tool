@@ -34,6 +34,10 @@
  *   the origin a session was applied from are rewritten; anything else in
  *   the tab passes through untouched and unrecorded. Bytes are served only
  *   when the session that ran the engine is still the tab's live one.
+ * - **Runtime requests**: answered with a packaged file only for the exact
+ *   runtime URL of the live session's latest simulated document,
+ *   requested by that very document (`./simulated-runtime`); everything
+ *   else goes to the site.
  * - Pushes tolerate the no-receiver case; every other failure is logged.
  */
 import { createLogger, type Logger } from '../logger';
@@ -97,7 +101,9 @@ import {
   type SessionMachineState
 } from './machine';
 import { servedUrl } from './served-url';
+import { resolveSimulatedRuntime } from './simulated-runtime';
 import {
+  deadlinedSources,
   INERT_SIMULATION_SOURCES,
   SimulationPreparationError,
   simulationMarkerSettler,
@@ -253,6 +259,8 @@ export function createExclusionSessionController(
   const enqueue = createKeyedQueue();
   const fallbackRunner = deps.runner ?? createInProcessTransformRunner();
   const simulationSources = deps.simulation ?? INERT_SIMULATION_SOURCES;
+  /** The sources a runtime request reads, each under its own deadline. */
+  const runtimeSources = deadlinedSources(simulationSources, deps.schedule);
   /** Settles once the wake re-validation ran; asks and documents wait for it (bounded). */
   let ready: Promise<void> = Promise.resolve();
   let backend: InterceptionBackend | null = null;
@@ -401,10 +409,13 @@ export function createExclusionSessionController(
     armer: InterceptionBackend,
     tabId: number,
     generation: number,
-    origin: string
+    origin: string,
+    simulate: SimulateSpec | undefined
   ): Promise<ArmResult> => {
     try {
-      return await bounded('Backend arm', STEPS.arm, () => armer.arm(tabId, generation, origin));
+      return await bounded('Backend arm', STEPS.arm, () =>
+        armer.arm(tabId, generation, origin, simulate)
+      );
     } catch (cause) {
       if (!timedOut(cause)) throw cause;
       log.warn('Backend arm timed out — interception unavailable', { tabId, cause });
@@ -429,7 +440,7 @@ export function createExclusionSessionController(
       // Checked before attaching anything; the store re-checks on write (another tab may race).
       if (othersActive >= EXCLUSION_SESSION_LIMIT)
         return { type: 'arm-unavailable', cause: 'session-limit', at: deps.now() };
-      const armed = await armBackend(armer, tabId, state.startedAt, state.origin);
+      const armed = await armBackend(armer, tabId, state.startedAt, state.origin, state.simulate);
       if (!armed.armed) return { type: 'arm-unavailable', cause: armed.cause, at: deps.now() };
       const record: ActiveExclusionSession = {
         state: 'active',
@@ -829,6 +840,20 @@ export function createExclusionSessionController(
         recordUnserved(tabId, documentUrl, identity, 'not-served')
       ),
 
+    // Queued behind the tab's events: the document record of the page that
+    // makes this request is written before the request is answered.
+    simulatedRuntime: (tabId, requestUrl, documentUrl) =>
+      hostCall('simulatedRuntime', null, async () => {
+        if (!(await awaitReady('runtime request left to the site'))) return null;
+        const status = await enqueueAsk(tabId, 'simulatedRuntime', () => readSession(tabId));
+        return resolveSimulatedRuntime(
+          status,
+          { url: requestUrl, documentUrl },
+          runtimeSources,
+          log
+        );
+      }),
+
     interceptionEnded: (tabId: number, cause: InterceptionEndCause, generation: number) =>
       hostCall('interceptionEnded', undefined, async () => {
         // The generation check makes proceeding safe even while the wake runs.
@@ -876,13 +901,14 @@ export function createExclusionSessionController(
   const resumeLive = async (
     tabId: number,
     generation: number,
-    origin: string
+    origin: string,
+    simulate: SimulateSpec | undefined
   ): Promise<boolean> => {
     const resumer = backend;
     if (resumer === null) return false;
     try {
       return await bounded('Backend resume', STEPS.resume, () =>
-        resumer.resume(tabId, generation, origin)
+        resumer.resume(tabId, generation, origin, simulate)
       );
     } catch (cause) {
       log.error('Wake resume failed — session treated as stale', { tabId, cause });
@@ -897,7 +923,7 @@ export function createExclusionSessionController(
       return;
     }
     if (record.state !== 'active') return;
-    if (!(await resumeLive(tabId, record.startedAt, record.origin))) {
+    if (!(await resumeLive(tabId, record.startedAt, record.origin, record.simulate))) {
       log.info('Stale session cleared at wake — tab served unmodified', { tabId });
       await driveQuietly(tabId, { type: 'stale' }, 'stale cleanup');
     }

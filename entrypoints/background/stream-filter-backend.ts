@@ -3,8 +3,11 @@
  * (`lib/exclusion-session/stream-backend`) to `webRequest` — a blocking
  * top-level request hook that attaches the body filter, a blocking
  * response-headers hook for the response facts, completion and error hooks
- * telling whether a body is whole, and a worker-hosted engine
- * runner that preempts a runaway row. Selected by feature detection of
+ * telling whether a body is whole, a worker-hosted engine
+ * runner that preempts a runaway row, and a blocking script-request hook
+ * redirecting a simulated page's runtime URL to its packaged copy
+ * (`lib/exclusion-session/runtime-redirect`) — held only on the tabs whose
+ * live session simulates a runtime feature. Selected by feature detection of
  * `webRequest.filterResponseData`.
  */
 import { createLogger, type Logger } from '../../lib/logger';
@@ -20,6 +23,15 @@ import {
 } from '../../lib/exclusion-session/transform-worker';
 import type { DocumentTransformRunner } from '../../lib/exclusion-session/document-transform';
 import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
+import type { InterceptionHost } from '../../lib/exclusion-session/backend';
+import {
+  createRuntimeHooks,
+  createRuntimeRedirect,
+  runtimeRequestPatterns,
+  withRuntimeHooks,
+  type RuntimeHookEvent,
+  type RuntimeHooks
+} from '../../lib/exclusion-session/runtime-redirect';
 
 /** The `webRequest` member this row needs (absent from the shared typings). */
 interface FilteringWebRequest {
@@ -126,6 +138,25 @@ function registerHooks(backend: StreamInterceptionBackend, log: Logger): void {
   }, topLevelDocuments());
 }
 
+/**
+ * The per-tab simulated-runtime hooks (none held until a session needs
+ * one). Blocking, so the redirect lands before the request leaves; the
+ * event is `webRequest.onBeforeRequest` as Firefox implements it — a
+ * blocking listener may answer with a promise (absent from the shared
+ * typings, which describe Chrome's synchronous form).
+ *
+ * @param host The host naming the packaged file for a request.
+ * @param log The row's logger.
+ */
+function runtimeHooks(host: Pick<InterceptionHost, 'simulatedRuntime'>, log: Logger): RuntimeHooks {
+  return createRuntimeHooks({
+    event: browser.webRequest.onBeforeRequest as unknown as RuntimeHookEvent,
+    urls: runtimeRequestPatterns(URL_PATTERNS),
+    hook: createRuntimeRedirect({ host, log }),
+    log
+  });
+}
+
 /** The registry row. */
 export const STREAM_FILTER_BACKEND: InterceptionBackendRow = {
   id: 'stream-filter',
@@ -140,6 +171,6 @@ export const STREAM_FILTER_BACKEND: InterceptionBackendRow = {
       runner: workerRunner(log)
     });
     registerHooks(backend, log);
-    return backend;
+    return withRuntimeHooks(backend, runtimeHooks(host, log));
   }
 };

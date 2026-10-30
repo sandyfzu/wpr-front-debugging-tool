@@ -195,15 +195,16 @@ export interface PackagedLazyloadRuntimeDeps {
  *
  * @param deps Transport, data URL and digest.
  * @param lazyload The version's LazyLoad package (path and pin).
- * @returns Sound, or the cause and a log detail.
+ * @returns The sound file (its URL and the verified bytes), or the cause and a log detail.
  */
 export async function checkPackagedLazyloadRuntime(
   deps: Pick<PackagedLazyloadRuntimeDeps, 'fetch' | 'dataUrl' | 'sha256'>,
   lazyload: Pick<SimulationLazyloadPackage, 'runtimeJsPath' | 'runtime'>
 ): Promise<LazyloadRuntimeCheck & { readonly detail?: string }> {
+  const url = new URL(lazyload.runtimeJsPath, deps.dataUrl).href;
   let bytes: ArrayBuffer;
   try {
-    const response = await deps.fetch(new URL(lazyload.runtimeJsPath, deps.dataUrl).href);
+    const response = await deps.fetch(url);
     if (!response.ok) {
       return { ok: false, cause: 'asset-unreachable', detail: `HTTP ${String(response.status)}` };
     }
@@ -224,14 +225,15 @@ export async function checkPackagedLazyloadRuntime(
       detail: `${lazyload.runtimeJsPath}: ${String(bytes.byteLength)} B, sha256 ${digest}`
     };
   }
-  return { ok: true };
+  return { ok: true, file: { url, bytes: new Uint8Array(bytes) } };
 }
 
 /**
  * The LazyLoad runtime source over the packaged files: each runtime path
  * is checked once per lifetime (concurrent asks share the check); a sound
- * or damaged answer is kept, an unreachable one retried by the next
- * document. Never rejects; each failure logged once per path and cause.
+ * answer (with its verified bytes: the runtime is read once per lifetime)
+ * or a damaged one is kept, an unreachable one retried by the next ask.
+ * Never rejects; each failure logged once per path and cause.
  *
  * @param deps Transport, data URL, digest and logger.
  */
@@ -245,7 +247,7 @@ export function createPackagedLazyloadRuntimeSource(
     const known = checks.get(key);
     if (known !== undefined) return known;
     const check = checkPackagedLazyloadRuntime(deps, lazyload).then((result) => {
-      if (result.ok) return { ok: true } as const;
+      if (result.ok) return { ok: true, file: result.file } as const;
       if (!logged.has(`${key} ${result.cause}`)) {
         logged.add(`${key} ${result.cause}`);
         deps.log.error(

@@ -60,9 +60,20 @@ export interface SimulationPackage {
   readonly lazyload: SimulationLazyloadPackage;
 }
 
-/** A packaged LazyLoad runtime check: sound, or why it is unusable. */
+/**
+ * A packaged LazyLoad runtime file as verified: its extension URL and the
+ * very bytes checked against the pin — what a simulated page's runtime
+ * request is answered with (served as these bytes, or redirected to the URL).
+ */
+export interface PackagedRuntimeFile {
+  readonly url: string;
+  readonly bytes: Uint8Array;
+}
+
+/** A packaged LazyLoad runtime check: the sound file, or why it is unusable. */
 export type LazyloadRuntimeCheck =
-  { readonly ok: true } | { readonly ok: false; readonly cause: SimulationRuntimeUnavailableCause };
+  | { readonly ok: true; readonly file: PackagedRuntimeFile }
+  | { readonly ok: false; readonly cause: SimulationRuntimeUnavailableCause };
 
 /** A runtime source's answer: the version's package, or why there is none. */
 export type SimulationPackageRead =
@@ -80,8 +91,9 @@ export interface SimulationSources {
   readonly runtime: (version: string) => Promise<SimulationPackageRead>;
   /**
    * Whether a version's packaged LazyLoad runtime file is sound (readable,
-   * its size and sha256 equal to the pin) — asked only for LazyLoad: the
-   * page will request that runtime. Resolves (never rejects).
+   * its size and sha256 equal to the pin), with the file when it is —
+   * asked when LazyLoad is simulated (the page will request that runtime)
+   * and when a simulated page requests it. Resolves (never rejects).
    */
   readonly lazyloadRuntime: (lazyload: SimulationLazyloadPackage) => Promise<LazyloadRuntimeCheck>;
   /** The exclusion list to use for a version, given its bundled rows. Resolves (never rejects). */

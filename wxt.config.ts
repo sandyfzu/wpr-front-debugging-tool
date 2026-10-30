@@ -1,6 +1,10 @@
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'wxt';
 import { URL_PATTERNS } from './lib/wp-rocket/constants';
+import {
+  LAZYLOAD_RUNTIME_FILE,
+  SIMULATION_DATA_PATH
+} from './lib/wp-rocket-simulation/simulation-data';
 
 // Extension name rendered in the browser UI.
 const NAME = 'WPR Front Debugging Tool';
@@ -16,6 +20,9 @@ export const FIREFOX_ADDON_ID = '{f6991cc9-09e3-43d0-a6dd-4aae5f676452}';
 
 /** Explicit supported Firefox floor (owner-chosen). */
 export const FIREFOX_MIN_VERSION = '150.0';
+
+/** The packaged simulation folder (the data file's), where each LazyLoad runtime ships. */
+const SIMULATION_PACKAGE_DIR = SIMULATION_DATA_PATH.slice(0, SIMULATION_DATA_PATH.lastIndexOf('/'));
 
 export default defineConfig({
   modules: ['@wxt-dev/module-solid'],
@@ -35,7 +42,23 @@ export default defineConfig({
     ...(browser === 'firefox' && {
       browser_specific_settings: {
         gecko: { id: FIREFOX_ADDON_ID, strict_min_version: FIREFOX_MIN_VERSION }
-      }
+      },
+      // Firefox only: a simulated page's LazyLoad runtime request is
+      // redirected (`webRequest`) to its packaged copy, and a page may load
+      // an extension file only when it is web-accessible — so the packaged
+      // runtimes (only those: never the data file) are. Firefox serves them at
+      // a random per-install `moz-extension://<uuid>/` origin, so a page cannot
+      // guess them blindly; but the MV2 manifest flattens this entry to a plain
+      // resource list (`matches` is not applied), so any page that learns the
+      // UUID (e.g. from a redirected request) can load them (owner-accepted).
+      // Chromium answers the request inside its debugger session, so its
+      // build exposes nothing.
+      web_accessible_resources: [
+        {
+          resources: [`${SIMULATION_PACKAGE_DIR}/*/${LAZYLOAD_RUNTIME_FILE}`],
+          matches: [...URL_PATTERNS]
+        }
+      ]
     }),
     // Least privilege — every permission has a concrete consumer somewhere in the
     // ported feature set; each is added/removed by the phase that owns that feature.

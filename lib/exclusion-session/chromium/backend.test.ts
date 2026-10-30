@@ -4,7 +4,8 @@
  * mid-arm detaches, liveness re-check, re-tagging), serialization (the
  * latest of arm/resume/disarm wins), disarm, browser detaches (cause
  * mapping, generations, closed tabs), and paused requests — every path
- * releasing the request exactly once.
+ * releasing the request exactly once — simulated-runtime script requests
+ * included.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Logger } from '../../logger';
@@ -17,6 +18,7 @@ import type {
   InterceptionGrant,
   InterceptionHost
 } from '../backend';
+import type { PackagedRuntimeFile } from '../simulation-sources';
 import { DOCUMENT_BODY_BYTE_LIMIT, DOCUMENT_TRANSFORM_BUDGET_MS } from '../document-transform';
 import { speculationRulesGuardSource } from '../speculation-rules';
 import {
@@ -229,6 +231,42 @@ class FakeHost implements InterceptionHost {
     this.ended.push([tabId, cause, generation]);
     return Promise.resolve();
   }
+
+  /** The file named for {@link RUNTIME_URL} (null: the host names none). */
+  runtime: PackagedRuntimeFile | null = RUNTIME_FILE;
+  readonly runtimeAsks: [number, string, string][] = [];
+
+  simulatedRuntime(
+    tabId: number,
+    requestUrl: string,
+    documentUrl: string
+  ): Promise<PackagedRuntimeFile | null> {
+    this.runtimeAsks.push([tabId, requestUrl, documentUrl]);
+    return Promise.resolve(requestUrl === RUNTIME_URL ? this.runtime : null);
+  }
+}
+
+/** A simulated page's runtime URL and the packaged file answering it. */
+const RUNTIME_URL =
+  'https://site.test/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js';
+/** The tab's top-level document requesting {@link RUNTIME_URL}. */
+const PAGE_URL = 'https://site.test/post';
+const RUNTIME_FILE: PackagedRuntimeFile = {
+  url: 'chrome-extension://id/wp-rocket-simulation/lazyload/17.8.3/lazyload.min.js',
+  bytes: new TextEncoder().encode('/*! lazyload */')
+};
+
+/** A request-stage top-frame script pause for {@link RUNTIME_URL}. */
+function scriptPause(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return pauseEvent({
+    requestId: 'js-1',
+    request: { url: RUNTIME_URL, method: 'GET' },
+    resourceType: 'Script',
+    responseStatusCode: undefined,
+    responseStatusText: undefined,
+    responseHeaders: undefined,
+    ...overrides
+  });
 }
 
 /** A response-stage top-frame document pause. */
@@ -317,7 +355,10 @@ describe('arm', () => {
         target: { tabId: TAB },
         method: 'Fetch.enable',
         params: {
-          patterns: [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Response' }]
+          patterns: [
+            { urlPattern: '*', resourceType: 'Document', requestStage: 'Response' },
+            { urlPattern: '*/lazyload.min.js', resourceType: 'Script', requestStage: 'Request' }
+          ]
         }
       },
       {
@@ -1107,5 +1148,112 @@ describe('Speculation-Rules header on continued session documents', () => {
       true,
       false
     ]);
+  });
+});
+
+describe('simulated-runtime script requests', () => {
+  beforeEach(async () => {
+    rig.port.commands.set('Page.getFrameTree', () =>
+      Promise.resolve({ frameTree: { frame: { id: 'TOP', url: PAGE_URL } } })
+    );
+    await rig.backend.arm(TAB, 10);
+    rig.port.calls.length = 0;
+    rig.port.sent.length = 0;
+  });
+
+  /** Deliver a script pause and let it settle. */
+  async function request(
+    overrides: Record<string, unknown> = {},
+    source: unknown = { tabId: TAB }
+  ) {
+    rig.port.handlers.event(source, 'Fetch.requestPaused', scriptPause(overrides));
+    await flush();
+  }
+
+  it('answers the named runtime with its packaged bytes, uncached, never reaching the site', async () => {
+    await request();
+    expect(rig.host.runtimeAsks).toEqual([[TAB, RUNTIME_URL, PAGE_URL]]);
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.fulfillRequest']);
+    expect(rig.port.sent.at(-1)?.params).toEqual({
+      requestId: 'js-1',
+      responseCode: 200,
+      responseHeaders: [
+        { name: 'content-type', value: 'text/javascript; charset=utf-8' },
+        { name: 'cache-control', value: 'no-store' }
+      ],
+      body: bytesToBase64(RUNTIME_FILE.bytes)
+    });
+    // A script request is never read nor handed to the document step.
+    expect(rig.port.calls).not.toContain('Fetch.getResponseBody');
+    expect(rig.host.gated).toEqual([]);
+  });
+
+  it('continues a request the host names no file for (another URL, no simulation)', async () => {
+    await request({ request: { url: 'https://site.test/x/lazyload.min.js', method: 'GET' } });
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.continueRequest']);
+    rig.host.runtime = null;
+    await request({ requestId: 'js-2' });
+    expect(rig.port.releases('js-2')).toEqual(['Fetch.continueRequest']);
+  });
+
+  it('continues a sub-frame’s or a child session’s request without asking the host', async () => {
+    await request({ frameId: 'IFRAME' });
+    await request({ requestId: 'js-2' }, { tabId: TAB, sessionId: 'child' });
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.continueRequest']);
+    expect(rig.port.sent.at(-1)?.method).toBe('Fetch.continueRequest');
+    expect(rig.host.runtimeAsks).toEqual([]);
+  });
+
+  it.each([
+    ['unreadable', () => Promise.reject(new Error('No target'))],
+    ['missing from the frame tree', () => Promise.resolve({ frameTree: {} })]
+  ])(
+    'continues a request whose top document is %s, without asking the host (logged)',
+    async (_name, answer) => {
+      rig.port.commands.set('Page.getFrameTree', answer);
+      await request();
+      expect(rig.port.releases('js-1')).toEqual(['Fetch.continueRequest']);
+      expect(rig.host.runtimeAsks).toEqual([]);
+      expect(logged('warn', /runtime request left to the site/)).toBe(true);
+    }
+  );
+
+  it('continues a request of a tab whose session is stopping, without asking the host', async () => {
+    const detach = deferred();
+    rig.port.detachImpl = () => detach.promise;
+    const disarmed = rig.backend.disarm(TAB);
+    await flush();
+    await request();
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.continueRequest']);
+    expect(rig.host.runtimeAsks).toEqual([]);
+    detach.resolve();
+    await disarmed;
+  });
+
+  it('names a refused answer and continues the request to the site', async () => {
+    rig.port.commands.set('Fetch.fulfillRequest', () =>
+      Promise.reject(new Error('Invalid header'))
+    );
+    await request();
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.fulfillRequest', 'Fetch.continueRequest']);
+    expect(logged('warn', /Simulated runtime not delivered — answer refused/)).toBe(true);
+  });
+
+  it('names an answer whose request was already gone (nothing left to release)', async () => {
+    rig.port.commands.set('Fetch.fulfillRequest', () =>
+      Promise.reject(new Error('Invalid InterceptionId.'))
+    );
+    await request();
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.fulfillRequest']);
+    expect(logged('info', /Simulated runtime not delivered — its request was already gone/)).toBe(
+      true
+    );
+  });
+
+  it('continues a request when the host fails unexpectedly', async () => {
+    rig.host.simulatedRuntime = () => Promise.reject(new Error('host broke'));
+    await request();
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.continueRequest']);
+    expect(logged('error', /handling failed/)).toBe(true);
   });
 });

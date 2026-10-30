@@ -176,7 +176,14 @@ export const INTERCEPTION_HOST_BOUNDS_MS = {
   /** Wake wait + session read + the record wait. */
   documentNotServed: STEPS.ready + STEPS.store + STEPS.record,
   /** Wake wait + the record wait. */
-  interceptionEnded: STEPS.ready + STEPS.record
+  interceptionEnded: STEPS.ready + STEPS.record,
+  /**
+   * Wake wait + queue wait (behind the tab's document record) + session
+   * read + the packaged data and runtime file reads (memory reads once a
+   * document of this lifetime simulated).
+   */
+  simulatedRuntime:
+    STEPS.ready + STEPS.queueWait + STEPS.store + 2 * SIMULATION_SOURCE_TIMEOUTS_MS.runtime
 } as const;
 
 /**

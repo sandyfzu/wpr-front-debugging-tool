@@ -25,6 +25,8 @@ import { webSha256HexOfBytes } from '../../utils/web-sha256';
 const DATA_URL = 'chrome-extension://id/wp-rocket-simulation/simulation-data.json';
 const RUNTIME_URL = 'chrome-extension://id/wp-rocket-simulation/lazyload/17.8.3/lazyload.min.js';
 const BYTES = new TextEncoder().encode('/*! lazyload */').buffer;
+/** The sound check of `BYTES` at `RUNTIME_URL`: the verified file itself. */
+const SOUND = { ok: true, file: { url: RUNTIME_URL, bytes: new Uint8Array(BYTES) } } as const;
 
 /** A transport serving `body` with `status`, recording each asked URL. */
 function serving(body: ArrayBuffer, status: number, asked: string[]): PackagedBytesFetch {
@@ -54,7 +56,7 @@ describe('checkPackagedLazyloadRuntime', () => {
       dataUrl: DATA_URL,
       sha256: webSha256HexOfBytes
     };
-    expect(await checkPackagedLazyloadRuntime(deps, await pinned())).toEqual({ ok: true });
+    expect(await checkPackagedLazyloadRuntime(deps, await pinned())).toEqual(SOUND);
     expect(asked).toEqual([RUNTIME_URL]);
   });
 
@@ -100,7 +102,7 @@ describe('createPackagedLazyloadRuntimeSource', () => {
       log
     });
     const sound = await pinned();
-    expect(await Promise.all([source(sound), source(sound)])).toEqual([{ ok: true }, { ok: true }]);
+    expect(await Promise.all([source(sound), source(sound)])).toEqual([SOUND, SOUND]);
     const damaged = { ...sound, runtime: { ...sound.runtime, sha256: 'f'.repeat(64) } };
     expect(await source(damaged)).toEqual({ ok: false, cause: 'hash-mismatch' });
     expect(await source(damaged)).toEqual({ ok: false, cause: 'hash-mismatch' });
@@ -122,7 +124,7 @@ describe('createPackagedLazyloadRuntimeSource', () => {
     expect(await source(sound)).toEqual({ ok: false, cause: 'asset-unreachable' });
     expect(await source(sound)).toEqual({ ok: false, cause: 'asset-unreachable' });
     status = 200;
-    expect(await source(sound)).toEqual({ ok: true });
+    expect(await source(sound)).toEqual(SOUND);
     expect(asked).toHaveLength(3);
     expect(log.error).toHaveBeenCalledTimes(1);
   });
@@ -149,7 +151,7 @@ function sources(lazyloadRuntime: SimulationSources['lazyloadRuntime']): Simulat
 
 describe('prepareSimulation — LazyLoad', () => {
   it('adds the LazyLoad input (the document’s URL, the version’s texts) once its runtime checks', async () => {
-    const check = vi.fn(() => Promise.resolve({ ok: true } as const));
+    const check = vi.fn(() => Promise.resolve(SOUND));
     const prepared = await prepareSimulation(
       '<html></html>',
       { features: ['lazyload'] },
@@ -185,9 +187,9 @@ describe('prepareSimulation — LazyLoad', () => {
     let release: (() => void) | undefined;
     const check = vi.fn(
       () =>
-        new Promise<{ readonly ok: true }>((resolve) => {
+        new Promise<typeof SOUND>((resolve) => {
           release = () => {
-            resolve({ ok: true });
+            resolve(SOUND);
           };
         })
     );
@@ -217,7 +219,7 @@ describe('prepareSimulation — LazyLoad', () => {
   });
 
   it('never checks the runtime nor adds the input without LazyLoad', async () => {
-    const check = vi.fn(() => Promise.resolve({ ok: true } as const));
+    const check = vi.fn(() => Promise.resolve(SOUND));
     const prepared = await prepareSimulation(
       '<html></html>',
       { features: ['delay_js'] },

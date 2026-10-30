@@ -236,7 +236,9 @@ describe('declared bounds', () => {
         steps.ready + 2 * steps.store + DOCUMENT_TRANSFORM_BUDGET_MS + steps.runnerOverhead,
       documentBodyUnavailable: steps.ready + steps.store + steps.record,
       documentNotServed: steps.ready + steps.store + steps.record,
-      interceptionEnded: steps.ready + steps.record
+      interceptionEnded: steps.ready + steps.record,
+      simulatedRuntime:
+        steps.ready + steps.queueWait + steps.store + 2 * SIMULATION_SOURCE_TIMEOUTS_MS.runtime
     });
   });
 

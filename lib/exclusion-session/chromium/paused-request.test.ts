@@ -8,12 +8,14 @@ import { bytesToBase64 } from '../../../utils/base64';
 import {
   classifyPause,
   continueWithoutRulesHeaderParams,
+  frameTreeDocumentUrl,
   fulfillHeaders,
   fulfillParams,
   headerValue,
   parsePausedRequest,
   pausedRequestId,
   responseBodyBytes,
+  runtimeFulfillParams,
   type PausedRequest
 } from './paused-request';
 
@@ -121,6 +123,28 @@ describe('classifyPause', () => {
     expect(
       classifyPause(paused({ responseStatusCode: undefined, responseHeaders: undefined }))
     ).toEqual({ kind: 'pass', reason: 'request-stage' });
+  });
+
+  it('marks a request-stage script pause as a script request', () => {
+    expect(
+      classifyPause(
+        paused({
+          resourceType: 'Script',
+          responseStatusCode: undefined,
+          responseHeaders: undefined
+        })
+      )
+    ).toEqual({ kind: 'script-request' });
+    // A script's network error is still only a pass.
+    expect(
+      classifyPause(
+        paused({
+          resourceType: 'Script',
+          responseStatusCode: undefined,
+          responseErrorReason: 'Failed'
+        })
+      )
+    ).toEqual({ kind: 'pass', reason: 'network-error' });
   });
 
   it('passes a network error', () => {
@@ -258,5 +282,39 @@ describe('continueWithoutRulesHeaderParams', () => {
         paused({ responseStatusCode: undefined, responseHeaders: withHeader })
       )
     ).toBeNull();
+  });
+});
+
+describe('runtimeFulfillParams', () => {
+  it('serves the bytes as a 200 classic script that is never stored', () => {
+    const body = new TextEncoder().encode('/*! runtime */');
+    expect(runtimeFulfillParams('r', body)).toEqual({
+      requestId: 'r',
+      responseCode: 200,
+      responseHeaders: [
+        { name: 'content-type', value: 'text/javascript; charset=utf-8' },
+        { name: 'cache-control', value: 'no-store' }
+      ],
+      body: bytesToBase64(body)
+    });
+  });
+});
+
+describe('frameTreeDocumentUrl', () => {
+  it('reads the root frame’s document URL', () => {
+    expect(
+      frameTreeDocumentUrl({
+        frameTree: { frame: { id: 'TOP', url: 'https://site.test/post' }, childFrames: [] }
+      })
+    ).toBe('https://site.test/post');
+  });
+
+  it.each([
+    ['no result', undefined],
+    ['no tree', {}],
+    ['no frame', { frameTree: {} }],
+    ['a non-string url', { frameTree: { frame: { url: 7 } } }]
+  ])('answers null for %s', (_name, result) => {
+    expect(frameTreeDocumentUrl(result)).toBeNull();
   });
 });

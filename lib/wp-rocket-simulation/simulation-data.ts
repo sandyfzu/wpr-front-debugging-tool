@@ -118,6 +118,15 @@ const WPR_VERSION = /^\d+(?:\.\d+)+$/;
  */
 export const LAZYLOAD_JS_DIR = 'js/';
 
+/**
+ * The file name every packaged LazyLoad runtime's `jsPath` ends with (held
+ * by the packaged-runtime check): a session tab's requests for it are the
+ * only scripts the extension may answer itself — matched by name, so a
+ * renamed plugin folder or a CDN host still matches, then answered only for
+ * the exact runtime URL its simulated page carries.
+ */
+export const LAZYLOAD_RUNTIME_FILE = 'lazyload.min.js';
+
 /** A runtime's own version (`this.v`): non-empty, no whitespace or quotes. */
 const RUNTIME_VERSION = /^[^\s"']+$/;
 

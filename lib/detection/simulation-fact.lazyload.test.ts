@@ -14,6 +14,16 @@ import { simulateLazyload } from '../wp-rocket-simulation/lazyload-simulation';
 import { writeSimulationMarker } from '../wp-rocket-simulation/marker-write';
 import { readSimulationData, SIMULATION_DATA_PATH } from '../wp-rocket-simulation/simulation-data';
 import type { SimulatedFeatureId } from '../wp-rocket-simulation/spec';
+import { describeDetections } from './describe';
+import {
+  BUILDER_TAB_LINE_TITLE,
+  builderPageKind,
+  builderTabLine,
+  hudFeatureOf,
+  readHudFeature,
+  simulationTabHint,
+  type HudFeature
+} from './hud';
 import { parsePage } from './parse-page';
 import { applyPresencePropagation, runChecks } from './run-detection';
 import { SIMULATED_MARKER_ID } from './simulated-pages.fixtures';
@@ -92,5 +102,32 @@ describe('LazyLoad detection authority — the honest-status table', () => {
   it('no marker: no simulation field', () => {
     const detections = detect(PLAIN);
     expect(detections.lazyload).not.toHaveProperty('simulation');
+  });
+});
+
+describe('LazyLoad simulated — HUD and panel words (the approved patterns, no new copy)', () => {
+  const ROW = hudFeatureOf('lazyload') as HudFeature;
+
+  it('verified: not applied (never unknown), the simulation fact, the shared tab-line pattern', () => {
+    const detections = detect(LAZY, ['lazyload']);
+    expect(readHudFeature(ROW, describeDetections(detections), detections)).toMatchObject({
+      verdict: 'not applied',
+      simulation: 'simulated'
+    });
+    expect(simulationTabHint(ROW)).toBe('Lazyload Images simulated');
+    expect(builderTabLine(detections)).toEqual({
+      title: BUILDER_TAB_LINE_TITLE,
+      hints: ['Lazyload Images simulated'],
+      spoken: `${BUILDER_TAB_LINE_TITLE} — Lazyload Images simulated`
+    });
+    expect(builderPageKind(detections)).toBe('simulated');
+  });
+
+  it('unverified: the served verdict, annotated', () => {
+    const detections = detect(LAZY);
+    expect(readHudFeature(ROW, describeDetections(detections), detections)).toMatchObject({
+      verdict: 'applied',
+      simulation: 'unverified'
+    });
   });
 });

@@ -194,7 +194,8 @@ function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } 
       unavailableIdentities.push(identity);
       return Promise.resolve();
     },
-    interceptionEnded: () => Promise.resolve()
+    interceptionEnded: () => Promise.resolve(),
+    simulatedRuntime: () => Promise.resolve(null)
   };
   const timers = manualTimers();
   const log = quietLog();
