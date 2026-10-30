@@ -610,6 +610,16 @@ function parseOptionalSimulation(value: unknown): SimulationFact | undefined | n
   return value === 'simulated' || value === 'unverified' ? value : null;
 }
 
+/** How many keys an optional `simulation` field adds to its row (0 or 1). */
+function simulationKeys(simulation: SimulationFact | undefined): number {
+  return simulation === undefined ? 0 : 1;
+}
+
+/** The parsed `simulation` field to spread into its row (nothing when absent). */
+function simulationOf(simulation: SimulationFact | undefined): { simulation?: SimulationFact } {
+  return simulation === undefined ? {} : { simulation };
+}
+
 /** `{ present }`-shaped row with exactly that key, own keys only. */
 function parsePresenceRow(
   input: unknown
@@ -638,7 +648,7 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
   if (builder === null) return reject('builder');
   const simulation = parseOptionalSimulation(row['simulation']);
   if (simulation === null) return reject('simulation');
-  const optionalKeys = builderKeys(builder) + (simulation === undefined ? 0 : 1);
+  const optionalKeys = builderKeys(builder) + simulationKeys(simulation);
   if (Object.keys(row).length !== featureRowKeyCount(4, source) + mark + optionalKeys)
     return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
@@ -712,7 +722,7 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
     ...truncationOf(mark),
     ...(source === undefined ? {} : { source }),
     ...builderOf(builder),
-    ...(simulation === undefined ? {} : { simulation })
+    ...simulationOf(simulation)
   };
 }
 
@@ -729,9 +739,16 @@ function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
   if (source === null) return reject('source');
   const builder = parseOptionalBuilder(row['builder'], 'defer_all_js');
   if (builder === null) return reject('builder');
-  if (Object.keys(row).length !== featureRowKeyCount(3, source) + mark + builderKeys(builder))
+  const simulation = parseOptionalSimulation(row['simulation']);
+  if (simulation === null) return reject('simulation');
+  if (
+    Object.keys(row).length !==
+    featureRowKeyCount(3, source) + mark + builderKeys(builder) + simulationKeys(simulation)
+  )
     return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
+  // A simulated row is never served: the engine clears its presence.
+  if (simulation === 'simulated' && row['present']) return reject('simulation');
   const scripts = row['scripts'];
   if (!Array.isArray(scripts)) return reject('scripts');
   if (scripts.length > LIMITS.deferScripts.count) return reject('scripts', 'length');
@@ -754,7 +771,8 @@ function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
     deferredScripts,
     ...truncationOf(mark),
     ...(source === undefined ? {} : { source }),
-    ...builderOf(builder)
+    ...builderOf(builder),
+    ...simulationOf(simulation)
   };
 }
 
@@ -771,9 +789,16 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
   if (source === null) return reject('source');
   const builder = parseOptionalBuilder(row['builder'], 'lazyload');
   if (builder === null) return reject('builder');
-  if (Object.keys(row).length !== featureRowKeyCount(2, source) + mark + builderKeys(builder))
+  const simulation = parseOptionalSimulation(row['simulation']);
+  if (simulation === null) return reject('simulation');
+  if (
+    Object.keys(row).length !==
+    featureRowKeyCount(2, source) + mark + builderKeys(builder) + simulationKeys(simulation)
+  )
     return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
+  // A simulated row is never served: the engine clears its presence.
+  if (simulation === 'simulated' && row['present']) return reject('simulation');
   const rawImages = row['images'];
   if (!Array.isArray(rawImages)) return reject('images');
   if (rawImages.length > LIMITS.images.count) return reject('images', 'length');
@@ -800,7 +825,8 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
     images,
     ...truncationOf(mark),
     ...(source === undefined ? {} : { source }),
-    ...builderOf(builder)
+    ...builderOf(builder),
+    ...simulationOf(simulation)
   };
 }
 
