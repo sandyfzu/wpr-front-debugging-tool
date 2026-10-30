@@ -34,7 +34,11 @@ import {
   contextScheduler
 } from '../../utils/context-timers';
 import { createOverlayController } from './controller';
-import { createSimulationEvidence, readSimulationPage } from './exclusions/simulation-page';
+import {
+  createSimulationEvidence,
+  readSimulationPage,
+  requestedPageUrl
+} from './exclusions/simulation-page';
 import { createSimulationMarkerCheck } from '../../lib/messaging/simulation-marker-verifier';
 import { createPageTools } from './page-tools';
 import { mountOverlay } from '../../components/injected-ui/mount-overlay';
@@ -120,7 +124,7 @@ function renderOverlay(
       navigationAnchor: () => readNavigationAnchor(ISOLATED_WORLD)
     });
     const simulationEvidence = createSimulationEvidence({
-      read: () => readSimulationPage(document),
+      read: () => readSimulationPage(document, requestedPageUrl(page.pageFacts())),
       changed: page.candidates,
       verify: createSimulationMarkerCheck({
         send: (markerId) => sendMessage('verifySimulationMarker', { markerId }),

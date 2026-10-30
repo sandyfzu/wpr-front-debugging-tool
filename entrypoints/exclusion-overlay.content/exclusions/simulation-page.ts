@@ -1,7 +1,8 @@
 /**
  * The live page's evidence for the mode lanes: whether the root declares
  * AMP, per lane whether WP Rocket's footprints of the feature are on the
- * page and whether the builder's marker says its rewrite turned it off,
+ * page, whether the page's URL is one WP Rocket never applies it to
+ * (LazyLoad), and whether the builder's marker says its rewrite turned it off,
  * and the simulation marker — asked of the background per id (once more
  * after a transient miss), because page markup alone (a saved or forged
  * copy) must never pass as a simulation. One marker names every simulated
@@ -20,15 +21,26 @@ import { readSimulationMarker } from '../../../lib/detection/simulation-fact';
 import type { Logger } from '../../../lib/logger';
 import type { SimulationMarkerCheck } from '../../../lib/messaging/simulation-marker-verifier';
 import { AMP_HTML_ATTRIBUTES } from '../../../lib/wp-rocket-simulation/amp';
+import {
+  alreadyServesLazyload,
+  isLazyloadFootprint,
+  type FootprintElement
+} from '../../../lib/wp-rocket-simulation/already-served';
+import {
+  lazyloadUrlSkip,
+  type LazyloadUrlSkip
+} from '../../../lib/wp-rocket-simulation/lazyload-url-skip';
 import type { SimulatedFeatureId } from '../../../lib/wp-rocket-simulation/spec';
 import {
   NO_SIMULATION_EVIDENCE,
   SIMULATION_LANES,
+  SIMULATION_LANE_KEYS,
   type LanePageEvidence,
   type MarkerVerification,
   type SimulationLane,
   type SimulationPageEvidence
 } from './simulation-mode';
+import type { PageFacts } from '../session/page-match';
 import { DEFER_FOOTPRINT_SELECTOR, DELAY_FOOTPRINT_SELECTOR } from './page-scan';
 
 /** One lane's read of the page. */
@@ -39,6 +51,8 @@ export interface LanePageReading {
   readonly builderOff: boolean;
   /** The builder's marker names any change of its rewrite to the feature here. */
   readonly builderTouched: boolean;
+  /** Why WP Rocket never applies the feature to the page's URL (null: it may). */
+  readonly skip: LazyloadUrlSkip | null;
 }
 
 /** One read of the page. */
@@ -58,11 +72,67 @@ export interface SimulationPageReading {
   } | null;
 }
 
+/** The elements that may be a LazyLoad footprint (see `isLazyloadFootprint`). */
+const LAZYLOAD_FOOTPRINT_CANDIDATES = 'meta[name], style[id], img[data-lazy-src], script';
+
+/** The HTML namespace: SVG's `<script>`/`<style>` are no footprints (as the stage masks `<svg>`). */
+const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
+
+/**
+ * A live element as a footprint test reads it.
+ *
+ * @param element A live element.
+ */
+function liveElement(element: Element): FootprintElement {
+  return {
+    name: element.localName,
+    attr: (name) => element.getAttribute(name),
+    has: (name) => element.hasAttribute(name),
+    body: () => element.textContent
+  };
+}
+
+/**
+ * Whether an element tree holds a LazyLoad footprint (see `isLazyloadFootprint`).
+ *
+ * @param root The tree (a document, or a parsed fragment).
+ */
+function holdsLazyloadFootprint(root: ParentNode): boolean {
+  for (const element of root.querySelectorAll(LAZYLOAD_FOOTPRINT_CANDIDATES)) {
+    if (element.namespaceURI === HTML_NAMESPACE && isLazyloadFootprint(liveElement(element))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether WP Rocket's LazyLoad footprints are on the page — the stage's own
+ * already-served rule (`isLazyloadFootprint`) over the live elements, then
+ * over the markup of each `<noscript>` (on a scripted page its content,
+ * where WP Rocket prints its no-JS style, is text, never elements), read
+ * by the stage's own text reader (`alreadyServesLazyload`: no HTML is
+ * parsed into the page). An `<xmp>` holds text too, as the stage masks it.
+ *
+ * @param doc The page document.
+ */
+function lazyloadFootprints(doc: Document): boolean {
+  if (holdsLazyloadFootprint(doc)) return true;
+  for (const noscript of doc.querySelectorAll('noscript')) {
+    // Element children: a document parsed without scripting, already read above.
+    if (noscript.childElementCount > 0) continue;
+    const markup = noscript.textContent;
+    if (markup.includes('<') && alreadyServesLazyload(markup)) return true;
+  }
+  return false;
+}
+
 /**
  * Whether WP Rocket's footprints of a lane's feature are on the page:
  * Delay JS — a delayed script; Defer JS — a script it stamped deferred, or
  * the generator meta declaring the feature (a page whose every script is
- * excluded carries no stamp).
+ * excluded carries no stamp); LazyLoad — the stage's already-served rule
+ * (see {@link lazyloadFootprints}).
  */
 const FOOTPRINTS: Readonly<
   Record<SimulationLane, (doc: Document, meta: () => FeatureMetaEvidence) => boolean>
@@ -70,15 +140,39 @@ const FOOTPRINTS: Readonly<
   delayJs: (doc) => doc.querySelector(DELAY_FOOTPRINT_SELECTOR) !== null,
   deferJs: (doc, meta) =>
     doc.querySelector(DEFER_FOOTPRINT_SELECTOR) !== null ||
-    featureMetaVerdict(meta(), FEATURE_META_TOKENS.defer_all_js) === 'declared'
+    featureMetaVerdict(meta(), FEATURE_META_TOKENS.defer_all_js) === 'declared',
+  lazyload: lazyloadFootprints
 };
+
+/**
+ * Why WP Rocket never applies a lane's feature to the page's URL (only
+ * LazyLoad skips requests by URL).
+ */
+const URL_SKIPS: Readonly<Record<SimulationLane, (url: string) => LazyloadUrlSkip | null>> = {
+  delayJs: () => null,
+  deferJs: () => null,
+  lazyload: lazyloadUrlSkip
+};
+
+/**
+ * The URL the session's rewrite read this document's verdicts from: the
+ * document's own URL as requested (the navigation entry's, which
+ * `history.pushState`/`replaceState` never move; a matching session record
+ * is this very URL's), else the current address.
+ *
+ * @param facts The page facts (see `PageFacts`).
+ */
+export function requestedPageUrl(facts: Pick<PageFacts, 'href' | 'documentUrl'>): string {
+  return facts.documentUrl ?? facts.href;
+}
 
 /**
  * Read the page's evidence for every mode lane.
  *
  * @param doc The page document.
+ * @param url The URL WP Rocket answered for the page (production: {@link requestedPageUrl}; default: the document's).
  */
-export function readSimulationPage(doc: Document): SimulationPageReading {
+export function readSimulationPage(doc: Document, url: string = doc.URL): SimulationPageReading {
   const root = doc.documentElement;
   const note = parseBuilderMarker(doc);
   const marker = readSimulationMarker(doc);
@@ -90,14 +184,27 @@ export function readSimulationPage(doc: Document): SimulationPageReading {
     return {
       footprints: FOOTPRINTS[key](doc, metaOnce),
       builderOff: fact !== undefined && 'off' in fact,
-      builderTouched: fact !== undefined
+      builderTouched: fact !== undefined,
+      skip: URL_SKIPS[key](url)
     };
   };
   return {
     amp: AMP_HTML_ATTRIBUTES.some((name) => root.hasAttribute(name)),
-    lanes: { delayJs: lane('delayJs'), deferJs: lane('deferJs') },
+    lanes: perLane(lane),
     marker: marker === null ? null : { id: marker.markerId, features: marker.features }
   };
+}
+
+/**
+ * One value per mode lane.
+ *
+ * @param value The lane's value.
+ */
+function perLane<T>(value: (lane: SimulationLane) => T): Record<SimulationLane, T> {
+  return Object.fromEntries(SIMULATION_LANE_KEYS.map((lane) => [lane, value(lane)])) as Record<
+    SimulationLane,
+    T
+  >;
 }
 
 /** What {@link createSimulationEvidence} needs. */
@@ -207,9 +314,6 @@ export function createSimulationEvidence(
     const current = reading();
     if (current === null) return NO_SIMULATION_EVIDENCE;
     const known = answers();
-    return {
-      delayJs: laneEvidence(current, 'delayJs', known),
-      deferJs: laneEvidence(current, 'deferJs', known)
-    };
+    return perLane((lane) => laneEvidence(current, lane, known));
   });
 }

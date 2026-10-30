@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capitalize, countOccurrences } from './text';
+import { capitalize, countOccurrences, joinWords } from './text';
 
 describe('capitalize', () => {
   it('uppercases the first character, preserving the rest', () => {
@@ -27,5 +27,17 @@ describe('countOccurrences', () => {
 
   it('refuses an empty needle', () => {
     expect(() => countOccurrences('abc', '')).toThrow('the needle is empty');
+  });
+});
+
+describe('joinWords', () => {
+  it.each([
+    [[], ''],
+    [['A'], 'A'],
+    [['A', 'B'], 'A and B'],
+    [['A', 'B', 'C'], 'A, B and C'],
+    [['A', 'B', 'C', 'D'], 'A, B, C and D']
+  ])('joins %j as %j', (words, joined) => {
+    expect(joinWords(words)).toBe(joined);
   });
 });

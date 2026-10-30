@@ -18,6 +18,7 @@ import type { StatusKind } from '../../../components/ui/status-badge';
 import { PAGE_UI_MENU_RESCUE, PAGE_UI_OPTIONS_RESCUE } from '../../../lib/page-commands/commands';
 import { hudFeatureOf } from '../../../lib/detection/hud';
 import type { SimulatedFeatureId } from '../../../lib/wp-rocket-simulation/spec';
+import { joinWords } from '../../../utils/text';
 
 /**
  * - `checking` — the first answer has not arrived.
@@ -96,7 +97,7 @@ function appliedLead(simulated: readonly SimulatedFeatureId[]): string {
   if (names.length === 0) return 'Exclusions are applied in this tab';
   if (names.length === 1)
     return `Exclusions and a simulated ${names.join('')} are applied in this tab`;
-  return `Exclusions are applied in this tab, with ${names.join(' and ')} simulated by the extension (not the site’s configuration)`;
+  return `Exclusions are applied in this tab, with ${joinWords(names)} simulated by the extension (not the site’s configuration)`;
 }
 
 /**

@@ -35,6 +35,7 @@ import { EmptyState } from '../../../../components/ui/empty-state';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { IMAGE_NOUN } from '../../../../lib/detection/count-nouns';
+import { runtimeOnPage } from '../../../../lib/detection/simulation-fact';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import {
@@ -89,6 +90,13 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
     const detection = lazyload();
     return detection === null ? [] : buildLazyloadRows(detection);
   });
+  /** A verified simulation, not WP Rocket, lazy loads the page. */
+  const simulated = (): boolean => lazyload()?.simulation === 'simulated';
+  /** Images are lazy loaded here, by WP Rocket or by a verified simulation. */
+  const lazyloading = (): boolean => {
+    const row = lazyload();
+    return row !== null && runtimeOnPage(row);
+  };
 
   return (
     <ResourceListPage
@@ -101,15 +109,17 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
       notes={notesFor(lazyload())}
       featureLabel={getRealOptionName('lazyload')}
       featurePresent={lazyload()?.present ?? false}
+      featureSimulated={simulated()}
       noun={IMAGE_NOUN}
       listLabel="Images"
       searchLabel="Search image URLs"
       searchPlaceholder="Search image URLs…"
-      estimateSize={(row) => lazyloadRowEstimate(row, lazyload()?.present ?? false)}
+      estimateSize={(row) => lazyloadRowEstimate(row, lazyloading())}
       renderRow={(row) => (
         <LazyloadRow
           row={row}
-          featurePresent={lazyload()?.present ?? false}
+          featurePresent={lazyloading()}
+          simulated={simulated()}
           clipped={urlClipped(lazyload()?.truncated, row.src, PAYLOAD_LIMITS.images.src)}
         />
       )}
@@ -128,18 +138,21 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
 
 /**
  * One image row: name, state badge, copy and the full URL; a non-lazyloaded
- * image adds its reasons on the meta line only when lazyload is detected.
+ * image adds its reasons on the meta line only when lazyload runs on the page.
  *
  * @param props.row The image row.
- * @param props.featurePresent Whether image lazyload was detected on the page.
+ * @param props.featurePresent Whether image lazyload runs on the page (WP Rocket's or a verified simulation's).
+ * @param props.simulated Whether a verified simulation runs it.
  * @param props.clipped Whether the capture clipped its URL.
  */
 function LazyloadRow(props: {
   row: LazyloadImageResource;
   featurePresent: boolean;
+  simulated: boolean;
   clipped: boolean;
 }): JSX.Element {
-  const state = (): ReturnType<typeof lazyloadStateBadge> => lazyloadStateBadge(props.row);
+  const state = (): ReturnType<typeof lazyloadStateBadge> =>
+    lazyloadStateBadge(props.row, props.simulated);
   return (
     <ResourceLink
       href={props.row.src}

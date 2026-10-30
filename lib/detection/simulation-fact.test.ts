@@ -12,7 +12,7 @@ import type { WprDetections } from '../wp-rocket/types';
 import { FIXTURE_DIR } from './fixtures/corpus';
 import { parsePage } from './parse-page';
 import { applyPresencePropagation, runChecks, runDetection } from './run-detection';
-import { applySimulationFacts, delayRuntimeOnPage } from './simulation-fact';
+import { applySimulationFacts, runtimeOnPage } from './simulation-fact';
 import {
   SIMULATED_MARKER_ID,
   simulatedPage,
@@ -295,18 +295,24 @@ describe('detection authority — the honest-status table', () => {
   });
 });
 
-describe('delayRuntimeOnPage', () => {
+describe('runtimeOnPage', () => {
   it('served or verified-simulated holds scripts; unverified or absent does not', () => {
-    expect(delayRuntimeOnPage({ present: true })).toBe(true);
-    expect(delayRuntimeOnPage({ present: false, simulation: 'simulated' })).toBe(true);
-    expect(delayRuntimeOnPage({ present: false, simulation: 'unverified' })).toBe(false);
-    expect(delayRuntimeOnPage({ present: true, simulation: 'unverified' })).toBe(true);
-    expect(delayRuntimeOnPage({ present: false })).toBe(false);
+    expect(runtimeOnPage({ present: true })).toBe(true);
+    expect(runtimeOnPage({ present: false, simulation: 'simulated' })).toBe(true);
+    expect(runtimeOnPage({ present: false, simulation: 'unverified' })).toBe(false);
+    expect(runtimeOnPage({ present: true, simulation: 'unverified' })).toBe(true);
+    expect(runtimeOnPage({ present: false })).toBe(false);
+  });
+
+  it('answers for any simulated feature’s row (LazyLoad too)', () => {
+    const lazyload = detect(simulatedPage(PLAIN), ['delay_js']).lazyload;
+    expect(runtimeOnPage({ ...lazyload, present: false, simulation: 'simulated' })).toBe(true);
+    expect(runtimeOnPage({ ...lazyload, present: false, simulation: 'unverified' })).toBe(false);
   });
 
   it('reads a verified simulated page as runtime-on-page though not served', () => {
     const row = detect(simulatedPage(PLAIN), ['delay_js']).delay_js;
     expect(row.present).toBe(false);
-    expect(delayRuntimeOnPage(row)).toBe(true);
+    expect(runtimeOnPage(row)).toBe(true);
   });
 });

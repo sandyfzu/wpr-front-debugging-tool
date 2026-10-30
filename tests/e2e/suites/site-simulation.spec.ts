@@ -104,7 +104,7 @@ const WORDS = {
   stripLine: 'Exclusion Builder rewrote this page',
   stripHint: 'Delay JS simulated',
   appliedBody:
-    'This page was rendered with WP Rocket Delay JavaScript execution simulated and your exclusions — not the site’s real configuration.',
+    'This page was rendered with your exclusions and WP Rocket’s Delay JavaScript execution simulated — not the site’s real configuration.',
   bundledList: `Exclusion list: bundled with WP Rocket ${SIMULATED_VERSION} (latest list unreachable: network error)`,
   version: `Simulated · WP Rocket ${SIMULATED_VERSION}`,
   alreadyDelayed: 'WP Rocket already delays scripts on this page — exclusions apply to its output.',

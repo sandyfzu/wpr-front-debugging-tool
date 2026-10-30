@@ -62,7 +62,13 @@ function simulation(
 
 /** Session facts (defaults: nothing simulated, nothing disabled, no delayed scripts). */
 function facts(over: Partial<LaneSessionFacts> = {}): LaneSessionFacts {
-  return { simulation: undefined, disabled: false, report: delayReport(0), ...over };
+  return {
+    simulation: undefined,
+    disabled: false,
+    report: delayReport(0),
+    reportProvesServed: true,
+    ...over
+  };
 }
 
 /** Page evidence over the empty page. */
@@ -352,7 +358,7 @@ describe('the Defer JS lane', () => {
     expect(isSimulationLane('deferJs')).toBe(true);
     expect(isSimulationLane('delayJs')).toBe(true);
     expect(isSimulationLane('lazyRender')).toBe(false);
-    expect(isSimulationLane('lazyload')).toBe(false);
+    expect(isSimulationLane('lazyload')).toBe(true);
   });
 
   it('reads every Defer JS report state', () => {
@@ -417,7 +423,8 @@ describe('the Defer JS lane', () => {
   it('says a page with no evidence of either lane, every lane', () => {
     expect(NO_SIMULATION_EVIDENCE).toEqual({
       delayJs: NO_PAGE_EVIDENCE,
-      deferJs: NO_PAGE_EVIDENCE
+      deferJs: NO_PAGE_EVIDENCE,
+      lazyload: NO_PAGE_EVIDENCE
     });
   });
 });

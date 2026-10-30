@@ -674,6 +674,14 @@
 .xo-lane-hint {
   font-size: 11px;
   color: var(--fg-muted);
+  /* Page-derived URLs (LazyLoad's script address) wrap instead of widening the lane. */
+  overflow-wrap: anywhere;
+}
+
+/* A URL in a lane hint is information: neutral ground, never the error tint. */
+.xo-lane-hint .xo-code {
+  background: var(--surface-3);
+  color: var(--fg-secondary);
 }
 
 .xo-lane-count {

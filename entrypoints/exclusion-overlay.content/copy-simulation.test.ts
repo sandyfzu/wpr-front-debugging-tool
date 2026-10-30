@@ -97,7 +97,7 @@ describe('simulation outcome words', () => {
     expect(simulationOutcomeCopy(simulatedReport())).toBeNull();
     expect(viewCopy(applied(simulatedReport()))).toEqual({
       title: 'Applied',
-      body: 'This page was rendered with WP Rocket Delay JavaScript execution simulated and your exclusions — not the site’s real configuration.'
+      body: 'This page was rendered with your exclusions and WP Rocket’s Delay JavaScript execution simulated — not the site’s real configuration.'
     });
   });
 

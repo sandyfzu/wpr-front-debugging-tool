@@ -143,7 +143,8 @@ async function started(
 function pageWith(delayed: boolean, deferred: boolean): SimulationPageEvidence {
   return {
     delayJs: { ...NO_PAGE_EVIDENCE, footprints: delayed },
-    deferJs: { ...NO_PAGE_EVIDENCE, footprints: deferred }
+    deferJs: { ...NO_PAGE_EVIDENCE, footprints: deferred },
+    lazyload: NO_PAGE_EVIDENCE
   };
 }
 
@@ -183,7 +184,8 @@ describe('Defer JS mode: availability from its own evidence', () => {
     const amp = { ...NO_PAGE_EVIDENCE, amp: true };
     const { controller } = await started(fakePort({ state: 'inactive' }), {
       delayJs: amp,
-      deferJs: amp
+      deferJs: amp,
+      lazyload: amp
     });
     expect(controller.laneBlocks('deferJs')).toEqual({
       served: null,
@@ -237,7 +239,8 @@ describe('Defer JS mode: availability from its own evidence', () => {
   it('reads a verified marker naming Defer JS as a kept simulation', async () => {
     const { controller } = await started(fakePort({ state: 'inactive' }), {
       delayJs: NO_PAGE_EVIDENCE,
-      deferJs: { ...NO_PAGE_EVIDENCE, footprints: true, marker: 'verified' }
+      deferJs: { ...NO_PAGE_EVIDENCE, footprints: true, marker: 'verified' },
+      lazyload: NO_PAGE_EVIDENCE
     });
     expect(controller.laneState('deferJs')).toEqual({ kind: 'not-served', simulation: 'kept' });
     expect(controller.laneState('delayJs')).toEqual({ kind: 'not-served', simulation: 'none' });

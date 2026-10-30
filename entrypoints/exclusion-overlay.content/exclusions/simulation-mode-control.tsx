@@ -1,20 +1,21 @@
 /**
- * A mode lane's control — As served · Simulated · Disabled, the options the
- * page does not allow dimmed — and the lines under it: why an option is
+ * A mode lane's control — As served · Simulated, and Disabled where the
+ * feature has a feature-wide disable; the options the page does not allow
+ * dimmed — and the lines under it: why an option is
  * unavailable, a shown Disabled that changes nothing here, a draft mode
  * the page does not allow (shown as As served), a simulation the page keeps
  * after the session left it, and the admin-screen warning (word + glyph,
  * never blocking; under the first mode control only — it concerns the page).
  */
-import { Show, type JSX } from 'solid-js';
+import { Show, createMemo, type JSX } from 'solid-js';
 import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import { ChoiceGroup, type ChoiceOption } from '../../../components/ui/choice-group';
 import { MODE_LANE_COPY, type LaneModeCopy } from '../copy';
 import type { OverlayController } from '../controller';
 import {
   ADMIN_WARNING_LANE,
-  SIMULATION_MODES,
   disabledChangesNothing,
+  laneModes,
   type ModeBlock,
   type SimulationLane,
   type SimulationMode
@@ -63,18 +64,21 @@ export function SimulationModeControl(props: SimulationModeProps): JSX.Element {
     const blocks = props.controller.laneBlocks(props.lane);
     return blocks !== null && blocks[mode] !== null;
   };
-  const options: readonly ChoiceOption<SimulationMode>[] = SIMULATION_MODES.map((mode) => ({
-    value: mode,
-    get label() {
-      return copy().labels[mode];
-    },
-    get disabled() {
-      return blocked(mode);
-    }
-  }));
+  // Rebuilt only if the lane itself changed (it never does in place).
+  const options = createMemo((): readonly ChoiceOption<SimulationMode>[] =>
+    laneModes(props.lane).map((mode) => ({
+      value: mode,
+      get label() {
+        return copy().labels[mode];
+      },
+      get disabled() {
+        return blocked(mode);
+      }
+    }))
+  );
   return (
     <ChoiceGroup
-      options={options}
+      options={options()}
       value={props.controller.laneMode(props.lane)}
       onChange={(mode) => {
         props.controller.setLaneMode(props.lane, mode);

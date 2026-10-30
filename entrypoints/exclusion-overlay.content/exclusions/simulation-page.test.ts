@@ -6,13 +6,25 @@ import type {
   SimulationMarkerCheckOutcome
 } from '../../../lib/messaging/simulation-marker-verifier';
 import type { SimulatedFeatureId } from '../../../lib/wp-rocket-simulation/spec';
+import { alreadyServesLazyload } from '../../../lib/wp-rocket-simulation/already-served';
 import { NO_PAGE_EVIDENCE, NO_SIMULATION_EVIDENCE } from './simulation-mode';
 import {
   createSimulationEvidence,
   readSimulationPage,
+  requestedPageUrl,
   type LanePageReading,
   type SimulationPageReading
 } from './simulation-page';
+
+/** A generator meta declaring WP Rocket features. */
+const GENERATOR = (features: string): string =>
+  `<meta name="generator" content="WP Rocket 3.24" data-wpr-features="${features}">`;
+const LAZY_RUNTIME =
+  '<script async src="https://e.org/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js"></script>';
+const LAZY_OPTIONS =
+  '<script>window.lazyLoadOptions=[{elements_selector:"img[data-lazy-src],.rocket-lazyload"}];</script>';
+const LAZY_NOJS = '<noscript><style id="rocket-lazyload-nojs-css">x</style></noscript>';
+const LAZY_IMAGE = `<img src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2010%2010'%3E%3C/svg%3E" data-lazy-src="/a.png">`;
 
 const MARKER = `<meta name="wpr-fdt-simulation" content="v1 delay_js=simulated id=${MARKER_ID}">`;
 
@@ -31,7 +43,12 @@ function deferLane(html: string): LanePageReading {
   return readSimulationPage(parse(html)).lanes.deferJs;
 }
 
-const NOTHING: LanePageReading = { footprints: false, builderOff: false, builderTouched: false };
+const NOTHING: LanePageReading = {
+  footprints: false,
+  builderOff: false,
+  builderTouched: false,
+  skip: null
+};
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -43,7 +60,7 @@ describe('readSimulationPage', () => {
       readSimulationPage(parse('<html><head></head><body><script src="a.js"></script>'))
     ).toEqual({
       amp: false,
-      lanes: { delayJs: NOTHING, deferJs: NOTHING },
+      lanes: { delayJs: NOTHING, deferJs: NOTHING, lazyload: NOTHING },
       marker: null
     });
   });
@@ -82,6 +99,119 @@ describe('readSimulationPage', () => {
     expect(delayLane(meta('wpr_delay_js')).footprints).toBe(false);
   });
 
+  it('reads WP Rocket’s LazyLoad footprints: its generator tokens, runtime tag and options', () => {
+    const lazy = (html: string): boolean =>
+      readSimulationPage(parse(html)).lanes.lazyload.footprints;
+    const meta = (features: string): string =>
+      `<head><meta name="generator" content="WP Rocket 3.24" data-wpr-features="${features}">`;
+    expect(lazy(meta('wpr_lazyload_images'))).toBe(true);
+    // An iframes-only page counts: its options script would be rewritten.
+    expect(lazy(meta('wpr_lazyload_iframes'))).toBe(true);
+    expect(lazy(meta('wpr_defer_js'))).toBe(false);
+    expect(
+      lazy(
+        '<script async src="https://e.org/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js"></script>'
+      )
+    ).toBe(true);
+    expect(
+      lazy('<script>window.lazyLoadOptions=[{elements_selector:"img[data-lazy-src]"}];</script>')
+    ).toBe(true);
+    // Each footprint belongs to LazyLoad alone.
+    expect(
+      delayLane(
+        '<script>window.lazyLoadOptions=[{elements_selector:"img[data-lazy-src]"}];</script>'
+      ).footprints
+    ).toBe(false);
+  });
+
+  it('never reads another plugin’s lazy markup as WP Rocket’s LazyLoad', () => {
+    const lazy = (html: string): boolean =>
+      readSimulationPage(parse(html)).lanes.lazyload.footprints;
+    // Generic vanilla-lazyload setups spell the global their own way.
+    expect(lazy('<script>window.lazyLoadOptions = {elements_selector: ".lazy"};</script>')).toBe(
+      false
+    );
+    expect(lazy('<script src="/wp-content/plugins/other/lazyload.min.js"></script>')).toBe(false);
+    // Another plugin's lazy images carry no WP Rocket placeholder.
+    expect(lazy('<img src="/ph.gif" data-lazy-src="a.png" class="lazy">')).toBe(false);
+    expect(lazy('<img src="data:image/svg+xml,x" data-lazy-src="a.png" class="lazyloaded">')).toBe(
+      false
+    );
+    // SVG's own <script> is no footprint (the stage masks <svg>).
+    expect(
+      lazy(
+        '<svg><script>window.lazyLoadOptions=[{elements_selector:"img[data-lazy-src]"}]</script></svg>'
+      )
+    ).toBe(false);
+  });
+
+  it.each([
+    ['generator images token', `<head>${GENERATOR('wpr_lazyload_images')}</head>`],
+    ['another generator token', `<head>${GENERATOR('wpr_delay_js')}</head>`],
+    ['runtime tag', `<body>${LAZY_RUNTIME}</body>`],
+    ['inline options', `<body>${LAZY_OPTIONS}</body>`],
+    ['no-JS style', `<head>${LAZY_NOJS}</head>`],
+    ['placeholder image', `<body>${LAZY_IMAGE}</body>`],
+    ['foreign lazy image', '<body><img data-lazy-src="/a.png" src="/ph.gif" class="lazy"></body>'],
+    ['theme setup', '<body><script src="/wp-content/themes/x/lazyload.min.js"></script></body>'],
+    ['prose', '<body><p>window.lazyLoadOptions rocket-lazyload-nojs-css</p></body>']
+  ])('reads %s exactly as the stage’s already-served rule', (_name, body) => {
+    const html = `<!doctype html><html>${body}</html>`;
+    expect(readSimulationPage(parse(html)).lanes.lazyload.footprints).toBe(
+      alreadyServesLazyload(html)
+    );
+  });
+
+  it('reads a WP Rocket page with its generator meta removed by its other footprints', () => {
+    const lazy = (html: string): boolean =>
+      readSimulationPage(parse(html)).lanes.lazyload.footprints;
+    expect(lazy(`<head>${LAZY_NOJS}</head><body>${LAZY_IMAGE}</body>`)).toBe(true);
+    expect(lazy(`<body>${LAZY_IMAGE}</body>`)).toBe(true);
+    expect(lazy(`<head>${LAZY_NOJS}</head>`)).toBe(true);
+  });
+
+  it('reads the no-JS style inside a scripted page’s <noscript>, where it is text', () => {
+    const doc = parse('<!doctype html><html><head></head><body></body></html>');
+    const noscript = doc.createElement('noscript');
+    // A scripted page parses <noscript> content as text, never elements.
+    noscript.textContent = '<style id="rocket-lazyload-nojs-css">img{}</style>';
+    doc.head.append(noscript);
+    expect(noscript.children).toHaveLength(0);
+    expect(readSimulationPage(doc).lanes.lazyload.footprints).toBe(true);
+    noscript.textContent = '<style id="other">img{}</style>';
+    expect(readSimulationPage(doc).lanes.lazyload.footprints).toBe(false);
+  });
+
+  it('reads the URLs WP Rocket never lazy loads, for the LazyLoad lane only', () => {
+    const doc = parse('<html><body>');
+    const lanes = (url: string) => readSimulationPage(doc, url).lanes;
+    expect(lanes('https://e.org/?s=shoes').lazyload.skip).toBe('search');
+    expect(lanes('https://e.org/?p=2&preview=true').lazyload.skip).toBe('preview');
+    expect(lanes('https://e.org/page/?fl_builder').lazyload.skip).toBe('page-builder-editor');
+    expect(lanes('https://e.org/post/').lazyload.skip).toBeNull();
+    expect(lanes('https://e.org/?s=shoes').delayJs.skip).toBeNull();
+    expect(lanes('https://e.org/?s=shoes').deferJs.skip).toBeNull();
+  });
+
+  it('reads the URL skip off the requested URL, never an address the page moved to', () => {
+    const doc = parse('<html><body>');
+    const requested = 'https://e.org/post/';
+    window.history.replaceState(null, '', '/?s=shoes');
+    try {
+      const facts = { href: window.location.href, documentUrl: requested };
+      expect(facts.href).toContain('?s=shoes');
+      expect(readSimulationPage(doc, requestedPageUrl(facts)).lanes.lazyload.skip).toBeNull();
+      // The document URL unknown: the current address is all there is.
+      expect(requestedPageUrl({ href: facts.href, documentUrl: null })).toBe(facts.href);
+      expect(
+        readSimulationPage(doc, requestedPageUrl({ ...facts, documentUrl: null })).lanes.lazyload
+          .skip
+      ).toBe('search');
+    } finally {
+      window.history.replaceState(null, '', '/');
+    }
+  });
+
   it('reads the builder’s Delay-off fact', () => {
     const lane = delayLane(
       '<head><meta name="wpr-fdt-exclusion-builder" content="v1 delay_js=off">'
@@ -100,7 +230,12 @@ describe('readSimulationPage', () => {
 
   it('reads each lane’s builder facts apart', () => {
     const html = '<head><meta name="wpr-fdt-exclusion-builder" content="v1 defer_all_js=page-off">';
-    expect(deferLane(html)).toEqual({ footprints: false, builderOff: true, builderTouched: true });
+    expect(deferLane(html)).toEqual({
+      footprints: false,
+      builderOff: true,
+      builderTouched: true,
+      skip: null
+    });
     expect(delayLane(html)).toEqual(NOTHING);
     expect(
       deferLane('<head><meta name="wpr-fdt-exclusion-builder" content="v1 defer_all_js=off">')
@@ -110,7 +245,7 @@ describe('readSimulationPage', () => {
       deferLane(
         '<head><meta name="wpr-fdt-exclusion-builder" content="v1 defer_all_js=excluded:2">'
       )
-    ).toEqual({ footprints: false, builderOff: false, builderTouched: true });
+    ).toEqual({ footprints: false, builderOff: false, builderTouched: true, skip: null });
   });
 
   it('reads the simulation marker’s id and features, and an unverifiable conflict as a null id', () => {
@@ -145,7 +280,8 @@ function reading(
     amp: false,
     lanes: {
       delayJs: { ...NOTHING, footprints: over.footprints ?? true },
-      deferJs: { ...NOTHING, ...over.defer }
+      deferJs: { ...NOTHING, ...over.defer },
+      lazyload: NOTHING
     },
     marker: marker === null ? null : { id: marker.id, features: marker.features ?? ['delay_js'] }
   };
@@ -193,7 +329,8 @@ describe('createSimulationEvidence', () => {
     const rig = evidenceRig(reading(), vi.fn());
     expect(rig.evidence()).toEqual({
       delayJs: { ...NO_PAGE_EVIDENCE, footprints: true },
-      deferJs: NO_PAGE_EVIDENCE
+      deferJs: NO_PAGE_EVIDENCE,
+      lazyload: NO_PAGE_EVIDENCE
     });
     rig.dispose();
   });
@@ -346,7 +483,8 @@ describe('createSimulationEvidence', () => {
       footprints: true,
       builderOff: false,
       builderTouched: true,
-      marker: 'none'
+      marker: 'none',
+      skip: null
     });
     expect(rig.evidence().delayJs.amp).toBe(true);
     rig.dispose();

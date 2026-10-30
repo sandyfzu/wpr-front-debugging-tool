@@ -99,7 +99,7 @@ const SIMULATION_REPORT_KEYS = ['lazyloadSimulation', 'deferSimulation', 'simula
  * own guard owns the outcome).
  *
  * @param input The status's `document` value.
- * @returns The simulated features (Defer JS's and Delay JS's reports), in
+ * @returns The simulated features (LazyLoad's, Defer JS's and Delay JS's reports), in
  *   registry order, or empty.
  */
 function simulatedFeatures(input: unknown): SimulatedFeatureId[] {

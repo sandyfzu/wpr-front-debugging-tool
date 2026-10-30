@@ -69,9 +69,12 @@ import { rowVerdict, type LanePage, type RowVerdict } from './exclusions/lane-pa
 import { laneReport } from './exclusions/counts';
 import {
   SIMULATION_LANES,
+  laneDisabled,
   laneModeBlocks,
+  laneModes,
   shownLaneMode,
   realFeatureState,
+  REPORT_PROVES_SERVED,
   runsSimulation,
   sameSimulate,
   type ModeBlock,
@@ -85,7 +88,7 @@ import { INITIAL_OVERLAY_STATE, canStart, overlayTransition } from './session/ma
 import type { OverlayEvent, OverlayState, SessionAction } from './session/machine';
 import { matchServedDocument, type PageFacts } from './session/page-match';
 import type { ExclusionSessionPort, PortOutcome, SessionProblem } from './session/port';
-import { sessionView, type SessionView } from './session/session-view';
+import { sessionView, simulationReports, type SessionView } from './session/session-view';
 
 /** How long a typing pause waits before the draft is saved. */
 export const AUTOSAVE_DELAY_MS = 800;
@@ -400,7 +403,10 @@ export interface OverlayController {
    * until the user picks another (As served included).
    */
   replacedLaneMode(lane: SimulationLane): SimulationMode | null;
-  /** Choose a mode lane's mode (ignored when not editable or when the page does not allow it). */
+  /**
+   * Choose a mode lane's mode (ignored when not editable, when the lane
+   * does not offer it, or when the page does not allow it).
+   */
   setLaneMode(lane: SimulationLane, mode: SimulationMode): void;
   /** The page on screen runs a simulation (any feature: the session's, or one kept). */
   readonly runsSimulation: Accessor<boolean>;
@@ -537,11 +543,10 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       const session =
         current?.state === 'active' && shown?.kind === 'applied'
           ? {
-              simulation: [shown.simulation, shown.deferSimulation].find(
-                (report) => report?.feature === feature
-              ),
-              disabled: current.set.disable[lane],
-              report: laneReport(shown.reports, lane)
+              simulation: simulationReports(shown).find((report) => report.feature === feature),
+              disabled: laneDisabled(current.set.disable, lane),
+              report: laneReport(shown.reports, lane),
+              reportProvesServed: REPORT_PROVES_SERVED[lane]
             }
           : null;
       return realFeatureState(session, evidence()[lane], current?.state === 'active');
@@ -567,7 +572,9 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const delayLane = laneModel('delayJs', () => null);
   const laneModels: Readonly<Record<SimulationLane, LaneModel>> = {
     delayJs: delayLane,
-    deferJs: laneModel('deferJs', delayLane.state)
+    deferJs: laneModel('deferJs', delayLane.state),
+    // LazyLoad runs first in WP Rocket's buffer: no other feature decides it.
+    lazyload: laneModel('lazyload', () => null)
   };
   const simulationRuns = createMemo(() =>
     Object.values(laneModels).some((model) => runsSimulation(model.state()))
@@ -1337,7 +1344,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     runsSimulation: simulationRuns,
     adminScreen,
     setLaneMode: (lane, mode) => {
-      if (!editable()) return;
+      // A mode the lane does not offer (Disabled without a feature-wide disable) is ignored.
+      if (!editable() || !laneModes(lane).includes(mode)) return;
       const blocks = laneModels[lane].blocks();
       if (blocks !== null && blocks[mode] !== null) return;
       setDraft(setLaneMode(draft(), lane, mode));

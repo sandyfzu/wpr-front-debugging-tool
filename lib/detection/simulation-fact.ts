@@ -18,7 +18,7 @@
  * feature was served, so the row gets no simulation field.
  */
 import { SIMULATION_MARKER_META_NAME } from '../wp-rocket/constants';
-import type { WprDetections } from '../wp-rocket/types';
+import type { SimulationFactField, WprDetections } from '../wp-rocket/types';
 import {
   parseSimulationMarker,
   type SimulationMarkerNote
@@ -131,18 +131,17 @@ export function applySimulationFacts(
 }
 
 /**
- * Whether a delay runtime holds scripts back on this page — WP Rocket's
- * served one or a verified simulation's injected one. A different question
- * from "did WP Rocket serve Delay JS" (`row.present`, false on a simulated
- * page): ask this one wherever the page's behavior matters (scripts waiting
- * for an interaction, the delayed-script count), `present` wherever the
- * served verdict does (cards, report, presence).
+ * Whether a feature's runtime acts on this page — WP Rocket's served one or
+ * a verified simulation's injected one (Delay JS holding scripts back,
+ * LazyLoad deferring images, …). A different question from "did WP Rocket
+ * serve it" (`row.present`, false on a simulated page): ask this one
+ * wherever the page's behavior matters (scripts waiting for an
+ * interaction, images loaded on scroll, their counts), `present` wherever
+ * the served verdict does (cards, report, presence).
  *
- * @param row The page's Delay JS row.
- * @returns True when a delay runtime is on the page.
+ * @param row The page's detection row of a simulated feature.
+ * @returns True when the feature's runtime is on the page.
  */
-export function delayRuntimeOnPage(
-  row: Pick<WprDetections['delay_js'], 'present' | 'simulation'>
-): boolean {
+export function runtimeOnPage(row: { readonly present: boolean } & SimulationFactField): boolean {
   return row.present || row.simulation === 'simulated';
 }

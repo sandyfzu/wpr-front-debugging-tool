@@ -6,6 +6,7 @@ import type {
 import { activeRecord } from '../../../lib/messaging/exclusion-session.fixtures';
 import {
   deferSimulatedReport,
+  lazyloadSimulatedReport,
   delaySimulate,
   simulatedReport
 } from '../../../lib/messaging/exclusion-simulation.fixtures';
@@ -194,6 +195,34 @@ describe('sessionView: simulation', () => {
     );
     expect(Object.hasOwn(deferOnly, 'simulation')).toBe(false);
     expect(deferOnly).toMatchObject({ deferSimulation });
+  });
+
+  it('carries the LazyLoad report first: all three listed in buffer order', () => {
+    const simulation = simulatedReport();
+    const deferSimulation = deferSimulatedReport();
+    const lazyloadSimulation = lazyloadSimulatedReport();
+    const view = sessionView(
+      {
+        ...withDocument({
+          outcome: 'rewritten',
+          reports: [REPORT],
+          simulation,
+          deferSimulation,
+          lazyloadSimulation
+        }),
+        simulate: { features: ['lazyload', 'defer_all_js', 'delay_js'] }
+      },
+      () => 'this-page'
+    );
+    expect(view).toMatchObject({ kind: 'applied', lazyloadSimulation });
+    if (view.kind !== 'applied') throw new Error('not applied');
+    expect(simulationReports(view)).toEqual([lazyloadSimulation, deferSimulation, simulation]);
+    const lazyloadOnly = sessionView(
+      withDocument({ outcome: 'rewritten', reports: [], lazyloadSimulation }),
+      () => 'this-page'
+    );
+    expect(Object.hasOwn(lazyloadOnly, 'deferSimulation')).toBe(false);
+    expect(lazyloadOnly).toMatchObject({ lazyloadSimulation });
   });
 
   it('marks a row overrun of a simulating session (the simulation shares its budget)', () => {

@@ -138,10 +138,10 @@ describe('Defer JS outcome words', () => {
   it('names a simulated Defer JS on the applied banner, alone and with Delay JS', () => {
     expect(viewCopy(applied(deferSimulatedReport()))).toEqual({
       title: 'Applied',
-      body: 'This page was rendered with WP Rocket Load JavaScript deferred simulated and your exclusions — not the site’s real configuration.'
+      body: 'This page was rendered with your exclusions and WP Rocket’s Load JavaScript deferred simulated — not the site’s real configuration.'
     });
     expect(viewCopy(applied(deferSimulatedReport(), simulatedReport())).body).toBe(
-      'This page was rendered with WP Rocket Load JavaScript deferred and Delay JavaScript execution simulated and your exclusions — not the site’s real configuration.'
+      'This page was rendered with your exclusions and WP Rocket’s Load JavaScript deferred and Delay JavaScript execution simulated — not the site’s real configuration.'
     );
   });
 

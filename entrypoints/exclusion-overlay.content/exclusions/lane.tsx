@@ -40,9 +40,9 @@ import {
 } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import type {
-  DeferSimulationReport,
   DelaySimulationReport,
-  DocumentSimulationReport
+  DocumentSimulationReport,
+  LazyloadSimulationReport
 } from '../../../lib/messaging/exclusion-simulation';
 import { createLogger } from '../../../lib/logger';
 import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
@@ -58,6 +58,7 @@ import {
   ROW_NOTE_COPY,
   SIMULATION_LANE_COPY,
   appliedRowWarningNote,
+  lazyloadLaneLines,
   simulationListCopy,
   rowWarningNote,
   type LanePageCopy,
@@ -69,7 +70,8 @@ import type { OverlayController, SettledPasteOutcome } from '../controller';
 import { capText } from '../../../utils/cap-text';
 import { CopyAll } from './copy-all';
 import { SimulationModeControl, SimulationModeNotes } from './simulation-mode-control';
-import { isSimulationLane, type SimulationLane } from './simulation-mode';
+import { SIMULATION_LANES, isSimulationLane, type SimulationLane } from './simulation-mode';
+import { simulationReports } from '../session/session-view';
 import { laneCounts, rowMatches } from './counts';
 import { isBlankRow, laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
 import type { PageOffRow } from './lane-page';
@@ -159,18 +161,41 @@ function isEditingKey(event: KeyboardEvent): boolean {
 
 /**
  * A simulated page's count line for its lane: scripts the simulation
- * delayed, or deferred and wrapped, then those the rows restored.
+ * delayed, or deferred and wrapped, or images, pictures and background
+ * images it made lazy, then those the rows restored.
  *
  * @param simulation The lane's simulation report (`simulated`).
- * @param excluded Scripts the rows restored (the lane transform's rewrites).
+ * @param excluded What the rows restored (the lane transform's rewrites).
  */
-function simulationCountLine(
-  simulation: DelaySimulationReport | DeferSimulationReport,
-  excluded: number
-): string {
-  return simulation.feature === 'delay_js'
-    ? SIMULATION_LANE_COPY.line(simulation.delayed, excluded)
-    : SIMULATION_LANE_COPY.deferLine(simulation.deferred, simulation.wrapped, excluded);
+function simulationCountLine(simulation: DocumentSimulationReport, excluded: number): string {
+  switch (simulation.feature) {
+    case 'delay_js':
+      return SIMULATION_LANE_COPY.line(simulation.delayed, excluded);
+    case 'defer_all_js':
+      return SIMULATION_LANE_COPY.deferLine(simulation.deferred, simulation.wrapped, excluded);
+    case 'lazyload':
+      return SIMULATION_LANE_COPY.lazyloadLine(simulation, excluded);
+  }
+}
+
+/**
+ * The exclusion-list line of a feature that runs with one (null: LazyLoad,
+ * whose exclusions ship with the version).
+ *
+ * @param simulation The lane's simulation report.
+ * @param now The current time (epoch ms).
+ */
+function listLine(simulation: DocumentSimulationReport, now: number): string | null {
+  return simulation.feature === 'lazyload' ? null : simulationListCopy(simulation, now);
+}
+
+/**
+ * The LazyLoad report's own facts, or null for another feature.
+ *
+ * @param simulation The lane's simulation report.
+ */
+function lazyloadFacts(simulation: DocumentSimulationReport): LazyloadSimulationReport | null {
+  return simulation.feature === 'lazyload' ? simulation : null;
 }
 
 /**
@@ -204,7 +229,9 @@ export function Lane(props: LaneProps): JSX.Element {
     const lane = modeLane();
     const view = props.controller.view();
     if (lane === null || view?.kind !== 'applied') return undefined;
-    const report = lane === 'delayJs' ? view.simulation : view.deferSimulation;
+    const report = simulationReports(view).find(
+      (candidate) => candidate.feature === SIMULATION_LANES[lane]
+    );
     return report?.state === 'simulated' ? report : undefined;
   });
   /** The lane's rows read as one set (null: its rows act alone). */
@@ -448,9 +475,33 @@ export function Lane(props: LaneProps): JSX.Element {
                   {simulationCountLine(simulated(), props.report?.rewritten ?? 0)}
                 </span>
                 <span class="xo-lane-hint">{SIMULATION_LANE_COPY.version(simulated())}</span>
-                <span class="xo-lane-hint">
-                  {simulationListCopy(simulated(), (props.now ?? Date.now)())}
-                </span>
+                <Show when={listLine(simulated(), (props.now ?? Date.now)())}>
+                  {(line) => <span class="xo-lane-hint">{line()}</span>}
+                </Show>
+                <Show when={lazyloadFacts(simulated())}>
+                  {(lazyload) => {
+                    const lines = createMemo(() =>
+                      lazyloadLaneLines(lazyload(), props.report?.rewritten ?? 0)
+                    );
+                    return (
+                      <>
+                        <Show when={lines().runtime}>
+                          {(runtime) => (
+                            <span class="xo-lane-hint">
+                              <NoteRuns note={runtime()} />
+                            </span>
+                          )}
+                        </Show>
+                        <For each={lines().caveats}>
+                          {(caveat) => <span class="xo-lane-caveat">{caveat}</span>}
+                        </For>
+                        <For each={lines().hints}>
+                          {(hint) => <span class="xo-lane-hint">{hint}</span>}
+                        </For>
+                      </>
+                    );
+                  }}
+                </Show>
                 <Show when={delayFacts(simulated())?.undetermined}>
                   {(count) => (
                     <span class="xo-lane-caveat">{SIMULATION_LANE_COPY.undetermined(count())}</span>

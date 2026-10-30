@@ -9,7 +9,7 @@
 import { CONTROLLER_RUN_MARKER } from '../exclusion-builder/delay-js';
 import { delayMaskedRegions, firstRegionFrom } from '../exclusion-builder/delay-js-mask';
 import { scanTags, type ScannedTag } from '../exclusion-builder/html-scan';
-import { attributeValue, isGeneratorMeta } from './generator-meta';
+import { attributeValue, isGeneratorMeta, isGeneratorMetaName } from './generator-meta';
 import { LAZY_PLACEHOLDER_PREFIX } from './lazyload-tag';
 import {
   DATA_LAZY_SRC,
@@ -130,7 +130,31 @@ export function holdsLazyloadOptions(body: string): boolean {
 }
 
 /**
- * Whether a tag is a WP Rocket LazyLoad footprint — WP Rocket's own
+ * An element as a LazyLoad footprint test reads it — an opening tag off the
+ * served text (the stage) or a live element (the overlay), so both ask one
+ * rule ({@link isLazyloadFootprint}).
+ */
+export interface FootprintElement {
+  /** Lowercased tag name. */
+  readonly name: string;
+  /**
+   * An attribute's value (`null` when absent or valueless).
+   *
+   * @param name A lowercase attribute name.
+   */
+  attr(name: string): string | null;
+  /**
+   * Whether the element carries an attribute (valued or not).
+   *
+   * @param name A lowercase attribute name.
+   */
+  has(name: string): boolean;
+  /** The element's raw text content (read only for scripts). */
+  body(): string;
+}
+
+/**
+ * Whether an element is a WP Rocket LazyLoad footprint — WP Rocket's own
  * markup, never the generic vanilla-lazyload a theme or another plugin
  * may set up: the generator meta declaring LazyLoad (images or iframes),
  * its runtime tag (a script loading from `wp-rocket/assets/js/lazyload/`),
@@ -140,30 +164,45 @@ export function holdsLazyloadOptions(body: string): boolean {
  * Rocket" plugin prints the same style and image shapes: its page counts
  * as served (WP Rocket's LazyLoad would not reproduce over it).
  *
- * @param html The page.
- * @param tag An opening tag.
+ * @param element The element.
  */
-function isLazyloadFootprint(html: string, tag: ScannedTag): boolean {
-  if (isGeneratorMeta(tag)) {
-    const features = attributeValue(tag, WPR_FEATURES_ATTRIBUTE)?.split(/\s+/) ?? [];
-    return LAZYLOAD_META_TOKENS.some((token) => features.includes(token));
-  }
-  switch (tag.name) {
+export function isLazyloadFootprint(element: FootprintElement): boolean {
+  switch (element.name) {
+    case 'meta': {
+      if (!isGeneratorMetaName(element.attr('name'))) return false;
+      const features = element.attr(WPR_FEATURES_ATTRIBUTE)?.split(/\s+/) ?? [];
+      return LAZYLOAD_META_TOKENS.some((token) => features.includes(token));
+    }
     case 'style':
-      return attributeValue(tag, 'id') === LAZYLOAD_NOJS_STYLE_ID;
+      return element.attr('id') === LAZYLOAD_NOJS_STYLE_ID;
     case 'img':
       return (
-        tag.attrs.some((attr) => attr.name === DATA_LAZY_SRC) &&
-        (attributeValue(tag, 'src')?.startsWith(LAZY_PLACEHOLDER_PREFIX) ?? false)
+        element.has(DATA_LAZY_SRC) &&
+        (element.attr('src')?.startsWith(LAZY_PLACEHOLDER_PREFIX) ?? false)
       );
     case 'script':
       return (
-        LAZYLOAD_SCRIPT_PATTERN.test(attributeValue(tag, 'src') ?? '') ||
-        holdsLazyloadOptions(html.slice(tag.openingEnd, tag.contentEnd))
+        LAZYLOAD_SCRIPT_PATTERN.test(element.attr('src') ?? '') ||
+        holdsLazyloadOptions(element.body())
       );
     default:
       return false;
   }
+}
+
+/**
+ * A scanned opening tag as a {@link FootprintElement}.
+ *
+ * @param html The page.
+ * @param tag An opening tag of it.
+ */
+function scannedElement(html: string, tag: ScannedTag): FootprintElement {
+  return {
+    name: tag.name,
+    attr: (name) => attributeValue(tag, name),
+    has: (name) => tag.attrs.some((attr) => attr.name === name),
+    body: () => html.slice(tag.openingEnd, tag.contentEnd)
+  };
 }
 
 /**
@@ -177,5 +216,7 @@ function isLazyloadFootprint(html: string, tag: ScannedTag): boolean {
  */
 export function alreadyServesLazyload(html: string, tags?: readonly ScannedTag[]): boolean {
   const masked = maskedTagTest(html);
-  return (tags ?? scanTags(html)).some((tag) => isLazyloadFootprint(html, tag) && !masked(tag));
+  return (tags ?? scanTags(html)).some(
+    (tag) => isLazyloadFootprint(scannedElement(html, tag)) && !masked(tag)
+  );
 }

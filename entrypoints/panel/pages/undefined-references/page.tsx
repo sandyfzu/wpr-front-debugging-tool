@@ -45,7 +45,7 @@ import { Skeleton } from '../../../../components/ui/skeleton';
 import { STATUS_TEXT_CLASSES } from '../../../../components/ui/status-badge';
 import { toast } from '../../../../components/ui/toast-store';
 import { LABEL_DELAY_JAVASCRIPT_EXECUTION } from '../../../../lib/detection/labels';
-import { delayRuntimeOnPage } from '../../../../lib/detection/simulation-fact';
+import { runtimeOnPage } from '../../../../lib/detection/simulation-fact';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
 import { useFdtData } from '../../state/use-fdt-data';
@@ -140,7 +140,7 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
     {
       delayJsPresent: () => {
         const row = loaded()?.wprDetections.delay_js;
-        return row !== undefined && delayRuntimeOnPage(row);
+        return row !== undefined && runtimeOnPage(row);
       },
       allScriptsLoaded: () => loaded()?.allScriptsLoaded ?? false,
       words: () => loaded()?.undefinedReferencesOnPage ?? NO_WORDS,

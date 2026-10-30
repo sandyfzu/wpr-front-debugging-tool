@@ -95,6 +95,20 @@ describe('builderEntryView', () => {
     ).toBe(
       'Exclusions are applied in this tab, with Load JavaScript deferred and Delay JavaScript execution simulated by the extension (not the site’s configuration): pages of example.com:8443 load rewritten until Stop or the tab closes. Open the builder to see this page’s result.'
     );
+    // All three features: a list, buffer order.
+    expect(
+      builderEntryView({
+        kind: 'known',
+        summary: { ...ACTIVE, simulated: ['lazyload', 'defer_all_js', 'delay_js'] }
+      }).description
+    ).toBe(
+      'Exclusions are applied in this tab, with LazyLoad for images, Load JavaScript deferred and Delay JavaScript execution simulated by the extension (not the site’s configuration): pages of example.com:8443 load rewritten until Stop or the tab closes. Open the builder to see this page’s result.'
+    );
+    // LazyLoad alone.
+    expect(
+      builderEntryView({ kind: 'known', summary: { ...ACTIVE, simulated: ['lazyload'] } })
+        .description
+    ).toMatch(/^Exclusions and a simulated LazyLoad for images are applied in this tab: /);
     // Defer JS alone: the single-feature words.
     expect(
       builderEntryView({ kind: 'known', summary: { ...ACTIVE, simulated: ['defer_all_js'] } })

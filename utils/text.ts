@@ -25,3 +25,14 @@ export function countOccurrences(text: string, needle: string): number {
   }
   return count;
 }
+
+/**
+ * Join words as an English list without a serial comma: "A", "A and B",
+ * "A, B and C".
+ *
+ * @param words The words, in order (empty gives '').
+ */
+export function joinWords(words: readonly string[]): string {
+  if (words.length <= 1) return words.join('');
+  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1] ?? ''}`;
+}

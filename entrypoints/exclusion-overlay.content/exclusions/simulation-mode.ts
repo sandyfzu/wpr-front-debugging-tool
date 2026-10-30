@@ -1,6 +1,7 @@
 /**
  * The mode of a lane whose feature the extension can simulate — As served,
- * Simulated or Disabled — and what the page allows. Pure. The mode is not a
+ * Simulated or Disabled (only where the feature has a feature-wide disable)
+ * — and what the page allows. Pure. The mode is not a
  * field of its own on the wire: it maps one to one onto the set's
  * feature-wide disable and the simulate spec (As served: neither;
  * Simulated: the feature simulated; Disabled: the disable), so no surface
@@ -14,8 +15,13 @@
  * alone would misread both.
  */
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import { EXCLUSION_FEATURES, type ExclusionSetToggles } from '../../../lib/exclusion-builder/set';
+import {
+  EXCLUSION_FEATURES,
+  type ExclusionSetRows,
+  type ExclusionSetToggles
+} from '../../../lib/exclusion-builder/set';
 import type { DocumentSimulationReport } from '../../../lib/messaging/exclusion-simulation';
+import type { LazyloadUrlSkip } from '../../../lib/wp-rocket-simulation/lazyload-url-skip';
 import {
   SIMULATED_FEATURES,
   type SimulateSpec,
@@ -29,13 +35,14 @@ export const SIMULATION_MODES = ['served', 'simulated', 'disabled'] as const;
 export type SimulationMode = (typeof SIMULATION_MODES)[number];
 
 /**
- * The lanes whose feature-wide switch is the mode control, each with the
- * feature it simulates (its disable shares the lane's key), in lane order.
+ * The lanes whose feature-wide switch (when the feature has one) is the
+ * mode control, each with the feature it simulates, in lane order.
  */
 export const SIMULATION_LANES = {
   delayJs: 'delay_js',
-  deferJs: 'defer_all_js'
-} as const satisfies Partial<Record<keyof ExclusionSetToggles, SimulatedFeatureId>>;
+  deferJs: 'defer_all_js',
+  lazyload: 'lazyload'
+} as const satisfies Partial<Record<keyof ExclusionSetRows, SimulatedFeatureId>>;
 
 /** A lane with a mode control (see {@link SIMULATION_LANES}). */
 export type SimulationLane = keyof typeof SIMULATION_LANES;
@@ -47,6 +54,43 @@ export type SimulationLane = keyof typeof SIMULATION_LANES;
  */
 export function isSimulationLane(lane: string): lane is SimulationLane {
   return Object.hasOwn(SIMULATION_LANES, lane);
+}
+
+/** The mode lanes, in lane order. */
+export const SIMULATION_LANE_KEYS = Object.keys(SIMULATION_LANES) as readonly SimulationLane[];
+
+/**
+ * A mode lane's feature-wide disable key, from the feature registry (null:
+ * the feature has none, so the lane offers no Disabled).
+ *
+ * @param lane The mode lane.
+ */
+export function laneToggleKey(lane: SimulationLane): keyof ExclusionSetToggles | null {
+  return EXCLUSION_FEATURES.find((feature) => feature.rowsKey === lane)?.toggleKey ?? null;
+}
+
+/**
+ * The modes a lane offers, in display order: Disabled only where its
+ * feature has a feature-wide disable.
+ *
+ * @param lane The mode lane.
+ */
+export function laneModes(lane: SimulationLane): readonly SimulationMode[] {
+  return laneToggleKey(lane) === null
+    ? SIMULATION_MODES.filter((mode) => mode !== 'disabled')
+    : SIMULATION_MODES;
+}
+
+/**
+ * Whether a set's disables turn a mode lane's feature off (never for a
+ * feature without a disable).
+ *
+ * @param disable The set's disables.
+ * @param lane The mode lane.
+ */
+export function laneDisabled(disable: ExclusionSetToggles, lane: SimulationLane): boolean {
+  const key = laneToggleKey(lane);
+  return key !== null && disable[key];
 }
 
 /**
@@ -68,7 +112,7 @@ export const ADMIN_WARNING_LANE: SimulationLane = firstSimulationLane();
 
 /** The wire fields one mode stands for. */
 export interface ModeFields {
-  /** The set's feature-wide disable of the lane. */
+  /** The set's feature-wide disable of the lane (always false for a lane without one). */
   readonly disable: boolean;
   /** The simulate spec (absent: nothing simulated). */
   readonly simulate: SimulateSpec | undefined;
@@ -99,12 +143,17 @@ export function laneModeOf(
  * @param lane The lane.
  * @param mode The mode.
  * @param simulate The current spec (its other features are kept).
+ * @throws {@link Error} when the lane does not offer the mode (Disabled
+ *   on a lane whose feature has no disable).
  */
 export function laneModeFields(
   lane: SimulationLane,
   mode: SimulationMode,
   simulate: SimulateSpec | undefined
 ): ModeFields {
+  if (!laneModes(lane).includes(mode)) {
+    throw new Error(`The ${lane} lane offers no ${mode} mode`);
+  }
   const feature = SIMULATION_LANES[lane];
   const wanted = new Set(simulate?.features ?? []);
   if (mode === 'simulated') wanted.add(feature);
@@ -147,6 +196,8 @@ export type PageSimulation = 'none' | 'session' | 'kept';
  *   touched the feature here and nothing vouches for it any more (e.g.
  *   after Stop), so the missing footprints prove nothing.
  * - `amp` — an AMP page: WP Rocket never applies the feature there.
+ * - `skipped` — a request WP Rocket never lazy loads by its URL (a
+ *   preview, a search, a page-builder editor; LazyLoad only).
  */
 export type RealFeatureState =
   | { readonly kind: 'checking' }
@@ -156,7 +207,8 @@ export type RealFeatureState =
       readonly simulation: PageSimulation;
       readonly unproven?: true;
     }
-  | { readonly kind: 'amp' };
+  | { readonly kind: 'amp' }
+  | { readonly kind: 'skipped'; readonly reason: LazyloadUrlSkip };
 
 /** What the session's rewrite of the page on screen says of a feature (only when it is this page's). */
 export interface LaneSessionFacts {
@@ -166,7 +218,25 @@ export interface LaneSessionFacts {
   readonly disabled: boolean;
   /** The feature's transform report on this document. */
   readonly report: TransformReport | undefined;
+  /**
+   * Whether the transform report's counts alone prove WP Rocket serves the
+   * feature (see {@link REPORT_PROVES_SERVED}); otherwise they count only
+   * with the page's own footprints of it.
+   */
+  readonly reportProvesServed: boolean;
 }
+
+/**
+ * Per mode lane, whether its transform's counts alone prove WP Rocket
+ * serves the feature. Not LazyLoad's: its transform counts any
+ * `<img data-lazy-src>`, a shape another plugin's lazy markup shares, so
+ * only WP Rocket's own footprints (the stage's already-served rule) prove it.
+ */
+export const REPORT_PROVES_SERVED: Readonly<Record<SimulationLane, boolean>> = {
+  delayJs: true,
+  deferJs: true,
+  lazyload: false
+};
 
 /** The verification of the page's simulation marker naming the feature. */
 export type MarkerVerification = 'none' | 'checking' | 'verified' | 'unverified';
@@ -189,6 +259,8 @@ export interface LanePageEvidence {
   readonly builderTouched: boolean;
   /** The simulation marker naming the feature, as the background verified it. */
   readonly marker: MarkerVerification;
+  /** Why WP Rocket never applies the feature to this URL (null: it may; LazyLoad's only). */
+  readonly skip: LazyloadUrlSkip | null;
 }
 
 /** Evidence of a page nobody has read yet: nothing on it. */
@@ -197,7 +269,8 @@ export const NO_PAGE_EVIDENCE: LanePageEvidence = {
   footprints: false,
   builderOff: false,
   builderTouched: false,
-  marker: 'none'
+  marker: 'none',
+  skip: null
 };
 
 /** The live page's evidence per mode lane. */
@@ -206,7 +279,8 @@ export type SimulationPageEvidence = Readonly<Record<SimulationLane, LanePageEvi
 /** Evidence of a page nobody has read yet, every lane. */
 export const NO_SIMULATION_EVIDENCE: SimulationPageEvidence = {
   delayJs: NO_PAGE_EVIDENCE,
-  deferJs: NO_PAGE_EVIDENCE
+  deferJs: NO_PAGE_EVIDENCE,
+  lazyload: NO_PAGE_EVIDENCE
 };
 
 /**
@@ -214,8 +288,9 @@ export const NO_SIMULATION_EVIDENCE: SimulationPageEvidence = {
  * it does not decide (no rewrite here, or nothing feature-specific in it).
  *
  * @param session The session's facts for the page on screen.
+ * @param footprints Whether the live page carries WP Rocket's footprints of the feature.
  */
-function stateFromSession(session: LaneSessionFacts): RealFeatureState | null {
+function stateFromSession(session: LaneSessionFacts, footprints: boolean): RealFeatureState | null {
   const simulation = session.simulation;
   if (simulation !== undefined) {
     switch (simulation.state) {
@@ -229,15 +304,23 @@ function stateFromSession(session: LaneSessionFacts): RealFeatureState | null {
         // Any other reason (an unreproducible page, its encoding, Delay JS
         // served before Defer JS could run) is a page WP Rocket did not
         // apply the feature to: the simulation could not run there.
-        return simulation.reason === 'amp'
-          ? { kind: 'amp' }
-          : { kind: 'not-served', simulation: 'none' };
+        switch (simulation.reason) {
+          case 'amp':
+            return { kind: 'amp' };
+          case 'preview':
+          case 'search':
+          case 'page-builder-editor':
+            return { kind: 'skipped', reason: simulation.reason };
+          default:
+            return { kind: 'not-served', simulation: 'none' };
+        }
     }
   }
   const report = session.report;
   // Rows (or the disable) may have undone every script WP Rocket rewrote,
   // or removed its scripts: the report still counts them.
-  if ((report?.candidates ?? 0) > 0 || (report?.regionRemovals ?? 0) > 0) {
+  const counted = (report?.candidates ?? 0) > 0 || (report?.regionRemovals ?? 0) > 0;
+  if (counted && (session.reportProvesServed || footprints)) {
     return { kind: 'served' };
   }
   return null;
@@ -275,7 +358,7 @@ export function realFeatureState(
   page: LanePageEvidence,
   sessionOn: boolean
 ): RealFeatureState {
-  const fromSession = session === null ? null : stateFromSession(session);
+  const fromSession = session === null ? null : stateFromSession(session, page.footprints);
   if (fromSession !== null) return fromSession;
   const servedLive = page.footprints || (page.builderOff && sessionOn);
   // A zero-count Disabled decides only when the live page shows no positive
@@ -288,6 +371,8 @@ export function realFeatureState(
   if (page.marker === 'checking') return { kind: 'checking' };
   if (page.amp) return { kind: 'amp' };
   if (page.footprints) return { kind: 'served' };
+  // After the footprints: a site that lazy loads such a page anyway serves it.
+  if (page.skip !== null) return { kind: 'skipped', reason: page.skip };
   return page.builderTouched
     ? { kind: 'not-served', simulation: 'none', unproven: true }
     : { kind: 'not-served', simulation: 'none' };
@@ -298,9 +383,10 @@ export function realFeatureState(
  * WP Rocket applies the feature here), `delay-served` (Simulated, Defer JS:
  * WP Rocket delays scripts here — it defers before it delays, so the
  * served page no longer holds what Defer JS reads), `amp` (Simulated and
- * Disabled), `checking` (Simulated: not known yet).
+ * Disabled), `checking` (Simulated: not known yet), a {@link LazyloadUrlSkip}
+ * (Simulated, LazyLoad: WP Rocket never lazy loads this request).
  */
-export type ModeBlock = 'already-served' | 'delay-served' | 'amp' | 'checking';
+export type ModeBlock = 'already-served' | 'delay-served' | 'amp' | 'checking' | LazyloadUrlSkip;
 
 /**
  * Why each mode of a lane is unavailable on a page (null: available). As
@@ -331,6 +417,8 @@ export function laneModeBlocks(
       };
     case 'amp':
       return { served: null, simulated: 'amp', disabled: 'amp' };
+    case 'skipped':
+      return { served: null, simulated: state.reason, disabled: null };
   }
 }
 

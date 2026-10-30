@@ -25,5 +25,15 @@ export function attributeValue(tag: ScannedTag, name: string): string | null {
  * @param tag An opening tag.
  */
 export function isGeneratorMeta(tag: ScannedTag): boolean {
-  return tag.name === 'meta' && attributeValue(tag, 'name') === GENERATOR_META_NAME;
+  return tag.name === 'meta' && isGeneratorMetaName(attributeValue(tag, 'name'));
+}
+
+/**
+ * Whether a `<meta>`'s `name` value is the generator's (compared exactly,
+ * as WP Rocket and WordPress spell it) — shared by text and DOM readers.
+ *
+ * @param name The meta's `name` value (null: absent).
+ */
+export function isGeneratorMetaName(name: string | null): boolean {
+  return name === GENERATOR_META_NAME;
 }

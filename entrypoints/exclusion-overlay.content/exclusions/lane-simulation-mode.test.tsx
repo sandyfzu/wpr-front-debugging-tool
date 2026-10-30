@@ -3,7 +3,8 @@
  * (unavailable ones dimmed, the reason said; a no-op Disabled said, never
  * dimmed), the replaced-mode note, focus kept across state changes, the
  * admin-screen warning that never blocks, the kept-simulation note, and the
- * simulated page's count, version and list lines.
+ * simulated page's count, version and list lines — then the Defer JS and
+ * LazyLoad lanes' own options, notes and lines.
  */
 import { createHash } from 'node:crypto';
 import { createRoot, createSignal } from 'solid-js';
@@ -17,13 +18,14 @@ import type {
 } from '../../../lib/messaging/exclusion-session';
 import {
   deferSimulatedReport,
+  lazyloadSimulatedReport,
   simulatedReport
 } from '../../../lib/messaging/exclusion-simulation.fixtures';
 import type { SimulateSpec } from '../../../lib/wp-rocket-simulation/spec';
 import type { VirtualizerFactory } from '../../../components/ui/virtual-list';
 import { createOverlayController, type OverlayController } from '../controller';
 import type { ExclusionSessionPort, PortOutcome } from '../session/port';
-import { DEFER_MODE_COPY, DELAY_MODE_COPY } from '../copy';
+import { DEFER_MODE_COPY, DELAY_MODE_COPY, LAZYLOAD_MODE_COPY } from '../copy';
 import {
   ADMIN_WARNING_LANE,
   NO_PAGE_EVIDENCE,
@@ -53,6 +55,8 @@ async function ready(
     href?: string;
     /** The Defer JS lane's evidence (default: nothing). */
     defer?: LanePageEvidence;
+    /** The LazyLoad lane's evidence (default: nothing). */
+    lazyload?: LanePageEvidence;
     /** Receives the evidence setter (a test that changes the page). */
     onPage?: (set: (next: LanePageEvidence) => void) => void;
   } = {}
@@ -78,7 +82,8 @@ async function ready(
       log: { warn: vi.fn() },
       simulationEvidence: () => ({
         delayJs: page(),
-        deferJs: options.defer ?? NO_SIMULATION_EVIDENCE.deferJs
+        deferJs: options.defer ?? NO_SIMULATION_EVIDENCE.deferJs,
+        lazyload: options.lazyload ?? NO_SIMULATION_EVIDENCE.lazyload
       })
     })
   );
@@ -96,7 +101,7 @@ function mount(
   controller: OverlayController,
   report?: TransformReport,
   hold: { readonly locked: boolean } = { locked: false },
-  lane: 'delayJs' | 'deferJs' = 'delayJs'
+  lane: 'delayJs' | 'deferJs' | 'lazyload' = 'delayJs'
 ): void {
   render(() => (
     <Lane
@@ -411,6 +416,118 @@ describe('Defer JS lane mode control', () => {
     ).toBeTruthy();
     expect(screen.getByText('Simulated · WP Rocket 3.24')).toBeTruthy();
     expect(screen.getByText(/^Exclusion list: bundled with WP Rocket 3.24/)).toBeTruthy();
+    expect(radio('Simulated').checked).toBe(true);
+    expect(radio('Simulated').disabled).toBe(false);
+  });
+});
+
+describe('LazyLoad lane mode control', () => {
+  /** A rewritten document of this page carrying a simulated LazyLoad report. */
+  function lazyloadSession(): ActiveExclusionSession {
+    return {
+      state: 'active',
+      origin: 'https://example.com',
+      set: { ...EMPTY_EXCLUSION_SET, rows: { ...EMPTY_EXCLUSION_SET.rows, lazyload: ['hero'] } },
+      simulate: { features: ['lazyload'] },
+      startedAt: 1,
+      document: {
+        outcome: 'rewritten',
+        reports: [],
+        lazyloadSimulation: {
+          ...lazyloadSimulatedReport(),
+          placement: {
+            head: 'before-end-tag',
+            footer: 'before-end-tag',
+            fallbacks: ['last-of-several-body-ends']
+          }
+        },
+        served: {
+          urlPath: PAGE,
+          urlDigest: createHash('sha256').update(PAGE, 'utf8').digest('hex'),
+          token: 't',
+          order: 1,
+          receivedAt: 40,
+          speculationRules: { removedFromDocument: 0, headerRemoved: false, guarded: true },
+          copy: true,
+          serviceWorkersBypassed: true
+        }
+      }
+    };
+  }
+
+  it('offers As served and Simulated only, in place of no switch', async () => {
+    const controller = await ready(NO_PAGE_EVIDENCE);
+    mount(controller, undefined, undefined, 'lazyload');
+    const group = screen.getByRole('radiogroup', { name: LAZYLOAD_MODE_COPY.groupName });
+    expect(group.querySelectorAll('input[type="radio"]')).toHaveLength(2);
+    expect(screen.queryByRole('radio', { name: 'Disabled' })).toBeNull();
+    expect(screen.queryByRole('switch')).toBeNull();
+    fireEvent.click(screen.getByText('Simulated'));
+    expect(controller.draft().simulate).toEqual({ features: ['lazyload'] });
+  });
+
+  it.each([
+    ['already-served' as const, { ...NO_PAGE_EVIDENCE, footprints: true }],
+    ['search' as const, { ...NO_PAGE_EVIDENCE, skip: 'search' as const }],
+    ['amp' as const, { ...NO_PAGE_EVIDENCE, amp: true }]
+  ])('dims Simulated and says why (%s)', async (block, lazyload) => {
+    mount(await ready(NO_PAGE_EVIDENCE, { lazyload }), undefined, undefined, 'lazyload');
+    expect(radio('Simulated').disabled).toBe(true);
+    expect(radio('As served').disabled).toBe(false);
+    expect(screen.getByText(LAZYLOAD_MODE_COPY.blocks[block])).toBeTruthy();
+  });
+
+  it('shows no admin warning under LazyLoad (said once, under the first mode control)', async () => {
+    mount(
+      await ready(NO_PAGE_EVIDENCE, { href: 'https://example.com/wp-admin/' }),
+      undefined,
+      undefined,
+      'lazyload'
+    );
+    expect(screen.queryByText(LAZYLOAD_MODE_COPY.adminScreen)).toBeNull();
+  });
+
+  it('shows the simulation’s counts, version, script address, fallbacks and every-page caveats', async () => {
+    const report: TransformReport = {
+      feature: 'lazyload',
+      featureWide: false,
+      candidates: 5,
+      rewritten: 2,
+      regionRemovals: 0,
+      matchedRows: [{ row: 'hero', rowKind: 'literal', matches: 2 }],
+      unmatchedRows: []
+    };
+    const controller = await ready(NO_PAGE_EVIDENCE, {
+      status: lazyloadSession(),
+      lazyload: { ...NO_PAGE_EVIDENCE, footprints: true }
+    });
+    mount(controller, report, undefined, 'lazyload');
+    expect(
+      screen.getByText(
+        '5 images, 1 picture and 2 background images lazy loaded by the simulation · 2 excluded by your rows'
+      )
+    ).toBeTruthy();
+    expect(screen.queryByText(/lazy images restored/)).toBeNull();
+    expect(screen.getByText('Simulated · WP Rocket 3.24')).toBeTruthy();
+    // No exclusion list: LazyLoad's exclusions ship with the version.
+    expect(screen.queryByText(/^Exclusion list:/)).toBeNull();
+    const script = screen.getByText(/^LazyLoad script:/);
+    expect(script.querySelector('code')?.textContent).toBe(
+      'https://example.com/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js'
+    );
+    expect(
+      screen.getByText(
+        'This page has several </body> tags: LazyLoad’s scripts went before the last one.'
+      ).className
+    ).toBe('xo-lane-caveat');
+    // The rows restored images: their noscript copies stay, unlike on the site.
+    expect(
+      screen.getByText('Images your rows restore keep their noscript copy, unlike on the site.')
+        .className
+    ).toBe('xo-lane-caveat');
+    expect(screen.getByText(/^WP Rocket skips lazy loading above-the-fold/).className).toBe(
+      'xo-lane-hint'
+    );
     expect(radio('Simulated').checked).toBe(true);
     expect(radio('Simulated').disabled).toBe(false);
   });

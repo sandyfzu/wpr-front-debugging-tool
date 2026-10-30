@@ -37,9 +37,11 @@ import {
 import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
 import type { SimulateSpec } from '../../../lib/wp-rocket-simulation/spec';
 import {
-  SIMULATION_LANES,
+  SIMULATION_LANE_KEYS,
+  laneDisabled,
   laneModeFields,
   laneModeOf,
+  laneToggleKey,
   type SimulationLane,
   type SimulationMode
 } from './simulation-mode';
@@ -363,9 +365,10 @@ export function restoreDraft(
 function withSimulate(draft: Draft, simulate: SimulateSpec | undefined): Draft {
   let spec = simulate;
   const disable = { ...draft.disable };
-  for (const lane of Object.keys(SIMULATION_LANES) as SimulationLane[]) {
-    const fields = laneModeFields(lane, laneModeOf(lane, disable[lane], spec), spec);
-    disable[lane] = fields.disable;
+  for (const lane of SIMULATION_LANE_KEYS) {
+    const fields = laneModeFields(lane, laneModeOf(lane, laneDisabled(disable, lane), spec), spec);
+    const key = laneToggleKey(lane);
+    if (key !== null) disable[key] = fields.disable;
     spec = fields.simulate;
   }
   return {
@@ -422,7 +425,7 @@ export function draftToSet(draft: Draft): ExclusionSet {
  * @param lane The mode lane.
  */
 export function draftLaneMode(draft: Draft, lane: SimulationLane): SimulationMode {
-  return laneModeOf(lane, draft.disable[lane], draft.simulate);
+  return laneModeOf(lane, laneDisabled(draft.disable, lane), draft.simulate);
 }
 
 /**
@@ -432,12 +435,14 @@ export function draftLaneMode(draft: Draft, lane: SimulationLane): SimulationMod
  * @param draft The draft.
  * @param lane The mode lane.
  * @param mode The mode.
+ * @throws {@link Error} when the lane does not offer the mode (see `laneModes`).
  */
 export function setLaneMode(draft: Draft, lane: SimulationLane, mode: SimulationMode): Draft {
   if (draftLaneMode(draft, lane) === mode) return draft;
   const fields = laneModeFields(lane, mode, draft.simulate);
+  const key = laneToggleKey(lane);
   return withSimulate(
-    { ...draft, disable: { ...draft.disable, [lane]: fields.disable } },
+    key === null ? draft : { ...draft, disable: { ...draft.disable, [key]: fields.disable } },
     fields.simulate
   );
 }
