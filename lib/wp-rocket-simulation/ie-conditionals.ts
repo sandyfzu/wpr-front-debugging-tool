@@ -97,6 +97,41 @@ export function extractIeConditionals(
   return { html: out + html.slice(at), conditionals };
 }
 
+/**
+ * WP Rocket's one output buffer between two features' passes: every
+ * simulated feature reads the same served page (`start`) and runs inside
+ * one IE conditional extraction of it (`scan`, `conditionals`), each pass
+ * continuing on the page the earlier ones left (`html`, conditionals still
+ * swapped out). Handing it forward lets each pass run once; extracting
+ * again around each feature would re-read the conditionals' `$` and `\`
+ * on the way back.
+ */
+export interface FeatureBuffer extends ExtractedConditionals {
+  /** The page every feature's checks read (before any pass, conditionals in place). */
+  readonly start: string;
+  /** `start`'s {@link conditionalScan}. */
+  readonly scan: ConditionalScan;
+}
+
+/**
+ * The buffer a feature's passes continue on: the given one, or a fresh
+ * extraction of `html` when it is the first feature to run.
+ *
+ * @param html The page the feature's checks read.
+ * @param buffer The buffer an earlier feature left (absent: none ran).
+ * @throws {@link Error} when `buffer` started from another page (a broken caller invariant).
+ */
+export function featureBuffer(html: string, buffer: FeatureBuffer | undefined): FeatureBuffer {
+  if (buffer === undefined) {
+    const scan = conditionalScan(html);
+    return { start: html, scan, ...extractIeConditionals(html, scan) };
+  }
+  if (buffer.start !== html) {
+    throw new Error('featureBuffer: the buffer was started from another page than the one given');
+  }
+  return buffer;
+}
+
 /** A conditional's parts when it holds a script with attributes. */
 export interface ScriptConditionalParts {
   /** Its text up to the script opening's `>` (inclusive). */

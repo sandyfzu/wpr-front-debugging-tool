@@ -18,7 +18,8 @@ import { expectationsFor } from '../exclusion-builder/parity-version-expectation
 import { SUPPORTED_WPR_VERSIONS } from '../wp-rocket/versions';
 import { simulateLazyloadImages } from './lazyload-forward';
 import { lazyloadAssetsUrl } from './lazyload-assets-url';
-import { lazyloadHookTexts, placeLazyloadHookTexts } from './lazyload-hook-texts';
+import { packagedVersion } from '../exclusion-session/packaged-simulation-data';
+import { composeLazyloadHookTexts, placeLazyloadHookTexts } from './lazyload-hook-texts';
 import { SIMULATION_DATA_PATH, readSimulationData } from './simulation-data';
 import { parseSimulationTable } from './simulation-parity-table';
 
@@ -71,6 +72,10 @@ describe.each(SUPPORTED_WPR_VERSIONS.map((pin) => [pin.version] as const))(
   (version) => {
     const entry = DATA.versions[version]?.lazyload;
     if (entry === undefined) throw new Error(`no LazyLoad data for ${version}`);
+    // The version's texts through the extension's own package reader.
+    const read = packagedVersion(DATA, version);
+    if (!read.ok) throw new Error(`no package for ${version}: ${read.cause}`);
+    const lazyloadPackage = read.package.lazyload;
     const literals = {
       excludedAttributes: rows(entry.excludedAttributes.sha256),
       excludedSrc: rows(entry.excludedSrc.sha256)
@@ -85,7 +90,7 @@ describe.each(SUPPORTED_WPR_VERSIONS.map((pin) => [pin.version] as const))(
       if (lazyload === undefined) throw new Error(`${row.id} holds no lazyload`);
       const placed = placeLazyloadHookTexts(
         row.html,
-        lazyloadHookTexts(DATA, version, lazyload.assetsUrl)
+        composeLazyloadHookTexts(lazyloadPackage, lazyload.assetsUrl)
       );
       // The harness takes only pages with one `</head>` then one `</body>`: no fallback.
       if (!placed.ok || placed.placement.fallbacks.length > 0) {

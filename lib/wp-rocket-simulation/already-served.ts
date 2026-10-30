@@ -1,20 +1,25 @@
 /**
- * Whether a served page already carries WP Rocket's Delay JS — then the
- * simulation is the identity (WP Rocket's real output is what rows apply
- * to). Evidence, read off the served text with the tag scanner (no DOM):
- * the generator meta declaring `wpr_delay_js`, or a Delay JS footprint on
- * a `<script>` element — a delay `type`, a `data-rocket-src`, or the
- * controller's run call in an inline body. Elements inside the regions
- * Delay JS masks (`<svg>`, `<xmp>`) do not count, nor does text in
- * comments, prose or attribute values: only real elements are scanned.
+ * Whether a served page already carries WP Rocket's Delay JS, Defer JS or
+ * LazyLoad — then that feature's simulation is the identity (WP Rocket's
+ * real output is what rows apply to). Evidence is read off the served text
+ * with the tag scanner (no DOM): only real elements count, never text in
+ * comments, prose or attribute values, and (Delay JS, LazyLoad) never
+ * elements inside the regions Delay JS masks (`<svg>`, `<xmp>`).
  */
 import { CONTROLLER_RUN_MARKER } from '../exclusion-builder/delay-js';
 import { delayMaskedRegions, firstRegionFrom } from '../exclusion-builder/delay-js-mask';
 import { scanTags, type ScannedTag } from '../exclusion-builder/html-scan';
 import { attributeValue, isGeneratorMeta } from './generator-meta';
+import { LAZY_PLACEHOLDER_PREFIX } from './lazyload-tag';
 import {
+  DATA_LAZY_SRC,
   DELAY_JS_SRC,
   FEATURE_META_TOKENS,
+  LAZYLOAD_IFRAME_SELECTOR,
+  LAZYLOAD_IMG_SELECTOR,
+  LAZYLOAD_NOJS_STYLE_ID,
+  LAZYLOAD_OPTIONS_ASSIGNMENT,
+  LAZYLOAD_SCRIPT_PATTERN,
   WPR_DEFER_ATTRIBUTE,
   WPR_FEATURES_ATTRIBUTE,
   isDelayJSType
@@ -45,17 +50,30 @@ function isDelayedScript(html: string, tag: ScannedTag): boolean {
 }
 
 /**
- * Whether the served page already delays its scripts with WP Rocket.
+ * A test of whether a tag opens inside a region Delay JS masks (`<svg>`,
+ * `<xmp>`): footprints there are not real elements to WP Rocket.
+ *
+ * @param html The page.
+ */
+function maskedTagTest(html: string): (tag: ScannedTag) => boolean {
+  const regions = delayMaskedRegions(html);
+  return (tag) => {
+    const region = regions[firstRegionFrom(regions, tag.start + 1) - 1];
+    return region !== undefined && region.end > tag.start;
+  };
+}
+
+/**
+ * Whether the served page already delays its scripts with WP Rocket: the
+ * generator meta declares `wpr_delay_js`, or a `<script>` element carries
+ * a Delay JS footprint — a delay `type`, a `data-rocket-src`, or the
+ * controller's run call in an inline body.
  *
  * @param html The served page.
  * @param tags Its opening tags, when already scanned (`scanTags(html)`).
  */
 export function alreadyServesDelayJs(html: string, tags?: readonly ScannedTag[]): boolean {
-  const regions = delayMaskedRegions(html);
-  const masked = (tag: ScannedTag): boolean => {
-    const region = regions[firstRegionFrom(regions, tag.start + 1) - 1];
-    return region !== undefined && region.end > tag.start;
-  };
+  const masked = maskedTagTest(html);
   return (tags ?? scanTags(html)).some(
     (tag) => (declaresDelayJs(tag) || isDelayedScript(html, tag)) && !masked(tag)
   );
@@ -79,4 +97,85 @@ export function alreadyServesDeferJs(tags: readonly ScannedTag[]): boolean {
           false)) ||
       (tag.name === 'script' && tag.attrs.some((attr) => attr.name === WPR_DEFER_ATTRIBUTE))
   );
+}
+
+/** The generator tokens of WP Rocket's LazyLoad (images or iframes: either means its texts are printed). */
+const LAZYLOAD_META_TOKENS: readonly string[] = [
+  FEATURE_META_TOKENS.lazyload,
+  FEATURE_META_TOKENS.lazyload_iframes
+];
+
+/** A line break as PCRE's and JS's `.` both refuse it. */
+const LINE_BREAK = /[\n\r\u2028\u2029]/g;
+
+/**
+ * Whether an inline script body holds WP Rocket's LazyLoad options: its
+ * assignment followed, on the same line, by the image or iframe selector
+ * it names (`LAZYLOAD_IMG_OPTIONS_PATTERN` / `…IFRAME…`, read linearly:
+ * each line is searched once from its first assignment).
+ *
+ * @param body The script's content.
+ */
+export function holdsLazyloadOptions(body: string): boolean {
+  for (let at = body.indexOf(LAZYLOAD_OPTIONS_ASSIGNMENT); at >= 0;) {
+    LINE_BREAK.lastIndex = at;
+    const lineEnd = LINE_BREAK.exec(body)?.index ?? body.length;
+    const line = body.slice(at + LAZYLOAD_OPTIONS_ASSIGNMENT.length, lineEnd);
+    if (line.includes(LAZYLOAD_IMG_SELECTOR) || line.includes(LAZYLOAD_IFRAME_SELECTOR)) {
+      return true;
+    }
+    at = body.indexOf(LAZYLOAD_OPTIONS_ASSIGNMENT, lineEnd);
+  }
+  return false;
+}
+
+/**
+ * Whether a tag is a WP Rocket LazyLoad footprint — WP Rocket's own
+ * markup, never the generic vanilla-lazyload a theme or another plugin
+ * may set up: the generator meta declaring LazyLoad (images or iframes),
+ * its runtime tag (a script loading from `wp-rocket/assets/js/lazyload/`),
+ * its no-JS style (by its `id`), its inline options script (see
+ * {@link holdsLazyloadOptions}), or an image carrying `data-lazy-src`
+ * with its placeholder SVG as `src`. The standalone "Lazy Load by WP
+ * Rocket" plugin prints the same style and image shapes: its page counts
+ * as served (WP Rocket's LazyLoad would not reproduce over it).
+ *
+ * @param html The page.
+ * @param tag An opening tag.
+ */
+function isLazyloadFootprint(html: string, tag: ScannedTag): boolean {
+  if (isGeneratorMeta(tag)) {
+    const features = attributeValue(tag, WPR_FEATURES_ATTRIBUTE)?.split(/\s+/) ?? [];
+    return LAZYLOAD_META_TOKENS.some((token) => features.includes(token));
+  }
+  switch (tag.name) {
+    case 'style':
+      return attributeValue(tag, 'id') === LAZYLOAD_NOJS_STYLE_ID;
+    case 'img':
+      return (
+        tag.attrs.some((attr) => attr.name === DATA_LAZY_SRC) &&
+        (attributeValue(tag, 'src')?.startsWith(LAZY_PLACEHOLDER_PREFIX) ?? false)
+      );
+    case 'script':
+      return (
+        LAZYLOAD_SCRIPT_PATTERN.test(attributeValue(tag, 'src') ?? '') ||
+        holdsLazyloadOptions(html.slice(tag.openingEnd, tag.contentEnd))
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether the served page already carries any WP Rocket LazyLoad footprint
+ * (images or iframes — an iframes-only page counts: its options script
+ * would be rewritten). Only real elements count, outside the `<svg>` and
+ * `<xmp>` regions (as Delay JS's evidence).
+ *
+ * @param html The served page.
+ * @param tags Its opening tags, when already scanned (`scanTags(html)`).
+ */
+export function alreadyServesLazyload(html: string, tags?: readonly ScannedTag[]): boolean {
+  const masked = maskedTagTest(html);
+  return (tags ?? scanTags(html)).some((tag) => isLazyloadFootprint(html, tag) && !masked(tag));
 }

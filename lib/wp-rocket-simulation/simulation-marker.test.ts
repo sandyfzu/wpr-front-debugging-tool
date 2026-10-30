@@ -28,7 +28,7 @@ describe('simulation marker grammar', () => {
     ).toBeNull();
     expect(
       serializeSimulationMarker({
-        features: ['lazyload' as unknown as 'delay_js'],
+        features: ['lazyload_iframes' as unknown as 'delay_js'],
         markerId: ID
       })
     ).toBeNull();
@@ -54,7 +54,7 @@ describe('simulation marker grammar', () => {
     ['long id', `v1 delay_js=simulated id=${ID}0`],
     ['id first', `v1 id=${ID} delay_js=simulated`],
     ['other state', `v1 delay_js=off id=${ID}`],
-    ['unknown feature', `v1 lazyload=simulated id=${ID}`],
+    ['unknown feature', `v1 lazyload_iframes=simulated id=${ID}`],
     ['repeated feature', `v1 delay_js=simulated delay_js=simulated id=${ID}`],
     ['double space', `v1  delay_js=simulated id=${ID}`],
     ['leading space', ` v1 delay_js=simulated id=${ID}`],

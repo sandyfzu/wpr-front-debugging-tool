@@ -177,6 +177,7 @@ export function runDocumentPipeline(
     // One report per simulated feature, each in its own outcome field.
     const simulation = run.simulation?.find((report) => report.feature === 'delay_js');
     const deferSimulation = run.simulation?.find((report) => report.feature === 'defer_all_js');
+    const lazyloadSimulation = run.simulation?.find((report) => report.feature === 'lazyload');
     // The marker steps ran after the last budget check, unbudgeted: linear
     // scans; only a preempting runner's deadline bounds them.
     return {
@@ -186,7 +187,8 @@ export function runDocumentPipeline(
         outcome: 'rewritten',
         reports: run.reports,
         ...(simulation === undefined ? {} : { simulation }),
-        ...(deferSimulation === undefined ? {} : { deferSimulation })
+        ...(deferSimulation === undefined ? {} : { deferSimulation }),
+        ...(lazyloadSimulation === undefined ? {} : { lazyloadSimulation })
       }
     };
   } catch (cause) {
@@ -320,7 +322,7 @@ function servedBytes(
  * @param outcome The run's `rewritten` outcome.
  */
 export function markedFeatures(outcome: RewrittenDocumentOutcome): SimulatedFeatureId[] {
-  const reports = [outcome.deferSimulation, outcome.simulation];
+  const reports = [outcome.lazyloadSimulation, outcome.deferSimulation, outcome.simulation];
   return SIMULATED_FEATURES.map(({ id }) => id).filter((id) =>
     reports.some((report) => report?.feature === id && report.markerId !== undefined)
   );

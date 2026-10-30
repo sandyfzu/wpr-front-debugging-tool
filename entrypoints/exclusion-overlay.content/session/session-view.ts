@@ -20,8 +20,7 @@ import {
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
 import type {
   DeferSimulationReport,
-  DelaySimulationReport,
-  DocumentSimulationReport
+  DelaySimulationReport
 } from '../../../lib/messaging/exclusion-simulation';
 import type {
   SimulationRuntimeUnavailableCause,
@@ -199,8 +198,8 @@ export function sessionView(
  */
 export function simulationReports(
   view: Pick<Extract<SessionView, { kind: 'applied' }>, 'simulation' | 'deferSimulation'>
-): DocumentSimulationReport[] {
+): (DelaySimulationReport | DeferSimulationReport)[] {
   return [view.deferSimulation, view.simulation].filter(
-    (report): report is DocumentSimulationReport => report !== undefined
+    (report): report is DelaySimulationReport | DeferSimulationReport => report !== undefined
   );
 }

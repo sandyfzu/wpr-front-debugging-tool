@@ -15,7 +15,13 @@
  * is the page's assets URL (see `lazyload-assets-url`).
  */
 import { asciiLowerCase } from '../exclusion-builder/literal-rows';
-import { LAZYLOAD_JS_DIR, type SimulationData } from './simulation-data';
+import { LAZYLOAD_JS_DIR } from './simulation-data';
+import type {
+  LAZYLOAD_FOOTER_PLACEMENTS,
+  LAZYLOAD_HEAD_PLACEMENTS,
+  LazyloadPlacementFallback,
+  LazyloadPlacementRefusal
+} from './spec';
 
 /** LazyLoad's two hook texts for one page. */
 export interface LazyloadHookTexts {
@@ -31,62 +37,42 @@ export interface LazyloadHookTexts {
   readonly runtimeUrl: string;
 }
 
+/** One version's printed texts, as the data file holds them (the runtime tag split at its URL). */
+export interface LazyloadTextParts {
+  /** The no-JS style `wp_head` prints. */
+  readonly noJsStyle: string;
+  /** The inline options script `wp_footer` prints first. */
+  readonly optionsScript: string;
+  /** The runtime tag before its URL. */
+  readonly runtimeTagBeforeUrl: string;
+  /** The runtime tag after its URL. */
+  readonly runtimeTagAfterUrl: string;
+  /** The runtime's path under the assets URL's `js/` folder. */
+  readonly runtimeJsPath: string;
+}
+
 /**
- * LazyLoad's hook texts for a version and an assets URL.
+ * LazyLoad's hook texts from a version's parts and an assets URL.
  *
- * @param data The (read, hash-checked) simulation data.
- * @param version A WP Rocket version key of `data`.
+ * @param parts The version's texts.
  * @param assetsUrl WP Rocket's assets URL (absolute, ending in `/`).
- * @throws {@link Error} when `data` holds no such version or text (a
- *   reader invariant: never on read data).
  */
-export function lazyloadHookTexts(
-  data: SimulationData,
-  version: string,
+export function composeLazyloadHookTexts(
+  parts: LazyloadTextParts,
   assetsUrl: string
 ): LazyloadHookTexts {
-  const entry = data.versions[version]?.lazyload;
-  if (entry === undefined) throw new Error(`LazyLoad hook texts: no version ${version}`);
-  const text = (sha256: string): string => {
-    const found = data.texts[sha256];
-    if (found === undefined) throw new Error(`LazyLoad hook texts: no text ${sha256}`);
-    return found;
-  };
-  const runtimeUrl = `${assetsUrl}${LAZYLOAD_JS_DIR}${entry.runtime.jsPath}`;
+  const runtimeUrl = `${assetsUrl}${LAZYLOAD_JS_DIR}${parts.runtimeJsPath}`;
   return {
-    head: text(entry.noJsStyle.sha256),
-    footer:
-      text(entry.optionsScript.sha256) +
-      text(entry.runtimeTag.beforeUrl.sha256) +
-      runtimeUrl +
-      text(entry.runtimeTag.afterUrl.sha256),
+    head: parts.noJsStyle,
+    footer: parts.optionsScript + parts.runtimeTagBeforeUrl + runtimeUrl + parts.runtimeTagAfterUrl,
     runtimeUrl
   };
 }
 
-/** Pages the rule cannot place texts on, by reason. */
-export const LAZYLOAD_PLACEMENT_REFUSALS = [
-  'no-head-end',
-  'no-body-end',
-  'body-end-before-head-end'
-] as const;
-
-/** Why a page's texts were not placed. */
-export type LazyloadPlacementRefusal = (typeof LAZYLOAD_PLACEMENT_REFUSALS)[number];
-
-/** End tags chosen among several (the theme's own one is not knowable). */
-export const LAZYLOAD_PLACEMENT_FALLBACKS = [
-  'first-of-several-head-ends',
-  'last-of-several-body-ends'
-] as const;
-
-/** An end tag chosen among several. */
-export type LazyloadPlacementFallback = (typeof LAZYLOAD_PLACEMENT_FALLBACKS)[number];
-
 /** Where the texts went. */
 export interface LazyloadPlacement {
-  readonly head: 'before-end-tag' | 'before-generator-meta';
-  readonly footer: 'before-end-tag' | 'before-beacon-block';
+  readonly head: (typeof LAZYLOAD_HEAD_PLACEMENTS)[number];
+  readonly footer: (typeof LAZYLOAD_FOOTER_PLACEMENTS)[number];
   /** Empty on pages with one end tag of each. */
   readonly fallbacks: readonly LazyloadPlacementFallback[];
 }

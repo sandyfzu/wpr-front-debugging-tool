@@ -228,7 +228,17 @@ describe('createPackagedRuntimeSource', () => {
           runtime: RUNTIME,
           fallback: FALLBACK,
           bundledListRows: ROWS,
-          bundledDeferLists: { external: ROWS, inline: ROWS }
+          bundledDeferLists: { external: ROWS, inline: ROWS },
+          lazyload: {
+            noJsStyle: FALLBACK,
+            optionsScript: FALLBACK,
+            runtimeTagBeforeUrl: FALLBACK,
+            runtimeTagAfterUrl: FALLBACK,
+            runtimeJsPath: 'lazyload/1.0/lazyload.min.js',
+            excludedAttributes: ROWS,
+            excludedSrc: ROWS,
+            runtime: { sha256: 'f'.repeat(64), bytes: 10 }
+          }
         }
       });
     }

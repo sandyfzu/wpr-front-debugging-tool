@@ -13,12 +13,14 @@
  */
 import type { PipelineStep, PreExclusionStage } from '../exclusion-builder/pipeline';
 import type { DocumentBytes } from '../exclusion-builder/libxml/charset';
-import type {
-  DeferSimulationReport,
-  DelaySimulationReport,
-  DocumentSimulationInput,
-  DocumentSimulationReport,
-  SimulationListProvenance
+import {
+  isLazyloadRuntimeUrl,
+  type DeferSimulationReport,
+  type DelaySimulationReport,
+  type DocumentSimulationInput,
+  type DocumentSimulationReport,
+  type LazyloadSimulationReport,
+  type SimulationListProvenance
 } from '../messaging/exclusion-simulation';
 import { evaluateSimulationCsp } from '../wp-rocket-simulation/csp-evaluation';
 import {
@@ -32,6 +34,12 @@ import {
   simulateDelayJs,
   type DelayJsForwardReport
 } from '../wp-rocket-simulation/delay-js-forward';
+import type { FeatureBuffer } from '../wp-rocket-simulation/ie-conditionals';
+import {
+  simulateLazyload,
+  type LazyloadSimulationResult,
+  type LazyloadStepReport
+} from '../wp-rocket-simulation/lazyload-simulation';
 import { writeSimulationMarker } from '../wp-rocket-simulation/marker-write';
 import { servedByteMeasure } from '../wp-rocket-simulation/served-measure';
 import {
@@ -118,15 +126,12 @@ function listProvenance(
 }
 
 /**
- * What every feature's report echoes: the state and its why, the versions
- * and the feature's list provenance.
+ * What every feature's report echoes: the state and its why, and the versions.
  *
- * @param feature The simulated feature.
  * @param report The step's report.
  * @param input The simulation input.
  */
-function reportBase(
-  feature: SimulatedFeatureId,
+function reportCore(
   report: Pick<DelayStepReport, 'state' | 'reason' | 'unreproducedRegex'>,
   input: DocumentSimulationInput
 ) {
@@ -137,9 +142,24 @@ function reportBase(
       ? {}
       : { unreproducedRegex: report.unreproducedRegex }),
     wpRocketVersion: input.wpRocketVersion,
-    ...(input.siteVersion === undefined ? {} : { siteVersion: input.siteVersion }),
-    ...listProvenance(feature, input)
+    ...(input.siteVersion === undefined ? {} : { siteVersion: input.siteVersion })
   };
+}
+
+/**
+ * {@link reportCore} plus the list provenance of a feature that runs with
+ * an exclusion list.
+ *
+ * @param feature The simulated feature.
+ * @param report The step's report.
+ * @param input The simulation input.
+ */
+function reportBase(
+  feature: 'defer_all_js' | 'delay_js',
+  report: Pick<DelayStepReport, 'state' | 'reason' | 'unreproducedRegex'>,
+  input: DocumentSimulationInput
+) {
+  return { ...reportCore(report, input), ...listProvenance(feature, input) };
 }
 
 /**
@@ -168,8 +188,13 @@ export function wireSimulationReport(
   input: DocumentSimulationInput
 ): DeferSimulationReport;
 export function wireSimulationReport(
+  feature: 'lazyload',
+  report: LazyloadStepReport,
+  input: DocumentSimulationInput
+): LazyloadSimulationReport;
+export function wireSimulationReport(
   feature: SimulatedFeatureId,
-  report: DelayStepReport | DeferJsForwardReport,
+  report: DelayStepReport | DeferJsForwardReport | LazyloadStepReport,
   input: DocumentSimulationInput,
   cspLimits: readonly SimulationCspLimit[] = [],
   cspUnavailable: SimulationCspUnavailableReason | undefined = input.cspUnavailable
@@ -178,6 +203,7 @@ export function wireSimulationReport(
     return wireDelayReport(report, input, cspLimits, cspUnavailable);
   }
   if (feature === 'defer_all_js' && 'deferred' in report) return wireDeferReport(report, input);
+  if (feature === 'lazyload' && 'images' in report) return wireLazyloadReport(report, input);
   throw new Error(`wireSimulationReport: the ${feature} step was given another feature's report`);
 }
 
@@ -216,6 +242,34 @@ function wireDeferReport(
   };
 }
 
+/** {@link wireSimulationReport} for LazyLoad: counts (0 unless `simulated`) and the page facts. */
+function wireLazyloadReport(
+  report: LazyloadStepReport,
+  input: DocumentSimulationInput
+): LazyloadSimulationReport {
+  const page = report.state === 'simulated' ? report.page : undefined;
+  return {
+    feature: 'lazyload',
+    ...reportCore(report, input),
+    images: report.images,
+    pictures: report.pictures,
+    backgrounds: report.backgrounds,
+    ...(page === undefined
+      ? {}
+      : {
+          runtimeUrl: page.runtimeUrl,
+          assetsUrlSource: page.assetsUrlSource,
+          delivery: page.delivery,
+          placement: {
+            head: page.placement.head,
+            footer: page.placement.footer,
+            fallbacks: [...page.placement.fallbacks]
+          },
+          caveats: [...page.caveats]
+        })
+  };
+}
+
 /** The Defer JS counts of a step that changed nothing. */
 const NO_DEFER_COUNTS: DeferJsPassCounts = { deferred: 0, wrapped: 0 };
 
@@ -244,32 +298,46 @@ function storedRowsKeepPage(pass: DeferJsPassInput, storedRows: readonly string[
   }
 }
 
+/** A Defer JS step's result, and the buffer after it (the one given when it did not simulate). */
+interface DeferStepRun {
+  readonly step: StepResult;
+  readonly buffer: FeatureBuffer | undefined;
+}
+
 /**
- * The Defer JS step: the forward transform on the page as given (no CSP
- * check: Defer JS injects no runtime — it stamps `defer` on external
- * scripts and edits inline scripts' own bodies, which the browser then
- * judges exactly as on WP Rocket's page).
+ * The Defer JS step: the forward transform on the page as given — or, when
+ * an earlier feature simulated (LazyLoad), on the page its buffer started
+ * from, continuing that buffer (no CSP check: Defer JS injects no runtime
+ * — it stamps `defer` on external scripts and edits inline scripts' own
+ * bodies, which the browser then judges exactly as on WP Rocket's page).
+ * Any state but `simulated` serves the page as given.
  *
- * @param html The page.
+ * @param html The page as given (LazyLoad's when it simulated).
  * @param input The simulation input.
  * @param bytes How the session decoded the page.
  * @param storedRows The session's stored Defer JS rows (checked, never applied).
+ * @param buffer The buffer the earlier features left (absent: none simulated).
  */
 function deferStep(
   html: string,
   input: DocumentSimulationInput,
   bytes: DocumentBytes | undefined,
-  storedRows: readonly string[]
-): StepResult {
+  storedRows: readonly string[],
+  buffer: FeatureBuffer | undefined
+): DeferStepRun {
   const identity = (why: Pick<DeferJsForwardReport, 'reason' | 'unreproducedRegex'>) => ({
-    html,
-    report: wireSimulationReport(
-      'defer_all_js',
-      { state: 'not-applicable', ...why, ...NO_DEFER_COUNTS },
-      input
-    )
+    step: {
+      html,
+      report: wireSimulationReport(
+        'defer_all_js',
+        { state: 'not-applicable', ...why, ...NO_DEFER_COUNTS },
+        input
+      )
+    },
+    buffer
   });
-  const measure = servedByteMeasure(bytes, html);
+  const page = buffer?.start ?? html;
+  const measure = servedByteMeasure(bytes, page);
   if (measure === null) return identity({ reason: 'unsupported-charset' });
   const pass = deferPassInput(input);
   if (!storedRowsKeepPage(pass, storedRows)) {
@@ -278,9 +346,20 @@ function deferStep(
       unreproducedRegex: 'defer-file-exclusions'
     });
   }
-  const result = simulateDeferJs({ html, ...pass, measure });
-  const served = result.report.state === 'simulated' ? result.html : html;
-  return { html: served, report: wireSimulationReport('defer_all_js', result.report, input) };
+  const result = simulateDeferJs({
+    html: page,
+    ...pass,
+    measure,
+    ...(buffer === undefined ? {} : { buffer })
+  });
+  const simulated = result.report.state === 'simulated';
+  return {
+    step: {
+      html: simulated ? result.html : html,
+      report: wireSimulationReport('defer_all_js', result.report, input)
+    },
+    buffer: result.buffer ?? buffer
+  };
 }
 
 /**
@@ -289,28 +368,28 @@ function deferStep(
  * page is then checked against the page's CSP (blocked: the page as
  * given, `csp-blocked`).
  *
- * When Defer JS simulated on `deferredFrom`, the transform runs on that
- * page with Defer JS's passes inside its own buffer — WP Rocket's one
- * buffer, whose IE conditionals are set aside once for both features
- * (setting them aside around each feature in turn would re-read their
- * `$` and `\` on the way back). Any Delay JS state but `simulated` then
- * serves the page as given: the Defer JS page.
+ * When an earlier feature simulated, the transform runs on the page its
+ * buffer started from, continuing that buffer — WP Rocket's one buffer,
+ * whose IE conditionals are set aside once for every feature (setting
+ * them aside around each feature in turn would re-read their `$` and `\`
+ * on the way back). Any Delay JS state but `simulated` then serves the
+ * page as given: the earlier features' page.
  *
- * @param html The page as given (Defer JS's page when it simulated).
+ * @param html The page as given (the earlier features' page).
  * @param input The simulation input.
  * @param bytes How the session decoded the page.
  * @param served The document as the session decoded it, before any step —
  *   the CSP metas' offsets are into it.
- * @param deferredFrom The page Defer JS simulated on (absent: it did not).
+ * @param buffer The buffer the earlier features left (absent: none simulated).
  */
 function delayStep(
   html: string,
   input: DocumentSimulationInput,
   bytes: DocumentBytes | undefined,
   served: string,
-  deferredFrom: string | undefined
+  buffer: FeatureBuffer | undefined
 ): StepResult {
-  const page = deferredFrom ?? html;
+  const page = buffer?.start ?? html;
   const measure = servedByteMeasure(bytes, page);
   if (measure === null) {
     const report = delayIdentityReport('not-applicable', 'unsupported-charset');
@@ -323,7 +402,7 @@ function delayStep(
     listRows: input.listRows,
     rows: [],
     measure,
-    ...(deferredFrom === undefined ? {} : { defer: deferPassInput(input) })
+    ...(buffer === undefined ? {} : { buffer })
   });
   if (result.report.state !== 'simulated') {
     return { html, report: wireSimulationReport('delay_js', result.report, input, []) };
@@ -343,6 +422,92 @@ function delayStep(
       ? wireSimulationReport('delay_js', result.report, input, [], csp.unavailable)
       : wireSimulationReport('delay_js', result.report, input, csp.limits);
   return { html: result.html, report };
+}
+
+/**
+ * The LazyLoad step's own run: the served page's bytes must be countable,
+ * then {@link simulateLazyload} (never with the stored rows: the exclusion
+ * steps restore their images). A simulated page whose runtime URL the
+ * report cannot carry is refused (`lazyload-runtime-url`), and so is one
+ * whose packaged runtime is unusable (`runtime-unavailable`).
+ *
+ * @param html The served page.
+ * @param input The simulation input.
+ * @param bytes How the session decoded the page.
+ * @throws {@link Error} when the input lacks the LazyLoad inputs (the input guard refuses that).
+ */
+function lazyloadRun(
+  html: string,
+  input: DocumentSimulationInput,
+  bytes: DocumentBytes | undefined
+): LazyloadSimulationResult {
+  const lazy = input.lazyload;
+  if (lazy === undefined) {
+    throw new Error(
+      `LazyLoad simulation input for WP Rocket ${input.wpRocketVersion} lacks its texts`
+    );
+  }
+  const refused = (why: Pick<LazyloadStepReport, 'reason' | 'unreproducedRegex'>) => ({
+    html,
+    report: { state: 'not-applicable' as const, ...why, ...NO_LAZYLOAD_COUNTS }
+  });
+  const measure = servedByteMeasure(bytes, html);
+  if (measure === null) return refused({ reason: 'unsupported-charset' });
+  const result = simulateLazyload({
+    html,
+    pageUrl: lazy.pageUrl,
+    texts: lazy,
+    literals: { excludedAttributes: lazy.excludedAttributes, excludedSrc: lazy.excludedSrc },
+    rows: [],
+    measure
+  });
+  if (result.report.state !== 'simulated') return result;
+  // The simulated page requests the runtime: an unusable packaged copy fails LazyLoad alone.
+  if (lazy.runtimeUnavailable !== undefined) return refused({ reason: 'runtime-unavailable' });
+  if (result.report.page !== undefined && !isLazyloadRuntimeUrl(result.report.page.runtimeUrl)) {
+    return refused({
+      reason: 'beyond-exact-reproduction',
+      unreproducedRegex: 'lazyload-runtime-url'
+    });
+  }
+  return result;
+}
+
+/** The LazyLoad counts of a step that changed nothing. */
+const NO_LAZYLOAD_COUNTS = { images: 0, pictures: 0, backgrounds: 0 } as const;
+
+/**
+ * How many times `needle` occurs in `text` (non-overlapping).
+ *
+ * @param text The page.
+ * @param needle A non-empty text.
+ */
+function occurrences(text: string, needle: string): number {
+  let count = 0;
+  for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + needle.length)) {
+    count++;
+  }
+  return count;
+}
+
+/**
+ * Whether the later features left LazyLoad's printed scripts as printed:
+ * each occurs on their final page as often as on LazyLoad's (WP Rocket's
+ * own lists exclude both; a list that defers, wraps or delays one would
+ * break the page in a way WP Rocket's bundled lists never do).
+ *
+ * @param lazyPage LazyLoad's page.
+ * @param finalPage The page after every later step.
+ * @param scripts LazyLoad's printed scripts.
+ */
+function injectedScriptsSurvive(
+  lazyPage: string,
+  finalPage: string,
+  scripts: readonly string[]
+): boolean {
+  return scripts.every(
+    (script) => occurrences(finalPage, script) === occurrences(lazyPage, script)
+  );
 }
 
 /**
@@ -371,12 +536,34 @@ function markerStep(
   };
 }
 
+/** LazyLoad's simulated page and the scripts it printed (the later features must leave them). */
+interface LazyloadPrinted {
+  readonly page: string;
+  readonly scripts: readonly string[];
+}
+
+/** LazyLoad's report when a later feature would change its printed scripts. */
+const INJECTED_SCRIPTS_REFUSAL: LazyloadStepReport = {
+  state: 'not-applicable',
+  reason: 'beyond-exact-reproduction',
+  unreproducedRegex: 'lazyload-injected-scripts',
+  ...NO_LAZYLOAD_COUNTS
+};
+
 /**
- * The simulation stage for one engine run: Defer JS, then Delay JS, each
- * when requested. With both, the Delay JS step runs Defer JS's passes in
- * its own buffer when Defer JS simulated (see {@link delayStep}): the page
- * is WP Rocket's with both features, Defer JS's alone when Delay JS ends
- * in any other state, Delay JS's alone when Defer JS does.
+ * The simulation stage for one engine run: LazyLoad, then Defer JS, then
+ * Delay JS, each when requested, in WP Rocket's one buffer — each step
+ * runs once, in order, continuing the buffer the simulated earlier steps
+ * left (see {@link delayStep}), so the page is WP Rocket's with every
+ * simulated feature, and a feature that does not simulate serves the page
+ * as given: the earlier features' page.
+ *
+ * LazyLoad prints two scripts the later features must leave as printed:
+ * the last step checks its page against LazyLoad's; when a later feature
+ * changed either script, the last step reruns the later features on the
+ * served page (inside its own step: the rare price of a list that names
+ * LazyLoad's scripts) and `finish` swaps in LazyLoad's refusal
+ * (`lazyload-injected-scripts`) and the rerun's reports.
  *
  * @param input The simulation input (features and their packaged inputs).
  * @param bytes How the session decoded the page (absent: UTF-8, no BOM).
@@ -388,22 +575,73 @@ export function simulationStage(
   bytes?: DocumentBytes,
   storedDeferRows: readonly string[] = []
 ): PreExclusionStage<DocumentSimulationReport> {
+  const steps = simulationStepIds(input.features);
+  const later = steps.filter((feature) => feature !== 'lazyload');
   // The document the first step is given (the stage's own input).
-  let original: string | undefined;
-  // The page Defer JS simulated on, when it did.
-  let deferredFrom: string | undefined;
-  const apply = (feature: SimulatedFeatureId, html: string): StepResult => {
-    original ??= html;
-    if (feature === 'delay_js') return delayStep(html, input, bytes, original, deferredFrom);
-    const result = deferStep(html, input, bytes, storedDeferRows);
-    if (result.report.state === 'simulated') deferredFrom = html;
-    return result;
+  let served: string | undefined;
+  // The buffer after the simulated steps so far.
+  let buffer: FeatureBuffer | undefined;
+  // LazyLoad's page and printed scripts, when it simulated.
+  let printed: LazyloadPrinted | undefined;
+  // Reports the rerun replaced, swapped in by `finish`.
+  const replaced = new Map<SimulatedFeatureId, DocumentSimulationReport>();
+
+  /** A later step on its page, continuing (and advancing) `from`. */
+  const runLater = (
+    feature: 'defer_all_js' | 'delay_js',
+    html: string,
+    from: FeatureBuffer | undefined
+  ): DeferStepRun =>
+    feature === 'delay_js'
+      ? { step: delayStep(html, input, bytes, served ?? html, from), buffer: from }
+      : deferStep(html, input, bytes, storedDeferRows, from);
+
+  /** The later features on the served page, LazyLoad refused: the last one's result. */
+  const rerunWithoutLazyload = (page: string): StepResult => {
+    let step: StepResult = {
+      html: page,
+      report: wireSimulationReport('lazyload', INJECTED_SCRIPTS_REFUSAL, input)
+    };
+    let from: FeatureBuffer | undefined;
+    replaced.set('lazyload', step.report);
+    for (const feature of later) {
+      const run = runLater(feature, step.html, from);
+      ({ step, buffer: from } = run);
+      replaced.set(feature, step.report);
+    }
+    return step;
   };
+
+  /** The LazyLoad step: its run, its buffer handed forward when it simulated. */
+  const runLazyload = (html: string): StepResult => {
+    const result = lazyloadRun(html, input, bytes);
+    if (result.buffer !== undefined && result.injectedScripts !== undefined) {
+      buffer = result.buffer;
+      printed = { page: result.html, scripts: result.injectedScripts };
+    }
+    return { html: result.html, report: wireSimulationReport('lazyload', result.report, input) };
+  };
+
+  const apply = (feature: SimulatedFeatureId, html: string): StepResult => {
+    const page = (served ??= html);
+    if (feature === 'lazyload') return runLazyload(html);
+    const run = runLater(feature, html, buffer);
+    buffer = run.buffer;
+    const isLast = feature === later.at(-1);
+    if (!isLast || printed === undefined) return run.step;
+    if (injectedScriptsSurvive(printed.page, run.step.html, printed.scripts)) return run.step;
+    return rerunWithoutLazyload(page);
+  };
+  const finishMarker = markerStep(input);
   return {
-    steps: simulationStepIds(input.features).map((feature) => ({
+    steps: steps.map((feature) => ({
       id: feature,
       apply: (html: string) => apply(feature, html)
     })),
-    finish: markerStep(input)
+    finish: (html, reports) =>
+      finishMarker(
+        html,
+        reports.map((report) => replaced.get(report.feature) ?? report)
+      )
   };
 }

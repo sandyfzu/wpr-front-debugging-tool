@@ -40,10 +40,10 @@ import { isAmpDocument } from './amp';
 import { delayJsCaveats, type SimulationCaveat } from './caveats';
 import { delayScriptMatches, type DelayScriptMatch } from './delay-js-regex';
 import {
-  conditionalScan,
-  extractIeConditionals,
+  featureBuffer,
   injectIeConditionals,
-  scriptConditionalParts
+  scriptConditionalParts,
+  type FeatureBuffer
 } from './ie-conditionals';
 import { metaCharsetSpans, moveMetaCharsetToHead, phpEmpty } from './meta-charset';
 import { firstOpeningTag } from './opening-tag';
@@ -83,6 +83,12 @@ export interface DelayJsForwardInput {
    * same IE conditional extraction), as WP Rocket orders them.
    */
   readonly defer?: DeferJsPassInput;
+  /**
+   * The buffer the earlier features left on `html` (LazyLoad, its texts
+   * placed; Defer JS): the pass continues on it instead of a fresh
+   * extraction (`defer` then runs on top of it).
+   */
+  readonly buffer?: FeatureBuffer;
 }
 
 /** What the Defer JS passes did ahead of Delay JS (`already-served`: the page already defers). */
@@ -544,9 +550,8 @@ export function simulateDelayJs(input: DelayJsForwardInput): DelayJsForwardResul
   if (isAmpDocument(input.html, tags)) return identity('not-applicable', { reason: 'amp' });
   if (alreadyServesDelayJs(input.html, tags)) return identity('already-served');
   const lookup = readForwardRows(input.listRows, input.rows);
-  const conditionals = conditionalScan(input.html);
-  const extracted = extractIeConditionals(input.html, conditionals);
-  let page = extracted.html;
+  const buffer = featureBuffer(input.html, input.buffer);
+  let page = buffer.html;
   let defer: DeferAheadReport | undefined;
   if (input.defer !== undefined) {
     if (alreadyServesDeferJs(tags)) {
@@ -560,8 +565,8 @@ export function simulateDelayJs(input: DelayJsForwardInput): DelayJsForwardResul
   }
   const masks = delayMaskScan(page);
   const unreproduced = unreproducedBeforeMetaMove(
-    extracted.conditionals,
-    ieConditionalsSteps(input.html, conditionals, measure),
+    buffer.conditionals,
+    ieConditionalsSteps(input.html, buffer.scan, measure),
     maskSteps(page, masks, measure),
     measure
   );
@@ -575,7 +580,7 @@ export function simulateDelayJs(input: DelayJsForwardInput): DelayJsForwardResul
     added = moveMetaCharsetToHead(added, measure);
   }
   return {
-    html: injectIeConditionals(added, extracted.conditionals),
+    html: injectIeConditionals(added, buffer.conditionals),
     report: {
       state: 'simulated',
       delayed: pass.delayed,

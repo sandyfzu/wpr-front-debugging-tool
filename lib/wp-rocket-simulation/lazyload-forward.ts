@@ -30,10 +30,10 @@
 import { asciiLowerCase } from '../exclusion-builder/literal-rows';
 import { replaceDisjoint, type KeyEnds } from './disjoint-replace';
 import {
-  conditionalScan,
-  extractIeConditionals,
+  featureBuffer,
   injectIeConditionals,
-  scriptConditionalParts
+  scriptConditionalParts,
+  type FeatureBuffer
 } from './ie-conditionals';
 import {
   backgroundElementMatches,
@@ -42,8 +42,7 @@ import {
   pictureMatches,
   sourceMatches,
   type ImageMatch,
-  type LazyloadBeyond,
-  type LazyloadUnreproduced
+  type LazyloadBeyond
 } from './lazyload-scan';
 import {
   backgroundUrl,
@@ -60,6 +59,7 @@ import {
   withoutOuterQuotes,
   withPlaceholderSource
 } from './lazyload-tag';
+import type { LazyloadUnreproduced } from './spec';
 import { pictureImagePatternCompiles, replacePictureImage } from './lazyload-picture-image';
 import { asciiCaselessAt, isSpaceAt } from './pcre-text';
 import { htmlEntityDecodeHtml5 } from './php-entities';
@@ -149,6 +149,8 @@ export interface LazyloadForwardReport extends LazyloadPassCounts {
 export interface LazyloadForwardResult {
   readonly html: string;
   readonly report: LazyloadForwardReport;
+  /** With `simulated`: the buffer after the pass (later features' passes continue on it). */
+  readonly buffer?: FeatureBuffer;
 }
 
 /** Thrown inside the pass to stop it where WP Rocket's run could diverge. */
@@ -559,7 +561,7 @@ export function lazyloadImagesPass(
  * it on (its head and footer texts placed by the caller).
  *
  * @param input The page, the version's literals and the stored rows.
- * @returns The page WP Rocket would serve, and the report.
+ * @returns The page WP Rocket would serve, the report, and on `simulated` the buffer after the pass.
  */
 export function simulateLazyloadImages(input: LazyloadForwardInput): LazyloadForwardResult {
   const measure = input.measure ?? UTF8_MEASURE;
@@ -567,12 +569,11 @@ export function simulateLazyloadImages(input: LazyloadForwardInput): LazyloadFor
     html: input.html,
     report: { state: 'not-applicable', unreproduced: step, images: 0, pictures: 0, backgrounds: 0 }
   });
-  const conditionals = conditionalScan(input.html);
-  if (ieConditionalsSteps(input.html, conditionals, measure) > UNREPRODUCED_STEP_CEILING) {
+  const buffer = featureBuffer(input.html, undefined);
+  if (ieConditionalsSteps(input.html, buffer.scan, measure) > UNREPRODUCED_STEP_CEILING) {
     return beyond('ie-conditionals');
   }
-  const extracted = extractIeConditionals(input.html, conditionals);
-  for (const conditional of extracted.conditionals) {
+  for (const conditional of buffer.conditionals) {
     const parts = scriptConditionalParts(conditional);
     if (
       parts !== null &&
@@ -582,14 +583,15 @@ export function simulateLazyloadImages(input: LazyloadForwardInput): LazyloadFor
     }
   }
   const pass = lazyloadImagesPass(
-    extracted.html,
+    buffer.html,
     lazyloadExclusions(input.literals, input.rows),
     measure
   );
   if ('beyond' in pass) return beyond(pass.beyond);
   const { html, ...counts } = pass;
   return {
-    html: injectIeConditionals(html, extracted.conditionals),
-    report: { state: 'simulated', ...counts }
+    html: injectIeConditionals(html, buffer.conditionals),
+    report: { state: 'simulated', ...counts },
+    buffer: { ...buffer, html }
   };
 }

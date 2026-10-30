@@ -15,17 +15,7 @@ import { decodeAttributeValue } from '../../utils/html-attribute-value';
 import { scanTags, type ScannedTag } from '../exclusion-builder/html-scan';
 import { attributeValue } from './generator-meta';
 import { pageBeaconBlock } from './lazyload-hook-texts';
-
-/** Where the assets URL came from (see the module doc), strongest first. */
-export const LAZYLOAD_ASSETS_URL_SOURCES = [
-  'beacon',
-  'plugin-asset',
-  'theme-asset',
-  'default'
-] as const;
-
-/** Where the assets URL came from. */
-export type LazyloadAssetsUrlSource = (typeof LAZYLOAD_ASSETS_URL_SOURCES)[number];
+import type { LazyloadAssetsUrlSource } from './spec';
 
 /** The assets URL used for a page and its source. */
 export interface LazyloadAssetsUrl {

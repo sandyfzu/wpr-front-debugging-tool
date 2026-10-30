@@ -113,7 +113,7 @@ describe('readSimulationMarker', () => {
       `v1 delay_js=off id=${ID}`,
       `v1 delay_js=simulated id=${ID.toUpperCase()}`,
       `v1 delay_js=simulated delay_js=simulated id=${ID}`,
-      `v1 lazyload=simulated id=${ID}`,
+      `v1 lazyload_iframes=simulated id=${ID}`,
       `${CONTENT} `,
       `${CONTENT}${'x'.repeat(5000)}`
     ]) {

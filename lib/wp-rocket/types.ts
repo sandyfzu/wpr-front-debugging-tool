@@ -285,7 +285,7 @@ export type SimulationFact = 'simulated' | 'unverified';
  * The detection rows a simulation fact can annotate — exactly the
  * simulated features, whose ids are these row keys.
  */
-export type SimulationFactRow = 'delay_js' | 'defer_all_js';
+export type SimulationFactRow = 'lazyload' | 'delay_js' | 'defer_all_js';
 
 /**
  * The additive simulation field of a {@link SimulationFactRow}: absent
@@ -353,7 +353,8 @@ export interface WprDetections {
     source?: FeatureEvidenceSource;
   };
   lazyload: TruncationMark &
-    BuilderFactField & {
+    BuilderFactField &
+    SimulationFactField & {
       present: boolean;
       /** One record per <img> element, document order. */
       images: LazyloadImageRecord[];

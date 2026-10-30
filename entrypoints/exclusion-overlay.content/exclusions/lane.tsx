@@ -40,6 +40,7 @@ import {
 } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import type {
+  DeferSimulationReport,
   DelaySimulationReport,
   DocumentSimulationReport
 } from '../../../lib/messaging/exclusion-simulation';
@@ -163,7 +164,10 @@ function isEditingKey(event: KeyboardEvent): boolean {
  * @param simulation The lane's simulation report (`simulated`).
  * @param excluded Scripts the rows restored (the lane transform's rewrites).
  */
-function simulationCountLine(simulation: DocumentSimulationReport, excluded: number): string {
+function simulationCountLine(
+  simulation: DelaySimulationReport | DeferSimulationReport,
+  excluded: number
+): string {
   return simulation.feature === 'delay_js'
     ? SIMULATION_LANE_COPY.line(simulation.delayed, excluded)
     : SIMULATION_LANE_COPY.deferLine(simulation.deferred, simulation.wrapped, excluded);

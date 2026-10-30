@@ -10,7 +10,10 @@
  * version's bundled one).
  */
 import type { Logger } from '../../lib/logger';
-import { createPackagedRuntimeSource } from '../../lib/exclusion-session/packaged-simulation-data';
+import {
+  createPackagedLazyloadRuntimeSource,
+  createPackagedRuntimeSource
+} from '../../lib/exclusion-session/packaged-simulation-data';
 import {
   createMarkerIdSource,
   createMarkerSettler
@@ -20,7 +23,7 @@ import type { SimulationCspBrowser } from '../../lib/wp-rocket-simulation/spec';
 import { rememberSimulationMarker } from '../../lib/storage/simulation-markers';
 import type { SimulationSources } from '../../lib/exclusion-session/simulation-sources';
 import { SIMULATION_DATA_PATH } from '../../lib/wp-rocket-simulation/simulation-data';
-import { webSha256Hex } from '../../utils/web-sha256';
+import { webSha256Hex, webSha256HexOfBytes } from '../../utils/web-sha256';
 import { latestDeferListsSource, latestListSource } from './latest-exclusion-list';
 
 /**
@@ -44,6 +47,12 @@ export function createSimulationSources(log: Pick<Logger, 'error'>): SimulationS
       fetch: (url) => fetch(url),
       url: browser.runtime.getURL(`/${SIMULATION_DATA_PATH}` as const),
       sha256: webSha256Hex,
+      log
+    }),
+    lazyloadRuntime: createPackagedLazyloadRuntimeSource({
+      fetch: (url) => fetch(url),
+      dataUrl: browser.runtime.getURL(`/${SIMULATION_DATA_PATH}` as const),
+      sha256: webSha256HexOfBytes,
       log
     }),
     markerId: createMarkerIdSource({

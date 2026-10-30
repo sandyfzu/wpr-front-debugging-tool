@@ -122,7 +122,8 @@ pnpm check:budgets   # measures built surfaces against scripts/budgets.json — 
                      #   `required: true` fails unless each of its globs matches exactly one built file
 pnpm parity:wp-rocket # WP Rocket parity tables (lib/exclusion-builder/wp-rocket-parity.fixtures.json + lib/wp-rocket-
                      #   simulation/simulation-parity.fixtures.json) + the generated simulation data file (public/wp-rocket-
-                     #   simulation/simulation-data.json): re-derives their
+                     #   simulation/simulation-data.json) and packaged LazyLoad runtime (public/wp-rocket-simulation/<jsPath>,
+                     #   WP Rocket's bytes, pinned in the data file; lint/format-ignored): re-derives their
                      #   expected outputs with the real plugin under `php -n -d pcre.jit=1` (needs PHP >= 8.1 + ext-dom/mbstring,
                      #   compiled in or shared, `unzip`, one pinned zip per supported version (lib/wp-rocket/versions.ts)
                      #   at docker/wpr/wpr-rocket-<version>.zip; network on the first run only — the pinned WordPress

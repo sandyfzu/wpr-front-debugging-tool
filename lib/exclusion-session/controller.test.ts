@@ -6,6 +6,7 @@
  * unavailable, interception ended), wake re-validation, reset, push
  * failures, and serialized races.
  */
+import { LAZYLOAD_PACKAGE_FIXTURE } from './simulation-package.fixtures';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../logger';
@@ -1749,7 +1750,8 @@ describe('host — simulating sessions', () => {
     runtime: '/*runtime*/RocketLazyLoadScripts.run();',
     fallback: 'if(navigator.userAgent.match(/MSIE|Trident/i)){}',
     bundledListRows: [],
-    bundledDeferLists: { external: [], inline: [] }
+    bundledDeferLists: { external: [], inline: [] },
+    lazyload: LAZYLOAD_PACKAGE_FIXTURE
   };
   const doc = () => ({
     tabId: TAB,
@@ -1795,6 +1797,7 @@ describe('host — simulating sessions', () => {
             listSource: 'bundled',
             listMiss: 'never-fetched'
           }),
+        lazyloadRuntime: INERT_SIMULATION_SOURCES.lazyloadRuntime,
         deferLists: INERT_SIMULATION_SOURCES.deferLists,
         settleMarker: INERT_SIMULATION_SOURCES.settleMarker,
         markerId: () => Promise.resolve(undefined),
@@ -1845,6 +1848,7 @@ describe('host — simulating sessions', () => {
             };
           }),
         list: () => Promise.reject(new Error('unused')),
+        lazyloadRuntime: INERT_SIMULATION_SOURCES.lazyloadRuntime,
         deferLists: () => Promise.reject(new Error('unused')),
         settleMarker: () => Promise.reject(new Error('unused')),
         markerId: () => Promise.reject(new Error('unused')),
@@ -1878,6 +1882,7 @@ describe('host — simulating sessions', () => {
           return Promise.resolve({ ok: false, cause: 'asset-unreachable' });
         },
         list: () => Promise.reject(new Error('unused')),
+        lazyloadRuntime: INERT_SIMULATION_SOURCES.lazyloadRuntime,
         deferLists: () => Promise.reject(new Error('unused')),
         settleMarker: () => Promise.reject(new Error('unused')),
         markerId: () => Promise.reject(new Error('unused')),
@@ -1899,6 +1904,7 @@ describe('host — simulating sessions', () => {
     runtime: () => Promise.resolve({ ok: true, package: PACKAGE }),
     list: (_version, bundledRows) =>
       Promise.resolve({ listRows: bundledRows, listSource: 'bundled', listMiss: 'never-fetched' }),
+    lazyloadRuntime: INERT_SIMULATION_SOURCES.lazyloadRuntime,
     deferLists: INERT_SIMULATION_SOURCES.deferLists,
     settleMarker: INERT_SIMULATION_SOURCES.settleMarker,
     markerId,
@@ -2047,6 +2053,7 @@ describe('host — simulating sessions', () => {
       simulation: {
         runtime: () => Promise.reject(new Error('asset read exploded')),
         list: () => Promise.reject(new Error('unused')),
+        lazyloadRuntime: INERT_SIMULATION_SOURCES.lazyloadRuntime,
         deferLists: () => Promise.reject(new Error('unused')),
         settleMarker: () => Promise.reject(new Error('unused')),
         markerId: () => Promise.reject(new Error('unused')),

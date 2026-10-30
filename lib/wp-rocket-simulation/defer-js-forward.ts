@@ -46,10 +46,10 @@ import {
   type BeyondScan
 } from './defer-js-scan';
 import {
-  conditionalScan,
-  extractIeConditionals,
+  featureBuffer,
   injectIeConditionals,
-  scriptConditionalParts
+  scriptConditionalParts,
+  type FeatureBuffer
 } from './ie-conditionals';
 import { asciiCaselessAt, isSpaceAt } from './pcre-text';
 import { cachedForwardSearch, nextOccurrenceFinder } from '../../utils/next-occurrence';
@@ -85,6 +85,11 @@ export interface DeferJsForwardInput extends DeferJsPassInput {
   readonly html: string;
   /** Bytes per code unit as served (default UTF-8): decides the backtrack-limit estimates. */
   readonly measure?: ByteMeasure;
+  /**
+   * The buffer an earlier feature left on `html` (LazyLoad, its texts
+   * placed): the passes continue on it instead of a fresh extraction.
+   */
+  readonly buffer?: FeatureBuffer;
 }
 
 /** What the two passes did. */
@@ -114,6 +119,8 @@ export interface DeferJsForwardReport extends DeferJsPassCounts {
 export interface DeferJsForwardResult {
   readonly html: string;
   readonly report: DeferJsForwardReport;
+  /** With `simulated`: the buffer after the passes (Delay JS's continue on it). */
+  readonly buffer?: FeatureBuffer;
 }
 
 /** The replay bound Defer JS shares with every buffer pass ({@link REPLACEMENT_WORK_LIMIT}). */
@@ -472,7 +479,7 @@ export function deferJsPasses(
  * Simulate WP Rocket's Defer JS on a page served without it.
  *
  * @param input The page, the stored rows, the lists and the version's quoting.
- * @returns The page WP Rocket would serve, and the report.
+ * @returns The page WP Rocket would serve, the report, and on `simulated` the buffer after the passes.
  * @throws What {@link deferUrlMatcher} throws.
  */
 export function simulateDeferJs(input: DeferJsForwardInput): DeferJsForwardResult {
@@ -494,12 +501,11 @@ export function simulateDeferJs(input: DeferJsForwardInput): DeferJsForwardResul
   if (alreadyServesDelayJs(input.html, tags)) {
     return identity('not-applicable', { reason: 'delay-js-served' });
   }
-  const conditionals = conditionalScan(input.html);
-  if (ieConditionalsSteps(input.html, conditionals, measure) > UNREPRODUCED_STEP_CEILING) {
+  const buffer = featureBuffer(input.html, input.buffer);
+  if (ieConditionalsSteps(input.html, buffer.scan, measure) > UNREPRODUCED_STEP_CEILING) {
     return beyond('ie-conditionals');
   }
-  const extracted = extractIeConditionals(input.html, conditionals);
-  for (const conditional of extracted.conditionals) {
+  for (const conditional of buffer.conditionals) {
     const parts = scriptConditionalParts(conditional);
     if (
       parts !== null &&
@@ -508,10 +514,11 @@ export function simulateDeferJs(input: DeferJsForwardInput): DeferJsForwardResul
       return beyond('ie-conditional-script');
     }
   }
-  const passes = deferJsPasses(extracted.html, input, measure);
+  const passes = deferJsPasses(buffer.html, input, measure);
   if ('beyond' in passes) return beyond(passes.beyond);
   return {
-    html: injectIeConditionals(passes.html, extracted.conditionals),
-    report: { state: 'simulated', deferred: passes.deferred, wrapped: passes.wrapped }
+    html: injectIeConditionals(passes.html, buffer.conditionals),
+    report: { state: 'simulated', deferred: passes.deferred, wrapped: passes.wrapped },
+    buffer: { ...buffer, html: passes.html }
   };
 }

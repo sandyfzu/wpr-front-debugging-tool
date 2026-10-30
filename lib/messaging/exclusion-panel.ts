@@ -89,7 +89,7 @@ export function parseExclusionSessionSummary(input: unknown): ExclusionSessionSu
 }
 
 /** The document outcome's keys holding each feature's simulation report. */
-const SIMULATION_REPORT_KEYS = ['deferSimulation', 'simulation'] as const;
+const SIMULATION_REPORT_KEYS = ['lazyloadSimulation', 'deferSimulation', 'simulation'] as const;
 
 /**
  * The known features an untrusted document outcome reports as simulated —

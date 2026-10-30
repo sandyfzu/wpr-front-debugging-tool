@@ -4,50 +4,29 @@ import {
   beaconBlockBefore,
   elementEnds,
   generatorMetaBefore,
-  lazyloadHookTexts,
+  composeLazyloadHookTexts,
   pageBeaconBlock,
   placeLazyloadHookTexts
 } from './lazyload-hook-texts';
-import type { SimulationData, SimulationVersionData } from './simulation-data';
 
-/** A data file holding one version's LazyLoad texts (keys are arbitrary here: no hash check). */
-const DATA: SimulationData = {
-  format: 1,
-  versions: {
-    '3.24': {
-      lazyload: {
-        runtime: { sha256: 'r', bytes: 1, jsPath: 'lazyload/17.8.3/lazyload.min.js' },
-        noJsStyle: { sha256: 'h' },
-        optionsScript: { sha256: 'o' },
-        runtimeTag: { beforeUrl: { sha256: 'b' }, afterUrl: { sha256: 'a' } },
-        excludedAttributes: { sha256: 'x', count: 0 },
-        excludedSrc: { sha256: 'y', count: 0 }
-      }
-    } as unknown as SimulationVersionData
-  },
-  texts: {
-    h: '<noscript>H</noscript>',
-    o: '<script>O</script>',
-    b: '<script src="',
-    a: '"></script>'
-  },
-  rowLists: {}
+/** One version's LazyLoad text parts (as the package reader hands them). */
+const PARTS = {
+  noJsStyle: '<noscript>H</noscript>',
+  optionsScript: '<script>O</script>',
+  runtimeTagBeforeUrl: '<script src="',
+  runtimeTagAfterUrl: '"></script>',
+  runtimeJsPath: 'lazyload/17.8.3/lazyload.min.js'
 };
 
 const ASSETS = 'https://example.org/wp-content/plugins/wp-rocket/assets/';
 
-describe('lazyloadHookTexts', () => {
-  it('builds the head text and the footer around the runtime URL from the data file', () => {
-    expect(lazyloadHookTexts(DATA, '3.24', ASSETS)).toEqual({
+describe('composeLazyloadHookTexts', () => {
+  it('builds the head text and the footer around the runtime URL from the parts', () => {
+    expect(composeLazyloadHookTexts(PARTS, ASSETS)).toEqual({
       head: '<noscript>H</noscript>',
       footer: `<script>O</script><script src="${ASSETS}js/lazyload/17.8.3/lazyload.min.js"></script>`,
       runtimeUrl: `${ASSETS}js/lazyload/17.8.3/lazyload.min.js`
     });
-  });
-
-  it('throws naming an unknown version or a missing text', () => {
-    expect(() => lazyloadHookTexts(DATA, '9.9', ASSETS)).toThrow('no version 9.9');
-    expect(() => lazyloadHookTexts({ ...DATA, texts: {} }, '3.24', ASSETS)).toThrow('no text h');
   });
 });
 

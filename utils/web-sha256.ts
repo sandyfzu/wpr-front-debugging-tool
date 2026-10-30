@@ -23,3 +23,13 @@ function hexOf(bytes: ArrayBuffer): string {
 export async function webSha256Hex(text: string): Promise<string> {
   return hexOf(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
 }
+
+/**
+ * SHA-256 of raw bytes (a packaged file, checked against its pin).
+ *
+ * @param bytes The input.
+ * @returns The 64-character lowercase hex digest.
+ */
+export async function webSha256HexOfBytes(bytes: ArrayBuffer): Promise<string> {
+  return hexOf(await crypto.subtle.digest('SHA-256', bytes));
+}

@@ -66,7 +66,7 @@ describe('createSimulationMarkerVerifier', () => {
 
   it('answers nothing (warned) for a malformed answer or a refusal', async () => {
     for (const send of [
-      () => Promise.resolve({ features: ['lazyload'] }),
+      () => Promise.resolve({ features: ['lazyload_iframes'] }),
       () => Promise.resolve(true),
       () => Promise.reject(new Error('verifySimulationMarker: only a top-frame page may ask'))
     ]) {

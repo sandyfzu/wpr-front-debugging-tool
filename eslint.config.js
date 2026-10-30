@@ -42,7 +42,9 @@ export default tseslint.config(
       '.wxt/**',
       '.claude/worktrees/**',
       '**/playwright-report/**',
-      '**/test-results/**'
+      '**/test-results/**',
+      // WP Rocket's own LazyLoad runtime, shipped byte for byte (pinned by `parity:wp-rocket`).
+      'public/wp-rocket-simulation/**/*.js'
     ]
   },
 

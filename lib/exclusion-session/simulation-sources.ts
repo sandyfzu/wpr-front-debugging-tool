@@ -11,7 +11,8 @@
  * unchanged).
  *
  * Every source has an inert default, so each one lands later without
- * touching the pipeline: no runtime (every document `runtime-unavailable`)
+ * touching the pipeline: no runtime (every document `runtime-unavailable`;
+ * an unusable LazyLoad runtime fails LazyLoad alone)
  * until the packaged data loads, the bundled list (never fetched) until a
  * latest list is kept, no marker id until markers are written, no CSP
  * known until it is captured.
@@ -23,8 +24,10 @@ import {
   parseDocumentSimulationInput,
   type DocumentSimulationInput,
   type SimulationDeferLists,
+  type SimulationLazyloadInput,
   type SimulationListProvenance
 } from '../messaging/exclusion-simulation';
+import type { LazyloadTextParts } from '../wp-rocket-simulation/lazyload-hook-texts';
 import type { DeferJsLists } from '../wp-rocket-simulation/defer-js-forward';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
 import { selectWprVersion } from '../wp-rocket-simulation/select-version';
@@ -34,6 +37,14 @@ import type {
   SimulationRuntimeUnavailableCause
 } from '../wp-rocket-simulation/spec';
 import { DeadlineExceededError, SIMULATION_SOURCE_TIMEOUTS_MS, withinDeadline } from './timeouts';
+
+/** One version's packaged LazyLoad inputs: its printed texts, image literals and runtime pin. */
+export interface SimulationLazyloadPackage extends LazyloadTextParts {
+  readonly excludedAttributes: readonly string[];
+  readonly excludedSrc: readonly string[];
+  /** The packaged runtime file's pin (its path is `runtimeJsPath` under the data folder). */
+  readonly runtime: { readonly sha256: string; readonly bytes: number };
+}
 
 /** One supported WP Rocket version's packaged simulation texts and bundled list. */
 export interface SimulationPackage {
@@ -45,7 +56,13 @@ export interface SimulationPackage {
   readonly bundledListRows: readonly string[];
   /** The version's bundled Defer JS lists. */
   readonly bundledDeferLists: DeferJsLists;
+  /** The version's LazyLoad inputs. */
+  readonly lazyload: SimulationLazyloadPackage;
 }
+
+/** A packaged LazyLoad runtime check: sound, or why it is unusable. */
+export type LazyloadRuntimeCheck =
+  { readonly ok: true } | { readonly ok: false; readonly cause: SimulationRuntimeUnavailableCause };
 
 /** A runtime source's answer: the version's package, or why there is none. */
 export type SimulationPackageRead =
@@ -61,6 +78,12 @@ export type SimulationListChoice = SimulationListProvenance & {
 export interface SimulationSources {
   /** The packaged inputs of a WP Rocket version. Resolves (never rejects). */
   readonly runtime: (version: string) => Promise<SimulationPackageRead>;
+  /**
+   * Whether a version's packaged LazyLoad runtime file is sound (readable,
+   * its size and sha256 equal to the pin) — asked only for LazyLoad: the
+   * page will request that runtime. Resolves (never rejects).
+   */
+  readonly lazyloadRuntime: (lazyload: SimulationLazyloadPackage) => Promise<LazyloadRuntimeCheck>;
   /** The exclusion list to use for a version, given its bundled rows. Resolves (never rejects). */
   readonly list: (version: string, bundledRows: readonly string[]) => Promise<SimulationListChoice>;
   /** The Defer JS lists to use for a version, given its bundled ones. Resolves (never rejects). */
@@ -85,11 +108,12 @@ export interface SimulationSources {
 }
 
 /**
- * The inert sources: no packaged runtime is loaded (`asset-unreachable`),
- * the bundled list (`never-fetched`), no marker, no CSP known.
+ * The inert sources: no packaged runtime is loaded (`asset-unreachable`,
+ * LazyLoad's too), the bundled list (`never-fetched`), no marker, no CSP known.
  */
 export const INERT_SIMULATION_SOURCES: SimulationSources = {
   runtime: () => Promise.resolve({ ok: false, cause: 'asset-unreachable' }),
+  lazyloadRuntime: () => Promise.resolve({ ok: false, cause: 'asset-unreachable' }),
   list: (_version, bundledRows) =>
     Promise.resolve({ listRows: bundledRows, listSource: 'bundled', listMiss: 'never-fetched' }),
   deferLists: (_version, bundled) =>
@@ -142,6 +166,16 @@ export function deadlinedSources(
           'Simulation runtime source',
           limits.runtime,
           () => sources.runtime(version),
+          schedule
+        ),
+        { ok: false, cause: 'asset-unreachable' }
+      ),
+    lazyloadRuntime: (lazyload) =>
+      orOnDeadline(
+        withinDeadline(
+          'Simulation LazyLoad runtime source',
+          limits.runtime,
+          () => sources.lazyloadRuntime(lazyload),
           schedule
         ),
         { ok: false, cause: 'asset-unreachable' }
@@ -244,12 +278,15 @@ async function assembleSimulation(
   const { selected, siteVersion } = selectWprVersion(html);
   const read = await sources.runtime(selected.version);
   if (!read.ok) return read;
-  // Both lists read the same kept record: asked at once, so one list deadline bounds both.
-  const [list, deferLists] = await Promise.all([
+  const lazyloaded = simulate.features.includes('lazyload');
+  // Both lists read the same kept record: asked at once, so one list deadline bounds both;
+  // LazyLoad's runtime check is independent of them, asked alongside.
+  const [list, deferLists, lazyloadRuntime] = await Promise.all([
     sources.list(selected.version, read.package.bundledListRows),
     simulate.features.includes('defer_all_js')
       ? sources.deferLists(selected.version, read.package.bundledDeferLists)
-      : undefined
+      : undefined,
+    lazyloaded ? sources.lazyloadRuntime(read.package.lazyload) : undefined
   ]);
   const markerId = await sources.markerId(document, simulate);
   const rawCsp = sources.csp(document, html);
@@ -262,6 +299,15 @@ async function assembleSimulation(
     runtime: read.package.runtime,
     fallback: read.package.fallback,
     ...(deferLists === undefined ? {} : { deferLists }),
+    ...(lazyloadRuntime === undefined
+      ? {}
+      : {
+          lazyload: lazyloadInput(
+            read.package.lazyload,
+            document.documentUrl,
+            lazyloadRuntime.ok ? undefined : lazyloadRuntime.cause
+          )
+        }),
     ...(markerId === undefined ? {} : { markerId }),
     ...(rawCsp === undefined ? {} : fitSimulationCsp(rawCsp, html.length))
   };
@@ -273,6 +319,31 @@ async function assembleSimulation(
     );
   }
   return { ok: true, input };
+}
+
+/**
+ * The engine's LazyLoad input from a version's package and the document's URL.
+ *
+ * @param lazyload The version's LazyLoad package.
+ * @param pageUrl The document's URL.
+ * @param runtimeUnavailable Why the packaged runtime is unusable (absent: it is sound).
+ */
+export function lazyloadInput(
+  lazyload: SimulationLazyloadPackage,
+  pageUrl: string,
+  runtimeUnavailable?: SimulationRuntimeUnavailableCause
+): SimulationLazyloadInput {
+  return {
+    pageUrl,
+    noJsStyle: lazyload.noJsStyle,
+    optionsScript: lazyload.optionsScript,
+    runtimeTagBeforeUrl: lazyload.runtimeTagBeforeUrl,
+    runtimeTagAfterUrl: lazyload.runtimeTagAfterUrl,
+    runtimeJsPath: lazyload.runtimeJsPath,
+    excludedAttributes: lazyload.excludedAttributes,
+    excludedSrc: lazyload.excludedSrc,
+    ...(runtimeUnavailable === undefined ? {} : { runtimeUnavailable })
+  };
 }
 
 /**

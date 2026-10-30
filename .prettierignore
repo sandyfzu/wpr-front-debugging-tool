@@ -19,6 +19,9 @@ lib/detection/fixtures/*.html
 # Husky internals (generated)
 .husky/_
 
+# WP Rocket's own LazyLoad runtime, shipped byte for byte (pinned by `parity:wp-rocket`)
+public/wp-rocket-simulation/**/*.js
+
 # Dotfiles with meaningful formatting
 .prettierignore
 .nvmrc

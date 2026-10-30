@@ -5,6 +5,7 @@
  * preparation asking it only when Defer JS is simulated, under the list
  * deadline, at once with the Delay JS list.
  */
+import { LAZYLOAD_PACKAGE_FIXTURE } from './simulation-package.fixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InterceptedDocument } from './backend';
 import {
@@ -108,7 +109,8 @@ const PACKAGE: SimulationPackage = {
   runtime: 'RocketLazyLoadScripts.run();',
   fallback: 'if(0){}',
   bundledListRows: ['delay-row'],
-  bundledDeferLists: BUNDLED
+  bundledDeferLists: BUNDLED,
+  lazyload: LAZYLOAD_PACKAGE_FIXTURE
 };
 
 const PAGE = '<!doctype html><html><head></head><body></body></html>';

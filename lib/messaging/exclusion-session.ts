@@ -40,6 +40,7 @@ import {
   optionalSimulateFor,
   parseDocumentSimulationReport,
   type DeferSimulationReport,
+  type LazyloadSimulationReport,
   type DelaySimulationReport
 } from './exclusion-simulation';
 import type {
@@ -146,7 +147,8 @@ const MAX_BUDGET_MS = 600_000;
  *   it), for a {@link SimulationRuntimeUnavailableCause}.
  *
  * A simulating session's `rewritten` outcome carries its Delay JS
- * `simulation` report and its Defer JS `deferSimulation` report (each when
+ * `simulation` report, its Defer JS `deferSimulation` report and its
+ * LazyLoad `lazyloadSimulation` report (each when
  * that feature is simulated), and an overrun of the simulation step names `stage: 'simulate'`
  * (its feature the simulated one, no row — the step is feature-wide).
  */
@@ -158,6 +160,8 @@ export type ExclusionDocumentOutcome = (
       readonly simulation?: DelaySimulationReport;
       /** The Defer JS simulation's report (feature `defer_all_js`). */
       readonly deferSimulation?: DeferSimulationReport;
+      /** The LazyLoad simulation's report (feature `lazyload`). */
+      readonly lazyloadSimulation?: LazyloadSimulationReport;
     }
   | {
       readonly outcome: 'over-budget';
@@ -800,7 +804,8 @@ function withServed(
 /** A `rewritten` outcome's simulation report fields → the feature each one reports. */
 const SIMULATION_REPORT_FIELDS = [
   ['simulation', 'delay_js'],
-  ['deferSimulation', 'defer_all_js']
+  ['deferSimulation', 'defer_all_js'],
+  ['lazyloadSimulation', 'lazyload']
 ] as const satisfies readonly (readonly [string, SimulatedFeatureId])[];
 
 /**
@@ -858,7 +863,14 @@ function parseDocumentOutcome(
   if (!isRecord(input)) return null;
   switch (ownValue(input, 'outcome')) {
     case 'rewritten': {
-      const keys = ['outcome', 'reports', 'simulation', 'deferSimulation', 'served'];
+      const keys = [
+        'outcome',
+        'reports',
+        'simulation',
+        'deferSimulation',
+        'lazyloadSimulation',
+        'served'
+      ];
       if (!keysAllowed(input, keys, policy)) {
         return null;
       }

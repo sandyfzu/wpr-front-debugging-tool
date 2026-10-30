@@ -1112,7 +1112,21 @@ const CSP_UNAVAILABLE_COPY: Readonly<Record<SimulationCspUnavailableReason, stri
 /** What a simulation cannot reproduce on a page. */
 const CAVEAT_COPY: Readonly<Record<SimulationCaveat, string>> = {
   'combined-js':
-    'This page serves WP Rocket’s combined JavaScript files: with Delay JS on, WP Rocket would serve them uncombined, which the simulation can’t reproduce.'
+    'This page serves WP Rocket’s combined JavaScript files: with Delay JS on, WP Rocket would serve them uncombined, which the simulation can’t reproduce.',
+  'core-lazy-loading':
+    'WordPress marked some images loading="lazy" here; with LazyLoad on it wouldn’t, so their fallback copies differ slightly from the site’s.',
+  'image-smilies':
+    'This page shows WordPress image smilies, which WP Rocket prints slightly differently with LazyLoad on.',
+  'foreign-lazy-markup':
+    'This page already holds another plugin’s lazy-load markup, lazy loaded again here as WP Rocket would.',
+  'hook-text-placement':
+    'LazyLoad’s style and scripts were placed where most themes print them; your theme may place them elsewhere.',
+  'runtime-url':
+    'LazyLoad’s script address was worked out from this page; your site’s plugin folder or CDN may give another.',
+  'above-the-fold-exclusions':
+    'WP Rocket skips lazy loading above-the-fold and LCP images from its own site data, which the simulation can’t read.',
+  'site-filters':
+    'Site code that changes LazyLoad (filters, options) isn’t known to the simulation, nor server settings that turn it off for a page (DONOTLAZYLOAD, DONOTCACHEPAGE or DONOTROCKETOPTIMIZE, as some plugins set on pages they keep out of the cache).'
 };
 
 /** The WP Rocket pattern a page may stop, named for the not-reproduced reason. */
@@ -1127,17 +1141,30 @@ const UNREPRODUCED_REGEX_NAMES: Readonly<Record<UnreproducedRegex, string>> = {
   'defer-inline-scripts': 'Defer JS inline script matching',
   'defer-replacements': 'Defer JS script rewriting',
   'defer-inline-exclusions': 'Defer JS inline exclusion',
-  'defer-file-exclusions': 'Defer JS file exclusion'
+  'defer-file-exclusions': 'Defer JS file exclusion',
+  'lazyload-hidden-blocks': 'LazyLoad script and noscript hiding',
+  'lazyload-pictures': 'LazyLoad picture matching',
+  'lazyload-images': 'LazyLoad image matching',
+  'lazyload-picture-image': 'LazyLoad picture image rewriting',
+  'lazyload-picture-pattern-size': 'LazyLoad picture image',
+  'lazyload-tag-length': 'LazyLoad attribute',
+  'lazyload-dimension': 'LazyLoad image size',
+  'lazyload-url': 'LazyLoad URL escaping',
+  'lazyload-entities': 'LazyLoad background URL decoding',
+  'lazyload-replacements': 'LazyLoad image rewriting',
+  'lazyload-injected-scripts': 'Delay JS or Defer JS exclusion of LazyLoad’s scripts',
+  'lazyload-runtime-url': 'LazyLoad script URL length'
 };
 
 /** What to do when a page could not be simulated: the forward actions. */
 const NOT_SIMULATED_REMEDY =
   'Test on another page of the site, or choose As served to apply your exclusions without the simulation.';
 
-/** What WP Rocket does to scripts, per simulated feature (the banners' verb). */
+/** What WP Rocket does, per simulated feature (the banners' verb and its object). */
 const FEATURE_VERBS: Readonly<Record<SimulatedFeatureId, string>> = {
-  delay_js: 'delays',
-  defer_all_js: 'defers'
+  lazyload: 'lazy loads images',
+  delay_js: 'delays scripts',
+  defer_all_js: 'defers scripts'
 };
 
 /**
@@ -1208,7 +1235,7 @@ function ownOutcomeCopy(
   if (simulation.state === 'already-served') {
     const opener = simulated.length === 0 ? 'Nothing was simulated' : `${name} wasn’t simulated`;
     return {
-      title: `Applied — WP Rocket already ${FEATURE_VERBS[simulation.feature]} scripts here`,
+      title: `Applied — WP Rocket already ${FEATURE_VERBS[simulation.feature]} here`,
       body: `${opener}: your exclusions apply to WP Rocket’s own ${name}, as served.`
     };
   }
@@ -1235,7 +1262,34 @@ function notApplicableCopy(simulation: DocumentSimulationReport, served: string)
     case 'amp':
       return {
         title: 'Not simulated: AMP page',
-        body: `WP Rocket never ${FEATURE_VERBS[simulation.feature]} scripts on AMP pages, so ${served} Choose As served to stop asking for the simulation.`
+        body: `WP Rocket never ${FEATURE_VERBS[simulation.feature]} on AMP pages, so ${served} Choose As served to stop asking for the simulation.`
+      };
+    case 'preview':
+      return {
+        title: 'Not simulated: preview',
+        body: `WP Rocket never lazy loads images on a preview, so ${served} Choose As served to stop asking for the simulation.`
+      };
+    case 'search':
+      return {
+        title: 'Not simulated: search page',
+        body: `WP Rocket never lazy loads images on search results, so ${served} Choose As served to stop asking for the simulation.`
+      };
+    case 'page-builder-editor':
+      return {
+        title: 'Not simulated: page builder editor',
+        body: `WP Rocket never lazy loads images in a page builder’s editor, so ${served} Choose As served to stop asking for the simulation.`
+      };
+    case 'no-head-end':
+    case 'no-body-end':
+    case 'body-end-before-head-end':
+      return {
+        title: 'Not simulated: page has no usable head or body end',
+        body: `LazyLoad’s style and scripts go before the page’s </head> and </body>, which this page lacks, so ${served} ${NOT_SIMULATED_REMEDY}`
+      };
+    case 'runtime-unavailable':
+      return {
+        title: 'Not simulated: LazyLoad’s script file is unavailable',
+        body: `The extension’s packaged copy of LazyLoad’s script couldn’t be loaded or is damaged, so ${served} Reload the page to retry (if it persists, reload or reinstall the extension), or choose As served to stop asking for the simulation.`
       };
     case 'delay-js-served':
       return {

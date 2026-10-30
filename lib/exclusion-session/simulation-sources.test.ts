@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LAZYLOAD_PACKAGE_FIXTURE } from './simulation-package.fixtures';
 import { MARKER_ID } from '../messaging/exclusion-simulation.fixtures';
 import type { InterceptedDocument } from './backend';
 import {
@@ -27,7 +28,8 @@ const PACKAGE: SimulationPackage = {
   runtime: 'RocketLazyLoadScripts.run();',
   fallback: 'if(navigator.userAgent.match(/MSIE|Trident/i)){}',
   bundledListRows: ['lazyLoadOptions', 'wpr-beacon'],
-  bundledDeferLists: { external: ['jquery'], inline: ['lazyLoadOptions'] }
+  bundledDeferLists: { external: ['jquery'], inline: ['lazyLoadOptions'] },
+  lazyload: LAZYLOAD_PACKAGE_FIXTURE
 };
 
 /** A page whose head holds `head`. */

@@ -24,35 +24,7 @@ import { asciiCaselessAt, isSpaceAt } from './pcre-text';
 import { UNREPRODUCED_STEP_CEILING } from './unreproduced-limits';
 import { rangeByteCounter, type ByteMeasure } from './utf8';
 import { cachedForwardSearch, nextOccurrenceFinder } from '../../utils/next-occurrence';
-
-/**
- * What LazyLoad's image pass cannot reproduce on a page, by the step that
- * could diverge from WP Rocket: a regex PCRE's backtrack limit could stop
- * (`lazyload-hidden-blocks`, `-pictures`, `-images`,
- * `-picture-image`: the per-picture image replacement), the per-picture
- * pattern's size too near PCRE's compiled-size cap
- * (`lazyload-picture-pattern-size`), an attribute regex on a tag too long
- * to bound (`lazyload-tag-length`), a dimension past 2^53
- * (`lazyload-dimension`), a URL `esc_url` handles through unported code
- * (`lazyload-url`), a named character reference outside the ported table
- * (`lazyload-entities`), or the `str_replace` replay past its work bound
- * (`lazyload-replacements`).
- */
-export const LAZYLOAD_UNREPRODUCED = [
-  'lazyload-hidden-blocks',
-  'lazyload-pictures',
-  'lazyload-images',
-  'lazyload-picture-image',
-  'lazyload-picture-pattern-size',
-  'lazyload-tag-length',
-  'lazyload-dimension',
-  'lazyload-url',
-  'lazyload-entities',
-  'lazyload-replacements'
-] as const;
-
-/** One LazyLoad step beyond exact reproduction (see {@link LAZYLOAD_UNREPRODUCED}). */
-export type LazyloadUnreproduced = (typeof LAZYLOAD_UNREPRODUCED)[number];
+import type { LazyloadUnreproduced } from './spec';
 
 /** A scan stopped where WP Rocket's run could diverge. */
 export interface LazyloadBeyond {

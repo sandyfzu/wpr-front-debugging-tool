@@ -20,7 +20,12 @@ import {
   type SimulationVersionData
 } from '../wp-rocket-simulation/simulation-data';
 import type { SimulationRuntimeUnavailableCause } from '../wp-rocket-simulation/spec';
-import type { SimulationPackageRead, SimulationSources } from './simulation-sources';
+import type {
+  LazyloadRuntimeCheck,
+  SimulationLazyloadPackage,
+  SimulationPackageRead,
+  SimulationSources
+} from './simulation-sources';
 
 /** Why the whole data file is unusable (a version's absence is decided per document). */
 export type PackagedDataFailure = Exclude<SimulationRuntimeUnavailableCause, 'version-missing'>;
@@ -106,19 +111,157 @@ export function packagedVersion(data: SimulationData, version: string): Simulati
     readonly string[] | undefined;
   const inline = ownValue(data.rowLists, entry.deferJsInlineExclusions.sha256) as
     readonly string[] | undefined;
+  const lazyload = lazyloadPackage(data, entry);
   // The reader resolved every key already; a miss here means the data was not read by it.
   if (
     runtime === undefined ||
     fallback === undefined ||
     rows === undefined ||
     external === undefined ||
-    inline === undefined
+    inline === undefined ||
+    lazyload === null
   ) {
     return { ok: false, cause: 'asset-malformed' };
   }
   return {
     ok: true,
-    package: { runtime, fallback, bundledListRows: rows, bundledDeferLists: { external, inline } }
+    package: {
+      runtime,
+      fallback,
+      bundledListRows: rows,
+      bundledDeferLists: { external, inline },
+      lazyload
+    }
+  };
+}
+
+/**
+ * A version entry's LazyLoad package from verified data.
+ *
+ * @param data Verified data.
+ * @param entry The version's entry.
+ * @returns The package, or null when a key does not resolve (data not read by the reader).
+ */
+function lazyloadPackage(
+  data: SimulationData,
+  entry: SimulationVersionData
+): SimulationLazyloadPackage | null {
+  const entryOf = entry.lazyload;
+  const text = (sha256: string): string | undefined =>
+    ownValue(data.texts, sha256) as string | undefined;
+  const list = (sha256: string): readonly string[] | undefined =>
+    ownValue(data.rowLists, sha256) as readonly string[] | undefined;
+  const parts = {
+    noJsStyle: text(entryOf.noJsStyle.sha256),
+    optionsScript: text(entryOf.optionsScript.sha256),
+    runtimeTagBeforeUrl: text(entryOf.runtimeTag.beforeUrl.sha256),
+    runtimeTagAfterUrl: text(entryOf.runtimeTag.afterUrl.sha256),
+    excludedAttributes: list(entryOf.excludedAttributes.sha256),
+    excludedSrc: list(entryOf.excludedSrc.sha256)
+  };
+  if (Object.values(parts).some((value) => value === undefined)) return null;
+  return {
+    ...(parts as { [Key in keyof typeof parts]: NonNullable<(typeof parts)[Key]> }),
+    runtimeJsPath: entryOf.runtime.jsPath,
+    runtime: { sha256: entryOf.runtime.sha256, bytes: entryOf.runtime.bytes }
+  };
+}
+
+/** The transport for the packaged LazyLoad runtime: its bytes at an extension URL. */
+export type PackagedBytesFetch = (
+  url: string
+) => Promise<Pick<Response, 'ok' | 'status' | 'arrayBuffer'>>;
+
+/** A sha256 of bytes, lowercase hex (the caller's platform digest). */
+export type BytesSha256 = (bytes: ArrayBuffer) => Promise<string>;
+
+/** What the LazyLoad runtime check needs. */
+export interface PackagedLazyloadRuntimeDeps {
+  /** Reads a packaged file's bytes (the background binds the platform `fetch`). */
+  readonly fetch: PackagedBytesFetch;
+  /**
+   * The data file's extension URL: runtime paths resolve against it (the
+   * runtime ships beside it, under its folder).
+   */
+  readonly dataUrl: string;
+  /** The digest the pin is checked with. */
+  readonly sha256: BytesSha256;
+  /** Where an unusable runtime is reported. */
+  readonly log: Pick<Logger, 'error'>;
+}
+
+/**
+ * Check one packaged LazyLoad runtime file against its pin. Never rejects.
+ *
+ * @param deps Transport, data URL and digest.
+ * @param lazyload The version's LazyLoad package (path and pin).
+ * @returns Sound, or the cause and a log detail.
+ */
+export async function checkPackagedLazyloadRuntime(
+  deps: Pick<PackagedLazyloadRuntimeDeps, 'fetch' | 'dataUrl' | 'sha256'>,
+  lazyload: Pick<SimulationLazyloadPackage, 'runtimeJsPath' | 'runtime'>
+): Promise<LazyloadRuntimeCheck & { readonly detail?: string }> {
+  let bytes: ArrayBuffer;
+  try {
+    const response = await deps.fetch(new URL(lazyload.runtimeJsPath, deps.dataUrl).href);
+    if (!response.ok) {
+      return { ok: false, cause: 'asset-unreachable', detail: `HTTP ${String(response.status)}` };
+    }
+    bytes = await response.arrayBuffer();
+  } catch (cause) {
+    return { ok: false, cause: 'asset-unreachable', detail: String(cause) };
+  }
+  let digest: string;
+  try {
+    digest = await deps.sha256(bytes);
+  } catch (cause) {
+    return { ok: false, cause: 'asset-unreachable', detail: `digest failed: ${String(cause)}` };
+  }
+  if (bytes.byteLength !== lazyload.runtime.bytes || digest !== lazyload.runtime.sha256) {
+    return {
+      ok: false,
+      cause: 'hash-mismatch',
+      detail: `${lazyload.runtimeJsPath}: ${String(bytes.byteLength)} B, sha256 ${digest}`
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * The LazyLoad runtime source over the packaged files: each runtime path
+ * is checked once per lifetime (concurrent asks share the check); a sound
+ * or damaged answer is kept, an unreachable one retried by the next
+ * document. Never rejects; each failure logged once per path and cause.
+ *
+ * @param deps Transport, data URL, digest and logger.
+ */
+export function createPackagedLazyloadRuntimeSource(
+  deps: PackagedLazyloadRuntimeDeps
+): SimulationSources['lazyloadRuntime'] {
+  const checks = new Map<string, Promise<LazyloadRuntimeCheck>>();
+  const logged = new Set<string>();
+  return (lazyload) => {
+    const key = `${lazyload.runtimeJsPath} ${lazyload.runtime.sha256}`;
+    const known = checks.get(key);
+    if (known !== undefined) return known;
+    const check = checkPackagedLazyloadRuntime(deps, lazyload).then((result) => {
+      if (result.ok) return { ok: true } as const;
+      if (!logged.has(`${key} ${result.cause}`)) {
+        logged.add(`${key} ${result.cause}`);
+        deps.log.error(
+          'Packaged LazyLoad runtime unusable — LazyLoad not simulated (the other features still are)',
+          {
+            path: lazyload.runtimeJsPath,
+            cause: result.cause,
+            detail: result.detail
+          }
+        );
+      }
+      if (result.cause === 'asset-unreachable') checks.delete(key);
+      return { ok: false, cause: result.cause } as const;
+    });
+    checks.set(key, check);
+    return check;
   };
 }
 

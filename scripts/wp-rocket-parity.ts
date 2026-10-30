@@ -58,6 +58,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync
@@ -140,6 +141,18 @@ export const SIMULATION_TABLE_PATH = 'lib/wp-rocket-simulation/simulation-parity
 
 /** The simulation data file, relative to the repo root (shipped from `public/`). */
 export const SIMULATION_DATA_FILE = `public/${SIMULATION_DATA_PATH}`;
+
+/** The packaged data folder: each LazyLoad runtime ships under it at its `jsPath`. */
+export const SIMULATION_PACKAGE_DIR = dirname(SIMULATION_DATA_FILE);
+
+/**
+ * A LazyLoad runtime's packaged file (repo path).
+ *
+ * @param jsPath The runtime's path under the plugin's `assets/js/`.
+ */
+export function packagedRuntimeFile(jsPath: string): string {
+  return `${SIMULATION_PACKAGE_DIR}/${jsPath}`;
+}
 
 /** The Delay JS runtime inside the plugin root. */
 const RUNTIME_PATH = 'assets/js/lazyload-scripts.min.js';
@@ -1858,6 +1871,95 @@ export function dataFindings(committed: string | null, fresh: string): Finding[]
 }
 
 /**
+ * Add a build's LazyLoad runtime files (repo path → the plugin's bytes),
+ * each checked against its data-file pin; versions sharing a path must
+ * ship the same bytes there.
+ *
+ * @param files The files so far (mutated).
+ * @param data The build's data file.
+ * @param read Reads a runtime's bytes by its plugin path.
+ * @throws {@link Error} when bytes differ from their pin or from another version's at one path.
+ */
+export function addRuntimeFiles(
+  files: Map<string, Uint8Array>,
+  data: SimulationData,
+  read: (pluginPath: string) => Uint8Array
+): void {
+  for (const [version, entry] of Object.entries(data.versions)) {
+    const { jsPath, sha256, bytes } = entry.lazyload.runtime;
+    const content = read(lazyloadRuntimePath(jsPath));
+    if (content.byteLength !== bytes || digest('sha256', content) !== sha256) {
+      throw new Error(`WP Rocket ${version}: ${lazyloadRuntimePath(jsPath)} differs from its pin`);
+    }
+    const path = packagedRuntimeFile(jsPath);
+    const known = files.get(path);
+    if (known !== undefined && digest('sha256', known) !== sha256) {
+      throw new Error(`${path}: two versions ship different runtimes at one path`);
+    }
+    files.set(path, content);
+  }
+}
+
+/**
+ * The verdict on the packaged LazyLoad runtime files: each derived file
+ * committed byte for byte, and no other `.js` file under the package folder
+ * (a runtime no version names is dead weight).
+ *
+ * @param fresh The derived files (repo path → bytes).
+ * @param committed Reads a committed file (`null` when missing).
+ * @param packagedJs Every `.js` file committed under the package folder (repo paths).
+ * @returns One error naming each stale, missing or orphan file, or nothing.
+ */
+export function runtimeFileFindings(
+  fresh: ReadonlyMap<string, Uint8Array>,
+  committed: (path: string) => Uint8Array | null,
+  packagedJs: readonly string[]
+): Finding[] {
+  const details: string[] = [];
+  for (const [path, bytes] of fresh) {
+    const file = committed(path);
+    if (file === null) details.push(`${path} is missing`);
+    else if (digest('sha256', file) !== digest('sha256', bytes)) {
+      details.push(`${path} differs from the plugin's runtime`);
+    }
+  }
+  for (const path of packagedJs) {
+    if (!fresh.has(path)) details.push(`${path} is not a supported version's runtime`);
+  }
+  if (details.length === 0) return [];
+  return [
+    {
+      level: 'error',
+      title: 'packaged LazyLoad runtime stale',
+      details: [
+        ...details,
+        'Re-derive locally (`pnpm parity:wp-rocket --write`) and review the change; never hand-edit it.'
+      ]
+    }
+  ];
+}
+
+/**
+ * Every `.js` file under a folder, recursively (repo-relative paths).
+ *
+ * @param dir A repo-relative folder.
+ */
+function packagedJsFiles(dir: string): string[] {
+  const root = join(REPO_ROOT, dir);
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .filter((name) => name.endsWith('.js'))
+    .map((name) => `${dir}/${name.split('\\').join('/')}`)
+    .sort();
+}
+
+/** A committed repo file's bytes, or `null` when missing. */
+function readCommittedBytes(path: string): Uint8Array | null {
+  const file = join(REPO_ROOT, path);
+  return existsSync(file) ? readFileSync(file) : null;
+}
+
+/**
  * The `--compare` finding for the simulation pins: the other version ships
  * another runtime, IE fallback, list or LazyLoad text. Never an error.
  *
@@ -2380,6 +2482,8 @@ interface Derived {
   readonly parity: { readonly table: TableObject; readonly text: string };
   readonly simulation: { readonly table: TableObject; readonly text: string };
   readonly data: string;
+  /** The packaged LazyLoad runtime files (repo path → bytes). */
+  readonly runtimeFiles: ReadonlyMap<string, Uint8Array>;
 }
 
 /**
@@ -2388,7 +2492,9 @@ interface Derived {
  *
  * @param merged The merged builds (see {@link mergeBuilds}).
  */
-async function formatDerived(merged: ReturnType<typeof mergeBuilds>): Promise<Derived> {
+async function formatDerived(
+  merged: ReturnType<typeof mergeBuilds>
+): Promise<Omit<Derived, 'runtimeFiles'>> {
   parseParityTable(merged.parity);
   parseSimulationTable(merged.simulation);
   return {
@@ -2439,14 +2545,22 @@ async function deriveAll(
 ): Promise<Derived> {
   const inputs = committedInputs(committed);
   const builds: BuildResult[] = [];
+  const runtimeFiles = new Map<string, Uint8Array>();
   for (const row of SUPPORTED_WPR_VERSIONS) {
     const zip = pinnedZip(row, mode);
     console.log(`[parity] deriving under WP Rocket ${row.version} (${pluginZipPath(row.version)})`);
     builds.push(
-      await withPluginTree(zip, php, (tree) => Promise.resolve(deriveBuild(inputs, tree)))
+      await withPluginTree(zip, php, (tree) => {
+        const build = deriveBuild(inputs, tree);
+        addRuntimeFiles(runtimeFiles, build.data, (path) =>
+          readFileSync(join(tree.pluginRoot, path))
+        );
+        return Promise.resolve(build);
+      })
     );
   }
-  return formatDerived(mergeBuilds(builds, latestStableWprVersion().version));
+  const derived = await formatDerived(mergeBuilds(builds, latestStableWprVersion().version));
+  return { ...derived, runtimeFiles };
 }
 
 /**
@@ -2575,14 +2689,29 @@ async function main(): Promise<void> {
     writeFileSync(join(REPO_ROOT, SIMULATION_TABLE_PATH), fresh.simulation.text);
     mkdirSync(dirname(join(REPO_ROOT, SIMULATION_DATA_FILE)), { recursive: true });
     writeFileSync(join(REPO_ROOT, SIMULATION_DATA_FILE), fresh.data);
-    console.log(`[parity] wrote ${TABLE_PATH}, ${SIMULATION_TABLE_PATH}, ${SIMULATION_DATA_FILE}`);
+    for (const [path, bytes] of fresh.runtimeFiles) {
+      mkdirSync(dirname(join(REPO_ROOT, path)), { recursive: true });
+      writeFileSync(join(REPO_ROOT, path), bytes);
+    }
+    for (const path of packagedJsFiles(SIMULATION_PACKAGE_DIR)) {
+      if (!fresh.runtimeFiles.has(path)) rmSync(join(REPO_ROOT, path));
+    }
+    const runtimes = [...fresh.runtimeFiles.keys()].join(', ');
+    console.log(
+      `[parity] wrote ${TABLE_PATH}, ${SIMULATION_TABLE_PATH}, ${SIMULATION_DATA_FILE}, ${runtimes}`
+    );
     return;
   }
   if (options.mode === 'ci') {
     const findings = [
       ...(await ciFindings(committed.parity, fresh.parity.table)),
       ...(await ciFindings(committed.simulation, fresh.simulation.table, SIMULATION_TABLE)),
-      ...dataFindings(committed.data, fresh.data)
+      ...dataFindings(committed.data, fresh.data),
+      ...runtimeFileFindings(
+        fresh.runtimeFiles,
+        readCommittedBytes,
+        packagedJsFiles(SIMULATION_PACKAGE_DIR)
+      )
     ];
     if (report('WP Rocket parity: pinned builds', findings)) process.exitCode = 1;
     return;
@@ -2596,6 +2725,14 @@ async function main(): Promise<void> {
     {
       path: SIMULATION_DATA_FILE,
       lines: dataFindings(committed.data, fresh.data).flatMap((finding) => finding.details)
+    },
+    {
+      path: `${SIMULATION_PACKAGE_DIR}/**/*.js`,
+      lines: runtimeFileFindings(
+        fresh.runtimeFiles,
+        readCommittedBytes,
+        packagedJsFiles(SIMULATION_PACKAGE_DIR)
+      ).flatMap((finding) => finding.details)
     }
   ];
   for (const { path, lines } of stale) {

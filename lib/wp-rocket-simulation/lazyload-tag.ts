@@ -251,6 +251,10 @@ export function withLazySourceSrcset(source: string): string {
   return out + source.slice(copied);
 }
 
+/** How every LazyLoad placeholder opens, up to its dimensions (its served footprint). */
+export const LAZY_PLACEHOLDER_PREFIX =
+  "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20";
+
 /**
  * LazyLoad's placeholder: an empty SVG with the image's dimensions.
  *
@@ -258,7 +262,7 @@ export function withLazySourceSrcset(source: string): string {
  * @param height The height (`absint`).
  */
 export function lazyPlaceholder(width: number, height: number): string {
-  return `data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20${String(width)}%20${String(height)}'%3E%3C/svg%3E`;
+  return `${LAZY_PLACEHOLDER_PREFIX}${String(width)}%20${String(height)}'%3E%3C/svg%3E`;
 }
 
 /** A real attribute on a tag: its text and its (still quoted) value. */

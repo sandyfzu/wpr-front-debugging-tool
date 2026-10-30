@@ -9,12 +9,11 @@ import { describe, expect, it } from 'vitest';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import {
   LATEST_LIST_MISSES,
-  SIMULATION_CAVEATS,
   SIMULATION_CSP_LIMITS,
   SIMULATION_CSP_UNAVAILABLE_REASONS,
   SIMULATION_LIST_LIMITS,
-  SIMULATION_RUNTIME_UNAVAILABLE_CAUSES,
-  UNREPRODUCED_REGEXES
+  SIMULATION_REPORT_VOCABULARY,
+  SIMULATION_RUNTIME_UNAVAILABLE_CAUSES
 } from '../wp-rocket-simulation/spec';
 import {
   isSimulatedFeatureId,
@@ -98,7 +97,7 @@ describe('parseSimulateSpec', () => {
 
   it.each([
     ['an empty list', { features: [] }],
-    ['an unknown feature', { features: ['lazyload'] }],
+    ['an unknown feature', { features: ['lazyload_iframes'] }],
     ['a repeated feature', { features: ['delay_js', 'delay_js'] }],
     ['a non-array', { features: 'delay_js' }],
     ['a sparse hole', { features: new Array<unknown>(1) }],
@@ -175,7 +174,7 @@ describe('parseDocumentSimulationReport', () => {
     }
     const amp = identity('not-applicable', { reason: 'amp' });
     expect(parseReport(amp)).toEqual(amp);
-    for (const regex of UNREPRODUCED_REGEXES) {
+    for (const regex of SIMULATION_REPORT_VOCABULARY.delay_js.regexes) {
       const beyond = identity('not-applicable', {
         reason: 'beyond-exact-reproduction',
         unreproducedRegex: regex
@@ -303,7 +302,9 @@ describe('parseDocumentSimulationReport', () => {
 
   it('accepts every vocabulary value of the CSP limits and caveats', () => {
     expect(parseReport(report({ cspLimits: [...SIMULATION_CSP_LIMITS] }))).not.toBeNull();
-    expect(parseReport(report({ caveats: [...SIMULATION_CAVEATS] }))).not.toBeNull();
+    expect(
+      parseReport(report({ caveats: [...SIMULATION_REPORT_VOCABULARY.delay_js.caveats] }))
+    ).not.toBeNull();
   });
 
   it('accepts a report only for a feature the session simulates', () => {
@@ -359,7 +360,7 @@ describe('parseDocumentSimulationInput', () => {
   it('checks every field', () => {
     for (const change of [
       { features: [] },
-      { features: ['lazyload'] },
+      { features: ['lazyload_iframes'] },
       { features: undefined },
       { wpRocketVersion: 'latest' },
       { wpRocketVersion: '9'.repeat(SIMULATION_WIRE_LIMITS.versionChars + 1) },
@@ -537,7 +538,7 @@ describe('closed-value predicates', () => {
   it('recognize their vocabularies only', () => {
     expect(isSimulatedFeatureId('delay_js')).toBe(true);
     expect(isSimulatedFeatureId('defer_all_js')).toBe(true);
-    expect(isSimulatedFeatureId('lazyload')).toBe(false);
+    expect(isSimulatedFeatureId('lazyload_iframes')).toBe(false);
     expect(isSimulationMarkerId(MARKER_ID)).toBe(true);
     expect(isSimulationMarkerId(`${MARKER_ID}0`)).toBe(false);
     expect(isSimulationMarkerId(1)).toBe(false);

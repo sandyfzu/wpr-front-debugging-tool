@@ -18,7 +18,10 @@ import {
   assembleRow,
   assembleSimulateRow,
   committedSentinels,
+  addRuntimeFiles,
   dataFindings,
+  packagedRuntimeFile,
+  runtimeFileFindings,
   DEFAULT_LAZYLOAD_ASSETS_URL,
   lazyloadArtifacts,
   sameLazyloadTexts,
@@ -1244,5 +1247,71 @@ describe('ciFindings on the PCRE JIT', () => {
       title: 'another PHP build than the table header',
       details: ['header.pcreJit: "on" → "off"', 'Rows are still compared; this alone never fails.']
     });
+  });
+});
+
+describe('packaged LazyLoad runtime files', () => {
+  const bytes = new TextEncoder().encode('/*! lazyload */');
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const jsPath = 'lazyload/17.8.3/lazyload.min.js';
+  /** A data file whose versions name runtimes. */
+  const data = (entries: Record<string, { sha256: string; bytes: number }>) =>
+    ({
+      versions: Object.fromEntries(
+        Object.entries(entries).map(([version, runtime]) => [
+          version,
+          { lazyload: { runtime: { ...runtime, jsPath } } }
+        ])
+      )
+    }) as unknown as Parameters<typeof addRuntimeFiles>[1];
+
+  it('adds each version’s runtime at its packaged path, read from the plugin path', () => {
+    const files = new Map<string, Uint8Array>();
+    const read: string[] = [];
+    const pin = { sha256, bytes: bytes.byteLength };
+    addRuntimeFiles(files, data({ '3.24': pin, '3.23.5.1': pin }), (path) => {
+      read.push(path);
+      return bytes;
+    });
+    expect([...files.keys()]).toEqual([
+      'public/wp-rocket-simulation/lazyload/17.8.3/lazyload.min.js'
+    ]);
+    expect(packagedRuntimeFile(jsPath)).toBe([...files.keys()][0]);
+    expect(read).toEqual([
+      'assets/js/lazyload/17.8.3/lazyload.min.js',
+      'assets/js/lazyload/17.8.3/lazyload.min.js'
+    ]);
+  });
+
+  it('refuses bytes off their pin, and two runtimes at one path', () => {
+    const files = new Map<string, Uint8Array>();
+    expect(() => {
+      addRuntimeFiles(
+        files,
+        data({ '3.24': { sha256: 'f'.repeat(64), bytes: bytes.byteLength } }),
+        () => bytes
+      );
+    }).toThrow(/differs from its pin/);
+    const other = new TextEncoder().encode('/*! other   */');
+    files.set(packagedRuntimeFile(jsPath), other);
+    expect(() => {
+      addRuntimeFiles(files, data({ '3.24': { sha256, bytes: bytes.byteLength } }), () => bytes);
+    }).toThrow(/different runtimes at one path/);
+  });
+
+  it('finds stale, missing and orphan files, nothing when committed byte for byte', () => {
+    const path = packagedRuntimeFile(jsPath);
+    const fresh = new Map([[path, bytes]]);
+    expect(runtimeFileFindings(fresh, () => bytes, [path])).toEqual([]);
+    const [finding] = runtimeFileFindings(fresh, () => new TextEncoder().encode('x'), [
+      path,
+      'public/wp-rocket-simulation/lazyload/1.0/lazyload.min.js'
+    ]);
+    expect(finding?.level).toBe('error');
+    expect(finding?.details.slice(0, 2)).toEqual([
+      `${path} differs from the plugin's runtime`,
+      "public/wp-rocket-simulation/lazyload/1.0/lazyload.min.js is not a supported version's runtime"
+    ]);
+    expect(runtimeFileFindings(fresh, () => null, [])[0]?.details[0]).toBe(`${path} is missing`);
   });
 });

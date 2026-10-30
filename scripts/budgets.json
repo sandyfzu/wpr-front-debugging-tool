@@ -3,7 +3,7 @@
     "surface": "background service worker",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 287.9
+      "raw": 319.9
     }
   },
   {
@@ -38,6 +38,25 @@
     "maxKb": {
       "raw": 26.7,
       "gzip": 8.0
+    },
+    "build": "firefox-mv2",
+    "required": true
+  },
+  {
+    "surface": "LazyLoad runtime (packaged, served for WP Rocket's runtime URL)",
+    "globs": ["wp-rocket-simulation/lazyload/*/lazyload.min.js"],
+    "maxKb": {
+      "raw": 8.7,
+      "gzip": 3.0
+    },
+    "required": true
+  },
+  {
+    "surface": "LazyLoad runtime (packaged, served for WP Rocket's runtime URL)",
+    "globs": ["wp-rocket-simulation/lazyload/*/lazyload.min.js"],
+    "maxKb": {
+      "raw": 8.7,
+      "gzip": 3.0
     },
     "build": "firefox-mv2",
     "required": true
@@ -60,16 +79,16 @@
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
-      "raw": 170.3,
-      "gzip": 58.4
+      "raw": 171.4,
+      "gzip": 58.8
     }
   },
   {
     "surface": "exclusion builder overlay (runtime content script, loaded on open)",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 306.8,
-      "gzip": 102.8
+      "raw": 312.3,
+      "gzip": 104.5
     }
   },
   {
@@ -77,15 +96,15 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 306.8,
-      "gzip": 102.8
+      "raw": 312.3,
+      "gzip": 104.5
     }
   },
   {
     "surface": "command palette view (runtime content script, loaded on open)",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 116.7,
+      "raw": 116.8,
       "gzip": 40.5
     }
   },
@@ -94,7 +113,7 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 116.7,
+      "raw": 116.8,
       "gzip": 40.5
     }
   },
@@ -152,7 +171,7 @@
     "build": "firefox-mv2",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 284.7
+      "raw": 316.8
     }
   },
   {
@@ -160,15 +179,15 @@
     "build": "firefox-mv2",
     "globs": ["exclusion-transform-worker.js"],
     "maxKb": {
-      "raw": 152.0,
-      "gzip": 53.3
+      "raw": 180.6,
+      "gzip": 62.9
     }
   },
   {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1761.6
+      "raw": 1801.6
     }
   }
 ]

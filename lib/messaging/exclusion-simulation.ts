@@ -21,9 +21,13 @@
  */
 import { EXCLUSION_FEATURES, type ExclusionSet } from '../exclusion-builder/set';
 import {
+  LAZYLOAD_ASSETS_URL_SOURCES,
+  LAZYLOAD_FOOTER_PLACEMENTS,
+  LAZYLOAD_HEAD_PLACEMENTS,
+  LAZYLOAD_PLACEMENT_FALLBACKS,
+  LAZYLOAD_RUNTIME_DELIVERIES,
   LATEST_LIST_MISSES,
   SIMULATED_FEATURES,
-  SIMULATION_CAVEATS,
   SIMULATION_CSP_BROWSERS,
   SIMULATION_CSP_LIMITS,
   SIMULATION_CSP_UNAVAILABLE_REASONS,
@@ -33,6 +37,10 @@ import {
   SIMULATION_RUNTIME_UNAVAILABLE_CAUSES,
   SIMULATION_REPORT_VOCABULARY,
   type LatestListMiss,
+  type LazyloadAssetsUrlSource,
+  type LazyloadCaveat,
+  type LazyloadPlacementFallback,
+  type LazyloadRuntimeDelivery,
   type SimulateSpec,
   type SimulatedFeatureId,
   type SimulationCaveat,
@@ -46,6 +54,7 @@ import {
   type SimulationState,
   type UnreproducedRegex
 } from '../wp-rocket-simulation/spec';
+import { isRuntimeJsPath } from '../wp-rocket-simulation/simulation-data';
 import { WPR_VERSION_NUMBER_SOURCE } from '../wp-rocket/constants';
 import { supportedWprVersion } from '../wp-rocket/versions';
 import { isRecord, ownValue } from '../../utils/is-record';
@@ -69,7 +78,15 @@ export const SIMULATION_WIRE_LIMITS = {
   /** Characters of a CSP header name. */
   cspNameChars: 64,
   /** Characters of one CSP header value or meta content. */
-  cspValueChars: 32 * 1024
+  cspValueChars: 32 * 1024,
+  /** Characters of one LazyLoad hook text piece (WP Rocket's longest, the options script, is 1 952 B). */
+  lazyloadTextChars: 16 * 1024,
+  /** Characters of the runtime path under the plugin's `assets/js/` (`lazyload/17.8.3/lazyload.min.js`). */
+  lazyloadJsPathChars: 256,
+  /** Characters of the page URL (a browser's own URL bound: 2 MiB). */
+  pageUrlChars: 2 * 1024 * 1024,
+  /** Characters of the reported runtime URL (page-derived; a longer one is not simulated). */
+  runtimeUrlChars: 8 * 1024
 } as const;
 
 /**
@@ -88,7 +105,7 @@ export type SimulationListProvenance = {
 }[SimulationListSource];
 
 /** What every simulated feature's report carries. */
-type SimulationReportBase = SimulationListProvenance & {
+type SimulationReportCore = {
   readonly state: SimulationState;
   /** With `not-applicable` only (required there). */
   readonly reason?: SimulationNotApplicableReason;
@@ -101,6 +118,9 @@ type SimulationReportBase = SimulationListProvenance & {
   /** The simulation marker's id written into the page (`simulated` only). */
   readonly markerId?: string;
 };
+
+/** What the report of a feature that runs with an exclusion list carries (its provenance too). */
+type SimulationReportBase = SimulationReportCore & SimulationListProvenance;
 
 /** One document's Delay JS simulation (its feature's values: {@link SIMULATION_REPORT_VOCABULARY}). */
 export type DelaySimulationReport = SimulationReportBase & {
@@ -133,8 +153,46 @@ export type DeferSimulationReport = SimulationReportBase & {
   readonly wrapped: number;
 };
 
+/** Where LazyLoad's hook texts went on a simulated page. */
+export interface LazyloadReportPlacement {
+  readonly head: (typeof LAZYLOAD_HEAD_PLACEMENTS)[number];
+  readonly footer: (typeof LAZYLOAD_FOOTER_PLACEMENTS)[number];
+  /** End tags chosen among several, each once (empty on pages with one of each). */
+  readonly fallbacks: readonly LazyloadPlacementFallback[];
+}
+
+/** What only a simulated LazyLoad step reports (all present exactly on `simulated`). */
+export interface LazyloadSimulatedFacts {
+  /** The runtime tag's URL — the exact URL the page requests. */
+  readonly runtimeUrl: string;
+  /** Where the assets URL in it came from. */
+  readonly assetsUrlSource: LazyloadAssetsUrlSource;
+  /** How the runtime reaches the page. */
+  readonly delivery: LazyloadRuntimeDelivery;
+  /** Where the hook texts went. */
+  readonly placement: LazyloadReportPlacement;
+  /** The caveats that apply, each once, in vocabulary order (never empty). */
+  readonly caveats: readonly LazyloadCaveat[];
+}
+
+/**
+ * One document's LazyLoad (images) simulation: no exclusion list (WP
+ * Rocket's literals ship per version), so no provenance (its feature's
+ * values: {@link SIMULATION_REPORT_VOCABULARY}).
+ */
+export type LazyloadSimulationReport = SimulationReportCore & {
+  readonly feature: 'lazyload';
+  /** Images outside pictures made lazy (0 unless `simulated`). */
+  readonly images: number;
+  /** Pictures made lazy (0 unless `simulated`). */
+  readonly pictures: number;
+  /** Background images made lazy (0 unless `simulated`). */
+  readonly backgrounds: number;
+} & Partial<LazyloadSimulatedFacts>;
+
 /** One document's simulation of one feature, as the `rewritten` outcome reports it. */
-export type DocumentSimulationReport = DelaySimulationReport | DeferSimulationReport;
+export type DocumentSimulationReport =
+  LazyloadSimulationReport | DelaySimulationReport | DeferSimulationReport;
 
 /** One CSP response header line as received (Firefox may join repeated lines with `, `). */
 export interface SimulationCspHeader {
@@ -169,6 +227,36 @@ export type SimulationDeferLists = SimulationListProvenance & {
 };
 
 /**
+ * The LazyLoad inputs a run uses: the page's URL (search and builder
+ * parameters, the assets URL's origin), the selected version's printed
+ * texts (the runtime tag around its URL) and its image exclusion literals.
+ */
+export interface SimulationLazyloadInput {
+  /** The document's URL (absolute http(s)). */
+  readonly pageUrl: string;
+  /** The `<noscript><style>` element `wp_head` prints. */
+  readonly noJsStyle: string;
+  /** The inline `window.lazyLoadOptions` script `wp_footer` prints. */
+  readonly optionsScript: string;
+  /** The runtime tag's text before its URL. */
+  readonly runtimeTagBeforeUrl: string;
+  /** The runtime tag's text after its URL. */
+  readonly runtimeTagAfterUrl: string;
+  /** The runtime's path under the plugin's `assets/js/` (and the packaged file's, under the data folder). */
+  readonly runtimeJsPath: string;
+  /** Attribute substrings that keep an image as served. */
+  readonly excludedAttributes: readonly string[];
+  /** Src substrings that keep an image as served. */
+  readonly excludedSrc: readonly string[];
+  /**
+   * Why the extension's packaged copy of the runtime is unusable, when it
+   * is: LazyLoad is then not simulated (`runtime-unavailable`), the other
+   * features still are.
+   */
+  readonly runtimeUnavailable?: SimulationRuntimeUnavailableCause;
+}
+
+/**
  * What one engine run needs to simulate: the session's features, the
  * selected WP Rocket version's packaged runtime and IE fallback texts,
  * the exclusion list rows in use with their provenance (echoed into the
@@ -188,6 +276,8 @@ export type DocumentSimulationInput = SimulationListProvenance & {
   readonly listRows: readonly string[];
   /** The Defer JS lists — present exactly when the run simulates Defer JS. */
   readonly deferLists?: SimulationDeferLists;
+  /** The LazyLoad inputs — present exactly when the run simulates LazyLoad. */
+  readonly lazyload?: SimulationLazyloadInput;
   /** The id the marker carries when the step simulates. */
   readonly markerId?: string;
   /** Absent (and no `cspUnavailable`): no policy is known (the runtime is taken as allowed). */
@@ -374,16 +464,27 @@ const REPORT_BASE_KEYS = [
   'unreproducedRegex',
   'wpRocketVersion',
   'siteVersion',
-  'listSource',
-  'listFetchedAt',
-  'listMiss',
   'markerId'
 ] as const;
 
-/** Per feature, the keys only its report carries (another feature's report naming one is malformed). */
+/** The list provenance keys (a feature that runs with an exclusion list echoes them). */
+const LIST_PROVENANCE_KEYS = ['listSource', 'listFetchedAt', 'listMiss'] as const;
+
+/** Per feature, the keys only its report carries (a key no other feature's report carries is malformed there). */
 const REPORT_FEATURE_KEYS = {
-  defer_all_js: ['deferred', 'wrapped'],
+  lazyload: [
+    'images',
+    'pictures',
+    'backgrounds',
+    'runtimeUrl',
+    'assetsUrlSource',
+    'delivery',
+    'placement',
+    'caveats'
+  ],
+  defer_all_js: [...LIST_PROVENANCE_KEYS, 'deferred', 'wrapped'],
   delay_js: [
+    ...LIST_PROVENANCE_KEYS,
     'delayed',
     'undetermined',
     'regexLimitHit',
@@ -401,7 +502,8 @@ const REPORT_KEYS: readonly string[] = [
 ];
 
 /**
- * Whether a record names a key only another feature's report carries.
+ * Whether a record names a key another feature's report carries and this
+ * feature's does not.
  *
  * @param input The report record.
  * @param feature The report's feature.
@@ -410,10 +512,13 @@ function namesOtherFeatureKey(
   input: Record<string, unknown>,
   feature: SimulatedFeatureId
 ): boolean {
+  const own: readonly string[] = REPORT_FEATURE_KEYS[feature];
   return SIMULATED_FEATURES.some(
     ({ id }) =>
       id !== feature &&
-      REPORT_FEATURE_KEYS[id].some((key: string) => ownValue(input, key) !== undefined)
+      REPORT_FEATURE_KEYS[id].some(
+        (key: string) => !own.includes(key) && ownValue(input, key) !== undefined
+      )
   );
 }
 
@@ -477,7 +582,9 @@ function parseDelayFacts(
   const cspLimits =
     rawLimits === undefined ? undefined : distinctList(rawLimits, SIMULATION_CSP_LIMITS);
   const caveats =
-    rawCaveats === undefined ? undefined : distinctList(rawCaveats, SIMULATION_CAVEATS);
+    rawCaveats === undefined
+      ? undefined
+      : distinctList(rawCaveats, SIMULATION_REPORT_VOCABULARY.delay_js.caveats);
   if (cspLimits === null || caveats === null) return null;
   const cspUnavailable =
     rawUnavailable === undefined
@@ -530,6 +637,88 @@ function parseDeferFields(
 }
 
 /**
+ * Where a simulated LazyLoad step placed its texts (exact keys; fallbacks
+ * distinct, possibly none).
+ *
+ * @returns The placement rebuilt, or null when invalid.
+ */
+function parseLazyloadPlacement(value: unknown): LazyloadReportPlacement | null {
+  if (!isRecord(value) || !keysAllowed(value, ['head', 'footer', 'fallbacks'], 'reject')) {
+    return null;
+  }
+  const head = oneOf(LAZYLOAD_HEAD_PLACEMENTS, ownValue(value, 'head'));
+  const footer = oneOf(LAZYLOAD_FOOTER_PLACEMENTS, ownValue(value, 'footer'));
+  const rawFallbacks = ownValue(value, 'fallbacks');
+  const fallbacks =
+    Array.isArray(rawFallbacks) && rawFallbacks.length === 0
+      ? []
+      : distinctList(rawFallbacks, LAZYLOAD_PLACEMENT_FALLBACKS);
+  if (head === undefined || footer === undefined || fallbacks === null) return null;
+  return { head, footer, fallbacks };
+}
+
+/**
+ * Whether a value is a runtime URL as reported: absolute http(s), within the cap.
+ *
+ * @param value The candidate.
+ */
+export function isLazyloadRuntimeUrl(value: unknown): value is string {
+  if (!isBoundedText(value, SIMULATION_WIRE_LIMITS.runtimeUrlChars, 1)) return false;
+  return URL.canParse(value) && /^https?:$/.test(new URL(value).protocol);
+}
+
+/**
+ * A simulated LazyLoad report's facts: every one present and valid.
+ *
+ * @returns The facts, or null when one is missing or invalid.
+ */
+function parseLazyloadFacts(input: Record<string, unknown>): LazyloadSimulatedFacts | null {
+  const runtimeUrl = ownValue(input, 'runtimeUrl');
+  const assetsUrlSource = oneOf(LAZYLOAD_ASSETS_URL_SOURCES, ownValue(input, 'assetsUrlSource'));
+  const delivery = oneOf(LAZYLOAD_RUNTIME_DELIVERIES, ownValue(input, 'delivery'));
+  const placement = parseLazyloadPlacement(ownValue(input, 'placement'));
+  const caveats = distinctList(
+    ownValue(input, 'caveats'),
+    SIMULATION_REPORT_VOCABULARY.lazyload.caveats
+  );
+  if (!isLazyloadRuntimeUrl(runtimeUrl) || assetsUrlSource === undefined) return null;
+  if (delivery === undefined || placement === null || caveats === null) return null;
+  return { runtimeUrl, assetsUrlSource, delivery, placement, caveats };
+}
+
+/** The keys only a simulated LazyLoad report carries. */
+const LAZYLOAD_SIMULATED_KEYS = [
+  'runtimeUrl',
+  'assetsUrlSource',
+  'delivery',
+  'placement',
+  'caveats'
+] as const;
+
+/**
+ * A LazyLoad report's own fields: the counts (0 unless `simulated`) and
+ * the simulated-only facts (all present on `simulated`, none otherwise).
+ *
+ * @returns The fields, or null on any violation.
+ */
+function parseLazyloadFields(
+  input: Record<string, unknown>,
+  state: SimulationState
+): Omit<LazyloadSimulationReport, keyof SimulationReportCore | 'feature'> | null {
+  const images = ownValue(input, 'images');
+  const pictures = ownValue(input, 'pictures');
+  const backgrounds = ownValue(input, 'backgrounds');
+  if (!isCount(images) || !isCount(pictures) || !isCount(backgrounds)) return null;
+  const counts = { images, pictures, backgrounds };
+  if (state !== 'simulated') {
+    const none = LAZYLOAD_SIMULATED_KEYS.every((key) => ownValue(input, key) === undefined);
+    return none && images + pictures + backgrounds === 0 ? counts : null;
+  }
+  const facts = parseLazyloadFacts(input);
+  return facts === null ? null : { ...counts, ...facts };
+}
+
+/**
  * Parse one document's simulation report against the session's spec: a
  * feature the session simulates, a state, reason and regex of that
  * feature's vocabulary, no field of another feature's report, the
@@ -564,16 +753,21 @@ export function parseDocumentSimulationReport(
     return null;
   }
   const why = parseReportWhy(input, state, vocabulary);
-  const list = parseListProvenance(input);
-  if (why === null || list === null) return null;
-  const base = {
+  if (why === null) return null;
+  const core = {
     state,
     ...why,
     wpRocketVersion,
     ...siteVersion,
-    ...list,
     ...(markerId === undefined ? {} : { markerId })
   };
+  if (feature === 'lazyload') {
+    const fields = parseLazyloadFields(input, state);
+    return fields === null ? null : { feature, ...core, ...fields };
+  }
+  const list = parseListProvenance(input);
+  if (list === null) return null;
+  const base = { ...core, ...list };
   if (feature === 'defer_all_js') {
     const fields = parseDeferFields(input, state);
     return fields === null ? null : { feature, ...base, ...fields };
@@ -743,6 +937,7 @@ const INPUT_KEYS = [
   'fallback',
   'listRows',
   'deferLists',
+  'lazyload',
   'listSource',
   'listFetchedAt',
   'listMiss',
@@ -790,10 +985,102 @@ function inputDeferLists(
   return deferLists === null ? null : { deferLists };
 }
 
+/** The keys the LazyLoad input carries. */
+const LAZYLOAD_INPUT_KEYS = [
+  'pageUrl',
+  'noJsStyle',
+  'optionsScript',
+  'runtimeTagBeforeUrl',
+  'runtimeTagAfterUrl',
+  'runtimeJsPath',
+  'excludedAttributes',
+  'excludedSrc',
+  'runtimeUnavailable'
+] as const;
+
+/**
+ * Whether a value is a page URL as the engine takes it: absolute http(s), within the cap.
+ *
+ * @param value The candidate.
+ */
+function isPageUrl(value: unknown): value is string {
+  if (!isBoundedText(value, SIMULATION_WIRE_LIMITS.pageUrlChars, 1)) return false;
+  return URL.canParse(value) && /^https?:$/.test(new URL(value).protocol);
+}
+
+/**
+ * Parse the LazyLoad input (exact keys): an http(s) page URL, non-empty
+ * texts within the text cap, a runtime path under `assets/js/`, both
+ * literal lists within the list caps, a runtime-unavailable cause when present.
+ *
+ * @param input The untrusted value.
+ * @returns The input rebuilt, or null on any violation.
+ */
+export function parseSimulationLazyloadInput(input: unknown): SimulationLazyloadInput | null {
+  if (!isRecord(input) || !keysAllowed(input, LAZYLOAD_INPUT_KEYS, 'reject')) return null;
+  const pageUrl = ownValue(input, 'pageUrl');
+  const runtimeJsPath = ownValue(input, 'runtimeJsPath');
+  const max = SIMULATION_WIRE_LIMITS.lazyloadTextChars;
+  const texts = (
+    ['noJsStyle', 'optionsScript', 'runtimeTagBeforeUrl', 'runtimeTagAfterUrl'] as const
+  ).map((key) => ownValue(input, key));
+  const excludedAttributes = parseSimulationListRows(ownValue(input, 'excludedAttributes'));
+  const excludedSrc = parseSimulationListRows(ownValue(input, 'excludedSrc'));
+  const runtimeUnavailable = ownValue(input, 'runtimeUnavailable');
+  if (!isPageUrl(pageUrl) || excludedAttributes === null || excludedSrc === null) return null;
+  if (
+    runtimeUnavailable !== undefined &&
+    !isSimulationRuntimeUnavailableCause(runtimeUnavailable)
+  ) {
+    return null;
+  }
+  if (
+    !isBoundedText(runtimeJsPath, SIMULATION_WIRE_LIMITS.lazyloadJsPathChars, 1) ||
+    !isRuntimeJsPath(runtimeJsPath)
+  ) {
+    return null;
+  }
+  const [noJsStyle, optionsScript, before, after] = texts;
+  if (
+    !isBoundedText(noJsStyle, max, 1) ||
+    !isBoundedText(optionsScript, max, 1) ||
+    !isBoundedText(before, max, 1) ||
+    !isBoundedText(after, max, 1)
+  ) {
+    return null;
+  }
+  return {
+    pageUrl,
+    noJsStyle,
+    optionsScript,
+    runtimeTagBeforeUrl: before,
+    runtimeTagAfterUrl: after,
+    runtimeJsPath,
+    excludedAttributes,
+    excludedSrc,
+    ...(runtimeUnavailable === undefined ? {} : { runtimeUnavailable })
+  };
+}
+
+/**
+ * The input's LazyLoad inputs: present exactly when the run simulates LazyLoad.
+ *
+ * @returns The field to spread (empty when absent), or null when invalid.
+ */
+function inputLazyload(
+  input: Record<string, unknown>,
+  features: readonly SimulatedFeatureId[]
+): Pick<DocumentSimulationInput, 'lazyload'> | null {
+  const raw = ownValue(input, 'lazyload');
+  if (!features.includes('lazyload')) return raw === undefined ? {} : null;
+  const lazyload = parseSimulationLazyloadInput(raw);
+  return lazyload === null ? null : { lazyload };
+}
+
 /**
  * Parse an engine request's simulation input (exact keys — host and
  * engine ship in one build; Defer JS lists exactly with Defer JS, for a
- * supported version). Page-derived parts degrade instead of failing
+ * supported version; LazyLoad inputs exactly with LazyLoad). Page-derived parts degrade instead of failing
  * the request: an unfit `siteVersion` string is omitted, an unfit `csp`
  * becomes `cspUnavailable`; a non-string `siteVersion` or a `csp` beside a
  * `cspUnavailable` is our own bug and fails it.
@@ -821,7 +1108,9 @@ export function parseDocumentSimulationInput(
   const list = parseListProvenance(input);
   const csp = inputCsp(input, htmlLength);
   const defer = inputDeferLists(input, spec.features, wpRocketVersion);
+  const lazyload = inputLazyload(input, spec.features);
   if (listRows === null || list === null || csp === null || defer === null) return null;
+  if (lazyload === null) return null;
   return {
     features: spec.features,
     wpRocketVersion,
@@ -830,6 +1119,7 @@ export function parseDocumentSimulationInput(
     fallback,
     listRows,
     ...defer,
+    ...lazyload,
     ...list,
     ...(markerId === undefined ? {} : { markerId }),
     ...csp
