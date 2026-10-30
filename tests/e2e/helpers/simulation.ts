@@ -1,6 +1,6 @@
 /**
- * The browser tier's Delay JS simulation seams: drive the overlay's Delay
- * mode control, read what a simulated load left behind (the fulfilled
+ * The browser tier's simulation seams: drive the overlay's mode controls
+ * (Delay JS, Defer JS, LazyLoad), read what a simulated load left behind (the fulfilled
  * document's bytes, the session's per-document simulation report, the
  * page's simulation marker, page errors), dispatch the user interaction
  * WP Rocket's runtime waits for, and stage the background's latest
@@ -16,7 +16,8 @@ import type { Locator, Page, Response } from '@playwright/test';
 
 import type {
   DeferSimulationReport,
-  DelaySimulationReport
+  DelaySimulationReport,
+  LazyloadSimulationReport
 } from '../../../lib/messaging/exclusion-simulation';
 import { SIMULATION_MARKER_META_NAME } from '../../../lib/wp-rocket/constants';
 import { expect, type DriverPage, type ExtensionDriver } from './extension';
@@ -84,6 +85,16 @@ export const deferModeGroup = (page: Page): Locator =>
 /** The Defer JS mode control's notes. */
 export const deferModeNotes = (page: Page): Locator => page.locator('#xo-mode-notes-deferJs p');
 
+/** The LazyLoad mode control's accessible name. */
+export const LAZYLOAD_MODE_GROUP = 'LazyLoad for images on this page';
+
+/** The LazyLoad mode control's radio group. */
+export const lazyloadModeGroup = (page: Page): Locator =>
+  page.getByRole('radiogroup', { name: LAZYLOAD_MODE_GROUP });
+
+/** The LazyLoad mode control's notes. */
+export const lazyloadModeNotes = (page: Page): Locator => page.locator('#xo-mode-notes-lazyload p');
+
 /** The Delay lane's count/hint/caveat lines (the simulation's count, version and list lines). */
 export async function delayLaneLines(page: Page): Promise<string[]> {
   return await lane(page, DELAY)
@@ -125,6 +136,7 @@ interface StoredSession {
     readonly outcome?: string;
     readonly simulation?: DelaySimulationReport;
     readonly deferSimulation?: DeferSimulationReport;
+    readonly lazyloadSimulation?: LazyloadSimulationReport;
   };
 }
 
@@ -149,9 +161,42 @@ export async function storedSession(
   );
 }
 
+/** A stored document's report fields. */
+type ReportField = 'simulation' | 'deferSimulation' | 'lazyloadSimulation';
+
 /**
- * The simulation report of the tab's last intercepted document, polled
+ * One feature's report of the tab's last intercepted document, polled
  * until one exists (the background records it as the reload lands).
+ *
+ * @param extension The driver.
+ * @param tabId The tab.
+ * @param field The document's report field (named in the failure).
+ * @param read Reads that field off the stored document.
+ * @throws {Error} When none is recorded in time.
+ */
+async function documentReport<Report>(
+  extension: ExtensionDriver,
+  tabId: number,
+  field: ReportField,
+  read: (document: NonNullable<StoredSession['document']>) => Report | undefined
+): Promise<Report> {
+  let report: Report | undefined;
+  await expect
+    .poll(
+      async () => {
+        const document = (await storedSession(extension, tabId))?.document;
+        report = document === undefined ? undefined : read(document);
+        return report !== undefined;
+      },
+      { timeout: 15_000, intervals: [100, 250, 500] }
+    )
+    .toBe(true);
+  if (report === undefined) throw new Error(`tab ${String(tabId)} has no ${field} report`);
+  return report;
+}
+
+/**
+ * The Delay JS simulation report of the tab's last intercepted document.
  *
  * @param extension The driver.
  * @param tabId The tab.
@@ -160,23 +205,11 @@ export async function documentSimulation(
   extension: ExtensionDriver,
   tabId: number
 ): Promise<DelaySimulationReport> {
-  let report: DelaySimulationReport | undefined;
-  await expect
-    .poll(
-      async () => {
-        report = (await storedSession(extension, tabId))?.document?.simulation;
-        return report !== undefined;
-      },
-      { timeout: 15_000, intervals: [100, 250, 500] }
-    )
-    .toBe(true);
-  if (report === undefined) throw new Error(`tab ${String(tabId)} has no simulation report`);
-  return report;
+  return await documentReport(extension, tabId, 'simulation', (document) => document.simulation);
 }
 
 /**
- * The Defer JS simulation report of the tab's last intercepted document,
- * polled until one exists.
+ * The Defer JS simulation report of the tab's last intercepted document.
  *
  * @param extension The driver.
  * @param tabId The tab.
@@ -185,18 +218,30 @@ export async function documentDeferSimulation(
   extension: ExtensionDriver,
   tabId: number
 ): Promise<DeferSimulationReport> {
-  let report: DeferSimulationReport | undefined;
-  await expect
-    .poll(
-      async () => {
-        report = (await storedSession(extension, tabId))?.document?.deferSimulation;
-        return report !== undefined;
-      },
-      { timeout: 15_000, intervals: [100, 250, 500] }
-    )
-    .toBe(true);
-  if (report === undefined) throw new Error(`tab ${String(tabId)} has no Defer JS report`);
-  return report;
+  return await documentReport(
+    extension,
+    tabId,
+    'deferSimulation',
+    (document) => document.deferSimulation
+  );
+}
+
+/**
+ * The LazyLoad simulation report of the tab's last intercepted document.
+ *
+ * @param extension The driver.
+ * @param tabId The tab.
+ */
+export async function documentLazyloadSimulation(
+  extension: ExtensionDriver,
+  tabId: number
+): Promise<LazyloadSimulationReport> {
+  return await documentReport(
+    extension,
+    tabId,
+    'lazyloadSimulation',
+    (document) => document.lazyloadSimulation
+  );
 }
 
 /**
