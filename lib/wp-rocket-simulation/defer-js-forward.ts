@@ -32,7 +32,13 @@ import { INLINE_WRAP_CLOSE, INLINE_WRAP_OPEN, WPR_DEFER_STAMP } from '../wp-rock
 import type { DeferInlineQuoteDelimiter } from '../wp-rocket/versions';
 import { alreadyServesDeferJs, alreadyServesDelayJs } from './already-served';
 import { isAmpDocument } from './amp';
-import { replaceDisjoint, type KeyEnds } from './disjoint-replace';
+import type { KeyEnds } from './disjoint-replace';
+import {
+  REPLACEMENT_WORK_LIMIT,
+  ReplacementWorkExceeded,
+  replaceInOrder,
+  type ReplacementWork
+} from './str-replace-sequence';
 import {
   deferSrcMatches,
   inlineScriptMatches,
@@ -110,42 +116,8 @@ export interface DeferJsForwardResult {
   readonly report: DeferJsForwardReport;
 }
 
-/**
- * Code units the call-by-call replay may rescan in total (each call reads
- * the whole page). Only pages one pass cannot replace get there: overlapping
- * occurrences, or an inline script whose wrapping could create one. Bounds
- * the replay's own time — the whole transform stops at the limit within
- * about 0.2 s (measured: Node 24, a 4 MiB page of overlapping tags), well
- * inside a document step's budget; a page beyond it is not simulated (PHP
- * has no such limit).
- */
-export const DEFER_REPLACEMENT_WORK_LIMIT = 2 ** 28;
-
-/** Thrown inside the passes when the replacement work passes its limit. */
-class ReplacementWorkExceeded extends Error {
-  override readonly name = 'ReplacementWorkExceeded';
-}
-
-/**
- * PHP's `str_replace` on strings, counting the code units it reads (the
- * call-by-call replay).
- *
- * @param work The running total (mutated).
- * @param subject The text searched.
- * @param search The text replaced (non-empty).
- * @param replacement Its replacement.
- * @throws {@link ReplacementWorkExceeded} past {@link DEFER_REPLACEMENT_WORK_LIMIT}.
- */
-function strReplace(
-  work: { units: number },
-  subject: string,
-  search: string,
-  replacement: string
-): string {
-  work.units += subject.length;
-  if (work.units > DEFER_REPLACEMENT_WORK_LIMIT) throw new ReplacementWorkExceeded();
-  return subject.split(search).join(replacement);
-}
+/** The replay bound Defer JS shares with every buffer pass ({@link REPLACEMENT_WORK_LIMIT}). */
+export const DEFER_REPLACEMENT_WORK_LIMIT = REPLACEMENT_WORK_LIMIT;
 
 /**
  * `/\s+(?:async|defer)/i` on a tag: some PCRE whitespace character directly
@@ -323,37 +295,6 @@ function inlineExcluded(
 }
 
 /**
- * Replace each search text in order, as PHP's sequential `str_replace`
- * calls over the whole page do: in one pass when the caller proved no
- * replacement can create an occurrence and the occurrences are disjoint,
- * else call by call.
- *
- * @param html The page.
- * @param order The search texts in call order (repeats included).
- * @param replacements Each distinct search text's replacement.
- * @param createsNone Whether no replacement can create an occurrence of any search text.
- * @param keyEnds How the one pass keys an occurrence.
- * @param work The replay's work so far.
- * @throws {@link ReplacementWorkExceeded} when the replay passes its limit.
- */
-function replaceInOrder(
-  html: string,
-  order: readonly string[],
-  replacements: ReadonlyMap<string, string>,
-  createsNone: boolean,
-  keyEnds: KeyEnds,
-  work: { units: number }
-): string {
-  const once = createsNone ? replaceDisjoint(html, replacements, keyEnds) : null;
-  if (once !== null) return once;
-  let out = html;
-  for (const search of order) {
-    out = strReplace(work, out, search, replacements.get(search) as string);
-  }
-  return out;
-}
-
-/**
  * A script tag's key: up to its first `>` (unique but for a URL holding `>`).
  *
  * @param text The text searched.
@@ -408,7 +349,7 @@ function deferScripts(
   html: string,
   matcher: ((url: string) => number) | null,
   measure: ByteMeasure,
-  work: { units: number }
+  work: ReplacementWork
 ): { readonly html: string; readonly deferred: number } | BeyondScan {
   const stripped = stripDeferComments(html, measure);
   if (typeof stripped !== 'string') return stripped;
@@ -466,7 +407,7 @@ function wrapInlineScripts(
   html: string,
   input: DeferJsPassInput,
   measure: ByteMeasure,
-  work: { units: number }
+  work: ReplacementWork
 ): { readonly html: string; readonly wrapped: number } | BeyondScan {
   if (namesJqueryFile([...input.lists.external, ...input.rows])) return { html, wrapped: 0 };
   const stripped = stripDeferComments(html, measure);

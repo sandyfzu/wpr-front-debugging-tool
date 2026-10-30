@@ -4,19 +4,18 @@
  * only caseless literals (the `i` flag on a byte subject never folds a
  * non-ASCII byte onto an ASCII letter).
  */
-import { PCRE_SPACE_CHARS } from '../exclusion-builder/pcre/byte-set';
-
-/** PCRE's `\s` (no UTF) as a one-character test. */
-const SPACE = new RegExp(`[${PCRE_SPACE_CHARS}]`);
 
 /**
- * Whether `text[index]` is PCRE's `\s` (`false` out of range).
+ * Whether `text[index]` is PCRE's `\s` without UTF — tab, LF, vertical
+ * tab, form feed, CR and space (the byte set's `PCRE_SPACE_CHARS`) — tested by code
+ * (scanners call it per character); `false` out of range.
  *
  * @param text The subject.
  * @param index An offset.
  */
 export function isSpaceAt(text: string, index: number): boolean {
-  return index >= 0 && index < text.length && SPACE.test(text.charAt(index));
+  const code = text.charCodeAt(index);
+  return code === 0x20 || (code >= 0x09 && code <= 0x0d);
 }
 
 /**
