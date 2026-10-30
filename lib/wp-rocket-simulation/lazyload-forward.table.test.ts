@@ -3,9 +3,9 @@
  * LazyLoad-only row of the plugin-derived simulation table byte for byte,
  * under each supported WP Rocket version (its own exclusion literals and
  * printed texts from the packaged data file). The rows' pages get
- * LazyLoad's head and footer texts where the table's harness prints them
- * (this suite's own placement, the oracle's rule) before the pass reads
- * them. Rows with Defer/Delay JS on too belong to the composed suites.
+ * LazyLoad's head and footer texts placed by the placement module (the
+ * oracle's rule: these rows pin the two against each other) before the
+ * pass reads them. Rows with Defer/Delay JS on too belong to the composed suites.
  * A row the transform refuses by design (a named reference outside the
  * ported table) must be refused — identity, the step named — and its
  * other cases are checked with that reference left out.
@@ -14,10 +14,11 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { asciiLowerCase } from '../exclusion-builder/literal-rows';
 import { expectationsFor } from '../exclusion-builder/parity-version-expectations';
 import { SUPPORTED_WPR_VERSIONS } from '../wp-rocket/versions';
 import { simulateLazyloadImages } from './lazyload-forward';
+import { lazyloadAssetsUrl } from './lazyload-assets-url';
+import { lazyloadHookTexts, placeLazyloadHookTexts } from './lazyload-hook-texts';
 import { SIMULATION_DATA_PATH, readSimulationData } from './simulation-data';
 import { parseSimulationTable } from './simulation-parity-table';
 
@@ -39,17 +40,6 @@ const DATA = (() => {
 const LAZYLOAD_ROWS = TABLE.rows.filter((row) => row.feature === 'lazyload');
 
 /**
- * A packaged text.
- *
- * @param sha256 Its content key.
- */
-function text(sha256: string): string {
-  const found = DATA.texts[sha256];
-  if (found === undefined) throw new Error(`no text ${sha256}`);
-  return found;
-}
-
-/**
  * A packaged row list.
  *
  * @param sha256 Its content key.
@@ -58,43 +48,6 @@ function rows(sha256: string): readonly string[] {
   const found = DATA.rowLists[sha256];
   if (found === undefined) throw new Error(`no row list ${sha256}`);
   return found;
-}
-
-/** WP Rocket's generator meta ending the head (written by the buffer after the hooks). */
-const GENERATOR_META_TAIL =
-  /<meta name="generator" content="WP Rocket[^"]*" data-wpr-features="[^"]*" \/>$/;
-
-/** WP Rocket's beacon block ending the body (written by the buffer after the hooks). */
-const BEACON_BLOCK_TAIL =
-  /<script>var rocket_beacon_data = (?:(?!<\/script>)[\s\S])*<\/script><script data-name="wpr-wpr-beacon" src='[^']*' async><\/script>$/;
-
-/**
- * Where a hook's text goes: right before the end tag, or before the block
- * WP Rocket's buffer writes there when the page ends the element with it.
- *
- * @param html The page.
- * @param end The end tag's offset.
- * @param tail The block's pattern.
- */
-function hookOffset(html: string, end: number, tail: RegExp): number {
-  const found = tail.exec(html.slice(0, end));
-  return found === null ? end : found.index;
-}
-
-/**
- * The page as WordPress prints it with LazyLoad on: its `wp_head` text
- * before `</head>`, its `wp_footer` text before `</body>`.
- *
- * @param html The table row's page.
- * @param head The `wp_head` text.
- * @param footer The `wp_footer` text.
- */
-function withHookTexts(html: string, head: string, footer: string): string {
-  // ASCII-caseless like the harness: Unicode lowering can change lengths (`İ`) and offsets.
-  const lower = asciiLowerCase(html);
-  const headAt = hookOffset(html, lower.indexOf('</head>'), GENERATOR_META_TAIL);
-  const bodyAt = hookOffset(html, lower.indexOf('</body>'), BEACON_BLOCK_TAIL);
-  return html.slice(0, headAt) + head + html.slice(headAt, bodyAt) + footer + html.slice(bodyAt);
 }
 
 /** Rows refused by design, with the step named and the text whose removal makes them reproducible. */
@@ -130,12 +83,15 @@ describe.each(SUPPORTED_WPR_VERSIONS.map((pin) => [pin.version] as const))(
     it.each(LAZYLOAD_ROWS.map((row) => [row.id, row] as const))('%s', (_id, row) => {
       const lazyload = row.lazyload;
       if (lazyload === undefined) throw new Error(`${row.id} holds no lazyload`);
-      const footer =
-        text(entry.optionsScript.sha256) +
-        text(entry.runtimeTag.beforeUrl.sha256) +
-        `${lazyload.assetsUrl}js/${entry.runtime.jsPath}` +
-        text(entry.runtimeTag.afterUrl.sha256);
-      const page = withHookTexts(row.html, text(entry.noJsStyle.sha256), footer);
+      const placed = placeLazyloadHookTexts(
+        row.html,
+        lazyloadHookTexts(DATA, version, lazyload.assetsUrl)
+      );
+      // The harness takes only pages with one `</head>` then one `</body>`: no fallback.
+      if (!placed.ok || placed.placement.fallbacks.length > 0) {
+        throw new Error(`${row.id}: ${JSON.stringify(placed)}`);
+      }
+      const page = placed.html;
       const out = simulateLazyloadImages({ html: page, literals, rows: lazyload.rows });
       const refused = REFUSED[row.id];
       if (refused === undefined) {
@@ -167,3 +123,24 @@ describe.each(SUPPORTED_WPR_VERSIONS.map((pin) => [pin.version] as const))(
     });
   }
 );
+
+describe('the LazyLoad rows pin the placement rule against the harness', () => {
+  it('place texts both before the buffer blocks and right before the end tags', () => {
+    const placements = LAZYLOAD_ROWS.map((row) => {
+      const placed = placeLazyloadHookTexts(row.html, { head: '', footer: '' });
+      return placed.ok ? `${placed.placement.head} ${placed.placement.footer}` : placed.refused;
+    });
+    expect(new Set(placements.flatMap((pair) => pair.split(' ')))).toEqual(
+      new Set(['before-end-tag', 'before-generator-meta', 'before-beacon-block'])
+    );
+  });
+
+  it("derive the live page's assets URL from its beacon tag", () => {
+    const docker = LAZYLOAD_ROWS.find((row) => row.id === 'simulate-lazyload-docker-off');
+    if (docker?.lazyload === undefined) throw new Error('no docker row');
+    expect(lazyloadAssetsUrl(docker.html, 'http://127.0.0.1:8493/')).toEqual({
+      url: docker.lazyload.assetsUrl,
+      source: 'beacon'
+    });
+  });
+});

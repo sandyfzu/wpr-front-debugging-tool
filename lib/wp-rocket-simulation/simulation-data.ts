@@ -112,6 +112,12 @@ export const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 /** A WP Rocket version key: dotted digits (`3.24`, `3.23.5.1`). */
 const WPR_VERSION = /^\d+(?:\.\d+)+$/;
 
+/**
+ * The JS folder under the plugin's assets folder (`WP_ROCKET_ASSETS_JS_URL`
+ * = assets URL + this), where LazyLoad's `runtime.jsPath` starts.
+ */
+export const LAZYLOAD_JS_DIR = 'js/';
+
 /** A runtime's own version (`this.v`): non-empty, no whitespace or quotes. */
 const RUNTIME_VERSION = /^[^\s"']+$/;
 

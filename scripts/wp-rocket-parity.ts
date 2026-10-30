@@ -116,6 +116,7 @@ import {
   SIMULATION_DATA_PATH,
   SIMULATION_LIST_FIELDS,
   isRuntimeJsPath,
+  LAZYLOAD_JS_DIR,
   readSimulationData,
   rowListKeyText,
   type SimulationData
@@ -1577,12 +1578,6 @@ export function simulationRuns(cases: readonly SimulateCase[]): SimulationRun[] 
 
 /** The plugin's assets folder (its URL is a run's assets URL, `WP_ROCKET_ASSETS_URL`). */
 const ASSETS_DIR = 'assets/';
-
-/**
- * The JS folder under the assets folder (`WP_ROCKET_ASSETS_JS_URL` = assets
- * URL + this), where LazyLoad's runtime paths start.
- */
-export const LAZYLOAD_JS_DIR = 'js/';
 
 /**
  * A LazyLoad runtime's path in the plugin.
