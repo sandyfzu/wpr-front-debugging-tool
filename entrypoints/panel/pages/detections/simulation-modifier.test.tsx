@@ -64,7 +64,7 @@ describe('the simulation modifier on the Delay JS card', () => {
       const line = card.querySelector('[data-fdt-card-simulation-line]');
       expect(line?.textContent).toContain(
         verified
-          ? "Simulated in this tab by the extension — not the site's configuration."
+          ? "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
           : "This page claims a simulation the extension can't confirm, so it's read as served."
       );
       expect(card.textContent).toContain(verdict);

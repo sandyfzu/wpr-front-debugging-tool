@@ -35,6 +35,14 @@ import {
 import { Lane } from './lane';
 
 const PAGE = 'https://example.com/';
+
+/** The note a lane whose simulation applied carries (LazyLoad adds its row scope). */
+const SITE_NOTE =
+  'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.';
+const SITE_NOTE_LAZYLOAD =
+  'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).';
+/** Any form of that note. */
+const ANY_SITE_NOTE = /site’s own WP Rocket exclusions/;
 const SIMULATE: SimulateSpec = { features: ['delay_js'] };
 
 const noRows: VirtualizerFactory = () => ({
@@ -141,6 +149,8 @@ describe('Delay JS lane mode control', () => {
     const controller = await ready(NO_PAGE_EVIDENCE);
     mount(controller);
     expect(radio('Simulated').disabled).toBe(false);
+    // No simulated page yet: the site-exclusions note belongs to an applied simulation.
+    expect(screen.queryByText(ANY_SITE_NOTE)).toBeNull();
     // Disabled stays selectable: disabling what the page does not serve is a no-op.
     expect(radio('Disabled').disabled).toBe(false);
     expect(screen.queryByText(DELAY_MODE_COPY.disabledChangesNothing)).toBeNull();
@@ -340,6 +350,7 @@ describe('Delay JS lane mode control', () => {
     expect(screen.getByText('4 delayed by the simulation · 1 excluded by your rows')).toBeTruthy();
     expect(screen.queryByText(/delayed scripts restored/)).toBeNull();
     expect(screen.getByText('Simulated · WP Rocket 3.24 (the site serves 3.12.1)')).toBeTruthy();
+    expect(screen.getByText(SITE_NOTE)).toBeTruthy();
     expect(screen.getByText('Exclusion list: latest (fetched 3 h ago)')).toBeTruthy();
     expect(screen.getByText(/1 left as served: WP Rocket decides it/)).toBeTruthy();
     expect(radio('Simulated').checked).toBe(true);
@@ -415,6 +426,7 @@ describe('Defer JS lane mode control', () => {
       )
     ).toBeTruthy();
     expect(screen.getByText('Simulated · WP Rocket 3.24')).toBeTruthy();
+    expect(screen.getByText(SITE_NOTE)).toBeTruthy();
     expect(screen.getByText(/^Exclusion list: bundled with WP Rocket 3.24/)).toBeTruthy();
     expect(radio('Simulated').checked).toBe(true);
     expect(radio('Simulated').disabled).toBe(false);
@@ -509,6 +521,7 @@ describe('LazyLoad lane mode control', () => {
     ).toBeTruthy();
     expect(screen.queryByText(/lazy images restored/)).toBeNull();
     expect(screen.getByText('Simulated · WP Rocket 3.24')).toBeTruthy();
+    expect(screen.getByText(SITE_NOTE_LAZYLOAD)).toBeTruthy();
     // No exclusion list: LazyLoad's exclusions ship with the version.
     expect(screen.queryByText(/^Exclusion list:/)).toBeNull();
     const script = screen.getByText(/^LazyLoad script:/);
@@ -530,5 +543,53 @@ describe('LazyLoad lane mode control', () => {
     );
     expect(radio('Simulated').checked).toBe(true);
     expect(radio('Simulated').disabled).toBe(false);
+  });
+});
+
+describe('site-exclusions note on a mixed page', () => {
+  /** A rewritten document of this page: Delay JS simulated, LazyLoad blocked by the CSP. */
+  function mixedSession(): ActiveExclusionSession {
+    return {
+      state: 'active',
+      origin: 'https://example.com',
+      set: EMPTY_EXCLUSION_SET,
+      simulate: { features: ['lazyload', 'delay_js'] },
+      startedAt: 1,
+      document: {
+        outcome: 'rewritten',
+        reports: [],
+        simulation: simulatedReport(),
+        lazyloadSimulation: {
+          feature: 'lazyload',
+          state: 'csp-blocked',
+          images: 0,
+          pictures: 0,
+          backgrounds: 0,
+          wpRocketVersion: '3.24'
+        },
+        served: {
+          urlPath: PAGE,
+          urlDigest: createHash('sha256').update(PAGE, 'utf8').digest('hex'),
+          token: 't',
+          order: 1,
+          receivedAt: 40,
+          speculationRules: { removedFromDocument: 0, headerRemoved: false, guarded: true },
+          copy: true,
+          serviceWorkersBypassed: true
+        }
+      }
+    };
+  }
+
+  it('stays off the blocked lane while the simulated lane beside it carries it', async () => {
+    const controller = await ready(
+      { ...NO_PAGE_EVIDENCE, footprints: true },
+      { status: mixedSession(), lazyload: { ...NO_PAGE_EVIDENCE, footprints: true } }
+    );
+    mount(controller, undefined, undefined, 'lazyload');
+    expect(screen.queryByText(ANY_SITE_NOTE)).toBeNull();
+    cleanup();
+    mount(controller);
+    expect(screen.getByText(SITE_NOTE)).toBeTruthy();
   });
 });

@@ -84,7 +84,7 @@ describe('builderEntryView', () => {
     });
     expect(view.badge).toEqual({ kind: 'ok', label: 'On' });
     expect(view.description).toBe(
-      'Exclusions and a simulated Delay JavaScript execution are applied in this tab: pages of example.com:8443 load rewritten until Stop or the tab closes. Open the builder to see this page’s result.'
+      'Exclusions and a simulated Delay JavaScript execution are applied in this tab: pages of example.com:8443 load rewritten until Stop or the tab closes. The site’s own WP Rocket exclusions aren’t part of the simulation. Open the builder to see this page’s result.'
     );
     // Both features: each named, buffer order.
     expect(
@@ -93,7 +93,7 @@ describe('builderEntryView', () => {
         summary: { ...ACTIVE, simulated: ['defer_all_js', 'delay_js'] }
       }).description
     ).toBe(
-      'Exclusions are applied in this tab, with Load JavaScript deferred and Delay JavaScript execution simulated by the extension (not the site’s configuration): pages of example.com:8443 load rewritten until Stop or the tab closes. Open the builder to see this page’s result.'
+      'Exclusions are applied in this tab, with Load JavaScript deferred and Delay JavaScript execution simulated by the extension (not the site’s configuration): pages of example.com:8443 load rewritten until Stop or the tab closes. The site’s own WP Rocket exclusions aren’t part of the simulation. Open the builder to see this page’s result.'
     );
     // All three features: a list, buffer order.
     expect(
@@ -102,7 +102,7 @@ describe('builderEntryView', () => {
         summary: { ...ACTIVE, simulated: ['lazyload', 'defer_all_js', 'delay_js'] }
       }).description
     ).toBe(
-      'Exclusions are applied in this tab, with LazyLoad for images, Load JavaScript deferred and Delay JavaScript execution simulated by the extension (not the site’s configuration): pages of example.com:8443 load rewritten until Stop or the tab closes. Open the builder to see this page’s result.'
+      'Exclusions are applied in this tab, with LazyLoad for images, Load JavaScript deferred and Delay JavaScript execution simulated by the extension (not the site’s configuration): pages of example.com:8443 load rewritten until Stop or the tab closes. The site’s own WP Rocket exclusions aren’t part of the simulation. Open the builder to see this page’s result.'
     );
     // LazyLoad alone.
     expect(
@@ -118,6 +118,9 @@ describe('builderEntryView', () => {
     expect(builderEntryView({ kind: 'known', summary: ACTIVE }).description).not.toMatch(
       /simulat/i
     );
+    expect(
+      builderEntryView({ kind: 'known', summary: { ...ACTIVE, simulated: [] } }).description
+    ).not.toContain('WP Rocket exclusions');
   });
 
   it('words each document state through the parsed summary (simulated only names it)', () => {

@@ -97,8 +97,16 @@ describe('simulation outcome words', () => {
     expect(simulationOutcomeCopy(simulatedReport())).toBeNull();
     expect(viewCopy(applied(simulatedReport()))).toEqual({
       title: 'Applied',
-      body: 'This page was rendered with your exclusions and WP Rocket’s Delay JavaScript execution simulated — not the site’s real configuration.'
+      body: 'This page was rendered with your exclusions and WP Rocket’s Delay JavaScript execution simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.'
     });
+  });
+
+  it('names the site exclusions the simulation lacks only on a simulated page', () => {
+    for (const state of ['csp-blocked', 'already-served', 'not-applicable'] as const) {
+      expect(viewCopy(applied(report(state))).body).not.toContain(
+        'site’s own WP Rocket exclusions'
+      );
+    }
   });
 
   it('titles each non-simulated state and gives a way forward', () => {

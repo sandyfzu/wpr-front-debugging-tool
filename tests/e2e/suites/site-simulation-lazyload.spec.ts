@@ -108,17 +108,20 @@ const LAZY_IMAGE = /<img\b[^>]*\bdata-lazy-src=/g;
 /** The words the surfaces carry. */
 const WORDS = {
   appliedBody:
-    'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images simulated — not the site’s real configuration.',
+    'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).',
   appliedAllBody:
-    'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images, Load JavaScript deferred and Delay JavaScript execution simulated — not the site’s real configuration.',
+    'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images, Load JavaScript deferred and Delay JavaScript execution simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).',
   alreadyServed:
     'WP Rocket already lazy loads images on this page — exclusions apply to its output.',
   search:
     'WP Rocket never lazy loads images on search results, so LazyLoad can’t be simulated here.',
   preview: 'WP Rocket never lazy loads images on a preview, so LazyLoad can’t be simulated here.',
+  siteExclusions:
+    'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).',
   badge: 'Simulated in this tab',
   stripHint: 'Lazyload Images simulated',
-  panelNote: "Simulated in this tab by the extension — not the site's configuration.",
+  panelNote:
+    "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included.",
   panelRow: 'Lazyloaded (Simulated)'
 } as const;
 
@@ -376,7 +379,8 @@ test.describe('LazyLoad simulation over real sessions', () => {
       expect(banners[0]).toMatchObject({ title: 'Applied', body: WORDS.appliedBody });
       expect(await lazyloadLaneLines(page)).toEqual(
         expect.arrayContaining([
-          `${String(report.images)} images, 1 picture and 1 background image lazy loaded by the simulation · 0 excluded by your rows`
+          `${String(report.images)} images, 1 picture and 1 background image lazy loaded by the simulation · 0 excluded by your rows`,
+          WORDS.siteExclusions
         ])
       );
       await expect(lazyloadModeGroup(page).getByRole('radio', { name: 'Simulated' })).toBeChecked();

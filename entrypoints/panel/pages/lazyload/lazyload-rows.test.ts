@@ -118,7 +118,7 @@ describe('lazyloadNotes', () => {
   it('says a verified simulation runs LazyLoad, never that its script is missing', () => {
     const images = [{ ...image, lazyloadDetected: true }];
     expect(lazyloadNotes({ present: false, simulation: 'simulated', images })).toEqual([
-      "Simulated in this tab by the extension — not the site's configuration."
+      "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
     ]);
     // An unverified marker proves nothing: the page reads as served.
     expect(lazyloadNotes({ present: false, simulation: 'unverified', images })[0]).toContain(

@@ -97,16 +97,19 @@ const FRESH = { timeout: 15_000, intervals: [100, 250, 500] };
 /** The surfaces' simulated words. */
 const WORDS = {
   badge: 'Simulated in this tab',
-  sentence: ", Simulated in this tab by the extension — not the site's configuration.",
+  sentence:
+    ", Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included.",
   unverifiedBadge: 'Simulation not verified',
   unverifiedSentence:
     ", This page claims a simulation the extension can't confirm, so it's read as served.",
   stripLine: 'Exclusion Builder rewrote this page',
   stripHint: 'Delay JS simulated',
   appliedBody:
-    'This page was rendered with your exclusions and WP Rocket’s Delay JavaScript execution simulated — not the site’s real configuration.',
+    'This page was rendered with your exclusions and WP Rocket’s Delay JavaScript execution simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.',
   bundledList: `Exclusion list: bundled with WP Rocket ${SIMULATED_VERSION} (latest list unreachable: network error)`,
   version: `Simulated · WP Rocket ${SIMULATED_VERSION}`,
+  siteExclusions:
+    'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.',
   alreadyDelayed: 'WP Rocket already delays scripts on this page — exclusions apply to its output.',
   adminScreen:
     'This is a WordPress admin or login screen. WP Rocket never optimizes these screens, so a simulation here shows something the site never serves.'
@@ -264,7 +267,12 @@ test.describe('Delay JS simulation over real sessions', () => {
         { title: 'Applied', body: WORDS.appliedBody }
       ]);
       expect(await delayLaneLines(page)).toEqual(
-        expect.arrayContaining([countLine(SCENARIO_DELAYED, 0), WORDS.version, WORDS.bundledList])
+        expect.arrayContaining([
+          countLine(SCENARIO_DELAYED, 0),
+          WORDS.version,
+          WORDS.siteExclusions,
+          WORDS.bundledList
+        ])
       );
 
       // The detection widget: the verified marker as the Delay JS row's modifier + the tab line.

@@ -58,7 +58,8 @@ describe('the Delay JS card', () => {
       status: 'not-active',
       simulation: 'simulated',
       simulationChip: 'Simulated in this tab',
-      simulationSentence: "Simulated in this tab by the extension — not the site's configuration."
+      simulationSentence:
+        "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
     });
     // The simulated runtime's version is never shown as served.
     expect(card).not.toHaveProperty('detail');
@@ -110,7 +111,7 @@ describe('the support report', () => {
     const text = report(detect(MARKED, ['delay_js']));
     expect(text).toMatch(/^- \*\*Optimizations:\*\* \d+ of \d+ active · 1 simulated in this tab$/m);
     expect(text).toMatch(
-      /^\| Delay JavaScript execution \| Not active \| .+ \| .*Simulated in this tab by the extension — not the site's configuration\. \|$/m
+      /^\| Delay JavaScript execution \| Not active \| .+ \| .*Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included\. \|$/m
     );
   });
 

@@ -60,6 +60,7 @@ import {
   appliedRowWarningNote,
   lazyloadLaneLines,
   simulationListCopy,
+  siteExclusionsNote,
   rowWarningNote,
   type LanePageCopy,
   type NoteText,
@@ -475,6 +476,7 @@ export function Lane(props: LaneProps): JSX.Element {
                   {simulationCountLine(simulated(), props.report?.rewritten ?? 0)}
                 </span>
                 <span class="xo-lane-hint">{SIMULATION_LANE_COPY.version(simulated())}</span>
+                <span class="xo-lane-hint">{siteExclusionsNote([simulated().feature])}</span>
                 <Show when={listLine(simulated(), (props.now ?? Date.now)())}>
                   {(line) => <span class="xo-lane-hint">{line()}</span>}
                 </Show>

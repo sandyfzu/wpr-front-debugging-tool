@@ -35,6 +35,7 @@ import {
 import type { SessionProblem } from './session/port';
 import {
   LAZYLOAD_PAGE_INDEPENDENT_CAVEATS,
+  SIMULATED_FEATURES,
   type LatestListMiss,
   type LazyloadAssetsUrlSource,
   type LazyloadCaveat,
@@ -850,9 +851,11 @@ function appliedCopy(view: Extract<SessionView, { kind: 'applied' }>): StateCopy
   const warnings = view.warnings.map(appliedWarningLine);
   const tail = warnings.length === 0 ? '' : ` ${warnings.join(' ')}`;
   if (view.unmatched > 0) {
+    // Every report here simulated (a step that did not run has its own banner).
+    const note = simulatedNote(reports);
     return {
       title: 'Applied, with rows that matched nothing',
-      body: `${String(view.unmatched)} ${countNoun(view.unmatched, COUNT_WORDS.rowMatches)} no element on this page. Check the rows marked “No match”.${tail}`
+      body: `${String(view.unmatched)} ${countNoun(view.unmatched, COUNT_WORDS.rowMatches)} no element on this page. Check the rows marked “No match”.${note === null ? '' : ` ${note}`}${tail}`
     };
   }
   const rendered = reports.length === 0 ? RENDER_WORDS : simulatedRenderWords(reports);
@@ -865,13 +868,58 @@ function appliedCopy(view: Extract<SessionView, { kind: 'applied' }>): StateCopy
 const RENDER_WORDS = 'This page was rendered with your exclusions.';
 
 /**
+ * Why a simulated feature can still differ from the site: the simulation runs
+ * WP Rocket's own lists plus the builder rows, never the exclusions saved in
+ * the site's WP Rocket settings (unreadable without site access).
+ */
+const SITE_EXCLUSIONS_NOT_SIMULATED =
+  'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them';
+
+/**
+ * Per simulated feature whose rows cover less than the site's own exclusions
+ * can: the scope its rows test (LazyLoad rows restore images, while the site's
+ * LazyLoad exclusions also cover pictures and background images).
+ */
+const ROW_SCOPE: Readonly<Partial<Record<SimulatedFeatureId, string>>> = {
+  lazyload: 'LazyLoad: images only'
+};
+
+/**
+ * The site-exclusions note for a page whose given features were simulated —
+ * said once in the Applied banner and on each lane whose simulation applied,
+ * never where nothing was simulated.
+ *
+ * @param features The simulated features (any order; repeats ignored).
+ * @returns The note, with each feature's narrower row scope in parentheses.
+ */
+export function siteExclusionsNote(features: readonly SimulatedFeatureId[]): string {
+  const scopes = SIMULATED_FEATURES.flatMap(({ id }) =>
+    features.includes(id) ? (ROW_SCOPE[id] ?? []) : []
+  );
+  const scope = scopes.length === 0 ? '' : ` (${scopes.join('; ')})`;
+  return `${SITE_EXCLUSIONS_NOT_SIMULATED}${scope}.`;
+}
+
+/**
+ * The note for these reports when any simulated, else null.
+ *
+ * @param reports The page's simulation reports (any states).
+ */
+function simulatedNote(reports: readonly DocumentSimulationReport[]): string | null {
+  const features = reports
+    .filter((report) => report.state === 'simulated')
+    .map((report) => report.feature);
+  return features.length === 0 ? null : siteExclusionsNote(features);
+}
+
+/**
  * What an applied, simulated page shows — never mistaken for the site's own
- * configuration.
+ * configuration, and naming the site exclusions the simulation lacks.
  *
  * @param reports The simulation reports (every one `simulated`).
  */
 function simulatedRenderWords(reports: readonly DocumentSimulationReport[]): string {
-  return `This page was rendered with your exclusions and WP Rocket’s ${featureList(reports)} simulated — not the site’s real configuration.`;
+  return `This page was rendered with your exclusions and WP Rocket’s ${featureList(reports)} simulated — not the site’s real configuration. ${siteExclusionsNote(reports.map((report) => report.feature))}`;
 }
 
 /**
@@ -1269,7 +1317,7 @@ function renderedWith(simulated: readonly DocumentSimulationReport[], alone: str
  * this page — each state titled with a way forward — or null when the
  * page was simulated (the regular applied words then say so). With both
  * features asked for, the other feature's outcome follows unless the body
- * already says it.
+ * already says it, then the site-exclusions note when any feature simulated.
  *
  * @param simulation The step's report.
  * @param others The other features' reports on this page (buffer order).
@@ -1282,6 +1330,8 @@ export function simulationOutcomeCopy(
   const simulated = others.filter((report) => report.state === 'simulated');
   const copy = ownOutcomeCopy(simulation, simulated);
   const tail = others.flatMap((other) => otherOutcomeSentence(simulation, other) ?? []);
+  const note = simulatedNote(simulated);
+  if (note !== null) tail.push(note);
   return tail.length === 0 ? copy : { title: copy.title, body: [copy.body, ...tail].join(' ') };
 }
 

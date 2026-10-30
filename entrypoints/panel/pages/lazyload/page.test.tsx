@@ -109,7 +109,7 @@ describe('LazyloadPage — frame and summary', () => {
     expect(badge?.textContent).not.toContain('detected');
     expect(badge?.className).toContain('text-status-info');
     expect(root.querySelector('[data-fdt="resource-note"]')?.textContent).toBe(
-      "Simulated in this tab by the extension — not the site's configuration."
+      "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
     );
     expect(screen.getAllByText('Lazyloaded (Simulated)')).toHaveLength(2);
     // The exclusion reasons stay meaningful: the simulation lazy loads the page.

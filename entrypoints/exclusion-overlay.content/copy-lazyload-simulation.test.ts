@@ -21,6 +21,7 @@ import {
   noteToText,
   simulationLimitLines,
   simulationOutcomeCopy,
+  siteExclusionsNote,
   viewCopy
 } from './copy';
 import type { OverlayState } from './session/machine';
@@ -75,6 +76,22 @@ const REMEDY =
   'Test on another page of the site, or choose As served to apply your exclusions without the simulation.';
 const AS_SERVED = 'the page was rendered as served, with your exclusions.';
 const STOP_ASKING = 'Choose As served to stop asking for the simulation.';
+/** The site-exclusions note without LazyLoad simulated… */
+const SITE_NOTE =
+  'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.';
+/** …and with it (its rows restore images only). */
+const SITE_NOTE_LAZYLOAD =
+  'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).';
+
+/**
+ * How many times a text holds a phrase.
+ *
+ * @param text The text searched.
+ * @param phrase The phrase counted.
+ */
+function occurrences(text: string, phrase: string): number {
+  return text.split(phrase).length - 1;
+}
 
 describe('LazyLoad mode words', () => {
   it('pins its own words and shares the rest; no Disabled words', () => {
@@ -245,7 +262,7 @@ describe('LazyLoad outcome banners', () => {
   it('names a simulated LazyLoad alone, and three features in buffer order', () => {
     expect(viewCopy(applied({ lazyloadSimulation: cleanLazyload() }))).toEqual({
       title: 'Applied',
-      body: 'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images simulated — not the site’s real configuration.'
+      body: 'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).'
     });
     const clean = { ...simulatedReport(), cspLimits: undefined, caveats: undefined };
     expect(
@@ -257,7 +274,7 @@ describe('LazyLoad outcome banners', () => {
         })
       ).body
     ).toBe(
-      'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images, Load JavaScript deferred and Delay JavaScript execution simulated — not the site’s real configuration.'
+      'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images, Load JavaScript deferred and Delay JavaScript execution simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).'
     );
   });
 
@@ -333,13 +350,13 @@ describe('LazyLoad outcome banners', () => {
       )
     ).toEqual({
       title: 'Not simulated: search page',
-      body: `WP Rocket never lazy loads images on search results, so the page was rendered with Load JavaScript deferred and Delay JavaScript execution simulated and your exclusions. ${STOP_ASKING}`
+      body: `WP Rocket never lazy loads images on search results, so the page was rendered with Load JavaScript deferred and Delay JavaScript execution simulated and your exclusions. ${STOP_ASKING} ${SITE_NOTE}`
     });
     expect(
       viewCopy(applied({ lazyloadSimulation: lazyload('already-served'), simulation: clean }))
     ).toEqual({
       title: 'Applied — WP Rocket already lazy loads images here',
-      body: 'LazyLoad for images wasn’t simulated: your exclusions apply to WP Rocket’s own LazyLoad for images, as served. Delay JavaScript execution was simulated.'
+      body: `LazyLoad for images wasn’t simulated: your exclusions apply to WP Rocket’s own LazyLoad for images, as served. Delay JavaScript execution was simulated. ${SITE_NOTE}`
     });
   });
 
@@ -347,5 +364,64 @@ describe('LazyLoad outcome banners', () => {
     expect(
       stateBanner(READY, applied({ lazyloadSimulation: lazyload('not-applicable', 'search') }))
     ).toMatchObject({ tone: 'warn', glyph: 'alert' });
+  });
+});
+
+describe('site-exclusions note', () => {
+  const clean = { ...simulatedReport(), cspLimits: undefined, caveats: undefined };
+
+  it('names LazyLoad’s narrower row scope only when LazyLoad simulated', () => {
+    expect(siteExclusionsNote(['delay_js'])).toBe(SITE_NOTE);
+    expect(siteExclusionsNote(['defer_all_js', 'delay_js'])).toBe(SITE_NOTE);
+    expect(siteExclusionsNote(['lazyload'])).toBe(SITE_NOTE_LAZYLOAD);
+    // Repeats and order never repeat the scope.
+    expect(siteExclusionsNote(['delay_js', 'lazyload', 'lazyload'])).toBe(SITE_NOTE_LAZYLOAD);
+  });
+
+  it('ends a mixed banner once when another feature simulated, without LazyLoad’s scope', () => {
+    const body = viewCopy(
+      applied({ lazyloadSimulation: lazyload('csp-blocked'), simulation: clean })
+    ).body;
+    expect(occurrences(body, SITE_NOTE)).toBe(1);
+    expect(body).not.toContain('LazyLoad: images only');
+    expect(body.endsWith(SITE_NOTE)).toBe(true);
+  });
+
+  it('carries LazyLoad’s scope on a mixed banner where LazyLoad simulated', () => {
+    const body = viewCopy(
+      applied({
+        lazyloadSimulation: cleanLazyload(),
+        simulation: { ...clean, state: 'csp-blocked' }
+      })
+    ).body;
+    expect(occurrences(body, SITE_NOTE_LAZYLOAD)).toBe(1);
+    expect(body.endsWith(SITE_NOTE_LAZYLOAD)).toBe(true);
+  });
+
+  it('says nothing when no feature simulated', () => {
+    for (const views of [
+      { lazyloadSimulation: lazyload('csp-blocked') },
+      { lazyloadSimulation: lazyload('already-served') },
+      {
+        lazyloadSimulation: lazyload('csp-blocked'),
+        deferSimulation: { ...deferSimulatedReport(), state: 'csp-blocked' as const }
+      },
+      {}
+    ]) {
+      expect(viewCopy(applied(views)).body).not.toContain(SITE_NOTE);
+    }
+  });
+
+  it('follows the no-match words on a simulated page, never on an unsimulated one', () => {
+    const unmatched = (views: Parameters<typeof applied>[0]): string =>
+      viewCopy({ ...applied(views), unmatched: 2 }).body;
+    const delayed = unmatched({ simulation: clean });
+    expect(delayed).toBe(
+      `2 rows match no element on this page. Check the rows marked “No match”. ${SITE_NOTE}`
+    );
+    expect(unmatched({ lazyloadSimulation: cleanLazyload(), simulation: clean })).toContain(
+      SITE_NOTE_LAZYLOAD
+    );
+    expect(unmatched({})).not.toContain(SITE_NOTE);
   });
 });

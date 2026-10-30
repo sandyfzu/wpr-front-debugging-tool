@@ -50,7 +50,8 @@ describe('simulation modifier copy (owner words)', () => {
   it('pins both facts', () => {
     expect(simulationModifierCopy('simulated')).toEqual({
       chip: 'Simulated in this tab',
-      sentence: "Simulated in this tab by the extension — not the site's configuration."
+      sentence:
+        "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
     });
     expect(simulationModifierCopy('unverified')).toEqual({
       chip: 'Simulation not verified',

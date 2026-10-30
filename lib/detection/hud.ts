@@ -570,7 +570,8 @@ export function simulationModifierCopy(fact: SimulationFact): SimulationModifier
   return fact === 'simulated'
     ? {
         chip: 'Simulated in this tab',
-        sentence: "Simulated in this tab by the extension — not the site's configuration."
+        sentence:
+          "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
       }
     : {
         chip: 'Simulation not verified',
