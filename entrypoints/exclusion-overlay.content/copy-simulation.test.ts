@@ -126,6 +126,41 @@ describe('simulation outcome words', () => {
     ).toContain('WP Rocket’s <xmp> masking pattern may stop on this page');
   });
 
+  it('names LazyLoad’s script and options when the policy blocks LazyLoad (draft words)', () => {
+    const lazyload = {
+      feature: 'lazyload',
+      state: 'csp-blocked',
+      wpRocketVersion: '3.24',
+      images: 0,
+      pictures: 0,
+      backgrounds: 0
+    } as const;
+    expect(simulationOutcomeCopy(lazyload)).toEqual({
+      title: 'Not simulated: blocked by this page’s Content Security Policy',
+      body: 'The policy forbids WP Rocket’s LazyLoad script or its inline options, as it would on the site, so no image was lazy loaded and the page was rendered with your exclusions only. Test on another page of the site, or choose As served to apply your exclusions without the simulation.'
+    });
+    expect(
+      simulationOutcomeCopy({
+        ...lazyload,
+        state: 'not-applicable',
+        reason: 'runtime-undeliverable'
+      })
+    ).toEqual({
+      title: 'Not simulated: LazyLoad’s script can’t be served on this page',
+      body: 'This page’s Content Security Policy sandboxes it without allow-same-origin, and Firefox then hides the page from the extension, so LazyLoad’s script can’t be served for it and the page was rendered as served, with your exclusions. Test in a Chromium-based browser, or choose As served to stop asking for the simulation.'
+    });
+    expect(
+      simulationOutcomeCopy({
+        ...lazyload,
+        state: 'not-applicable',
+        reason: 'runtime-mixed-content'
+      })
+    ).toEqual({
+      title: 'Not simulated: LazyLoad’s script would be blocked as mixed content',
+      body: 'This https page would load LazyLoad’s script over http, which the browser blocks (as it would on the site), so the page was rendered as served, with your exclusions. Serve WP Rocket’s assets over https, or choose As served to stop asking for the simulation.'
+    });
+  });
+
   it('words every not-applicable reason and unreproduced pattern', () => {
     for (const reason of SIMULATION_NOT_APPLICABLE_REASONS) {
       for (const regex of UNREPRODUCED_REGEXES) {

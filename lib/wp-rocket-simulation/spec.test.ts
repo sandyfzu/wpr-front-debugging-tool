@@ -56,6 +56,8 @@ describe('simulation vocabulary', () => {
       'no-body-end',
       'body-end-before-head-end',
       'runtime-unavailable',
+      'runtime-undeliverable',
+      'runtime-mixed-content',
       'delay-js-served',
       'beyond-exact-reproduction',
       'unsupported-charset'
@@ -119,7 +121,8 @@ describe('simulation vocabulary', () => {
       'data',
       'inline',
       'inline-after-fallback',
-      'trusted-types'
+      'trusted-types',
+      'placeholders'
     ]);
     expect(SIMULATION_CSP_BROWSERS).toEqual(['chromium', 'firefox']);
     expect(SIMULATION_CSP_UNAVAILABLE_REASONS).toEqual(['oversized', 'unreadable']);
@@ -146,7 +149,17 @@ describe('simulation vocabulary', () => {
 
   it('gives LazyLoad its own reasons, steps and caveats, never another feature’s', () => {
     const { lazyload, defer_all_js: defer, delay_js: delay } = SIMULATION_REPORT_VOCABULARY;
-    expect(lazyload.states).not.toContain('csp-blocked');
+    expect(lazyload.states).toContain('csp-blocked');
+    expect(lazyload.cspLimits).toEqual(['placeholders']);
+    expect(delay.cspLimits).toEqual([
+      'eval',
+      'data',
+      'inline',
+      'inline-after-fallback',
+      'trusted-types'
+    ]);
+    expect(defer.cspLimits).toEqual([]);
+    expect(defer.states).not.toContain('csp-blocked');
     expect(lazyload.reasons).not.toContain('delay-js-served');
     expect(lazyload.regexes).toEqual([
       'ie-conditionals',
@@ -154,7 +167,16 @@ describe('simulation vocabulary', () => {
       ...UNREPRODUCED_REGEXES.filter((regex) => regex.startsWith('lazyload-'))
     ]);
     expect(lazyload.caveats).not.toContain('combined-js');
-    const lazyOnly = ['preview', 'search', 'page-builder-editor', 'no-head-end', 'no-body-end'];
+    const lazyOnly = [
+      'preview',
+      'search',
+      'page-builder-editor',
+      'no-head-end',
+      'no-body-end',
+      'runtime-unavailable',
+      'runtime-undeliverable',
+      'runtime-mixed-content'
+    ];
     const lazyCaveats: readonly string[] = lazyload.caveats;
     for (const vocabulary of [defer, delay]) {
       expect(vocabulary.regexes.some((regex) => regex.startsWith('lazyload-'))).toBe(false);

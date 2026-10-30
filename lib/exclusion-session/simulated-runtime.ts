@@ -15,7 +15,10 @@
  *   page that rewrote its own query (`history.replaceState`) still gets
  *   it — and
  * - the request URL is that document's runtime URL, exactly (normalized as
- *   the browser serializes it) — any other URL goes to the site as made.
+ *   the browser serializes it; the report names the URL the page requests,
+ *   upgraded under `upgrade-insecure-requests` — Firefox first shows the
+ *   written `http` request, left to its own upgrade, then the `https` one)
+ *   — any other URL goes to the site as made.
  *
  * The file is the version's packaged runtime as verified against its pin
  * (the same bytes a simulation was allowed to run with).

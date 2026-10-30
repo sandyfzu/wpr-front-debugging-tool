@@ -3,13 +3,19 @@
  * session records it, its refusals (uncountable bytes, a runtime URL the
  * report cannot carry, later features touching its printed scripts) with
  * the other features still running, each step run once in order (its
- * time its own), and the marker naming it.
+ * time its own), the marker naming it, and the page's CSP (blocked:
+ * `csp-blocked`, the later features run as without it; limits and an
+ * unevaluated CSP on its report; Delay JS's own check unchanged beside it).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { LINEAR_SCALING_TIMEOUT_MS, linearScaling } from '../../vitest.shared';
 import { composeSteps } from '../exclusion-builder/pipeline';
 import { EMPTY_EXCLUSION_SET } from '../exclusion-builder/set';
-import type { DocumentSimulationInput } from '../messaging/exclusion-simulation';
+import {
+  SIMULATION_WIRE_LIMITS,
+  type DocumentSimulationInput,
+  type SimulationCspInput
+} from '../messaging/exclusion-simulation';
 import { SIMULATION_MARKER_META_NAME } from '../wp-rocket/constants';
 import * as deferForward from '../wp-rocket-simulation/defer-js-forward';
 import * as delayForward from '../wp-rocket-simulation/delay-js-forward';
@@ -28,7 +34,9 @@ const PAGE =
 /** A simulation input for `features`. */
 function input(
   features: DocumentSimulationInput['features'],
-  overrides: Partial<Pick<DocumentSimulationInput, 'deferLists' | 'lazyload' | 'markerId'>> = {}
+  overrides: Partial<
+    Pick<DocumentSimulationInput, 'deferLists' | 'lazyload' | 'markerId' | 'csp' | 'cspUnavailable'>
+  > = {}
 ): DocumentSimulationInput {
   return {
     features,
@@ -286,5 +294,204 @@ describe('the LazyLoad step', () => {
   it('throws without its inputs (the input guard refuses that request)', () => {
     const stage = simulationStage(input(['lazyload'], { lazyload: undefined }));
     expect(() => stage.steps[0]?.apply(PAGE)).toThrow(/lacks its texts/);
+  });
+});
+
+/** Header policies as an engine input's CSP. */
+function headerCsp(
+  values: readonly string[],
+  browser: 'chromium' | 'firefox' = 'chromium'
+): SimulationCspInput {
+  return {
+    browser,
+    headers: values.map((value) => ({ name: 'Content-Security-Policy', value })),
+    metas: []
+  };
+}
+
+describe('the LazyLoad step under the page’s CSP', () => {
+  const BOTH = ['lazyload', 'delay_js'] as const;
+
+  it('serves the page as is when the policy blocks the runtime URL (csp-blocked)', () => {
+    for (const browser of ['chromium', 'firefox'] as const) {
+      const csp = headerCsp(["script-src 'unsafe-inline'"], browser);
+      const result = run(PAGE, input(['lazyload'], { csp }));
+      expect(result.html).toBe(PAGE);
+      expect(result.lazyloadSimulation).toEqual({
+        feature: 'lazyload',
+        state: 'csp-blocked',
+        wpRocketVersion: '3.24',
+        images: 0,
+        pictures: 0,
+        backgrounds: 0
+      });
+    }
+  });
+
+  it('serves the page as is when the policy blocks the inline options script', () => {
+    const result = run(PAGE, input(['lazyload'], { csp: headerCsp(["script-src 'self'"]) }));
+    expect(result.html).toBe(PAGE);
+    expect(result.lazyloadSimulation?.state).toBe('csp-blocked');
+  });
+
+  it('runs the later features as without LazyLoad when it is blocked', () => {
+    const csp = headerCsp(["script-src 'unsafe-inline'"]);
+    const result = run(PAGE, input([...BOTH], { csp }));
+    const without = run(PAGE, input(['delay_js'], { csp }));
+    expect(result.lazyloadSimulation?.state).toBe('csp-blocked');
+    expect(result.html).toBe(without.html);
+    expect(result.simulation).toEqual(without.simulation);
+    expect(result.simulation?.state).toBe('simulated');
+  });
+
+  it('refuses LazyLoad on Firefox where a sandbox hides the page from delivery', () => {
+    const policy = "sandbox allow-scripts; script-src 'self' 'unsafe-inline'";
+    const firefox = run(PAGE, input([...BOTH], { csp: headerCsp([policy], 'firefox') }));
+    expect(firefox.html).not.toContain('lazyLoadOptions');
+    expect(firefox.lazyloadSimulation).toMatchObject({
+      state: 'not-applicable',
+      reason: 'runtime-undeliverable',
+      images: 0
+    });
+    expect(firefox.simulation?.state).toBe('csp-blocked');
+    const chromium = run(PAGE, input(['lazyload'], { csp: headerCsp([policy]) }));
+    expect(chromium.lazyloadSimulation?.state).toBe('simulated');
+  });
+
+  describe('the runtime request (upgrade-insecure-requests, mixed content)', () => {
+    const RT_PATH = '/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js';
+
+    /** PAGE whose beacon evidences the assets folder `assets` (ending in `/`). */
+    const withAssets = (assets: string): string =>
+      PAGE.replace(
+        '</body>',
+        `<script>var rocket_beacon_data = {"a":1}</script>` +
+          `<script data-name="wpr-wpr-beacon" src='${assets}js/wpr-beacon.min.js' async></script></body>`
+      );
+    const HTTP_ASSETS = 'http://example.org/wp-content/plugins/wp-rocket/assets/';
+    const UIR = 'upgrade-insecure-requests';
+
+    it('refuses an http runtime on an https page as mixed content, later features as without it', () => {
+      const html = withAssets(HTTP_ASSETS);
+      const alone = run(html, input(['lazyload']));
+      expect(alone.html).toBe(html);
+      expect(alone.lazyloadSimulation).toMatchObject({
+        state: 'not-applicable',
+        reason: 'runtime-mixed-content',
+        images: 0
+      });
+      const both = run(html, input(['lazyload', 'delay_js']));
+      const without = run(html, input(['delay_js']));
+      expect(both.html).toBe(without.html);
+      expect(both.simulation).toEqual(without.simulation);
+    });
+
+    it('reports the upgraded URL the page requests under the upgrade', () => {
+      const result = run(withAssets(HTTP_ASSETS), input(['lazyload'], { csp: headerCsp([UIR]) }));
+      expect(result.lazyloadSimulation).toMatchObject({
+        state: 'simulated',
+        runtimeUrl: `https://example.org${RT_PATH}`
+      });
+      expect(result.html).toContain(`src="http://example.org${RT_PATH}"`);
+    });
+
+    it('upgrades on an http page too (port 80 to the https default, others kept)', () => {
+      const lazyload = { ...LAZYLOAD_TEXTS, pageUrl: 'http://example.org:8080/' };
+      const at = (csp: SimulationCspInput | undefined) =>
+        run(PAGE, input(['lazyload'], { lazyload, ...(csp === undefined ? {} : { csp }) }))
+          .lazyloadSimulation?.runtimeUrl;
+      expect(at(undefined)).toBe(`http://example.org:8080${RT_PATH}`);
+      expect(at(headerCsp([UIR], 'firefox'))).toBe(`https://example.org:8080${RT_PATH}`);
+      expect(at({ browser: 'chromium', headers: [], metas: [{ content: UIR, offset: 0 }] })).toBe(
+        `https://example.org:8080${RT_PATH}`
+      );
+    });
+
+    it('serves a loopback runtime as written (never upgraded, never mixed content)', () => {
+      const result = run(
+        withAssets('http://localhost/wp-content/plugins/wp-rocket/assets/'),
+        input(['lazyload'])
+      );
+      expect(result.lazyloadSimulation).toMatchObject({
+        state: 'simulated',
+        runtimeUrl: `http://localhost${RT_PATH}`
+      });
+    });
+
+    it('refuses an upgraded URL longer than the report carries (lazyload-runtime-url)', () => {
+      const lazyload = { ...LAZYLOAD_TEXTS, pageUrl: 'http://example.org/' };
+      const page = (pad: number) =>
+        withAssets(`http://example.org/${'x'.repeat(pad)}/wp-content/plugins/wp-rocket/assets/`);
+      const report = (html: string, csp?: SimulationCspInput) =>
+        run(html, input(['lazyload'], { lazyload, ...(csp === undefined ? {} : { csp }) }))
+          .lazyloadSimulation;
+      const oneLength = report(page(1))?.runtimeUrl?.length ?? 0;
+      // The written URL fits the cap exactly; its https twin is one character longer.
+      const html = page(SIMULATION_WIRE_LIMITS.runtimeUrlChars - oneLength + 1);
+      expect(report(html)?.runtimeUrl).toHaveLength(SIMULATION_WIRE_LIMITS.runtimeUrlChars);
+      expect(report(html, headerCsp([UIR]))).toMatchObject({
+        state: 'not-applicable',
+        reason: 'beyond-exact-reproduction',
+        unreproducedRegex: 'lazyload-runtime-url'
+      });
+    });
+  });
+
+  it('names broken placeholders on a simulated report', () => {
+    const csp = headerCsp(["script-src 'self' 'unsafe-inline'; img-src 'self'"]);
+    const result = run(PAGE, input(['lazyload'], { csp }));
+    expect(result.lazyloadSimulation).toMatchObject({
+      state: 'simulated',
+      cspLimits: ['placeholders']
+    });
+    expect(result.lazyloadSimulation).not.toHaveProperty('cspUnavailable');
+  });
+
+  it('names no placeholder limit on a page that got no placeholder', () => {
+    const csp = headerCsp(["script-src 'self' 'unsafe-inline'; img-src 'self'"]);
+    const html = PAGE.replace(
+      '<img src="/a.png" alt="a">',
+      '<div style="background-image:url(/b.png)">b</div>'
+    );
+    const result = run(html, input(['lazyload'], { csp }));
+    expect(result.lazyloadSimulation).toMatchObject({ state: 'simulated', backgrounds: 1 });
+    expect(result.lazyloadSimulation).not.toHaveProperty('cspLimits');
+  });
+
+  it('carries an unevaluated CSP: the input’s own reason, or an unreadable meta', () => {
+    const oversized = run(PAGE, input(['lazyload'], { cspUnavailable: 'oversized' }));
+    expect(oversized.lazyloadSimulation).toMatchObject({
+      state: 'simulated',
+      cspUnavailable: 'oversized'
+    });
+    const unreadable = run(
+      PAGE,
+      input(['lazyload'], {
+        csp: { ...headerCsp(["script-src 'self' 'unsafe-inline'"]), metasUnreadable: true }
+      })
+    );
+    expect(unreadable.lazyloadSimulation).toMatchObject({
+      state: 'simulated',
+      cspUnavailable: 'unreadable'
+    });
+    expect(unreadable.lazyloadSimulation).not.toHaveProperty('cspLimits');
+  });
+
+  it('leaves Delay JS’s own check as without LazyLoad (its options script is not delayed)', () => {
+    const page = PAGE.replace('</body>', '<script>var inline=1;</script></body>');
+    for (const browser of ['chromium', 'firefox'] as const) {
+      for (const policy of [
+        "script-src 'self' 'unsafe-inline'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' data:"
+      ]) {
+        const csp = headerCsp([policy], browser);
+        const composed = run(page, input([...BOTH], { csp }));
+        const alone = run(page, input(['delay_js'], { csp }));
+        expect(composed.lazyloadSimulation?.state).toBe('simulated');
+        expect(composed.simulation?.state).toBe('simulated');
+        expect(composed.simulation?.cspLimits).toEqual(alone.simulation?.cspLimits);
+        expect(composed.html).toContain('window.lazyLoadOptions');
+      }
+    }
   });
 });

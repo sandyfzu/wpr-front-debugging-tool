@@ -176,11 +176,18 @@ export function delayedInlineScripts(simulated: string): DelayedInlineScript[] {
     )
     .map((tag) => ({
       ...elementNonces(tag),
-      text: simulated
-        .slice(tag.openingEnd, tag.contentEnd)
-        .replace(/\r\n?/g, '\n')
-        .replace(/\0/g, '\uFFFD')
+      text: parsedScriptText(simulated.slice(tag.openingEnd, tag.contentEnd))
     }));
+}
+
+/**
+ * A script element's text as the parser hands it to CSP (what a hash
+ * source digests): line breaks normalized to LF, NUL read as U+FFFD.
+ *
+ * @param source The text between the tags as written.
+ */
+export function parsedScriptText(source: string): string {
+  return source.replace(/\r\n?/g, '\n').replace(/\0/g, '\uFFFD');
 }
 
 /** A delayed script ready for the checks: its recreated copy, and its nonce in place. */
@@ -225,7 +232,7 @@ function chromiumInlineLimits(
 }
 
 /** A page's policies, each read once for the engine. */
-interface PagePolicies {
+export interface PagePolicies {
   readonly headers: readonly PolicyFacts[];
   readonly reportOnly: readonly PolicyFacts[];
   readonly metas: readonly { readonly facts: PolicyFacts; readonly offset: number }[];
@@ -236,9 +243,9 @@ interface PagePolicies {
  *
  * @param csp The inputs.
  */
-function pagePolicies(csp: SimulationCspInput): PagePolicies {
+export function pagePolicies(csp: SimulationCspInput): PagePolicies {
   const read = (policy: CspPolicy): PolicyFacts => policyFacts(policy, csp.browser);
-  const { enforced, reportOnly } = headerPolicies(csp.headers);
+  const { enforced, reportOnly } = headerPolicies(csp.headers, csp.browser);
   return {
     headers: enforced.map(read),
     reportOnly: reportOnly.map(read),

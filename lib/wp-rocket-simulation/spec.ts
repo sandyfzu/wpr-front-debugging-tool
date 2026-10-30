@@ -58,8 +58,9 @@ export type SimulationStage = 'simulate';
  * - `simulated` — the step ran: the page is what WP Rocket would serve.
  * - `already-served` — WP Rocket already applies the feature on this page:
  *   identity (exclusions apply to its real output).
- * - `csp-blocked` — the page's Content Security Policy blocks the inline
- *   runtime, as it would block WP Rocket's: identity.
+ * - `csp-blocked` — the page's Content Security Policy blocks the runtime
+ *   (Delay JS: its inline script; LazyLoad: its script file or its inline
+ *   options), as it would block WP Rocket's: identity.
  * - `not-applicable` — identity, for a {@link SimulationNotApplicableReason}.
  */
 export const SIMULATION_STATES = [
@@ -95,7 +96,12 @@ export type LazyloadPlacementRefusal = (typeof LAZYLOAD_PLACEMENT_REFUSALS)[numb
  * Rocket never lazy loads; a page LazyLoad's texts cannot be placed on (a
  * {@link LazyloadPlacementRefusal}); LazyLoad when the extension's packaged
  * copy of its runtime — the file the simulated page requests — is unusable
- * (`runtime-unavailable`; the other features still simulate); Defer JS on a page WP Rocket already delays
+ * (`runtime-unavailable`; the other features still simulate) or cannot be
+ * served for the page (`runtime-undeliverable`: on Firefox, a header
+ * `sandbox` without `allow-same-origin` hides the requesting page from the
+ * extension) or is never requested (`runtime-mixed-content`: an `https`
+ * page whose runtime URL is `http`, which the browser blocks as on WP
+ * Rocket's page); Defer JS on a page WP Rocket already delays
  * (`delay-js-served`: WP Rocket defers before it delays, and the served
  * page no longer holds the scripts as Defer JS would read them); a page
  * beyond exact reproduction — one of WP Rocket's regexes
@@ -112,6 +118,8 @@ export const SIMULATION_NOT_APPLICABLE_REASONS = [
   'page-builder-editor',
   ...LAZYLOAD_PLACEMENT_REFUSALS,
   'runtime-unavailable',
+  'runtime-undeliverable',
+  'runtime-mixed-content',
   'delay-js-served',
   'beyond-exact-reproduction',
   'unsupported-charset'
@@ -239,6 +247,34 @@ export const SIMULATION_CAVEATS = [...DELAY_JS_CAVEATS, ...LAZYLOAD_CAVEATS] as 
 /** One simulation caveat (see {@link SIMULATION_CAVEATS}). */
 export type SimulationCaveat = (typeof SIMULATION_CAVEATS)[number];
 
+/**
+ * Work of an allowed runtime the page's Content Security Policy blocks, as
+ * it would block WP Rocket's: `eval` (no `'unsafe-eval'`: `on…` handlers
+ * of delayed elements throw), `inline` (at least one delayed inline script
+ * fails), `data` (Chromium only, informational: `data:` loads blocked, the
+ * runtime's inline fallback runs them), `inline-after-fallback` (Chromium
+ * only: a delayed inline script runs from its `data:` URL, but fails once
+ * an earlier page in the tab switched the runtime to its inline fallback —
+ * tab state a per-document check cannot see), `trusted-types` (the page
+ * requires Trusted Types: every delayed script fails, `eval` too) — Delay
+ * JS's; `placeholders` (LazyLoad: `data:` images blocked, so its
+ * placeholder images render broken until each image loads).
+ */
+export const SIMULATION_CSP_LIMITS = [
+  'eval',
+  'data',
+  'inline',
+  'inline-after-fallback',
+  'trusted-types',
+  'placeholders'
+] as const;
+
+/** One CSP limit (see {@link SIMULATION_CSP_LIMITS}). */
+export type SimulationCspLimit = (typeof SIMULATION_CSP_LIMITS)[number];
+
+/** The CSP limits of a LazyLoad page (see {@link SIMULATION_CSP_LIMITS}). */
+const LAZYLOAD_CSP_LIMITS: readonly SimulationCspLimit[] = ['placeholders'];
+
 /** The closed values one simulated feature's report can carry (see {@link SIMULATION_REPORT_VOCABULARY}). */
 export interface SimulationReportVocabulary {
   /** The states it reaches. */
@@ -249,6 +285,8 @@ export interface SimulationReportVocabulary {
   readonly regexes: readonly UnreproducedRegex[];
   /** The caveats it can name. */
   readonly caveats: readonly SimulationCaveat[];
+  /** The CSP limits it can name. */
+  readonly cspLimits: readonly SimulationCspLimit[];
 }
 
 /**
@@ -266,7 +304,9 @@ const LAZYLOAD_ONLY_REASONS: readonly SimulationNotApplicableReason[] = [
   'search',
   'page-builder-editor',
   ...LAZYLOAD_PLACEMENT_REFUSALS,
-  'runtime-unavailable'
+  'runtime-unavailable',
+  'runtime-undeliverable',
+  'runtime-mixed-content'
 ];
 
 /** The regexes of the buffer's IE conditional extraction (every feature runs inside it). */
@@ -279,18 +319,19 @@ const IE_REGEXES: readonly UnreproducedRegex[] = ['ie-conditionals', 'ie-conditi
  * `delay-js-served` is Defer JS's alone. Delay JS can name Defer JS's
  * regexes: with both on, Defer JS's passes run inside its buffer. LazyLoad
  * names its own steps and the buffer's IE extraction only (the later
- * features continue its buffer); its runtime's CSP is not evaluated, so it
- * is never `csp-blocked`; preview, search, builder, placement and
- * runtime-file reasons are its alone.
+ * features continue its buffer); preview, search, builder, placement and
+ * runtime-file reasons are its alone, and so is the `placeholders` CSP
+ * limit (Delay JS names every other one).
  */
 export const SIMULATION_REPORT_VOCABULARY = {
   lazyload: {
-    states: SIMULATION_STATES.filter((state) => state !== 'csp-blocked'),
+    states: SIMULATION_STATES,
     reasons: SIMULATION_NOT_APPLICABLE_REASONS.filter((reason) => reason !== 'delay-js-served'),
     regexes: UNREPRODUCED_REGEXES.filter(
       (regex) => isLazyloadRegex(regex) || IE_REGEXES.includes(regex)
     ),
-    caveats: LAZYLOAD_CAVEATS
+    caveats: LAZYLOAD_CAVEATS,
+    cspLimits: LAZYLOAD_CSP_LIMITS
   },
   defer_all_js: {
     states: SIMULATION_STATES.filter((state) => state !== 'csp-blocked'),
@@ -304,7 +345,8 @@ export const SIMULATION_REPORT_VOCABULARY = {
         regex !== 'svg-mask' &&
         regex !== 'meta-charset'
     ),
-    caveats: []
+    caveats: [],
+    cspLimits: []
   },
   delay_js: {
     states: SIMULATION_STATES,
@@ -312,7 +354,8 @@ export const SIMULATION_REPORT_VOCABULARY = {
       (reason) => reason !== 'delay-js-served' && !LAZYLOAD_ONLY_REASONS.includes(reason)
     ),
     regexes: UNREPRODUCED_REGEXES.filter((regex) => !isLazyloadRegex(regex)),
-    caveats: DELAY_JS_CAVEATS
+    caveats: DELAY_JS_CAVEATS,
+    cspLimits: SIMULATION_CSP_LIMITS.filter((limit) => !LAZYLOAD_CSP_LIMITS.includes(limit))
   }
 } as const satisfies Record<SimulatedFeatureId, SimulationReportVocabulary>;
 
@@ -354,28 +397,6 @@ export const LAZYLOAD_RUNTIME_DELIVERIES = ['external'] as const;
 
 /** One runtime delivery (see {@link LAZYLOAD_RUNTIME_DELIVERIES}). */
 export type LazyloadRuntimeDelivery = (typeof LAZYLOAD_RUNTIME_DELIVERIES)[number];
-
-/**
- * Work of an allowed runtime the page's Content Security Policy blocks, as
- * it would block WP Rocket's: `eval` (no `'unsafe-eval'`: `on…` handlers
- * of delayed elements throw), `inline` (at least one delayed inline script
- * fails), `data` (Chromium only, informational: `data:` loads blocked, the
- * runtime's inline fallback runs them), `inline-after-fallback` (Chromium
- * only: a delayed inline script runs from its `data:` URL, but fails once
- * an earlier page in the tab switched the runtime to its inline fallback —
- * tab state a per-document check cannot see), `trusted-types` (the page
- * requires Trusted Types: every delayed script fails, `eval` too).
- */
-export const SIMULATION_CSP_LIMITS = [
-  'eval',
-  'data',
-  'inline',
-  'inline-after-fallback',
-  'trusted-types'
-] as const;
-
-/** One CSP limit (see {@link SIMULATION_CSP_LIMITS}). */
-export type SimulationCspLimit = (typeof SIMULATION_CSP_LIMITS)[number];
 
 /**
  * Why a page's Content Security Policy could not be evaluated (reported as

@@ -1098,7 +1098,16 @@ const CSP_LIMIT_COPY: Readonly<Record<SimulationCspLimit, string>> = {
   'inline-after-fallback':
     'If WP Rocket switched to its inline fallback on an earlier page of this tab, this page’s CSP blocks those inline scripts — as it would live.',
   'trusted-types':
-    'This page requires Trusted Types — WP Rocket’s Delay JS cannot load delayed scripts under it; they fail here as they would on the site.'
+    'This page requires Trusted Types — WP Rocket’s Delay JS cannot load delayed scripts under it; they fail here as they would on the site.',
+  placeholders:
+    'This page’s Content Security Policy blocks data: images: LazyLoad’s placeholders show as broken images until each image loads, as they would on the site.'
+};
+
+/** What a page's CSP forbids when it blocks a feature's runtime, and what then did not happen. */
+const CSP_BLOCKED_COPY: Readonly<Record<'delay_js' | 'lazyload', string>> = {
+  delay_js: 'WP Rocket’s inline Delay JS script, as it would on the site, so nothing was delayed',
+  lazyload:
+    'WP Rocket’s LazyLoad script or its inline options, as it would on the site, so no image was lazy loaded'
 };
 
 /** Why a page's CSP was not evaluated (never said as "no CSP"). */
@@ -1239,10 +1248,10 @@ function ownOutcomeCopy(
       body: `${opener}: your exclusions apply to WP Rocket’s own ${name}, as served.`
     };
   }
-  if (simulation.state === 'csp-blocked') {
+  if (simulation.state === 'csp-blocked' && simulation.feature !== 'defer_all_js') {
     return {
       title: 'Not simulated: blocked by this page’s Content Security Policy',
-      body: `The policy forbids WP Rocket’s inline Delay JS script, as it would on the site, so nothing was delayed and ${renderedWith(simulated, 'the page was rendered with your exclusions only.')} ${NOT_SIMULATED_REMEDY}`
+      body: `The policy forbids ${CSP_BLOCKED_COPY[simulation.feature]} and ${renderedWith(simulated, 'the page was rendered with your exclusions only.')} ${NOT_SIMULATED_REMEDY}`
     };
   }
   return notApplicableCopy(
@@ -1290,6 +1299,16 @@ function notApplicableCopy(simulation: DocumentSimulationReport, served: string)
       return {
         title: 'Not simulated: LazyLoad’s script file is unavailable',
         body: `The extension’s packaged copy of LazyLoad’s script couldn’t be loaded or is damaged, so ${served} Reload the page to retry (if it persists, reload or reinstall the extension), or choose As served to stop asking for the simulation.`
+      };
+    case 'runtime-undeliverable':
+      return {
+        title: 'Not simulated: LazyLoad’s script can’t be served on this page',
+        body: `This page’s Content Security Policy sandboxes it without allow-same-origin, and Firefox then hides the page from the extension, so LazyLoad’s script can’t be served for it and ${served} Test in a Chromium-based browser, or choose As served to stop asking for the simulation.`
+      };
+    case 'runtime-mixed-content':
+      return {
+        title: 'Not simulated: LazyLoad’s script would be blocked as mixed content',
+        body: `This https page would load LazyLoad’s script over http, which the browser blocks (as it would on the site), so ${served} Serve WP Rocket’s assets over https, or choose As served to stop asking for the simulation.`
       };
     case 'delay-js-served':
       return {

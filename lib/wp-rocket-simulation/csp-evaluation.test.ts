@@ -505,6 +505,70 @@ const P21H_PROBES: readonly Row[] = [
     },
     [],
     []
+  ],
+  // A directive holding a non-ASCII character is dropped whole; on Chromium it still claims its name.
+  ['non-ASCII: the directive is dropped', { headers: ["script-src 'none' é"] }, [], []],
+  ['non-ASCII in a meta: dropped', { metaBefore: "script-src 'none' é" }, [], []],
+  [
+    'non-ASCII then a repeat: Chromium ignores the repeat, Firefox applies it',
+    { headers: ["script-src 'none' é; script-src 'none'"] },
+    [],
+    'blocked'
+  ],
+  [
+    'non-ASCII then a repeat in a meta',
+    { metaBefore: "script-src 'none' é; script-src 'none'" },
+    [],
+    'blocked'
+  ],
+  [
+    'non-ASCII then an allowing repeat',
+    { headers: ["script-src 'none' é; script-src 'unsafe-inline' 'unsafe-eval' data:"] },
+    [],
+    []
+  ],
+  [
+    'an IDN host source drops script-src: default-src governs',
+    {
+      headers: [
+        "script-src 'unsafe-inline' 'unsafe-eval' data: https://bücher.de; default-src 'self'"
+      ]
+    },
+    'blocked',
+    'blocked'
+  ],
+  [
+    'a typographic quote drops script-src: default-src governs eval',
+    {
+      headers: [
+        "script-src 'unsafe-inline' 'unsafe-eval' data: ‘report-sample’; default-src 'unsafe-inline' data:"
+      ]
+    },
+    ['eval'],
+    ['eval']
+  ],
+  [
+    'a no-break space (not a separator) drops the directive',
+    { headers: ["script-src 'unsafe-inline'\u00a0'unsafe-eval' data:"] },
+    [],
+    []
+  ],
+  [
+    'non-ASCII script-src-elem: script-src governs',
+    { headers: ["script-src 'unsafe-inline' 'unsafe-eval' data:; script-src-elem 'self' é"] },
+    [],
+    []
+  ],
+  ['non-ASCII sandbox: dropped', { headers: ['sandbox é'] }, [], []],
+  [
+    'non-ASCII require-trusted-types-for: dropped',
+    {
+      headers: [
+        "script-src 'unsafe-inline' 'unsafe-eval' data:; require-trusted-types-for 'script' é"
+      ]
+    },
+    [],
+    []
   ]
 ];
 

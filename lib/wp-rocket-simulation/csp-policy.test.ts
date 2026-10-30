@@ -4,6 +4,7 @@ import {
   allowsCreatedInline,
   allowsDataScript,
   allowsParsedInline,
+  allowsParsedScriptUrl,
   checkedScript,
   elementListFacts,
   governingList,
@@ -18,15 +19,15 @@ import {
 import type { SimulationCspBrowser } from './spec';
 
 /** A policy that must parse. */
-function policy(text: string): CspPolicy {
-  const parsed = parsePolicy(text);
+function policy(text: string, browser: SimulationCspBrowser = 'chromium'): CspPolicy {
+  const parsed = parsePolicy(text, browser);
   if (parsed === null) throw new Error(`no policy in ${text}`);
   return parsed;
 }
 
 /** A policy's facts for an engine. */
 const facts = (text: string, browser: SimulationCspBrowser = 'chromium'): PolicyFacts =>
-  policyFacts(policy(text), browser);
+  policyFacts(policy(text, browser), browser);
 
 /** Base64 digest of a text. */
 const digest = (algorithm: string, text: string): string =>
@@ -49,25 +50,27 @@ describe('parsePolicy', () => {
   });
 
   it('is null without any directive', () => {
-    expect(parsePolicy('')).toBeNull();
-    expect(parsePolicy(' ;\t; ')).toBeNull();
+    expect(parsePolicy('', 'chromium')).toBeNull();
+    expect(parsePolicy(' ;\t; ', 'chromium')).toBeNull();
   });
 });
 
 describe('parsePolicyList / headerPolicies', () => {
   it('splits a header value into comma-separated policies, dropping empty ones', () => {
-    expect(parsePolicyList("script-src 'a', , default-src 'b'").map((p) => [...p.keys()])).toEqual([
-      ['script-src'],
-      ['default-src']
-    ]);
+    expect(
+      parsePolicyList("script-src 'a', , default-src 'b'", 'chromium').map((p) => [...p.keys()])
+    ).toEqual([['script-src'], ['default-src']]);
   });
 
   it('sorts header lines by disposition, names caseless, others ignored', () => {
-    const { enforced, reportOnly } = headerPolicies([
-      { name: 'Content-Security-Policy', value: "script-src 'a', script-src 'b'" },
-      { name: 'CONTENT-SECURITY-POLICY-REPORT-ONLY', value: "script-src 'c'" },
-      { name: 'X-Content-Security-Policy', value: "script-src 'd'" }
-    ]);
+    const { enforced, reportOnly } = headerPolicies(
+      [
+        { name: 'Content-Security-Policy', value: "script-src 'a', script-src 'b'" },
+        { name: 'CONTENT-SECURITY-POLICY-REPORT-ONLY', value: "script-src 'c'" },
+        { name: 'X-Content-Security-Policy', value: "script-src 'd'" }
+      ],
+      'chromium'
+    );
     expect(enforced.map((p) => p.get('script-src'))).toEqual([["'a'"], ["'b'"]]);
     expect(reportOnly.map((p) => p.get('script-src'))).toEqual([["'c'"]]);
   });
@@ -217,5 +220,98 @@ describe('policy facts', () => {
       false
     );
     expect(facts("script-src 'self'").sandboxStopsRuntime).toBe(false);
+  });
+});
+
+describe('LazyLoad facts', () => {
+  const url = new URL('https://site.test/wp/lazyload.min.js');
+  const self = new URL('https://site.test/p');
+
+  it('reads a `sandbox` that stops every script (no `allow-scripts`, caseless)', () => {
+    expect(facts('sandbox').sandboxStopsScripts).toBe(true);
+    expect(facts('sandbox allow-same-origin').sandboxStopsScripts).toBe(true);
+    expect(facts('sandbox Allow-Scripts').sandboxStopsScripts).toBe(false);
+    expect(facts("script-src 'self'").sandboxStopsScripts).toBe(false);
+  });
+
+  it('reads whether `data:` images load: `img-src`, else `default-src`', () => {
+    expect(facts("script-src 'none'").imageDataAllowed).toBe(true);
+    expect(facts("default-src 'self'").imageDataAllowed).toBe(false);
+    expect(facts("default-src 'self'; img-src DATA:").imageDataAllowed).toBe(true);
+    expect(facts('default-src data:; img-src *').imageDataAllowed).toBe(false);
+  });
+
+  it('keeps the governing list’s tokens as written', () => {
+    expect(facts("script-src 'self' https://cdn.test/a/").element?.sources).toEqual([
+      "'self'",
+      'https://cdn.test/a/'
+    ]);
+  });
+
+  it('allows a parser-inserted script URL by the list, never under `strict-dynamic`', () => {
+    expect(allowsParsedScriptUrl(facts("img-src 'none'"), url, self, 'chromium')).toBe(true);
+    expect(allowsParsedScriptUrl(facts("script-src 'self'"), url, self, 'firefox')).toBe(true);
+    expect(allowsParsedScriptUrl(facts("script-src 'none'"), url, self, 'firefox')).toBe(false);
+    expect(
+      allowsParsedScriptUrl(facts("script-src 'self' 'strict-dynamic'"), url, self, 'chromium')
+    ).toBe(false);
+  });
+
+  it('reads upgrade-insecure-requests (any value), dropped with a non-ASCII value', () => {
+    expect(facts('upgrade-insecure-requests').upgradeInsecure).toBe(true);
+    expect(facts("UPGRADE-INSECURE-REQUESTS foo; script-src 'self'").upgradeInsecure).toBe(true);
+    expect(facts("script-src 'self'").upgradeInsecure).toBe(false);
+    expect(facts("upgrade-insecure-requests é; script-src 'self'").upgradeInsecure).toBe(false);
+  });
+
+  it('Firefox matches an http URL as https under its own policy’s upgrade only', () => {
+    const http = new URL('http://site.test/x.js');
+    const https = 'script-src https:; upgrade-insecure-requests';
+    expect(allowsParsedScriptUrl(facts(https, 'firefox'), http, self, 'firefox')).toBe(true);
+    expect(
+      allowsParsedScriptUrl(facts('script-src https:', 'firefox'), http, self, 'firefox')
+    ).toBe(false);
+    // Chromium is handed the upgraded URL by its caller: the written one never matches as https.
+    expect(allowsParsedScriptUrl(facts(https), http, self, 'chromium')).toBe(false);
+  });
+});
+
+describe('non-ASCII directives (dropped whole, per engine)', () => {
+  const engines = ['chromium', 'firefox'] as const;
+
+  it('drops a directive holding a non-ASCII character, on both engines', () => {
+    for (const browser of engines) {
+      const parsed = policy("default-src 'none'; script-src 'self' https://bücher.de", browser);
+      expect([...parsed.keys()]).toEqual(['default-src']);
+      expect(parsePolicy("script-src 'none' é", browser)).toBeNull();
+      expect(parsePolicy("script-src 'none'\u00a0'self'", browser)).toBeNull();
+      expect(
+        policy("script-src-elem 'self' ‘report-sample’; script-src 'none'", browser).has(
+          'script-src-elem'
+        )
+      ).toBe(false);
+      expect(policy("scrïpt-src 'self'; script-src 'none'", browser).get('script-src')).toEqual([
+        "'none'"
+      ]);
+    }
+  });
+
+  it('Chromium: the dropped directive still claims its name (caseless); Firefox applies the repeat', () => {
+    const text = "SCRIPT-SRC 'none' é; script-src 'none'; img-src 'self'";
+    expect(policy(text, 'chromium').has('script-src')).toBe(false);
+    expect(policy(text, 'firefox').get('script-src')).toEqual(["'none'"]);
+  });
+
+  it('drops per policy in a header list and a meta', () => {
+    for (const browser of engines) {
+      const list = parsePolicyList("script-src 'none' é, script-src 'none'", browser);
+      expect(list.map((p) => p.get('script-src'))).toEqual([["'none'"]]);
+      expect(metaPolicies("script-src 'none' é", browser)).toEqual([]);
+      const { enforced } = headerPolicies(
+        [{ name: 'Content-Security-Policy', value: "script-src 'self' é; img-src 'self'" }],
+        browser
+      );
+      expect(enforced.map((p) => [...p.keys()])).toEqual([['img-src']]);
+    }
   });
 });

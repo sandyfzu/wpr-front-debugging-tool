@@ -45,10 +45,13 @@ import {
   type LazyloadCaveat,
   type LazyloadRuntimeDelivery,
   type SimulationNotApplicableReason,
+  type SimulationState,
   type UnreproducedRegex
 } from './spec';
 import { UTF8_MEASURE, type ByteMeasure } from './utf8';
 import { DATA_LAZY_SRC } from '../wp-rocket/constants';
+import { LAZY_PLACEHOLDER_PREFIX } from './lazyload-tag';
+import { countOccurrences } from '../../utils/text';
 
 /** What the step is given. */
 export interface LazyloadSimulationInput {
@@ -75,11 +78,14 @@ export interface LazyloadSimulatedPage {
   readonly placement: LazyloadPlacement;
   /** The caveats that apply, in vocabulary order. */
   readonly caveats: readonly LazyloadCaveat[];
+  /** The pass wrote placeholder images (`data:` URLs a page's CSP may block). */
+  readonly placeholders: boolean;
 }
 
 /** The step's report. */
 export type LazyloadStepReport = LazyloadPassCounts & {
-  readonly state: 'simulated' | 'already-served' | 'not-applicable';
+  /** Never `csp-blocked` from {@link simulateLazyload}: the stage's CSP check decides that one. */
+  readonly state: SimulationState;
   /** With `not-applicable` (required there). */
   readonly reason?: SimulationNotApplicableReason;
   /** With `beyond-exact-reproduction` (required there). */
@@ -290,7 +296,10 @@ export function simulateLazyload(input: LazyloadSimulationInput): LazyloadSimula
         assetsUrlSource: assets.source,
         delivery: 'external',
         placement: placed.placement,
-        caveats: simulatedCaveats(tags)
+        caveats: simulatedCaveats(tags),
+        placeholders:
+          countOccurrences(result.html, LAZY_PLACEHOLDER_PREFIX) >
+          countOccurrences(input.html, LAZY_PLACEHOLDER_PREFIX)
       }
     },
     buffer: result.buffer,

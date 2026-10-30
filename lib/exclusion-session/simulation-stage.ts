@@ -22,7 +22,10 @@ import {
   type LazyloadSimulationReport,
   type SimulationListProvenance
 } from '../messaging/exclusion-simulation';
-import { evaluateSimulationCsp } from '../wp-rocket-simulation/csp-evaluation';
+import {
+  evaluateSimulationCsp,
+  type SimulationCspVerdict
+} from '../wp-rocket-simulation/csp-evaluation';
 import {
   deferUrlMatcher,
   simulateDeferJs,
@@ -40,6 +43,11 @@ import {
   type LazyloadSimulationResult,
   type LazyloadStepReport
 } from '../wp-rocket-simulation/lazyload-simulation';
+import {
+  evaluateLazyloadCsp,
+  lazyloadRuntimeRequest,
+  runtimeUndeliverable
+} from '../wp-rocket-simulation/lazyload-csp';
 import { writeSimulationMarker } from '../wp-rocket-simulation/marker-write';
 import { servedByteMeasure } from '../wp-rocket-simulation/served-measure';
 import {
@@ -50,6 +58,7 @@ import {
   type SimulationState
 } from '../wp-rocket-simulation/spec';
 import { supportedWprVersion } from '../wp-rocket/versions';
+import { countOccurrences } from '../../utils/text';
 
 /** A Delay JS step's report: the forward transform's, or one the step decided without it. */
 type DelayStepReport = Omit<DelayJsForwardReport, 'state' | 'defer'> & {
@@ -165,15 +174,17 @@ function reportBase(
 /**
  * A step's report as the session records it, per feature. Delay JS: the
  * transform's facts (the `simulated`-only ones only on `simulated`, each
- * only when it says something) and the CSP facts. Defer JS: its counts (0
- * unless `simulated`) — it injects no runtime, so it carries no CSP fact.
+ * only when it says something) and the CSP facts. LazyLoad: its counts,
+ * its page facts and the CSP facts (`simulated` only). Defer JS: its
+ * counts (0 unless `simulated`) — it injects no runtime, so it carries no
+ * CSP fact.
  *
  * @param feature The simulated feature.
  * @param report The step's report.
  * @param input The simulation input (versions, list provenance).
- * @param cspLimits The runtime work the page's CSP limits (Delay JS).
- * @param cspUnavailable Why the step could not evaluate the CSP (Delay JS;
- *   over the input's own reason).
+ * @param cspLimits The runtime work the page's CSP limits (Delay JS, LazyLoad).
+ * @param cspUnavailable Why the step could not evaluate the CSP (Delay JS,
+ *   LazyLoad; over the input's own reason).
  */
 export function wireSimulationReport(
   feature: 'delay_js',
@@ -190,7 +201,9 @@ export function wireSimulationReport(
 export function wireSimulationReport(
   feature: 'lazyload',
   report: LazyloadStepReport,
-  input: DocumentSimulationInput
+  input: DocumentSimulationInput,
+  cspLimits?: readonly SimulationCspLimit[],
+  cspUnavailable?: SimulationCspUnavailableReason
 ): LazyloadSimulationReport;
 export function wireSimulationReport(
   feature: SimulatedFeatureId,
@@ -203,7 +216,9 @@ export function wireSimulationReport(
     return wireDelayReport(report, input, cspLimits, cspUnavailable);
   }
   if (feature === 'defer_all_js' && 'deferred' in report) return wireDeferReport(report, input);
-  if (feature === 'lazyload' && 'images' in report) return wireLazyloadReport(report, input);
+  if (feature === 'lazyload' && 'images' in report) {
+    return wireLazyloadReport(report, input, cspLimits, cspUnavailable);
+  }
   throw new Error(`wireSimulationReport: the ${feature} step was given another feature's report`);
 }
 
@@ -242,12 +257,15 @@ function wireDeferReport(
   };
 }
 
-/** {@link wireSimulationReport} for LazyLoad: counts (0 unless `simulated`) and the page facts. */
+/** {@link wireSimulationReport} for LazyLoad: counts (0 unless `simulated`), the page and CSP facts. */
 function wireLazyloadReport(
   report: LazyloadStepReport,
-  input: DocumentSimulationInput
+  input: DocumentSimulationInput,
+  cspLimits: readonly SimulationCspLimit[],
+  cspUnavailable: SimulationCspUnavailableReason | undefined
 ): LazyloadSimulationReport {
-  const page = report.state === 'simulated' ? report.page : undefined;
+  const simulated = report.state === 'simulated';
+  const page = simulated ? report.page : undefined;
   return {
     feature: 'lazyload',
     ...reportCore(report, input),
@@ -266,7 +284,9 @@ function wireLazyloadReport(
             fallbacks: [...page.placement.fallbacks]
           },
           caveats: [...page.caveats]
-        })
+        }),
+    ...(simulated && cspLimits.length > 0 ? { cspLimits: [...cspLimits] } : {}),
+    ...(simulated && cspUnavailable !== undefined ? { cspUnavailable } : {})
   };
 }
 
@@ -424,12 +444,22 @@ function delayStep(
   return { html: result.html, report };
 }
 
+/** The LazyLoad step's run: its result, and the CSP verdict of a simulated page. */
+interface LazyloadRun {
+  readonly result: LazyloadSimulationResult;
+  /** With a simulated result only (never blocked: a blocked page is `csp-blocked`). */
+  readonly csp?: Exclude<SimulationCspVerdict, { readonly blocked: true }>;
+}
+
 /**
- * The LazyLoad step's own run: the served page's bytes must be countable,
- * then {@link simulateLazyload} (never with the stored rows: the exclusion
- * steps restore their images). A simulated page whose runtime URL the
- * report cannot carry is refused (`lazyload-runtime-url`), and so is one
- * whose packaged runtime is unusable (`runtime-unavailable`).
+ * The LazyLoad step's own run: {@link lazyloadSimulation}, then a
+ * simulated page's runtime request and CSP are checked (an `http` runtime
+ * on an `https` page: `runtime-mixed-content`; blocked: the page as
+ * served, `csp-blocked`; a runtime the extension cannot serve there:
+ * `runtime-undeliverable` — each way the later features then run as
+ * without LazyLoad). The report's runtime URL is the URL the page
+ * requests (upgraded under `upgrade-insecure-requests`); one the report
+ * cannot carry is refused (`lazyload-runtime-url`).
  *
  * @param html The served page.
  * @param input The simulation input.
@@ -437,6 +467,55 @@ function delayStep(
  * @throws {@link Error} when the input lacks the LazyLoad inputs (the input guard refuses that).
  */
 function lazyloadRun(
+  html: string,
+  input: DocumentSimulationInput,
+  bytes: DocumentBytes | undefined
+): LazyloadRun {
+  const result = lazyloadSimulation(html, input, bytes);
+  const page = result.report.page;
+  if (result.report.state !== 'simulated' || page === undefined || input.lazyload === undefined) {
+    return { result };
+  }
+  const refused = (why: Pick<LazyloadStepReport, 'reason' | 'unreproducedRegex'>): LazyloadRun => ({
+    result: { html, report: { state: 'not-applicable', ...why, ...NO_LAZYLOAD_COUNTS } }
+  });
+  const pageUrl = input.lazyload.pageUrl;
+  const request = lazyloadRuntimeRequest(input.csp, pageUrl, page.runtimeUrl);
+  if ('refused' in request) return refused({ reason: 'runtime-mixed-content' });
+  const csp = evaluateLazyloadCsp({
+    csp: input.csp,
+    pageUrl,
+    runtimeUrl: page.runtimeUrl,
+    optionsScript: input.lazyload.optionsScript,
+    placeholders: page.placeholders
+  });
+  if (csp.blocked) {
+    return { result: { html, report: { state: 'csp-blocked', ...NO_LAZYLOAD_COUNTS } } };
+  }
+  if (runtimeUndeliverable(input.csp)) return refused({ reason: 'runtime-undeliverable' });
+  if (!isLazyloadRuntimeUrl(request.url)) {
+    return refused({
+      reason: 'beyond-exact-reproduction',
+      unreproducedRegex: 'lazyload-runtime-url'
+    });
+  }
+  const report = { ...result.report, page: { ...page, runtimeUrl: request.url } };
+  return { result: { ...result, report }, csp };
+}
+
+/**
+ * {@link simulateLazyload} on the served page: its bytes must be countable
+ * (never with the stored rows: the exclusion steps restore their images).
+ * A simulated page whose runtime URL the report cannot carry is refused
+ * (`lazyload-runtime-url`), and so is one whose packaged runtime is
+ * unusable (`runtime-unavailable`).
+ *
+ * @param html The served page.
+ * @param input The simulation input.
+ * @param bytes How the session decoded the page.
+ * @throws {@link Error} when the input lacks the LazyLoad inputs (the input guard refuses that).
+ */
+function lazyloadSimulation(
   html: string,
   input: DocumentSimulationInput,
   bytes: DocumentBytes | undefined
@@ -477,20 +556,6 @@ function lazyloadRun(
 const NO_LAZYLOAD_COUNTS = { images: 0, pictures: 0, backgrounds: 0 } as const;
 
 /**
- * How many times `needle` occurs in `text` (non-overlapping).
- *
- * @param text The page.
- * @param needle A non-empty text.
- */
-function occurrences(text: string, needle: string): number {
-  let count = 0;
-  for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + needle.length)) {
-    count++;
-  }
-  return count;
-}
-
-/**
  * Whether the later features left LazyLoad's printed scripts as printed:
  * each occurs on their final page as often as on LazyLoad's (WP Rocket's
  * own lists exclude both; a list that defers, wraps or delays one would
@@ -506,7 +571,7 @@ function injectedScriptsSurvive(
   scripts: readonly string[]
 ): boolean {
   return scripts.every(
-    (script) => occurrences(finalPage, script) === occurrences(lazyPage, script)
+    (script) => countOccurrences(finalPage, script) === countOccurrences(lazyPage, script)
   );
 }
 
@@ -614,12 +679,16 @@ export function simulationStage(
 
   /** The LazyLoad step: its run, its buffer handed forward when it simulated. */
   const runLazyload = (html: string): StepResult => {
-    const result = lazyloadRun(html, input, bytes);
+    const { result, csp } = lazyloadRun(html, input, bytes);
     if (result.buffer !== undefined && result.injectedScripts !== undefined) {
       buffer = result.buffer;
       printed = { page: result.html, scripts: result.injectedScripts };
     }
-    return { html: result.html, report: wireSimulationReport('lazyload', result.report, input) };
+    const report =
+      csp !== undefined && 'unavailable' in csp
+        ? wireSimulationReport('lazyload', result.report, input, [], csp.unavailable)
+        : wireSimulationReport('lazyload', result.report, input, csp?.limits ?? []);
+    return { html: result.html, report };
   };
 
   const apply = (feature: SimulatedFeatureId, html: string): StepResult => {

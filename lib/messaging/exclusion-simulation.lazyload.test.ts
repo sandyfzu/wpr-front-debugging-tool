@@ -143,12 +143,15 @@ describe('parseDocumentSimulationReport — LazyLoad', () => {
       const beyond = { ...identity, state: 'not-applicable', reason: 'beyond-exact-reproduction' };
       expect(parse({ ...beyond, unreproducedRegex: regex })).not.toBeNull();
     }
-    expect(parse({ ...identity, state: 'csp-blocked' })).toBeNull();
+    expect(parse({ ...identity, state: 'csp-blocked' })).not.toBeNull();
+    expect(parse({ ...identity, state: 'csp-blocked', images: 1 })).toBeNull();
+    expect(parse({ ...identity, state: 'csp-blocked', cspLimits: ['placeholders'] })).toBeNull();
     expect(parse({ ...identity, state: 'not-applicable', reason: 'delay-js-served' })).toBeNull();
     const beyond = { ...identity, state: 'not-applicable', reason: 'beyond-exact-reproduction' };
     expect(parse({ ...beyond, unreproducedRegex: 'xmp-mask' })).toBeNull();
     expect(parse({ ...identity, state: 'already-served', images: 1 })).toBeNull();
     expect(parse({ ...identity, state: 'already-served', delivery: 'external' })).toBeNull();
+    expect(parse({ ...identity, state: 'already-served', cspUnavailable: 'oversized' })).toBeNull();
   });
 
   it.each([
@@ -181,6 +184,43 @@ describe('parseDocumentSimulationReport — LazyLoad', () => {
     ['Delay JS’s field', { delayed: 0 }]
   ])('refuses %s', (_name, change) => {
     expect(parse({ ...SIMULATED, ...change })).toBeNull();
+  });
+
+  it('carries its CSP facts on a simulated report: its own limit, or why the CSP was not read', () => {
+    expect(parse({ ...SIMULATED, cspLimits: ['placeholders'] })).toEqual({
+      ...SIMULATED,
+      cspLimits: ['placeholders']
+    });
+    for (const cspUnavailable of ['oversized', 'unreadable']) {
+      expect(parse({ ...SIMULATED, cspUnavailable })).toEqual({ ...SIMULATED, cspUnavailable });
+    }
+    expect(parse({ ...SIMULATED, cspLimits: ['inline'] })).toBeNull();
+    expect(parse({ ...SIMULATED, cspLimits: [] })).toBeNull();
+    expect(parse({ ...SIMULATED, cspLimits: ['placeholders', 'placeholders'] })).toBeNull();
+    expect(parse({ ...SIMULATED, cspUnavailable: 'huge' })).toBeNull();
+    expect(
+      parse({ ...SIMULATED, cspLimits: ['placeholders'], cspUnavailable: 'oversized' })
+    ).toBeNull();
+  });
+
+  it('refuses CSP facts on a Defer JS report', () => {
+    const defer = {
+      feature: 'defer_all_js',
+      state: 'simulated',
+      wpRocketVersion: '3.24',
+      listSource: 'bundled',
+      listMiss: 'never-fetched',
+      deferred: 1,
+      wrapped: 0
+    };
+    const spec: SimulateSpec = { features: ['defer_all_js'] };
+    expect(parseDocumentSimulationReport(defer, spec, 'reject')).not.toBeNull();
+    expect(
+      parseDocumentSimulationReport({ ...defer, cspLimits: ['placeholders'] }, spec, 'reject')
+    ).toBeNull();
+    expect(
+      parseDocumentSimulationReport({ ...defer, cspUnavailable: 'oversized' }, spec, 'reject')
+    ).toBeNull();
   });
 
   it('accepts every caveat of its vocabulary at once', () => {

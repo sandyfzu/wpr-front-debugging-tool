@@ -301,7 +301,13 @@ describe('parseDocumentSimulationReport', () => {
   });
 
   it('accepts every vocabulary value of the CSP limits and caveats', () => {
-    expect(parseReport(report({ cspLimits: [...SIMULATION_CSP_LIMITS] }))).not.toBeNull();
+    const delayLimits = SIMULATION_REPORT_VOCABULARY.delay_js.cspLimits;
+    expect(parseReport(report({ cspLimits: [...delayLimits] }))).not.toBeNull();
+    // LazyLoad's own limit is never Delay JS's.
+    expect(parseReport(report({ cspLimits: ['placeholders'] }))).toBeNull();
+    expect(SIMULATION_CSP_LIMITS.filter((limit) => !delayLimits.includes(limit))).toEqual([
+      'placeholders'
+    ]);
     expect(
       parseReport(report({ caveats: [...SIMULATION_REPORT_VOCABULARY.delay_js.caveats] }))
     ).not.toBeNull();

@@ -29,7 +29,6 @@ import {
   LATEST_LIST_MISSES,
   SIMULATED_FEATURES,
   SIMULATION_CSP_BROWSERS,
-  SIMULATION_CSP_LIMITS,
   SIMULATION_CSP_UNAVAILABLE_REASONS,
   SIMULATION_LIST_LIMITS,
   SIMULATION_LIST_SOURCES,
@@ -163,7 +162,10 @@ export interface LazyloadReportPlacement {
 
 /** What only a simulated LazyLoad step reports (all present exactly on `simulated`). */
 export interface LazyloadSimulatedFacts {
-  /** The runtime tag's URL — the exact URL the page requests. */
+  /**
+   * The exact URL the page requests for the runtime: the tag's URL, or its
+   * `https` twin when the page's policy has `upgrade-insecure-requests`.
+   */
   readonly runtimeUrl: string;
   /** Where the assets URL in it came from. */
   readonly assetsUrlSource: LazyloadAssetsUrlSource;
@@ -188,6 +190,10 @@ export type LazyloadSimulationReport = SimulationReportCore & {
   readonly pictures: number;
   /** Background images made lazy (0 unless `simulated`). */
   readonly backgrounds: number;
+  /** What the page's CSP limits (LazyLoad's: `placeholders`; non-empty; `simulated` only). */
+  readonly cspLimits?: readonly SimulationCspLimit[];
+  /** Why the page's CSP was not evaluated (`simulated` only; never with `cspLimits`). */
+  readonly cspUnavailable?: SimulationCspUnavailableReason;
 } & Partial<LazyloadSimulatedFacts>;
 
 /** One document's simulation of one feature, as the `rewritten` outcome reports it. */
@@ -480,7 +486,9 @@ const REPORT_FEATURE_KEYS = {
     'assetsUrlSource',
     'delivery',
     'placement',
-    'caveats'
+    'caveats',
+    'cspLimits',
+    'cspUnavailable'
   ],
   defer_all_js: [...LIST_PROVENANCE_KEYS, 'deferred', 'wrapped'],
   delay_js: [
@@ -549,6 +557,40 @@ function parseReportWhy(
   return regex === undefined ? null : { reason, unreproducedRegex: regex };
 }
 
+/** A report's CSP facts, parsed (see {@link parseCspFacts}). */
+type CspFacts = Pick<DelaySimulationReport, 'cspLimits' | 'cspUnavailable'>;
+
+/**
+ * A simulated report's CSP facts: each absent or valid — non-empty
+ * distinct limits of the feature's vocabulary, or a CSP-unavailable
+ * reason (not both: an unevaluated policy names no limit).
+ *
+ * @param input The report record.
+ * @param vocabulary The feature's vocabulary.
+ * @returns The facts present, or null when invalid.
+ */
+function parseCspFacts(
+  input: Record<string, unknown>,
+  vocabulary: SimulationReportVocabulary
+): CspFacts | null {
+  const rawLimits = ownValue(input, 'cspLimits');
+  const rawUnavailable = ownValue(input, 'cspUnavailable');
+  const cspLimits =
+    rawLimits === undefined ? undefined : distinctList(rawLimits, vocabulary.cspLimits);
+  if (cspLimits === null) return null;
+  const cspUnavailable =
+    rawUnavailable === undefined
+      ? undefined
+      : oneOf(SIMULATION_CSP_UNAVAILABLE_REASONS, rawUnavailable);
+  if (rawUnavailable !== undefined && (cspUnavailable === undefined || cspLimits !== undefined)) {
+    return null;
+  }
+  return {
+    ...(cspLimits === undefined ? {} : { cspLimits }),
+    ...(cspUnavailable === undefined ? {} : { cspUnavailable })
+  };
+}
+
 /** A Delay JS report's `simulated`-only facts, parsed (see {@link parseDelayFacts}). */
 type DelayFacts = Pick<
   DelaySimulationReport,
@@ -579,25 +621,16 @@ function parseDelayFacts(
   if (undetermined !== undefined && (!isCount(undetermined) || undetermined < 1)) return null;
   if (limitHit !== undefined && limitHit !== true) return null;
   if (limitHit === true && (delayed > 0 || undetermined !== undefined)) return null;
-  const cspLimits =
-    rawLimits === undefined ? undefined : distinctList(rawLimits, SIMULATION_CSP_LIMITS);
+  const csp = parseCspFacts(input, SIMULATION_REPORT_VOCABULARY.delay_js);
   const caveats =
     rawCaveats === undefined
       ? undefined
       : distinctList(rawCaveats, SIMULATION_REPORT_VOCABULARY.delay_js.caveats);
-  if (cspLimits === null || caveats === null) return null;
-  const cspUnavailable =
-    rawUnavailable === undefined
-      ? undefined
-      : oneOf(SIMULATION_CSP_UNAVAILABLE_REASONS, rawUnavailable);
-  if (rawUnavailable !== undefined && (cspUnavailable === undefined || cspLimits !== undefined)) {
-    return null;
-  }
+  if (csp === null || caveats === null) return null;
   return {
     ...(undetermined === undefined ? {} : { undetermined }),
     ...(limitHit === undefined ? {} : { regexLimitHit: true as const }),
-    ...(cspLimits === undefined ? {} : { cspLimits }),
-    ...(cspUnavailable === undefined ? {} : { cspUnavailable }),
+    ...csp,
     ...(caveats === undefined ? {} : { caveats })
   };
 }
@@ -686,7 +719,10 @@ function parseLazyloadFacts(input: Record<string, unknown>): LazyloadSimulatedFa
   return { runtimeUrl, assetsUrlSource, delivery, placement, caveats };
 }
 
-/** The keys only a simulated LazyLoad report carries. */
+/** The CSP fact keys (optional, `simulated` only). */
+const CSP_FACT_KEYS = ['cspLimits', 'cspUnavailable'] as const;
+
+/** The keys only a simulated LazyLoad report carries (all of them). */
 const LAZYLOAD_SIMULATED_KEYS = [
   'runtimeUrl',
   'assetsUrlSource',
@@ -711,11 +747,14 @@ function parseLazyloadFields(
   if (!isCount(images) || !isCount(pictures) || !isCount(backgrounds)) return null;
   const counts = { images, pictures, backgrounds };
   if (state !== 'simulated') {
-    const none = LAZYLOAD_SIMULATED_KEYS.every((key) => ownValue(input, key) === undefined);
+    const none = [...LAZYLOAD_SIMULATED_KEYS, ...CSP_FACT_KEYS].every(
+      (key) => ownValue(input, key) === undefined
+    );
     return none && images + pictures + backgrounds === 0 ? counts : null;
   }
   const facts = parseLazyloadFacts(input);
-  return facts === null ? null : { ...counts, ...facts };
+  const csp = parseCspFacts(input, SIMULATION_REPORT_VOCABULARY.lazyload);
+  return facts === null || csp === null ? null : { ...counts, ...facts, ...csp };
 }
 
 /**
