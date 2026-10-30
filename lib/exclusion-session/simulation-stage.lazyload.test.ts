@@ -13,11 +13,7 @@ import type { DocumentSimulationInput } from '../messaging/exclusion-simulation'
 import { SIMULATION_MARKER_META_NAME } from '../wp-rocket/constants';
 import * as deferForward from '../wp-rocket-simulation/defer-js-forward';
 import * as delayForward from '../wp-rocket-simulation/delay-js-forward';
-import {
-  DOCUMENT_TRANSFORM_BUDGET_MS,
-  runDocumentPipeline,
-  type DocumentTransformResult
-} from './document-transform';
+import { runDocumentPipeline, type DocumentTransformResult } from './document-transform';
 import { LAZYLOAD_PACKAGE_FIXTURE } from './simulation-package.fixtures';
 import { lazyloadInput } from './simulation-sources';
 import { simulationStage } from './simulation-stage';
@@ -247,7 +243,7 @@ describe('the LazyLoad step', () => {
   });
 
   it(
-    'composes the three features linearly, each pass once: near LazyLoad alone, under the budget',
+    'composes the three features linearly, each pass once: near LazyLoad alone',
     () => {
       const block = (index: number): string =>
         `<img src="/i${String(index)}.jpg" width="10" height="10">\n` +
@@ -270,11 +266,10 @@ describe('the LazyLoad step', () => {
         'simulated'
       ]);
       // Measured at 4 MiB (≈ 93 000 images): LazyLoad alone 0.43 s, all three 0.59 s (×1.4;
-      // ×2.7 when the later features reran LazyLoad's pass). The ratio is machine-independent;
-      // the budget is the absolute backstop (instrumented runs are ≈ 2× slower).
+      // ×2.7 when the later features reran LazyLoad's pass). Ratio only: no absolute ceiling
+      // (machine-dependent; the runtime over-budget outcome enforces the budget).
       const alone = linearScaling(page, staged(['lazyload']));
       expect(composed.largeMs / alone.largeMs).toBeLessThan(2);
-      expect(composed.largeMs).toBeLessThan(DOCUMENT_TRANSFORM_BUDGET_MS);
     },
     2 * LINEAR_SCALING_TIMEOUT_MS
   );
