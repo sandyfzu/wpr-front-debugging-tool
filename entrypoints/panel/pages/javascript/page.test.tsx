@@ -219,6 +219,16 @@ describe('JavaScriptView — summary and chips', () => {
     expect(summary?.querySelector('.text-status-neutral')).not.toBeNull();
   });
 
+  it('says "Simulated", never "Not detected", while a verified simulation runs Delay JS', () => {
+    const data = dataWith(scripts(), false, null);
+    const simulated = { ...data.wprDetections.delay_js, simulation: 'simulated' as const };
+    renderView(makeFdtData({ wprDetections: { ...data.wprDetections, delay_js: simulated } }));
+    const summary = document.querySelector<HTMLElement>('[data-fdt="script-summary"]');
+    expect(summary?.textContent).toContain('Simulated');
+    expect(summary?.textContent).not.toContain('Not detected');
+    expect(summary?.textContent).not.toContain('Version');
+  });
+
   it('counts every chip over all rows', () => {
     renderView();
     const counts: Record<string, string | null | undefined> = Object.fromEntries(

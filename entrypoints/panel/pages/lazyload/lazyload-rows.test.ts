@@ -31,6 +31,14 @@ describe('lazyloadStateBadge', () => {
     });
     expect(lazyloadStateBadge(row())).toEqual({ kind: 'neutral', label: 'Not lazyloaded' });
   });
+
+  it('names a verified simulation’s lazy image as simulated; a skipped one stays plain', () => {
+    expect(lazyloadStateBadge(row({ lazyloaded: true }), true)).toEqual({
+      kind: 'info',
+      label: 'Lazyloaded (Simulated)'
+    });
+    expect(lazyloadStateBadge(row(), true)).toEqual({ kind: 'neutral', label: 'Not lazyloaded' });
+  });
 });
 
 describe('exclusionReasons', () => {
@@ -105,6 +113,17 @@ describe('lazyloadNotes', () => {
     ]);
     expect(lazyloadNotes({ present: true, images: full })).toEqual([]);
     expect(lazyloadNotes({ present: true, images: [image], truncated: true })).toEqual([]);
+  });
+
+  it('says a verified simulation runs LazyLoad, never that its script is missing', () => {
+    const images = [{ ...image, lazyloadDetected: true }];
+    expect(lazyloadNotes({ present: false, simulation: 'simulated', images })).toEqual([
+      "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
+    ]);
+    // An unverified marker proves nothing: the page reads as served.
+    expect(lazyloadNotes({ present: false, simulation: 'unverified', images })[0]).toContain(
+      'lazyload script was not found'
+    );
   });
 
   it('explains lazyloaded images while the feature reads absent', () => {

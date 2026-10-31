@@ -5,8 +5,8 @@
  * channels (the panel's open, the overlay's presentation) with the overlay
  * re-open on a session tab's loaded pages (and on every session tab when
  * the on-page UI gate turns back on — while it is off, no overlay is
- * injected and the sessions go on), and the cleanup hooks (tab close,
- * extension update, wake re-validation). Lifecycle logic lives in
+ * injected and the sessions go on), the simulation marker verification,
+ * and the cleanup hooks (tab close, extension update, wake re-validation). Lifecycle logic lives in
  * `lib/exclusion-session/`; this module only binds it to `browser.*`.
  */
 import { createLogger } from '../../lib/logger';
@@ -25,7 +25,7 @@ import {
   putExclusionSessionRecord,
   removeExclusionSessionRecord
 } from '../../lib/storage/exclusion-sessions';
-import { getSavedExclusionSet, saveExclusionSet } from '../../lib/storage/exclusion-sets';
+import { getSavedExclusionEntry, saveExclusionSet } from '../../lib/storage/exclusion-sets';
 import {
   createOverlayReopener,
   restoreSessionOverlays,
@@ -50,6 +50,13 @@ import {
 import { INTERCEPTION_BACKENDS } from './interception-backends';
 import { openExclusionOverlay, reopenExclusionOverlay } from './exclusion-overlay';
 import { tabExists } from './tab-exists';
+import { createSimulationSources } from './simulation-sources';
+import { answerSimulationMarkerVerify } from '../../lib/exclusion-session/simulation-marker-memo';
+import {
+  clearAllSimulationMarkers,
+  clearSimulationMarkersForTab,
+  getTabSimulationMarkers
+} from '../../lib/storage/simulation-markers';
 
 const log = createLogger('exclusion-session');
 
@@ -161,7 +168,10 @@ export function initExclusionSessions(
       put: putExclusionSessionRecord,
       remove: removeExclusionSessionRecord
     },
-    savedSets: { get: getSavedExclusionSet, save: (origin, set) => saveExclusionSet(origin, set) },
+    savedSets: {
+      get: getSavedExclusionEntry,
+      save: (origin, set, simulate) => saveExclusionSet(origin, set, undefined, simulate)
+    },
     pushToTab: (tabId, status) =>
       sendMessage('exclusionSessionChanged', status, { tabId, frameId: 0 }),
     pushToPanels: (tabId, status) => sendMessage('exclusionSessionUpdated', { tabId, status }),
@@ -169,6 +179,7 @@ export function initExclusionSessions(
     tabExists: (tabId) => tabExists(tabId, log),
     now: () => Date.now(),
     extensionId: browser.runtime.id,
+    simulation: createSimulationSources(log),
     log
   });
 
@@ -189,6 +200,14 @@ export function initExclusionSessions(
   );
   onMessage('getExclusionSessionForTab', ({ sender, data }) =>
     answered('getExclusionSessionForTab', controller.statusForTab(sender, data))
+  );
+  // The page's simulation marker: vouched for only by the memo the
+  // controller's simulations wrote (kept across Stop and worker restarts).
+  onMessage('verifySimulationMarker', ({ sender, data }) =>
+    answered(
+      'verifySimulationMarker',
+      answerSimulationMarkerVerify(sender, data, getTabSimulationMarkers)
+    )
   );
 
   const reopener = createOverlayReopener({
@@ -236,16 +255,24 @@ export function initExclusionSessions(
     try {
       void reopener.tabClosed(tabId);
       void controller.tabClosed(tabId);
+      clearSimulationMarkersForTab(tabId).catch((cause: unknown) => {
+        log.error('Closed-tab simulation marker cleanup failed', { tabId, cause });
+      });
     } catch (cause) {
       log.error('Closed-tab session cleanup failed', { tabId, cause });
     }
   });
 
   // An extension update/reload restores unmodified rendering whatever the
-  // `session:` area kept across it.
+  // `session:` area kept across it, and forgets every simulation marker (a
+  // page still showing a simulation then reads its marker as unverified).
   browser.runtime.onInstalled.addListener((details) => {
     try {
-      if (details.reason === 'update') void controller.resetAll();
+      if (details.reason !== 'update') return;
+      void controller.resetAll();
+      clearAllSimulationMarkers().catch((cause: unknown) => {
+        log.error('Simulation marker reset on update failed', cause);
+      });
     } catch (cause) {
       log.error('Session reset on update failed', cause);
     }

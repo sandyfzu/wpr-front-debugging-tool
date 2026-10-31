@@ -526,6 +526,11 @@
   font: 500 10px/1 var(--font-mono);
   white-space: nowrap;
 }
+/* An unverified simulation marker is a caution, not information. */
+.ins-mod[data-fdt-strip-modifier='unverified'] {
+  background: var(--status-warn-soft);
+  color: var(--status-warn);
+}
 .ins-mod-icon {
   display: inline-flex;
   width: 10px;

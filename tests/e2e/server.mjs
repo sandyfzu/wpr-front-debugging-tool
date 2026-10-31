@@ -93,6 +93,36 @@ function resolveFixturePath(urlPath) {
 }
 
 /**
+ * The CSP cases `/__e2e/csp/<case>` serves (each: the simulation fixture page
+ * under `fixtures/simulation/` and the policy header lines). Delay JS on
+ * `plain.html`: `blocked` forbids WP Rocket's inline runtime; `limits`
+ * allows it but not eval (delayed handlers) nor `data:` scripts (Chromium's
+ * delayed inline path); `oversized` is past what the session evaluates.
+ * LazyLoad on `lazyload.html`: `lazyload-blocked` forbids its inline
+ * options script; `lazyload-placeholders` allows its scripts but not
+ * `data:` images (its placeholders).
+ */
+const CSP_CASES = {
+  blocked: { page: 'plain.html', policies: ["script-src 'self'"] },
+  limits: { page: 'plain.html', policies: ["script-src 'self' 'unsafe-inline'"] },
+  oversized: {
+    page: 'plain.html',
+    policies: [`script-src 'self' 'unsafe-inline' ${'https://cdn.invalid '.repeat(2300)}`.trim()]
+  },
+  'lazyload-blocked': { page: 'lazyload.html', policies: ["script-src 'self'"] },
+  'lazyload-placeholders': {
+    page: 'lazyload.html',
+    policies: ["script-src 'self' 'unsafe-inline'; img-src 'self'"]
+  }
+};
+
+/**
+ * Requests served so far per `run` key of `/__e2e/partial-on-reload` (each
+ * test passes its own key, so its first request is the whole page again).
+ */
+const partialRuns = new Map();
+
+/**
  * Serve one request: the whole handler of every bound socket.
  *
  * @param {import('node:http').IncomingMessage} request The incoming request.
@@ -227,6 +257,38 @@ async function handle(request, response) {
     response.end(
       '<!doctype html><html><head><title>secret headers</title></head><body>secret headers</body></html>'
     );
+    return;
+  }
+  if (url.pathname.startsWith('/__e2e/csp/')) {
+    // A simulation fixture page served under one Content-Security-Policy
+    // case (header lines in order), so a session's CSP evaluation meets a
+    // real policy the browser also enforces.
+    const name = url.pathname.slice('/__e2e/csp/'.length);
+    const cspCase = Object.hasOwn(CSP_CASES, name) ? CSP_CASES[name] : undefined;
+    if (cspCase === undefined) {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+      response.end(`unknown CSP case: ${url.pathname}`);
+      return;
+    }
+    const headers = ['content-type', 'text/html; charset=utf-8', 'cache-control', 'no-store'];
+    for (const policy of cspCase.policies) headers.push('content-security-policy', policy);
+    response.writeHead(200, headers);
+    response.end(await readFile(join(ROOT, 'simulation', cspCase.page)));
+    return;
+  }
+  if (url.pathname === '/__e2e/partial-on-reload') {
+    // The delayed-scripts page, served whole (200) on its first request, then
+    // — from the session's reload on — as a 206 partial HTML response: a page
+    // the session never rewrites that still becomes the tab's page (it must
+    // be recorded, never leave the overlay waiting).
+    const run = url.searchParams.get('run') ?? '';
+    const served = (partialRuns.get(run) ?? 0) + 1;
+    partialRuns.set(run, served);
+    response.writeHead(served === 1 ? 200 : 206, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store'
+    });
+    response.end(await readFile(join(ROOT, 'exclusion', 'delayed.html')));
     return;
   }
   if (url.pathname === '/__e2e/windows-1252') {

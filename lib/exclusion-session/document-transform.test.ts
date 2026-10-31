@@ -15,7 +15,8 @@ import {
   createInProcessTransformRunner,
   DOCUMENT_BODY_BYTE_LIMIT,
   isRewritableResponse,
-  DOCUMENT_TRANSFORM_BUDGET_MS,
+  rendersAsPage,
+  rendersInline,
   overBudgetOutcome,
   overrunRow,
   rewriteDocument,
@@ -23,6 +24,7 @@ import {
   type DocumentTransformRequest,
   type DocumentTransformRunner
 } from './document-transform';
+import { DOCUMENT_TRANSFORM_BUDGET_MS } from './timeouts';
 
 /** A set with selected rows/toggles replaced. */
 function setWith(
@@ -532,5 +534,98 @@ describe('isRewritableResponse', () => {
     ['a lowercase head request', { ...html, method: 'head' }]
   ])('passes %s through', (_case, response) => {
     expect(isRewritableResponse(response)).toBe(false);
+  });
+});
+
+describe('rendersAsPage', () => {
+  const page = { status: 206, method: 'GET', disposition: null, contentType: 'text/html' };
+
+  it.each([
+    ['a partial 206 HTML response', page],
+    ['a 200 non-HTML page', { ...page, status: 200, contentType: 'text/plain' }],
+    ['an XHTML page', { ...page, status: 200, contentType: 'application/xhtml+xml' }],
+    ['a mixed-case type with parameters', { ...page, contentType: ' Image/PNG ; q=1' }],
+    ['a 404', { ...page, status: 404 }],
+    ['the highest status', { ...page, status: 599 }],
+    ['an inline disposition', { ...page, disposition: 'inline; filename="a.html"' }],
+    ['a disposition type merely starting with the word', { ...page, disposition: 'attachments' }]
+  ])('records %s (it becomes the tab’s page)', (_case, response) => {
+    expect(rendersAsPage(response)).toBe(true);
+  });
+
+  it.each([
+    ['a redirect (its next hop is the page)', { ...page, status: 302 }],
+    ['a 304', { ...page, status: 304 }],
+    ['204 No Content (the page stays)', { ...page, status: 204 }],
+    ['205 Reset Content', { ...page, status: 205 }],
+    ['an informational status', { ...page, status: 199 }],
+    ['an out-of-range status', { ...page, status: 600 }],
+    ['a non-integer status', { ...page, status: 200.5 }],
+    ['a HEAD request', { ...page, method: 'head' }],
+    ['a download', { ...page, disposition: 'attachment; filename="report.html"' }],
+    ['a download, any case and spacing', { ...page, disposition: '  ATTACHMENT ' }],
+    ['a zip (downloaded without a disposition)', { ...page, contentType: 'application/zip' }],
+    ['an octet stream', { ...page, status: 200, contentType: 'application/octet-stream' }],
+    ['a missing content type (the browser sniffs)', { ...page, contentType: null }],
+    ['an unparsable content type', { ...page, contentType: 'nonsense' }],
+    ['an RSS feed (Firefox may download it)', { ...page, contentType: 'application/rss+xml' }],
+    ['an Atom feed', { ...page, contentType: 'application/atom+xml; charset=UTF-8' }],
+    [
+      'an inline type served as an attachment',
+      { ...page, contentType: 'application/pdf', disposition: 'attachment' }
+    ]
+  ])('leaves %s unrecorded', (_case, response) => {
+    expect(rendersAsPage(response)).toBe(false);
+  });
+});
+
+describe('rendersInline', () => {
+  it.each([
+    'text/html',
+    'text/plain; charset=utf-8',
+    'TEXT/CSS',
+    'application/xhtml+xml',
+    'application/xml',
+    'image/svg+xml',
+    'application/ld+xml',
+    'APPLICATION/JSON; charset=UTF-8',
+    'application/pdf',
+    'image/webp',
+    'audio/mpeg',
+    'video/mp4',
+    '\ttext/html \t',
+    'application/zip, text/html'
+  ])('renders %j inline', (contentType) => {
+    expect(rendersInline(contentType)).toBe(true);
+  });
+
+  it.each([
+    [null],
+    [''],
+    ['nonsense'],
+    ['*/*'],
+    ['application/zip'],
+    ['Application/Octet-Stream'],
+    ['application/x-msdownload'],
+    ['application/javascript'],
+    ['application/xml-dtd'],
+    ['application/rss+xml'],
+    ['Application/Atom+XML; charset=utf-8'],
+    ['textual/html'],
+    ['text/html, application/zip']
+  ])('does not count %j as rendered inline', (contentType) => {
+    expect(rendersInline(contentType)).toBe(false);
+  });
+});
+
+describe('overBudgetOutcome: the simulate stage', () => {
+  it('names the stage and no row, even when the feature holds one row', () => {
+    expect(overBudgetOutcome(setWith({ delayJs: ['x'] }), 'delay_js', 5, 'simulate')).toEqual({
+      outcome: 'over-budget',
+      feature: 'delay_js',
+      row: null,
+      budgetMs: 5,
+      stage: 'simulate'
+    });
   });
 });

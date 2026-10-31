@@ -7,6 +7,7 @@
  * of re-typed copies so the vocabulary can never drift between surfaces.
  */
 
+import { escapeRegex } from '../../utils/regex.ts';
 import type { FeatureMetaRow } from './types';
 
 /** Attribute WP Rocket uses on delayed scripts to carry the original `src`. */
@@ -26,8 +27,24 @@ export const FDT_EXCLUDED_RESOURCE = 'data-wpr-fdt-excluded';
  */
 export const BUILDER_MARKER_META_NAME = 'wpr-fdt-exclusion-builder';
 
+/**
+ * `name` of the one `<meta>` a simulation adds to a document it simulated a
+ * WP Rocket feature on, naming the features and the id the background drew
+ * for that document (content grammar:
+ * `lib/wp-rocket-simulation/simulation-marker`). Page markup is untrusted:
+ * detection treats it as an authority only once the background vouches for
+ * its id. Never WP Rocket's `generator` meta nor any `data-wpr-features` token.
+ */
+export const SIMULATION_MARKER_META_NAME = 'wpr-fdt-simulation';
+
 /** Attribute WP Rocket adds to scripts it defers. */
 export const WPR_DEFER_ATTRIBUTE = 'data-rocket-defer';
+
+/**
+ * What WP Rocket's Defer JS writes in place of every `>` of a script tag it
+ * defers (a `>` inside a quoted value included).
+ */
+export const WPR_DEFER_STAMP = ` ${WPR_DEFER_ATTRIBUTE} defer>`;
 
 /**
  * What WP Rocket's Defer JS puts before the body of an inline jQuery script
@@ -102,17 +119,31 @@ export const DATA_LAZY_SRC = 'data-lazy-src';
 /** …and its srcset variant. */
 export const DATA_LAZY_SRCSET = 'data-lazy-srcset';
 
+/** The `id` of LazyLoad's no-JS `<style>` (inside a `<noscript>` WP Rocket prints in `wp_head`). */
+export const LAZYLOAD_NOJS_STYLE_ID = 'rocket-lazyload-nojs-css';
+
+/**
+ * How WP Rocket's inline LazyLoad options script opens (no space around
+ * `=`: generic vanilla-lazyload setups spell the same global their own way).
+ */
+export const LAZYLOAD_OPTIONS_ASSIGNMENT = 'window.lazyLoadOptions=';
+
+/** The selector WP Rocket's options name for lazy images… */
+export const LAZYLOAD_IMG_SELECTOR = `img[${DATA_LAZY_SRC}]`;
+/** …and for lazy iframes. */
+export const LAZYLOAD_IFRAME_SELECTOR = `iframe[${DATA_LAZY_SRC}]`;
+
 /** Lazyload script footprint by URL — both served layouts. */
 export const LAZYLOAD_SCRIPT_PATTERN =
   /(wp-rocket\/assets\/js\/lazyload\/.*\/lazyload(\.min)?\.js)/;
 
 /** Lazyload options blob tailored per media query (`img` selector). */
 export const LAZYLOAD_IMG_OPTIONS_PATTERN = new RegExp(
-  `window\\.lazyLoadOptions=(.*)img\\[${DATA_LAZY_SRC}\\]`
+  `${escapeRegex(LAZYLOAD_OPTIONS_ASSIGNMENT)}(.*)${escapeRegex(LAZYLOAD_IMG_SELECTOR)}`
 );
 /** …and for iframes. */
 export const LAZYLOAD_IFRAME_OPTIONS_PATTERN = new RegExp(
-  `window\\.lazyLoadOptions=(.*)iframe\\[${DATA_LAZY_SRC}\\]`
+  `${escapeRegex(LAZYLOAD_OPTIONS_ASSIGNMENT)}(.*)${escapeRegex(LAZYLOAD_IFRAME_SELECTOR)}`
 );
 /** YouTube thumbnail replacement helper (iframe preview images). */
 export const LAZYLOAD_YOUTUBE_PATTERN =
@@ -290,8 +321,11 @@ export const FEATURE_COMMENT_PATTERN = /^\s*wpr_[a-z0-9_]+\s*$/;
 /** Optimize critical images' feature comment (corroboration only — see below). */
 export const OPTIMIZE_CRITICAL_IMAGES_COMMENT = 'wpr_oci';
 
+/** The generator meta's `name` value, compared exactly (as WordPress and WP Rocket spell it). */
+export const GENERATOR_META_NAME = 'generator';
+
 /** Generator meta declaring the active optimization plugins. */
-export const GENERATOR_META_SELECTOR = 'meta[name="generator"]';
+export const GENERATOR_META_SELECTOR = `meta[name="${GENERATOR_META_NAME}"]`;
 
 /**
  * The feature-declaration attribute on that generator meta: since 3.17.2 the
@@ -356,9 +390,12 @@ export const FEATURE_META_TOKENS: Readonly<Record<FeatureMetaRow, string>> = {
 /** WP Rocket's name as it formats the generator content (`WP Rocket`, `WP-Rocket`…). */
 export const WPR_NAME_PATTERN = /wp\s*-?\s*rocket/i;
 
+/** A WP Rocket version number's grammar: 1–4 dot-separated digit runs (regex source). */
+export const WPR_VERSION_NUMBER_SOURCE = '[0-9]+(?:\\.[0-9]+){0,3}';
+
 /** Version match: the name, split across optional separators, then the digits. */
 export const WPR_VERSION_PATTERN = new RegExp(
-  `${WPR_NAME_PATTERN.source}[/\\s:;v=]*\\s*([0-9]+(?:\\.[0-9]+){0,3})`,
+  `${WPR_NAME_PATTERN.source}[/\\s:;v=]*\\s*(${WPR_VERSION_NUMBER_SOURCE})`,
   'i'
 );
 

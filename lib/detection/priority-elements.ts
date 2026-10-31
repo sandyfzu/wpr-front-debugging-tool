@@ -39,6 +39,7 @@ import {
 } from '../wp-rocket/constants';
 import { isRecord } from '../../utils/is-record';
 import type { ParsedPage } from './parse-page';
+import { servedScriptSrc } from './served-script-src';
 
 /** The inline beacon config parsed and validated — the beacon row minus presence. */
 export type ParsedBeaconConfig = Omit<PriorityElementsBeaconDetection, 'present'>;
@@ -389,7 +390,12 @@ export function detectBeacon(
   const tagPresent = page.scripts.some(
     (script) => script.getAttribute('data-name') === BEACON_DATA_NAME
   );
-  if (!tagPresent && !page.scripts.some((script) => BEACON_SRC_PATTERN.test(script.src))) {
+  // The URL fallback reads the served URL: a delayed beacon keeps it in
+  // `data-rocket-src`.
+  if (
+    !tagPresent &&
+    !page.scripts.some((script) => BEACON_SRC_PATTERN.test(servedScriptSrc(script)))
+  ) {
     return { present: false, status: null, isMobile: null };
   }
   if (config === null) return { present: true, status: null, isMobile: null };

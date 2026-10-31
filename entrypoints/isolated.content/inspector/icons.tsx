@@ -6,10 +6,12 @@
  *
  * The set is the widget's glyph family: one glyph per group (Tools
  * lands with the tool phases and is declared against that landing now), the
- * Exclusion Builder modifier pair and the pill's presence marker.
+ * in-tab modifier glyphs (the Exclusion Builder pair, the simulation pair)
+ * and the pill's presence marker.
  */
 
 import type { BuilderBadgeKind, HudGroupId } from '../../../lib/detection/hud';
+import type { SimulationFact } from '../../../lib/wp-rocket/types';
 import type { IconCircle, IconEllipse } from '../ui/icons';
 
 /** One glyph's stroke geometry exactly as the factory consumes it. */
@@ -101,10 +103,33 @@ export const BUILDER_EXCLUDED_ICON: StripIconGlyph = {
   paths: ['M16 5H3', 'M11 12H3', 'M16 19H3', 'm15.5 9.5 5 5', 'm20.5 9.5-5 5']
 };
 
-/** Each builder modifier kind's glyph (the panel badge's icon pair). */
-export const BUILDER_ICONS: Readonly<Record<BuilderBadgeKind, StripIconGlyph>> = {
+/** Simulation modifier glyph: simulated in this tab (lucide `flask-conical`). */
+export const SIMULATED_ICON: StripIconGlyph = {
+  paths: [
+    'M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2',
+    'M6.453 15h11.094',
+    'M8.5 2h7'
+  ]
+};
+
+/** Simulation modifier glyph: marker not verified (lucide `shield-question-mark`). */
+export const UNVERIFIED_ICON: StripIconGlyph = {
+  paths: [
+    'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z',
+    'M9.1 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3',
+    'M12 17h.01'
+  ]
+};
+
+/** A row modifier's kind: the builder's effect, or the simulation fact. */
+export type StripModifierKind = BuilderBadgeKind | SimulationFact;
+
+/** Each row modifier kind's glyph (the panel badges' icons). */
+export const MODIFIER_ICONS: Readonly<Record<StripModifierKind, StripIconGlyph>> = {
   off: BUILDER_OFF_ICON,
-  excluded: BUILDER_EXCLUDED_ICON
+  excluded: BUILDER_EXCLUDED_ICON,
+  simulated: SIMULATED_ICON,
+  unverified: UNVERIFIED_ICON
 };
 
 /**

@@ -88,6 +88,17 @@ describe('buildRowView', () => {
     expect(buildRowView(script(), 'e').code).toBeNull();
     expect(buildRowView(script(), 'e').capture).toBe('complete');
   });
+
+  it('words a stamped defer as the simulation’s when a verified simulation ran Defer JS', () => {
+    const stamped = script({ deferredByWPR: true, deferred: true });
+    expect(buildRowView(stamped, 'e', 'complete', true).badges[1]?.label).toBe(
+      'Deferred (Simulated)'
+    );
+    expect(reconcileRowViews([], [stamped], [], true)[0]?.badges[1]?.label).toBe(
+      'Deferred (Simulated)'
+    );
+    expect(buildRowView(stamped, 'e').badges[1]?.label).toBe('Deferred (By WP Rocket)');
+  });
 });
 
 describe('reconcileRowViews', () => {

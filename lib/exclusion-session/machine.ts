@@ -20,6 +20,7 @@
  * ```
  */
 import type { ExclusionSet } from '../exclusion-builder/set';
+import type { SimulateSpec } from '../wp-rocket-simulation/spec';
 import type {
   ActiveExclusionSession,
   ExclusionDocumentOutcome,
@@ -33,6 +34,8 @@ export interface ArmingSession {
   readonly state: 'arming';
   readonly origin: string;
   readonly set: ExclusionSet;
+  /** What the session simulates before the exclusions (absent: nothing). */
+  readonly simulate?: SimulateSpec;
   /** The start time the session will carry — its generation (strictly after a replaced session's). */
   readonly startedAt: number;
   /** The status before the apply (what observers still see). */
@@ -44,11 +47,12 @@ export type SessionMachineState = ExclusionSessionStatus | ArmingSession;
 
 /** What can happen to a tab's session. */
 export type SessionEvent =
-  /** The overlay applied `set` from `origin` at `at` (epoch ms). */
+  /** The overlay applied `set` (+ `simulate`) from `origin` at `at` (epoch ms). */
   | {
       readonly type: 'apply';
       readonly origin: string;
       readonly set: ExclusionSet;
+      readonly simulate?: SimulateSpec;
       readonly at: number;
     }
   /** The arm activity armed interception and stored the active record. */
@@ -91,8 +95,13 @@ export type SessionEffect =
   | { readonly kind: 'store'; readonly record: ExclusionSessionRecord }
   /** Remove the tab's record. */
   | { readonly kind: 'clear' }
-  /** Save the applied set as its origin's set. */
-  | { readonly kind: 'save-set'; readonly origin: string; readonly set: ExclusionSet }
+  /** Save the applied set (with its simulation, when any) as its origin's set. */
+  | {
+      readonly kind: 'save-set';
+      readonly origin: string;
+      readonly set: ExclusionSet;
+      readonly simulate?: SimulateSpec;
+    }
   /** Reload the tab (after the apply answer is on its way). */
   | { readonly kind: 'reload' }
   /** Push the new status to the tab's overlay and the panels. */
@@ -132,6 +141,18 @@ function isOlderDocument(
   return incoming !== undefined && current !== undefined && incoming < current;
 }
 
+/**
+ * The optional `simulate` field to spread: absent stays absent (records and
+ * effects without a simulation keep exactly their earlier shape).
+ *
+ * @param simulate The spec, when any.
+ */
+export function withSimulate(simulate: SimulateSpec | undefined): {
+  readonly simulate?: SimulateSpec;
+} {
+  return simulate === undefined ? {} : { simulate };
+}
+
 /** Start arming from a settled state. */
 function startArming(
   state: ExclusionSessionStatus,
@@ -140,7 +161,14 @@ function startArming(
   // A replaced session's documents are told apart by start time: keep it strictly increasing.
   const startedAt = state.state === 'active' ? Math.max(event.at, state.startedAt + 1) : event.at;
   return {
-    next: { state: 'arming', origin: event.origin, set: event.set, startedAt, previous: state },
+    next: {
+      state: 'arming',
+      origin: event.origin,
+      set: event.set,
+      ...withSimulate(event.simulate),
+      startedAt,
+      previous: state
+    },
     effects: [{ kind: 'arm' }]
   };
 }
@@ -153,6 +181,7 @@ function settleArming(state: ArmingSession, event: SessionEvent): SessionTransit
         state: 'active',
         origin: state.origin,
         set: state.set,
+        ...withSimulate(state.simulate),
         startedAt: state.startedAt,
         document: null
       };
@@ -160,7 +189,12 @@ function settleArming(state: ArmingSession, event: SessionEvent): SessionTransit
       return {
         next: active,
         effects: [
-          { kind: 'save-set', origin: state.origin, set: state.set },
+          {
+            kind: 'save-set',
+            origin: state.origin,
+            set: state.set,
+            ...withSimulate(state.simulate)
+          },
           { kind: 'notify', status: active },
           { kind: 'reload' }
         ]

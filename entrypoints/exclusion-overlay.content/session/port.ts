@@ -21,6 +21,7 @@ import {
   parseSavedExclusionSetReply
 } from '../../../lib/messaging/exclusion-session';
 import type { ExclusionSet } from '../../../lib/exclusion-builder/set';
+import type { SimulateSpec } from '../../../lib/wp-rocket-simulation/spec';
 import { boundedAsk, type AskOutcome } from '../../../lib/messaging/bounded-ask';
 import type { Logger } from '../../../lib/logger';
 
@@ -48,12 +49,15 @@ export interface ExclusionSessionPort {
   status(): Promise<PortOutcome<ExclusionSessionStatus>>;
   /** This origin's saved set (the editor's restore source). */
   savedSet(): Promise<PortOutcome<SavedExclusionSetReply>>;
-  /** Start (or replace) the session with `set`; `applying` means the tab reloads next. */
-  apply(set: ExclusionSet): Promise<PortOutcome<ExclusionApplyReply>>;
+  /**
+   * Start (or replace) the session with `set` and what to simulate beside
+   * it (absent: nothing); `applying` means the tab reloads next.
+   */
+  apply(set: ExclusionSet, simulate?: SimulateSpec): Promise<PortOutcome<ExclusionApplyReply>>;
   /** End the session; answers the status after it. */
   stop(): Promise<PortOutcome<ExclusionSessionStatus>>;
-  /** Store `set` as this origin's draft. */
-  save(set: ExclusionSet): Promise<PortOutcome<ExclusionSaveReply>>;
+  /** Store `set` (with what to simulate beside it) as this origin's draft. */
+  save(set: ExclusionSet, simulate?: SimulateSpec): Promise<PortOutcome<ExclusionSaveReply>>;
   /**
    * Follow status pushes for this tab.
    *
@@ -120,6 +124,17 @@ export interface SessionTransport {
 }
 
 /**
+ * The apply/save payload: the set, plus the simulate spec only when there
+ * is one (an absent key is the contract's "nothing simulated").
+ *
+ * @param set The set.
+ * @param simulate What to simulate beside it.
+ */
+function setPayload(set: ExclusionSet, simulate: SimulateSpec | undefined): ExclusionSetPayload {
+  return simulate === undefined ? { set } : { set, simulate };
+}
+
+/**
  * The extension's port: each ask is a bounded ask over the session channels
  * with that channel's deadline and answer guard; pushes are guarded before
  * they reach a listener (an invalid push is dropped, logged).
@@ -156,16 +171,22 @@ export function createMessagingSessionPort(
         parseSavedExclusionSetReply,
         EXCLUSION_SESSION_DEADLINES_MS.savedSet
       ),
-    apply: (set) =>
-      ask('applyExclusionSession', parseExclusionApplyReply, EXCLUSION_SESSION_DEADLINES_MS.apply, {
-        set
-      }),
+    apply: (set, simulate) =>
+      ask(
+        'applyExclusionSession',
+        parseExclusionApplyReply,
+        EXCLUSION_SESSION_DEADLINES_MS.apply,
+        setPayload(set, simulate)
+      ),
     stop: () =>
       ask('stopExclusionSession', parseExclusionSessionStatus, EXCLUSION_SESSION_DEADLINES_MS.stop),
-    save: (set) =>
-      ask('saveExclusionSet', parseExclusionSaveReply, EXCLUSION_SESSION_DEADLINES_MS.save, {
-        set
-      }),
+    save: (set, simulate) =>
+      ask(
+        'saveExclusionSet',
+        parseExclusionSaveReply,
+        EXCLUSION_SESSION_DEADLINES_MS.save,
+        setPayload(set, simulate)
+      ),
     onStatus: (listener) => {
       let active = true;
       const remove = transport.listen((raw) => {

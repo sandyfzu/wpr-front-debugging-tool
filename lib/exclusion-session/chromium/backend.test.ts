@@ -4,7 +4,8 @@
  * mid-arm detaches, liveness re-check, re-tagging), serialization (the
  * latest of arm/resume/disarm wins), disarm, browser detaches (cause
  * mapping, generations, closed tabs), and paused requests — every path
- * releasing the request exactly once.
+ * releasing the request exactly once — simulated-runtime script requests
+ * included.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Logger } from '../../logger';
@@ -14,14 +15,24 @@ import type {
   InterceptedDocument,
   InterceptedResponseIdentity,
   InterceptionBackend,
+  InterceptionGrant,
   InterceptionHost
 } from '../backend';
+import type { PackagedRuntimeFile } from '../simulation-sources';
+import type { PassedDocumentFailure } from '../../messaging/exclusion-session';
 import { DOCUMENT_BODY_BYTE_LIMIT } from '../document-transform';
 import { speculationRulesGuardSource } from '../speculation-rules';
-import { INTERCEPTION_HOST_BOUNDS_MS, SESSION_STEP_TIMEOUTS_MS } from '../timeouts';
+import {
+  DOCUMENT_TRANSFORM_BUDGET_MS,
+  INTERCEPTION_HOST_BOUNDS_MS,
+  rewriteDocumentBoundMs,
+  SESSION_STEP_TIMEOUTS_MS,
+  SIMULATION_PREPARATION_BOUND_MS
+} from '../timeouts';
 import {
   CHROMIUM_OPERATION_BUDGETS_MS,
   CHROMIUM_TIMEOUTS_MS,
+  chromiumReleaseMs,
   createChromiumInterceptionBackend
 } from './backend';
 import type { DebuggerEventHandlers, DebuggerPort, DebuggerTarget, TabPresence } from './port';
@@ -29,16 +40,16 @@ import type { DebuggerEventHandlers, DebuggerPort, DebuggerTarget, TabPresence }
 const TAB = 4;
 /** The commands that enable a session after attaching, in order. */
 const SESSION = ['Fetch.enable', 'Network.enable', 'Network.setBypassServiceWorker', 'Page.enable'];
-/** A fresh attachment with no session origin: attach, the session, the page target. */
-const FRESH = [`attach:${String(TAB)}`, ...SESSION, 'pageTargetId'];
+/** A fresh attachment with no session origin: attach, the session, the top frame. */
+const FRESH = [`attach:${String(TAB)}`, ...SESSION, 'Page.getFrameTree'];
 /** The session origin of the guard tests. */
 const ORIGIN = 'https://site.test';
-/** A fresh attachment for {@link ORIGIN}: the guard installed before the page target. */
+/** A fresh attachment for {@link ORIGIN}: the guard installed before the top frame read. */
 const GUARDED = [
   `attach:${String(TAB)}`,
   ...SESSION,
   'Page.addScriptToEvaluateOnNewDocument',
-  'pageTargetId'
+  'Page.getFrameTree'
 ];
 const MAIN = 'MAIN-FRAME';
 const BODY = new TextEncoder().encode('<p>served</p>');
@@ -67,11 +78,15 @@ function fakeClock(): {
 }
 
 /** A logger recording its lines. */
-function fakeLog(): Logger & { lines: { level: string; message: string }[] } {
-  const lines: { level: string; message: string }[] = [];
-  const at = (level: string) => (message: string) => {
-    lines.push({ level, message });
-  };
+function fakeLog(): Logger & {
+  lines: { level: string; message: string; details: unknown[] }[];
+} {
+  const lines: { level: string; message: string; details: unknown[] }[] = [];
+  const at =
+    (level: string) =>
+    (message: string, ...details: unknown[]) => {
+      lines.push({ level, message, details });
+    };
   return { lines, debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') };
 }
 
@@ -128,7 +143,8 @@ class FakePort implements DebuggerPort {
     [];
   attachImpl: (tabId: number) => Promise<void> = () => Promise.resolve();
   detachImpl: (tabId: number) => Promise<void> = () => Promise.resolve();
-  pageTarget: () => Promise<string | null> = () => Promise.resolve(MAIN);
+  /** The root frame id `Page.getFrameTree` answers (null: none). */
+  topFrame: () => Promise<string | null> = () => Promise.resolve(MAIN);
   presence: () => Promise<TabPresence> = () => Promise.resolve('web');
   readonly commands = new Map<string, Command>();
 
@@ -145,12 +161,14 @@ class FakePort implements DebuggerPort {
   send(target: DebuggerTarget, method: string, params?: Record<string, unknown>): Promise<unknown> {
     this.calls.push(method);
     this.sent.push(params === undefined ? { target, method } : { target, method, params });
-    return this.commands.get(method)?.(target, params) ?? Promise.resolve({});
-  }
-
-  pageTargetId(): Promise<string | null> {
-    this.calls.push('pageTargetId');
-    return this.pageTarget();
+    const command = this.commands.get(method);
+    if (command !== undefined) return command(target, params);
+    // The attached session's frame tree: its root frame is the top frame.
+    if (method === 'Page.getFrameTree')
+      return this.topFrame().then((id) => ({
+        frameTree: { frame: { ...(id === null ? {} : { id }), url: PAGE_URL } }
+      }));
+    return Promise.resolve({});
   }
 
   tabPresence(): Promise<TabPresence> {
@@ -184,15 +202,21 @@ class FakeHost implements InterceptionHost {
   readonly ended: [number, string, number][] = [];
 
   intercept = true;
+  /** The grant when intercepting (an exclusions-only session by default). */
+  grant: InterceptionGrant = { rewriteBoundMs: INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument };
   readonly gated: [number, string][] = [];
 
-  shouldIntercept(tabId: number, documentUrl: string): Promise<boolean> {
+  shouldIntercept(tabId: number, documentUrl: string): Promise<InterceptionGrant | null> {
     this.gated.push([tabId, documentUrl]);
-    return Promise.resolve(this.intercept);
+    return Promise.resolve(this.intercept ? this.grant : null);
   }
 
-  rewriteDocument(document: InterceptedDocument): Promise<Uint8Array | null> {
+  rewriteDocument(
+    document: InterceptedDocument,
+    abandoned?: () => boolean
+  ): Promise<Uint8Array | null> {
     this.documents.push(document);
+    if (abandoned !== undefined) this.abandons.push(abandoned);
     return this.rewrite(document);
   }
 
@@ -206,6 +230,24 @@ class FakeHost implements InterceptionHost {
   }
 
   readonly notServed: [number, string, InterceptedResponseIdentity | undefined][] = [];
+  readonly passed: [
+    number,
+    string,
+    PassedDocumentFailure,
+    InterceptedResponseIdentity | undefined
+  ][] = [];
+  /** Each rewrite's abandon check, in call order. */
+  readonly abandons: (() => boolean)[] = [];
+
+  documentPassed(
+    tabId: number,
+    documentUrl: string,
+    reason: PassedDocumentFailure,
+    identity?: InterceptedResponseIdentity
+  ): Promise<void> {
+    this.passed.push([tabId, documentUrl, reason, identity]);
+    return Promise.resolve();
+  }
 
   documentNotServed(
     tabId: number,
@@ -220,6 +262,42 @@ class FakeHost implements InterceptionHost {
     this.ended.push([tabId, cause, generation]);
     return Promise.resolve();
   }
+
+  /** The file named for {@link RUNTIME_URL} (null: the host names none). */
+  runtime: PackagedRuntimeFile | null = RUNTIME_FILE;
+  readonly runtimeAsks: [number, string, string][] = [];
+
+  simulatedRuntime(
+    tabId: number,
+    requestUrl: string,
+    documentUrl: string
+  ): Promise<PackagedRuntimeFile | null> {
+    this.runtimeAsks.push([tabId, requestUrl, documentUrl]);
+    return Promise.resolve(requestUrl === RUNTIME_URL ? this.runtime : null);
+  }
+}
+
+/** A simulated page's runtime URL and the packaged file answering it. */
+const RUNTIME_URL =
+  'https://site.test/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js';
+/** The tab's top-level document requesting {@link RUNTIME_URL}. */
+const PAGE_URL = 'https://site.test/post';
+const RUNTIME_FILE: PackagedRuntimeFile = {
+  url: 'chrome-extension://id/wp-rocket-simulation/lazyload/17.8.3/lazyload.min.js',
+  bytes: new TextEncoder().encode('/*! lazyload */')
+};
+
+/** A request-stage top-frame script pause for {@link RUNTIME_URL}. */
+function scriptPause(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return pauseEvent({
+    requestId: 'js-1',
+    request: { url: RUNTIME_URL, method: 'GET' },
+    resourceType: 'Script',
+    responseStatusCode: undefined,
+    responseStatusText: undefined,
+    responseHeaders: undefined,
+    ...overrides
+  });
 }
 
 /** A response-stage top-frame document pause. */
@@ -300,7 +378,7 @@ function logged(level: string, pattern: RegExp): boolean {
 }
 
 describe('arm', () => {
-  it('attaches, enables interception and the service-worker bypass, then learns the page target', async () => {
+  it('attaches, enables interception and the service-worker bypass, then learns the top frame', async () => {
     await expect(rig.backend.arm(TAB, 10)).resolves.toEqual({ armed: true });
     expect(rig.port.calls).toEqual(FRESH);
     expect(rig.port.sent).toEqual([
@@ -308,7 +386,10 @@ describe('arm', () => {
         target: { tabId: TAB },
         method: 'Fetch.enable',
         params: {
-          patterns: [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Response' }]
+          patterns: [
+            { urlPattern: '*', resourceType: 'Document', requestStage: 'Response' },
+            { urlPattern: '*/lazyload.min.js', resourceType: 'Script', requestStage: 'Request' }
+          ]
         }
       },
       {
@@ -321,14 +402,16 @@ describe('arm', () => {
         method: 'Network.setBypassServiceWorker',
         params: { bypass: true }
       },
-      { target: { tabId: TAB }, method: 'Page.enable', params: {} }
+      { target: { tabId: TAB }, method: 'Page.enable', params: {} },
+      // The attached session's own frame tree names its top frame.
+      { target: { tabId: TAB }, method: 'Page.getFrameTree' }
     ]);
   });
 
   it('installs the speculation-rules guard for the session origin', async () => {
     await expect(rig.backend.arm(TAB, 10, ORIGIN)).resolves.toEqual({ armed: true });
     expect(rig.port.calls).toEqual(GUARDED);
-    expect(rig.port.sent.at(-1)).toEqual({
+    expect(rig.port.sent.at(-2)).toEqual({
       target: { tabId: TAB },
       method: 'Page.addScriptToEvaluateOnNewDocument',
       params: { source: speculationRulesGuardSource(ORIGIN) }
@@ -382,9 +465,9 @@ describe('arm', () => {
   });
 
   it('arms even when the page target cannot be learned (read on the first pause)', async () => {
-    rig.port.pageTarget = () => Promise.reject(new Error('targets failed'));
+    rig.port.topFrame = () => Promise.reject(new Error('targets failed'));
     await expect(rig.backend.arm(TAB, 10)).resolves.toEqual({ armed: true });
-    rig.port.pageTarget = () => Promise.resolve(MAIN);
+    rig.port.topFrame = () => Promise.resolve(MAIN);
     await rig.pause();
     expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest']);
   });
@@ -735,7 +818,7 @@ describe('paused requests', () => {
     ]);
     expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest']);
     // The page target id is cached at arm: no lookup per pause.
-    expect(rig.port.calls).not.toContain('pageTargetId');
+    expect(rig.port.calls).not.toContain('Page.getFrameTree');
     expect(rig.port.sent.at(-1)?.params).toEqual({
       requestId: 'req-1',
       responseCode: 200,
@@ -770,21 +853,21 @@ describe('paused requests', () => {
   });
 
   it('continues a document of another frame when the page target cannot be re-read', async () => {
-    rig.port.pageTarget = () => Promise.reject(new Error('targets failed'));
+    rig.port.topFrame = () => Promise.reject(new Error('targets failed'));
     await rig.pause({ frameId: 'OTHER' });
     expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
-    rig.port.pageTarget = () => Promise.resolve(null);
+    rig.port.topFrame = () => Promise.resolve(null);
     await rig.pause({ frameId: 'OTHER', requestId: 'req-2' });
     expect(rig.port.releases('req-2')).toEqual(['Fetch.continueRequest']);
   });
 
   it('re-reads the page target on a mismatch and follows a changed one', async () => {
-    rig.port.pageTarget = () => Promise.resolve('SWAPPED');
+    rig.port.topFrame = () => Promise.resolve('SWAPPED');
     await rig.pause({ frameId: 'SWAPPED' });
     expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest']);
     rig.port.calls.length = 0;
     await rig.pause({ frameId: 'SWAPPED', requestId: 'req-2' });
-    expect(rig.port.calls).not.toContain('pageTargetId');
+    expect(rig.port.calls).not.toContain('Page.getFrameTree');
     // The old id is no longer the page.
     await rig.pause({ frameId: MAIN, requestId: 'req-3' });
     expect(rig.port.releases('req-3')).toEqual(['Fetch.continueRequest']);
@@ -794,7 +877,7 @@ describe('paused requests', () => {
     await rig.detach('target_closed');
     rig.port.calls.length = 0;
     await rig.pause();
-    expect(rig.port.calls).toContain('pageTargetId');
+    expect(rig.port.calls).toContain('Page.getFrameTree');
   });
 
   it('flags a Speculation-Rules header and drops it from the fulfilled response', async () => {
@@ -883,16 +966,54 @@ describe('paused requests', () => {
     expect(rig.host.unavailable).toHaveLength(1);
   });
 
-  it('serves the original once the host passes the release deadline, ignoring its late answer', async () => {
-    expect(CHROMIUM_TIMEOUTS_MS.release).toBeGreaterThan(
-      INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument
+  it('keeps an exclusions-only release deadline at the host bound + 1 s', () => {
+    // The bound before simulation existed: 2 s engine budget + steps + 1 s margin.
+    const headRelease =
+      SESSION_STEP_TIMEOUTS_MS.ready +
+      2 * SESSION_STEP_TIMEOUTS_MS.store +
+      DOCUMENT_TRANSFORM_BUDGET_MS +
+      SESSION_STEP_TIMEOUTS_MS.runnerOverhead +
+      1_000;
+    expect(chromiumReleaseMs(rewriteDocumentBoundMs(false))).toBe(headRelease);
+    expect(chromiumReleaseMs(rewriteDocumentBoundMs(true))).toBe(
+      headRelease + SIMULATION_PREPARATION_BOUND_MS
     );
+  });
+
+  it('serves the original once the host passes the release deadline, ignoring its late answer', async () => {
+    const release = chromiumReleaseMs(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
+    expect(release).toBeGreaterThan(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
     const late = deferred<Uint8Array | null>();
     rig.host.rewrite = () => late.promise;
     await rig.pause();
-    rig.timers.fire(CHROMIUM_TIMEOUTS_MS.release);
+    rig.timers.fire(release);
     await flush();
     late.resolve(REWRITTEN);
+    await flush();
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
+  });
+
+  it('tells the host it abandoned a rewrite past the release deadline (the host records it)', async () => {
+    const late = deferred<Uint8Array | null>();
+    rig.host.rewrite = () => late.promise;
+    await rig.pause();
+    expect(rig.host.abandons.map((abandoned) => abandoned())).toEqual([false]);
+    rig.timers.fire(chromiumReleaseMs(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument));
+    await flush();
+    expect(rig.host.abandons.map((abandoned) => abandoned())).toEqual([true]);
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
+    late.resolve(null);
+  });
+
+  it('gives a simulating session’s rewrite its longer granted deadline', async () => {
+    rig.host.grant = { rewriteBoundMs: rewriteDocumentBoundMs(true) };
+    const late = deferred<Uint8Array | null>();
+    rig.host.rewrite = () => late.promise;
+    await rig.pause();
+    rig.timers.fire(chromiumReleaseMs(rewriteDocumentBoundMs(false)));
+    await flush();
+    expect(rig.port.releases('req-1')).toEqual([]);
+    rig.timers.fire(chromiumReleaseMs(rewriteDocumentBoundMs(true)));
     await flush();
     expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
   });
@@ -926,7 +1047,7 @@ describe('paused requests', () => {
     await flush();
     await rig.pause();
     expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
-    expect(rig.port.calls).not.toContain('pageTargetId');
+    expect(rig.port.calls).not.toContain('Page.getFrameTree');
     detach.resolve();
     await disarmed;
   });
@@ -978,6 +1099,210 @@ describe('paused requests', () => {
     await flush();
     expect(rig.port.sent).toEqual([]);
     expect(logged('error', /unknown source/)).toBe(true);
+  });
+});
+
+describe('session pages passed without a rewrite (one record each)', () => {
+  const html = [{ name: 'Content-Type', value: 'text/html; charset=utf-8' }];
+  const URL_WITH_QUERY = 'https://site.test/page?token=secret';
+
+  beforeEach(async () => {
+    await rig.backend.arm(TAB, 10);
+    rig.port.calls.length = 0;
+    rig.port.sent.length = 0;
+  });
+
+  /** The identity the backend hands over for `req-1`. */
+  const IDENTITY = {
+    token: 'req-1',
+    receivedAt: EPOCH,
+    wallAt: WALL_AT,
+    speculationRulesHeader: false,
+    servedAsCopy: true,
+    speculationGuard: false,
+    serviceWorkersBypassed: true
+  };
+
+  it.each([
+    ['a partial 206 HTML response', { responseStatusCode: 206, responseHeaders: html }],
+    ['a non-HTML page', { responseHeaders: [{ name: 'Content-Type', value: 'application/json' }] }],
+    ['XHTML', { responseHeaders: [{ name: 'Content-Type', value: 'application/xhtml+xml' }] }]
+  ])('reports %s as ineligible-response once released, unread', async (_case, overrides) => {
+    await rig.pause(overrides);
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
+    expect(rig.port.calls).not.toContain('Fetch.getResponseBody');
+    expect(rig.host.documents).toEqual([]);
+    expect(rig.host.passed).toEqual([
+      [TAB, 'https://site.test/page', 'ineligible-response', IDENTITY]
+    ]);
+  });
+
+  it('reports a failed navigation as network-error', async () => {
+    await rig.pause({
+      responseStatusCode: undefined,
+      responseHeaders: undefined,
+      responseErrorReason: 'ConnectionReset'
+    });
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
+    expect(rig.host.passed).toEqual([[TAB, 'https://site.test/page', 'network-error', IDENTITY]]);
+  });
+
+  it.each([
+    ['a redirect hop', { responseStatusCode: 302, responseHeaders: html }],
+    ['204 No Content (the page stays)', { responseStatusCode: 204, responseHeaders: html }],
+    [
+      'a download',
+      {
+        responseHeaders: [
+          { name: 'Content-Type', value: 'application/zip' },
+          { name: 'Content-Disposition', value: 'attachment; filename="a.zip"' }
+        ]
+      }
+    ],
+    [
+      'a zip served without a disposition (the browser downloads it)',
+      { responseHeaders: [{ name: 'Content-Type', value: 'application/zip' }] }
+    ],
+    [
+      'an octet stream',
+      { responseHeaders: [{ name: 'content-type', value: 'Application/Octet-Stream' }] }
+    ],
+    ['a response without a content type', { responseHeaders: [] }],
+    [
+      'a cancelled navigation',
+      { responseStatusCode: undefined, responseHeaders: undefined, responseErrorReason: 'Aborted' }
+    ],
+    ['an iframe’s 206', { frameId: 'IFRAME', responseStatusCode: 206, responseHeaders: html }],
+    ['a non-document response', { resourceType: 'Stylesheet', responseStatusCode: 206 }]
+  ])('reports nothing for %s', async (_case, overrides) => {
+    await rig.pause(overrides);
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
+    expect(rig.host.passed).toEqual([]);
+  });
+
+  it('reports nothing while the session stops', async () => {
+    const detach = deferred();
+    rig.port.detachImpl = () => detach.promise;
+    const disarmed = rig.backend.disarm(TAB);
+    await flush();
+    await rig.pause({ responseStatusCode: 206, responseHeaders: html });
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
+    expect(rig.host.passed).toEqual([]);
+    detach.resolve();
+    await disarmed;
+  });
+
+  /** The pass lines logged so far. */
+  const passLines = (): unknown[] =>
+    rig.log.lines.filter((line) => line.message === 'Session page served as received');
+
+  it('logs each pass of a top-frame page on the session origin once, with why and origin + path only', async () => {
+    await rig.backend.arm(TAB, 10, ORIGIN);
+    rig.host.rewrite = () => Promise.resolve(null);
+    await rig.pause({ request: { url: URL_WITH_QUERY, method: 'GET' } });
+    await rig.pause({ requestId: 'req-2', responseStatusCode: 206, responseHeaders: html });
+    expect(passLines()).toEqual([
+      {
+        level: 'info',
+        message: 'Session page served as received',
+        details: [{ tabId: TAB, why: 'unmodified', page: 'https://site.test/page' }]
+      },
+      {
+        level: 'info',
+        message: 'Session page served as received',
+        details: [{ tabId: TAB, why: 'ineligible', page: 'https://site.test/page' }]
+      }
+    ]);
+    expect(JSON.stringify(rig.log.lines)).not.toContain('secret');
+  });
+
+  it('logs no pass for a page the host does not grant (another origin, no session, a failed read)', async () => {
+    await rig.backend.arm(TAB, 10, ORIGIN);
+    rig.host.intercept = false;
+    await rig.pause({ request: { url: 'https://other.test/page', method: 'GET' } });
+    await rig.pause({ requestId: 'req-2' });
+    expect(rig.port.releases('req-2')).toEqual(['Fetch.continueRequest']);
+    expect(passLines()).toEqual([]);
+  });
+
+  it('logs no pass for an unrewritten page off the session origin, or with the origin unknown', async () => {
+    await rig.backend.arm(TAB, 10, ORIGIN);
+    const other = { request: { url: 'https://other.test/page', method: 'GET' } };
+    await rig.pause({ ...other, responseStatusCode: 206, responseHeaders: html });
+    // Reported all the same: the host decides what it records.
+    expect(rig.host.passed.map(([, url]) => url)).toEqual(['https://other.test/page']);
+    // A rules header asks the host: refused (no session, a failed read) — no log.
+    rig.host.intercept = false;
+    await rig.pause({
+      requestId: 'req-2',
+      responseStatusCode: 206,
+      responseHeaders: [...html, { name: 'Speculation-Rules', value: '"/rules.json"' }]
+    });
+    expect(rig.port.releases('req-2')).toEqual(['Fetch.continueRequest']);
+    expect(passLines()).toEqual([]);
+  });
+
+  it('treats an unparsable page URL as off the session origin (no log, no guard flag)', async () => {
+    const unparsable = {
+      request: { url: 'not a url', method: 'GET' },
+      responseStatusCode: 206,
+      responseHeaders: html
+    };
+    // No guard installed and no origin parsed: still never "on the origin".
+    await rig.pause(unparsable);
+    await rig.backend.arm(TAB, 10, ORIGIN);
+    await rig.pause({ ...unparsable, requestId: 'req-2' });
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
+    expect(rig.port.releases('req-2')).toEqual(['Fetch.continueRequest']);
+    expect(rig.host.passed.map(([, , , identity]) => identity?.speculationGuard)).toEqual([
+      false,
+      false
+    ]);
+    expect(passLines()).toEqual([]);
+  });
+
+  it('logs no pass while the session origin is unknown (armed without one)', async () => {
+    await rig.pause({ responseStatusCode: 206, responseHeaders: html });
+    expect(rig.host.passed).toHaveLength(1);
+    expect(passLines()).toEqual([]);
+  });
+
+  it('logs no pass for sub-frames, non-documents or served rewrites', async () => {
+    await rig.pause({ frameId: 'IFRAME' });
+    await rig.pause({ requestId: 'req-2', resourceType: 'Image', responseStatusCode: 200 });
+    await rig.pause({ requestId: 'req-3' });
+    expect(rig.port.releases('req-3')).toEqual(['Fetch.fulfillRequest']);
+    expect(rig.log.lines.some((line) => line.message === 'Session page served as received')).toBe(
+      false
+    );
+  });
+});
+
+describe('top frame (the attached session’s own frame tree)', () => {
+  beforeEach(async () => {
+    await rig.backend.arm(TAB, 10);
+    rig.port.calls.length = 0;
+    rig.port.sent.length = 0;
+  });
+
+  it('asks the tab’s root session for its frame tree — another page target (a prerender) never counts', async () => {
+    // A prerendered page's document pauses with its own frame id: not this session's top frame.
+    await rig.pause({ frameId: 'PRERENDER' });
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
+    expect(rig.port.sent.find((call) => call.method === 'Page.getFrameTree')?.target).toEqual({
+      tabId: TAB
+    });
+    // The real top frame is still recognized (and rewritten), from the cache.
+    rig.port.calls.length = 0;
+    await rig.pause({ requestId: 'req-2' });
+    expect(rig.port.releases('req-2')).toEqual(['Fetch.fulfillRequest']);
+    expect(rig.port.calls).not.toContain('Page.getFrameTree');
+  });
+
+  it('follows the session’s top frame when it changes (an activated prerender)', async () => {
+    rig.port.topFrame = () => Promise.resolve('ACTIVATED');
+    await rig.pause({ frameId: 'ACTIVATED' });
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest']);
   });
 });
 
@@ -1072,5 +1397,112 @@ describe('Speculation-Rules header on continued session documents', () => {
       true,
       false
     ]);
+  });
+});
+
+describe('simulated-runtime script requests', () => {
+  beforeEach(async () => {
+    rig.port.commands.set('Page.getFrameTree', () =>
+      Promise.resolve({ frameTree: { frame: { id: MAIN, url: PAGE_URL } } })
+    );
+    await rig.backend.arm(TAB, 10);
+    rig.port.calls.length = 0;
+    rig.port.sent.length = 0;
+  });
+
+  /** Deliver a script pause and let it settle. */
+  async function request(
+    overrides: Record<string, unknown> = {},
+    source: unknown = { tabId: TAB }
+  ) {
+    rig.port.handlers.event(source, 'Fetch.requestPaused', scriptPause(overrides));
+    await flush();
+  }
+
+  it('answers the named runtime with its packaged bytes, uncached, never reaching the site', async () => {
+    await request();
+    expect(rig.host.runtimeAsks).toEqual([[TAB, RUNTIME_URL, PAGE_URL]]);
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.fulfillRequest']);
+    expect(rig.port.sent.at(-1)?.params).toEqual({
+      requestId: 'js-1',
+      responseCode: 200,
+      responseHeaders: [
+        { name: 'content-type', value: 'text/javascript; charset=utf-8' },
+        { name: 'cache-control', value: 'no-store' }
+      ],
+      body: bytesToBase64(RUNTIME_FILE.bytes)
+    });
+    // A script request is never read nor handed to the document step.
+    expect(rig.port.calls).not.toContain('Fetch.getResponseBody');
+    expect(rig.host.gated).toEqual([]);
+  });
+
+  it('continues a request the host names no file for (another URL, no simulation)', async () => {
+    await request({ request: { url: 'https://site.test/x/lazyload.min.js', method: 'GET' } });
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.continueRequest']);
+    rig.host.runtime = null;
+    await request({ requestId: 'js-2' });
+    expect(rig.port.releases('js-2')).toEqual(['Fetch.continueRequest']);
+  });
+
+  it('continues a sub-frame’s or a child session’s request without asking the host', async () => {
+    await request({ frameId: 'IFRAME' });
+    await request({ requestId: 'js-2' }, { tabId: TAB, sessionId: 'child' });
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.continueRequest']);
+    expect(rig.port.sent.at(-1)?.method).toBe('Fetch.continueRequest');
+    expect(rig.host.runtimeAsks).toEqual([]);
+  });
+
+  it.each([
+    ['unreadable', () => Promise.reject(new Error('No target'))],
+    ['missing from the frame tree', () => Promise.resolve({ frameTree: {} })]
+  ])(
+    'continues a request whose top document is %s, without asking the host (logged)',
+    async (_name, answer) => {
+      rig.port.commands.set('Page.getFrameTree', answer);
+      await request();
+      expect(rig.port.releases('js-1')).toEqual(['Fetch.continueRequest']);
+      expect(rig.host.runtimeAsks).toEqual([]);
+      expect(logged('warn', /runtime request left to the site/)).toBe(true);
+    }
+  );
+
+  it('continues a request of a tab whose session is stopping, without asking the host', async () => {
+    const detach = deferred();
+    rig.port.detachImpl = () => detach.promise;
+    const disarmed = rig.backend.disarm(TAB);
+    await flush();
+    await request();
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.continueRequest']);
+    expect(rig.host.runtimeAsks).toEqual([]);
+    detach.resolve();
+    await disarmed;
+  });
+
+  it('names a refused answer and continues the request to the site', async () => {
+    rig.port.commands.set('Fetch.fulfillRequest', () =>
+      Promise.reject(new Error('Invalid header'))
+    );
+    await request();
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.fulfillRequest', 'Fetch.continueRequest']);
+    expect(logged('warn', /Simulated runtime not delivered — answer refused/)).toBe(true);
+  });
+
+  it('names an answer whose request was already gone (nothing left to release)', async () => {
+    rig.port.commands.set('Fetch.fulfillRequest', () =>
+      Promise.reject(new Error('Invalid InterceptionId.'))
+    );
+    await request();
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.fulfillRequest']);
+    expect(logged('info', /Simulated runtime not delivered — its request was already gone/)).toBe(
+      true
+    );
+  });
+
+  it('continues a request when the host fails unexpectedly', async () => {
+    rig.host.simulatedRuntime = () => Promise.reject(new Error('host broke'));
+    await request();
+    expect(rig.port.releases('js-1')).toEqual(['Fetch.continueRequest']);
+    expect(logged('error', /handling failed/)).toBe(true);
   });
 });

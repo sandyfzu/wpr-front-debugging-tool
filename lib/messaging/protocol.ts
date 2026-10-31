@@ -64,6 +64,7 @@ import type {
   SavedExclusionSetReply
 } from './exclusion-session';
 import type { ExclusionOverlayOpenOutcome } from './exclusion-panel';
+import type { SimulationMarkerQuery, SimulationMarkerVerdict } from './exclusion-simulation';
 import type { TabRelayReply, TabRelayRequest } from './tab-relay';
 
 export interface ProtocolMap {
@@ -202,6 +203,15 @@ export interface ProtocolMap {
    * the same way.
    */
   exclusionOverlayPresented(data: ExclusionOverlayPresentation): true;
+  /**
+   * Content script (data hub, top frame) → background (sender-resolved top
+   * frame, `boundedAsk` with `EXCLUSION_SESSION_DEADLINES_MS.verifyMarker`):
+   * is the page's simulation marker one this tab's session wrote for this
+   * origin? Answers the features it vouches for; `[]` = unverified (unknown
+   * id, another tab or origin). Asked only when the page carries a
+   * well-formed marker.
+   */
+  verifySimulationMarker(data: SimulationMarkerQuery): SimulationMarkerVerdict;
   /**
    * Panel/devtools page → background: forward one registry-listed tab ask
    * (`./tab-relay`) for a context without the `tabs` API. Carries the

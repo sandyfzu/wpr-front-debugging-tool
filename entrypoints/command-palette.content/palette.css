@@ -28,7 +28,10 @@
   margin: 0;
   padding: 0;
   border: 0;
-  overflow: hidden;
+  /* Clip, never hidden: a hidden box still scrolls programmatically, so a
+   * focus move to anything laid out past the viewport would scroll the whole
+   * layer and carry the dialog off screen; a clipped box never scrolls. */
+  overflow: clip;
   background: transparent;
   pointer-events: none;
   /* Only matters where the top layer is unavailable (the fixed fallback). */

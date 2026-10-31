@@ -8,12 +8,16 @@ import { bytesToBase64 } from '../../../utils/base64';
 import {
   classifyPause,
   continueWithoutRulesHeaderParams,
+  frameTreeDocumentUrl,
+  frameTreeRootId,
   fulfillHeaders,
   fulfillParams,
   headerValue,
   parsePausedRequest,
+  passedPageFailure,
   pausedRequestId,
   responseBodyBytes,
+  runtimeFulfillParams,
   type PausedRequest
 } from './paused-request';
 
@@ -121,6 +125,28 @@ describe('classifyPause', () => {
     expect(
       classifyPause(paused({ responseStatusCode: undefined, responseHeaders: undefined }))
     ).toEqual({ kind: 'pass', reason: 'request-stage' });
+  });
+
+  it('marks a request-stage script pause as a script request', () => {
+    expect(
+      classifyPause(
+        paused({
+          resourceType: 'Script',
+          responseStatusCode: undefined,
+          responseHeaders: undefined
+        })
+      )
+    ).toEqual({ kind: 'script-request' });
+    // A script's network error is still only a pass.
+    expect(
+      classifyPause(
+        paused({
+          resourceType: 'Script',
+          responseStatusCode: undefined,
+          responseErrorReason: 'Failed'
+        })
+      )
+    ).toEqual({ kind: 'pass', reason: 'network-error' });
   });
 
   it('passes a network error', () => {
@@ -258,5 +284,106 @@ describe('continueWithoutRulesHeaderParams', () => {
         paused({ responseStatusCode: undefined, responseHeaders: withHeader })
       )
     ).toBeNull();
+  });
+});
+
+describe('runtimeFulfillParams', () => {
+  it('serves the bytes as a 200 classic script that is never stored', () => {
+    const body = new TextEncoder().encode('/*! runtime */');
+    expect(runtimeFulfillParams('r', body)).toEqual({
+      requestId: 'r',
+      responseCode: 200,
+      responseHeaders: [
+        { name: 'content-type', value: 'text/javascript; charset=utf-8' },
+        { name: 'cache-control', value: 'no-store' }
+      ],
+      body: bytesToBase64(body)
+    });
+  });
+});
+
+describe('frameTreeDocumentUrl', () => {
+  it('reads the root frame’s document URL', () => {
+    expect(
+      frameTreeDocumentUrl({
+        frameTree: { frame: { id: 'TOP', url: 'https://site.test/post' }, childFrames: [] }
+      })
+    ).toBe('https://site.test/post');
+  });
+
+  it.each([
+    ['no result', undefined],
+    ['no tree', {}],
+    ['no frame', { frameTree: {} }],
+    ['a non-string url', { frameTree: { frame: { url: 7 } } }]
+  ])('answers null for %s', (_name, result) => {
+    expect(frameTreeDocumentUrl(result)).toBeNull();
+  });
+});
+
+describe('frameTreeRootId', () => {
+  it('reads the root frame’s id (the answering session’s top frame)', () => {
+    expect(
+      frameTreeRootId({ frameTree: { frame: { id: 'TOP', url: 'https://site.test/' } } })
+    ).toBe('TOP');
+  });
+
+  it.each([
+    ['no tree', {}],
+    ['no frame', { frameTree: {} }],
+    ['an empty id', { frameTree: { frame: { id: '' } } }],
+    ['a non-string id', { frameTree: { frame: { id: 7 } } }]
+  ])('answers null for %s', (_name, result) => {
+    expect(frameTreeRootId(result)).toBeNull();
+  });
+});
+
+describe('passedPageFailure', () => {
+  /** A paused top-level response. */
+  const paused = (overrides: Record<string, unknown> = {}): PausedRequest =>
+    parsePausedRequest({
+      requestId: 'r',
+      request: { url: 'https://site.test/', method: 'GET' },
+      frameId: 'F',
+      resourceType: 'Document',
+      responseStatusCode: 206,
+      responseHeaders: [{ name: 'Content-Type', value: 'text/html' }],
+      ...overrides
+    }) as PausedRequest;
+
+  it('names an ineligible response that becomes the page', () => {
+    expect(passedPageFailure(paused(), 'ineligible')).toBe('ineligible-response');
+  });
+
+  it('names a network failure, but not a cancelled navigation', () => {
+    const failed = { responseStatusCode: undefined, responseHeaders: undefined };
+    expect(
+      passedPageFailure(paused({ ...failed, responseErrorReason: 'Failed' }), 'network-error')
+    ).toBe('network-error');
+    expect(
+      passedPageFailure(paused({ ...failed, responseErrorReason: 'Aborted' }), 'network-error')
+    ).toBeNull();
+  });
+
+  it.each([
+    ['a redirect', paused({ responseStatusCode: 301 }), 'ineligible'],
+    [
+      'a download',
+      paused({
+        responseStatusCode: 200,
+        responseHeaders: [{ name: 'Content-Disposition', value: 'attachment' }]
+      }),
+      'ineligible'
+    ],
+    [
+      'a zip without a disposition',
+      paused({ responseHeaders: [{ name: 'Content-Type', value: 'application/zip' }] }),
+      'ineligible'
+    ],
+    ['a non-document', paused({ resourceType: 'Image' }), 'ineligible'],
+    ['a request-stage pause', paused({ responseStatusCode: undefined }), 'request-stage'],
+    ['a non-document pass', paused(), 'not-document']
+  ] as const)('answers null for %s', (_name, pause, reason) => {
+    expect(passedPageFailure(pause, reason)).toBeNull();
   });
 });

@@ -11,9 +11,11 @@ import {
   EXCLUSION_SESSION_DEADLINES_MS,
   EXCLUSION_SET_LIMITS
 } from '../messaging/exclusion-session';
-import { DOCUMENT_TRANSFORM_BUDGET_MS } from './document-transform';
 import {
+  chromiumReleaseMs,
   DeadlineExceededError,
+  documentRecordWaitMs,
+  DOCUMENT_TRANSFORM_BUDGET_MS,
   INTERCEPTION_HOST_BOUNDS_MS,
   PREVALIDATION_CPU_BOUND_MS,
   PREVALIDATION_FIXED_MS,
@@ -21,7 +23,16 @@ import {
   PREVALIDATION_WORK_BOUND,
   SESSION_ASK_WORST_CASE_MS,
   SESSION_STEP_TIMEOUTS_MS,
-  withinDeadline
+  SIMULATION_PREPARATION_BOUND_MS,
+  SIMULATION_PREPARATION_CPU_BOUND_MS,
+  SIMULATION_SOURCE_TIMEOUTS_MS,
+  STREAM_FACTS_WAIT_MS,
+  STREAM_RELEASE_MARGIN_MS,
+  STREAM_SETTLE_WAIT_MS,
+  rewriteDocumentBoundMs,
+  streamHoldWorstCaseMs,
+  withinDeadline,
+  withinExtensibleDeadline
 } from './timeouts';
 
 /** A timer seam whose single pending timer fires on demand. */
@@ -122,17 +133,168 @@ describe('withinDeadline', () => {
   });
 });
 
+/** A timer seam firing pending timers by delay, recording every armed one. */
+function delayTimers(): {
+  schedule: ScheduleTimer;
+  fire: (ms: number) => void;
+  pending: () => number[];
+} {
+  const timers = new Set<{ run: () => void; ms: number }>();
+  return {
+    schedule: (run, ms) => {
+      const timer = { run, ms };
+      timers.add(timer);
+      return () => timers.delete(timer);
+    },
+    fire: (ms) => {
+      for (const timer of [...timers]) {
+        if (timer.ms !== ms) continue;
+        timers.delete(timer);
+        timer.run();
+      }
+    },
+    pending: () => [...timers].map((timer) => timer.ms)
+  };
+}
+
+describe('withinExtensibleDeadline', () => {
+  const never = (): Promise<number> => new Promise<number>(() => undefined);
+
+  it('times out at the base deadline when the work never extends it', async () => {
+    const timers = delayTimers();
+    const bounded = withinExtensibleDeadline('x', 5, 9, never, timers.schedule);
+    expect(timers.pending()).toEqual([9, 5]);
+    timers.fire(5);
+    await expect(bounded).rejects.toMatchObject({ name: 'DeadlineExceededError', ms: 5 });
+    // Settled: every timer cancelled.
+    expect(timers.pending()).toEqual([]);
+  });
+
+  it('outlives the base deadline once extended, then times out at the extended one', async () => {
+    const timers = delayTimers();
+    const bounded = withinExtensibleDeadline(
+      'x',
+      5,
+      9,
+      (extend) => {
+        extend();
+        return never();
+      },
+      timers.schedule
+    );
+    timers.fire(5);
+    timers.fire(9);
+    await expect(bounded).rejects.toMatchObject({ name: 'DeadlineExceededError', ms: 9 });
+    expect(timers.pending()).toEqual([]);
+  });
+
+  it('resolves with the work and cancels both timers', async () => {
+    const timers = delayTimers();
+    await expect(
+      withinExtensibleDeadline('x', 5, 9, () => Promise.resolve(7), timers.schedule)
+    ).resolves.toBe(7);
+    expect(timers.pending()).toEqual([]);
+  });
+
+  it('passes a rejection or a synchronous throw through unchanged', async () => {
+    const timers = delayTimers();
+    const boom = new Error('boom');
+    await expect(
+      withinExtensibleDeadline('x', 5, 9, () => Promise.reject(boom), timers.schedule)
+    ).rejects.toBe(boom);
+    await expect(
+      withinExtensibleDeadline(
+        'x',
+        5,
+        9,
+        () => {
+          throw boom;
+        },
+        timers.schedule
+      )
+    ).rejects.toBe(boom);
+    expect(timers.pending()).toEqual([]);
+  });
+
+  it('refuses an extended deadline below its base', () => {
+    expect(() => withinExtensibleDeadline('x', 9, 5, never)).toThrow(RangeError);
+  });
+
+  it('uses the platform timer by default', async () => {
+    vi.useFakeTimers();
+    try {
+      const settled = withinExtensibleDeadline('x', 10, 20, never).catch((cause: unknown) => cause);
+      await vi.advanceTimersByTimeAsync(10);
+      await expect(settled).resolves.toMatchObject({ ms: 10 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('declared bounds', () => {
   it('derives each host bound from the steps it awaits', () => {
     const steps = SESSION_STEP_TIMEOUTS_MS;
     expect(INTERCEPTION_HOST_BOUNDS_MS).toEqual({
       shouldIntercept: steps.ready + steps.store,
+      // Exclusions only — exactly the bound before simulation existed.
       rewriteDocument:
         steps.ready + 2 * steps.store + DOCUMENT_TRANSFORM_BUDGET_MS + steps.runnerOverhead,
       documentBodyUnavailable: steps.ready + steps.store + steps.record,
       documentNotServed: steps.ready + steps.store + steps.record,
-      interceptionEnded: steps.ready + steps.record
+      documentPassed: steps.ready + steps.store + steps.record,
+      interceptionEnded: steps.ready + steps.record,
+      simulatedRuntime:
+        steps.ready + steps.queueWait + steps.store + 2 * SIMULATION_SOURCE_TIMEOUTS_MS.runtime
     });
+  });
+
+  it('waits for a page’s record past every backend’s worst hold, plus the record write', () => {
+    for (const simulates of [false, true]) {
+      const bound = rewriteDocumentBoundMs(simulates);
+      const wait = documentRecordWaitMs(simulates);
+      // The stream's hold (settle + facts waits + its release margin) is the longer one.
+      expect(wait).toBe(
+        STREAM_SETTLE_WAIT_MS +
+          STREAM_FACTS_WAIT_MS +
+          bound +
+          STREAM_RELEASE_MARGIN_MS +
+          SESSION_STEP_TIMEOUTS_MS.record
+      );
+      expect(wait).toBeGreaterThanOrEqual(
+        chromiumReleaseMs(bound) + SESSION_STEP_TIMEOUTS_MS.record
+      );
+      expect(wait).toBeGreaterThanOrEqual(
+        streamHoldWorstCaseMs(bound) + SESSION_STEP_TIMEOUTS_MS.record
+      );
+    }
+    // Pinned values: an exclusions-only session, then a simulating one.
+    expect(documentRecordWaitMs(false)).toBe(9_500);
+    expect(documentRecordWaitMs(true)).toBe(12_600);
+  });
+
+  it('adds the simulation preparation to the rewrite bound only for a simulating session', () => {
+    expect(rewriteDocumentBoundMs(false)).toBe(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
+    expect(rewriteDocumentBoundMs(true)).toBe(
+      INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument + SIMULATION_PREPARATION_BOUND_MS
+    );
+  });
+
+  it('bounds a simulation preparation by every awaited source deadline plus its CPU', () => {
+    const sources = SIMULATION_SOURCE_TIMEOUTS_MS;
+    expect(SIMULATION_PREPARATION_BOUND_MS).toBe(
+      sources.runtime +
+        sources.list +
+        sources.markerId +
+        sources.settleMarker +
+        SIMULATION_PREPARATION_CPU_BOUND_MS
+    );
+    // The stored-copy read and the memo writes are one store step each.
+    expect(sources.list).toBe(SESSION_STEP_TIMEOUTS_MS.store);
+    expect(sources.markerId).toBe(SESSION_STEP_TIMEOUTS_MS.store);
+    expect(sources.settleMarker).toBe(SESSION_STEP_TIMEOUTS_MS.store);
+    // ≥ 10× the ~58 ms measured on a 4 MiB page.
+    expect(SIMULATION_PREPARATION_CPU_BOUND_MS).toBeGreaterThanOrEqual(580);
   });
 
   /** Each ask path, step by step (the worst of them is the declared worst case). */

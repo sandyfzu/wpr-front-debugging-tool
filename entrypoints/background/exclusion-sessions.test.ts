@@ -18,6 +18,10 @@ import {
   answerOverlayPresented,
   initExclusionSessions
 } from './exclusion-sessions';
+import {
+  getSimulationMarkers,
+  rememberSimulationMarker
+} from '../../lib/storage/simulation-markers';
 import { EXCLUSION_OVERLAY_SCRIPT } from './exclusion-overlay';
 import { CHROMIUM_INTERCEPTION_ROW } from './chromium-interception';
 import { INTERCEPTION_BACKENDS } from './interception-backends';
@@ -88,6 +92,40 @@ describe('exclusion-session wiring', () => {
     await fakeBrowser.tabs.onRemoved.trigger(7, { windowId: 1, isWindowClosing: false });
     await flush();
     await expect(getExclusionSessionRecords()).resolves.toEqual({});
+  });
+
+  it('refuses a marker verification from a sender that is no top-frame page, reaching the sender', async () => {
+    await expect(
+      sendMessage('verifySimulationMarker', { markerId: '0123456789abcdef0123456789abcdef' })
+    ).rejects.toThrow(/top-frame page/);
+  });
+
+  it('forgets a closed tab’s simulation markers, other tabs kept', async () => {
+    const entry = (markerId: string) => ({
+      markerId,
+      origin: 'https://site.test',
+      features: ['delay_js'] as const
+    });
+    await rememberSimulationMarker(21, entry('a'.repeat(32)));
+    await rememberSimulationMarker(22, entry('b'.repeat(32)));
+    await fakeBrowser.tabs.onRemoved.trigger(21, { windowId: 1, isWindowClosing: false });
+    await flush();
+    await expect(getSimulationMarkers()).resolves.toEqual({ '22': [entry('b'.repeat(32))] });
+  });
+
+  it('forgets every simulation marker on an extension update, not on install', async () => {
+    const entry = {
+      markerId: 'c'.repeat(32),
+      origin: 'https://site.test',
+      features: ['delay_js'] as const
+    };
+    await rememberSimulationMarker(23, entry);
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install' });
+    await flush();
+    await expect(getSimulationMarkers()).resolves.toMatchObject({ '23': [entry] });
+    await fakeBrowser.runtime.onInstalled.trigger({ reason: 'update', previousVersion: '0.0.0' });
+    await flush();
+    await expect(getSimulationMarkers()).resolves.toEqual({});
   });
 
   it('clears every session on an extension update, not on install', async () => {

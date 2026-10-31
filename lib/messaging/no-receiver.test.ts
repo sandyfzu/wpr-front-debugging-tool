@@ -12,6 +12,13 @@ describe('isNoReceiverError', () => {
     );
   });
 
+  it('matches Chromium’s receiver-gone rejection (the page navigated before answering)', () => {
+    expect(
+      isNoReceiverError(new Error('The message port closed before a response was received.'))
+    ).toBe(true);
+    expect(isNoReceiverError(new Error('The message port closed'))).toBe(false);
+  });
+
   it("matches the transport's own tab-send no-response error", () => {
     expect(isNoReceiverError(new Error('No response'))).toBe(true);
   });

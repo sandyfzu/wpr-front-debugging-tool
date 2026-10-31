@@ -38,11 +38,8 @@ import {
   writeStoredOptions
 } from '../helpers/options';
 import { openSitePage, SITE_URL } from '../helpers/site';
+import { STRIP_HOST, WIDGET_ORIGINS_KEY } from '../helpers/strip-pill';
 
-/** The detection strip's shadow host over the real site (the widget's shape). */
-const STRIP_HOST = 'wpr-fdt-inspector';
-/** The per-origin opt-in map's storage key (the widget's gate seam). */
-const ORIGINS_KEY = 'detection-widget-sites';
 /** The strip's mount settle (the hub's pass answers after the page loads). */
 const MOUNT_SETTLE: { timeout: number; intervals: number[] } = {
   timeout: 15_000,
@@ -103,7 +100,7 @@ async function enableStripForSite(driver: ExtensionDriver): Promise<void> {
         [payload.key]: { ...(current ?? {}), [payload.origin]: { enabled: true } }
       });
     },
-    { key: ORIGINS_KEY, origin: new URL(SITE_URL).origin }
+    { key: WIDGET_ORIGINS_KEY, origin: new URL(SITE_URL).origin }
   );
 }
 
@@ -111,7 +108,7 @@ async function enableStripForSite(driver: ExtensionDriver): Promise<void> {
 async function clearStripOptIn(driver: ExtensionDriver): Promise<void> {
   await driver.evaluateInWorker(async (key: string) => {
     await chrome.storage.sync.remove([key]);
-  }, ORIGINS_KEY);
+  }, WIDGET_ORIGINS_KEY);
 }
 
 test.describe('options appearance', () => {

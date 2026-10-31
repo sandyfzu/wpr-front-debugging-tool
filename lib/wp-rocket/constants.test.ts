@@ -32,6 +32,8 @@ import {
   FEATURE_COMMENT_PATTERN,
   FDT_EXCLUDED_RESOURCE,
   BUILDER_MARKER_META_NAME,
+  SIMULATION_MARKER_META_NAME,
+  GENERATOR_META_NAME,
   GENERATOR_META_SELECTOR,
   WPR_FEATURES_ATTRIBUTE,
   WPR_FEATURES_META_SELECTOR,
@@ -142,6 +144,7 @@ describe('other feature footprints', () => {
     expect(LAZYLOAD_BG_CONTAINER_ID).toBe('wpr-lazyload-bg-container');
     expect(LAZYLOAD_BG_EXCLUSION_ID).toBe('wpr-lazyload-bg-exclusion');
     expect(BEACON_DATA_NAME).toBe('wpr-wpr-beacon');
+    expect(GENERATOR_META_NAME).toBe('generator');
     expect(GENERATOR_META_SELECTOR).toBe('meta[name="generator"]');
     expect(WPR_FEATURES_ATTRIBUTE).toBe('data-wpr-features');
     expect(WPR_FEATURES_META_SELECTOR).toBe('meta[name="generator"][data-wpr-features]');
@@ -343,6 +346,12 @@ describe('platforms and ids', () => {
   it("names the Exclusion Builder's document marker in this extension's namespace", () => {
     expect(BUILDER_MARKER_META_NAME).toBe('wpr-fdt-exclusion-builder');
     expect(GENERATOR_META_SELECTOR).not.toContain(BUILDER_MARKER_META_NAME);
+  });
+
+  it("names the simulation's document marker in this extension's namespace, apart from the builder's", () => {
+    expect(SIMULATION_MARKER_META_NAME).toBe('wpr-fdt-simulation');
+    expect(GENERATOR_META_SELECTOR).not.toContain(SIMULATION_MARKER_META_NAME);
+    expect(SIMULATION_MARKER_META_NAME).not.toBe(BUILDER_MARKER_META_NAME);
   });
 
   it('single-sources the url patterns and search action ids', () => {

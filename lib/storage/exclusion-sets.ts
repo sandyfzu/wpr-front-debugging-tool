@@ -12,12 +12,19 @@
  * this whole map — so the queue's one-context scope covers every writer. Reads
  * validate: corrupt entries are dropped, unknown entry fields ignored (a
  * newer build's value keeps parsing), and the map is held to an honest byte
- * budget by evicting the least recently updated origins.
+ * budget by evicting the least recently updated origins. An entry's
+ * optional simulation is the user's Delay mode: one that does not parse,
+ * or that simulates a feature its set disables, is dropped (logged) and
+ * the set kept — the rows are the user's work, the mode then reads from
+ * the set alone.
  */
 
 import { storage } from 'wxt/utils/storage';
 import type { ExclusionSet } from '../exclusion-builder/set';
 import { parseExclusionSet } from '../messaging/exclusion-session';
+import { optionalSimulateFor } from '../messaging/exclusion-simulation';
+import type { SimulateSpec } from '../wp-rocket-simulation/spec';
+import { createLogger } from '../logger';
 import { isRecord } from '../../utils/is-record';
 import { isHttpOrigin } from '../../utils/urls';
 import { createWriteQueue } from './write-queue';
@@ -28,6 +35,8 @@ export const EXCLUSION_SETS_KEY = 'local:exclusion-sets';
 /** One origin's saved set. */
 export interface SavedExclusionSet {
   readonly set: ExclusionSet;
+  /** What was simulated with the set (absent: nothing); restoring it never arms by itself. */
+  readonly simulate?: SimulateSpec;
   /** Epoch ms of the save — the eviction order (oldest first). */
   readonly updatedAt: number;
 }
@@ -51,6 +60,27 @@ export const exclusionSetsStore = storage.defineItem<SavedExclusionSets>(EXCLUSI
 
 /** The item's write queue. */
 const enqueueWrite = createWriteQueue();
+
+/** The store's logger. */
+const log = createLogger('exclusion-sets');
+
+/**
+ * Origins whose dropped simulation was already logged in this context: every
+ * read re-parses the stored map, so the same stored entry would otherwise
+ * warn on each one. Bounded by the origins the byte budget lets the map hold.
+ */
+const warnedDroppedSimulation = new Set<string>();
+
+/**
+ * Log a dropped saved simulation once per origin per context lifetime.
+ *
+ * @param origin The origin whose stored simulation was dropped.
+ */
+function warnDroppedSimulation(origin: string): void {
+  if (warnedDroppedSimulation.has(origin)) return;
+  warnedDroppedSimulation.add(origin);
+  log.warn(`Dropped the saved simulation of ${origin}: invalid, or a feature its set disables`);
+}
 
 /** UTF-8 encoder for the byte measure (stateless, reused). */
 const encoder = new TextEncoder();
@@ -106,6 +136,8 @@ function withinByteBudget(saved: SavedExclusionSets, keep?: string): SavedExclus
  * - a key must be a canonical http(s) origin; its entry an object with a
  *   valid set and a non-negative integer `updatedAt` — anything else is
  *   dropped, not trusted; unknown entry fields are ignored;
+ * - an invalid or contradictory `simulate` is dropped (logged once per
+ *   origin), the set kept;
  * - the map is held to the byte budget (least recently updated evicted).
  *
  * @param input Any storage-delivered value.
@@ -121,7 +153,13 @@ export function parseSavedExclusionSets(input: unknown): SavedExclusionSets | nu
       continue;
     }
     const set = parseExclusionSet(raw['set'], 'ignore');
-    if (set !== null) parsed[origin] = { set, updatedAt };
+    if (set === null) continue;
+    const simulate = optionalSimulateFor(raw['simulate'], set, 'ignore');
+    if (simulate === null) warnDroppedSimulation(origin);
+    parsed[origin] =
+      simulate === null || simulate === undefined
+        ? { set, updatedAt }
+        : { set, simulate, updatedAt };
   }
   return withinByteBudget(parsed);
 }
@@ -146,21 +184,36 @@ export async function getSavedExclusionSet(origin: string): Promise<ExclusionSet
 }
 
 /**
+ * One origin's saved entry: its set with the simulation saved beside it.
+ *
+ * @param origin The page origin to look up.
+ * @returns The entry, or null when the origin has none (or it was corrupt).
+ */
+export async function getSavedExclusionEntry(origin: string): Promise<SavedExclusionSet | null> {
+  const saved = await getSavedExclusionSets();
+  return Object.hasOwn(saved, origin) ? (saved[origin] ?? null) : null;
+}
+
+/**
  * Save one origin's set (queued read-modify-write over the validated map;
  * other origins survive, the budget evicts the oldest others if needed).
  *
  * @param origin A canonical http(s) origin.
  * @param set The set to save (re-validated: callers pass parsed sets).
  * @param now The save time (epoch ms); injectable for tests.
+ * @param simulate The simulation to save with it (absent: none — a save
+ *   replaces the whole entry).
  * @returns The map that was written. Rejects with an {@link Error} when
- *   `origin` is not a canonical http(s) origin or `set` fails the set guard
- *   (a broken caller — nothing touched), and with whatever the storage
+ *   `origin` is not a canonical http(s) origin, `set` fails the set guard
+ *   or `simulate` fails its guard or simulates a feature `set` disables (a
+ *   broken caller — nothing touched), and with whatever the storage
  *   read/write rejects with (callers branch on it).
  */
 export function saveExclusionSet(
   origin: string,
   set: ExclusionSet,
-  now: number = Date.now()
+  now: number = Date.now(),
+  simulate?: SimulateSpec
 ): Promise<SavedExclusionSets> {
   if (!isHttpOrigin(origin)) {
     return Promise.reject(
@@ -173,12 +226,21 @@ export function saveExclusionSet(
       new Error(`saveExclusionSet: the set for ${origin} fails the exclusion-set guard`)
     );
   }
+  const checkedSimulate = optionalSimulateFor(simulate, checked, 'reject');
+  if (checkedSimulate === null) {
+    return Promise.reject(
+      new Error(
+        `saveExclusionSet: the simulation for ${origin} fails its guard or simulates a feature the set disables`
+      )
+    );
+  }
+  const entry: SavedExclusionSet =
+    checkedSimulate === undefined
+      ? { set: checked, updatedAt: now }
+      : { set: checked, simulate: checkedSimulate, updatedAt: now };
   return enqueueWrite(async () => {
     const current = parseSavedExclusionSets(await exclusionSetsStore.getValue()) ?? {};
-    const next = withinByteBudget(
-      { ...current, [origin]: { set: checked, updatedAt: now } },
-      origin
-    );
+    const next = withinByteBudget({ ...current, [origin]: entry }, origin);
     await exclusionSetsStore.setValue(next);
     return next;
   });

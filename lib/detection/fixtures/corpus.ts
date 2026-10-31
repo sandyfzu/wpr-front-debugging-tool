@@ -32,6 +32,8 @@ export const FIXTURES = [
   'footprint-branches.html',
   'adversarial-lazyload-classes.html',
   'adversarial-exclusion-tokens.html',
+  // Real plugin pass: Delay JS on without a generator meta (served URLs).
+  'delay-on-no-meta.html',
   // Crafted Priority-Elements states: pending (beacon + config), applied,
   // collecting, mixed, and the adversarial markup/degrade cases.
   'priority-elements-pending.html',

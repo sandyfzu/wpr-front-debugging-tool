@@ -7,6 +7,11 @@ import type { ExclusionSet } from '../../lib/exclusion-builder/set';
 import { activeRecord, validSet } from '../../lib/messaging/exclusion-session.fixtures';
 import { OverlayApp } from './app';
 import { createOverlayController } from './controller';
+import {
+  NO_PAGE_EVIDENCE,
+  NO_SIMULATION_EVIDENCE,
+  type LanePageEvidence
+} from './exclusions/simulation-mode';
 import { createElementKeys, scanPage, type PageCandidate } from './exclusions/page-scan';
 import type { PageTools, PointedPick } from './page-tools';
 import type { PickerEvents } from './picker';
@@ -122,7 +127,9 @@ function mount(
   mode?: OverlayMode,
   modalAtStart = false,
   /** Run frame requests on a later task, like a browser (default: at once). */
-  laterFrames = false
+  laterFrames = false,
+  /** The page's Delay JS evidence (default: not read). */
+  delayEvidence?: LanePageEvidence
 ) {
   let reveal: (() => void) | null = null;
   const onClose = vi.fn();
@@ -147,7 +154,10 @@ function mount(
         return () => undefined;
       },
       reload,
-      log: { warn: vi.fn() }
+      log: { warn: vi.fn() },
+      ...(delayEvidence === undefined
+        ? {}
+        : { simulationEvidence: () => ({ ...NO_SIMULATION_EVIDENCE, delayJs: delayEvidence }) })
     });
     controller.start();
     made = controller;
@@ -246,12 +256,37 @@ describe('OverlayApp', () => {
     expect(document.activeElement?.tagName).toBe('H1');
   });
 
+  it('shows the Simulated indicator while the page runs a simulation, on the panel and the pill', async () => {
+    const kept: LanePageEvidence = { ...NO_PAGE_EVIDENCE, footprints: true, marker: 'verified' };
+    const open = mount(port({ state: 'inactive' }), null, undefined, false, false, kept);
+    await open.findByRole('heading', { level: 2, name: 'Delay JavaScript execution' });
+    expect(open.container.querySelector('[data-indicator="simulated"]')?.textContent).toBe(
+      'Simulated'
+    );
+    cleanup();
+    const folded = mount(port({ state: 'inactive' }), 'folded', undefined, false, false, kept);
+    const pill = await folded.findByRole('button', { name: /open the exclusion builder/i });
+    expect(pill.querySelector('[data-indicator="simulated"]')).not.toBeNull();
+    cleanup();
+    const plain = mount(
+      port({ state: 'inactive' }),
+      null,
+      undefined,
+      false,
+      false,
+      NO_PAGE_EVIDENCE
+    );
+    await plain.findByRole('heading', { level: 2, name: 'Delay JavaScript execution' });
+    expect(plain.container.querySelector('[data-indicator="simulated"]')).toBeNull();
+  });
+
   it('offers Stop for an active session; Reset only once the draft differs', async () => {
     mount(port(activeRecord()));
     await screen.findByRole('button', { name: /Stop/ });
     const reset = screen.getByRole('button', { name: /Reset/ });
     expect(reset.getAttribute('aria-disabled')).toBe('true');
-    fireEvent.click(screen.getByRole('switch', { name: /Disable feature: Delay JavaScript/ }));
+    // Two mode lanes each offer Disabled: the Delay JS one (the first) is meant.
+    fireEvent.click(screen.getAllByText('Disabled')[0] as HTMLElement);
     expect(reset.getAttribute('aria-disabled')).toBeNull();
   });
 
@@ -1078,7 +1113,10 @@ describe('held controls under the pointer', () => {
     // A text field: a locked row is read-only, never aria-disabled.
     '.xo-row-input:hover',
     // Restates the copied colour over the ghost hover — the resting look.
-    '.xo-lane-copy[data-copied]:hover'
+    '.xo-lane-copy[data-copied]:hover',
+    // A choice tile: held as a whole group (native disabled radios), which
+    // Kobalte marks `data-disabled` on every tile — guarded on that instead.
+    '.xo-mode-choice label:not([data-checked], [data-disabled]):hover'
   ]);
 
   /** The sheet's hover rules. */

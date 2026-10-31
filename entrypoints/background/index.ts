@@ -22,7 +22,9 @@
  * - the chord platform (`./chord-platform`) — the OS keyboard convention
  *   content scripts cannot read themselves,
  * - the command palette (`./command-palette`) — the on-page palette's view
- *   injection and its builder open for the asking tab.
+ *   injection and its builder open for the asking tab,
+ * - the latest exclusion list (`./latest-exclusion-list`) — the simulation's
+ *   fetched Delay JS list, refreshed when due.
  *
  * Every subsystem registration happens inside `main()` (nothing at import
  * time beyond constants), the global error handlers are attached first, and
@@ -47,6 +49,7 @@ import { registerTabPushRelay } from './tab-push-relay';
 import { registerTabRelay } from './tab-relay';
 import { registerChordPlatform } from './chord-platform';
 import { registerCommandPalette } from './command-palette';
+import { registerLatestExclusionList } from './latest-exclusion-list';
 
 const log = createLogger('background');
 
@@ -195,6 +198,15 @@ async function main(): Promise<void> {
   // work contains its own failures, and a slow probe must not hold the badge
   // gate or the database prime hostage behind it.
   void simSessions.sweep();
+
+  // Fire-and-forget: its due refresh resolves every failure itself, and a
+  // slow endpoint must not hold the database prime or the badge gate.
+  try {
+    void registerLatestExclusionList().prime();
+  } catch (cause) {
+    // Simulations then run the kept copy (if any) or the bundled list.
+    log.error('Latest exclusion list init failed — no refreshes this session', cause);
+  }
 
   const database = bootDatabaseService();
 

@@ -10,6 +10,7 @@ import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import { FDT_EXCLUDED_RESOURCE } from '../../../../lib/wp-rocket/constants';
 import type { WprDetections } from '../../../../lib/wp-rocket/types';
 import { formatCount } from '../../../../utils/format-count';
+import { simulationModifierCopy } from '../../../../lib/detection/hud';
 import { listCapped } from '../resource-list/resource-list-view';
 
 /** The state badge of one image row. */
@@ -21,16 +22,21 @@ export interface LazyloadStateBadge {
 }
 
 /**
- * The state badge for a row: `Lazyloaded` → `info`, `Not lazyloaded` →
- * `neutral` (an image outside lazyload is often deliberate — never an error).
+ * The state badge for a row: `Lazyloaded` → `info` (`Lazyloaded
+ * (Simulated)` where a verified simulation, not WP Rocket, lazy loads the
+ * page), `Not lazyloaded` → `neutral` (an image outside lazyload is often
+ * deliberate — never an error).
  *
  * @param row The image row.
+ * @param simulated A verified simulation runs LazyLoad on the page.
  * @returns The badge's kind and text.
  */
-export function lazyloadStateBadge(row: LazyloadImageResource): LazyloadStateBadge {
-  return row.lazyloaded
-    ? { kind: 'info', label: 'Lazyloaded' }
-    : { kind: 'neutral', label: 'Not lazyloaded' };
+export function lazyloadStateBadge(
+  row: LazyloadImageResource,
+  simulated = false
+): LazyloadStateBadge {
+  if (!row.lazyloaded) return { kind: 'neutral', label: 'Not lazyloaded' };
+  return { kind: 'info', label: simulated ? 'Lazyloaded (Simulated)' : 'Lazyloaded' };
 }
 
 /** A non-lazyloaded row's reasons, split for display. */
@@ -107,8 +113,10 @@ export function sameImageRow(a: LazyloadImageResource, b: LazyloadImageResource)
 /**
  * The summary strip's caveats:
  * - the capture capped the image list (counts then cover the kept rows only);
- * - images carry the lazyload attribute while the feature's script was not
- *   found — the badge's "not detected" would otherwise read as a contradiction.
+ * - a verified simulation runs LazyLoad here: said who did it (the
+ *   extension, never the site);
+ * - else, images carry the lazyload attribute while the feature's script was
+ *   not found — the badge's "not detected" would otherwise read as a contradiction.
  *
  * @param lazyload The payload's lazyload detection.
  * @returns The notes, in display order (often none).
@@ -121,7 +129,9 @@ export function lazyloadNotes(lazyload: WprDetections['lazyload']): string[] {
       `The list was capped at the first ${formatCount(cap)} images; counts cover these rows.`
     );
   }
-  if (!lazyload.present && lazyload.images.some((image) => image.lazyloadDetected)) {
+  if (lazyload.simulation === 'simulated') {
+    notes.push(simulationModifierCopy('simulated').sentence);
+  } else if (!lazyload.present && lazyload.images.some((image) => image.lazyloadDetected)) {
     notes.push(
       "Some images carry WP Rocket's lazyload attribute, but its lazyload script was not found on this page."
     );

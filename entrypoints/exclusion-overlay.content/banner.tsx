@@ -1,13 +1,16 @@
 /**
- * Renders one {@link Banner}: glyph + title + body, side notes, and its
- * forward actions as buttons — a dismissal as a close control in the
+ * Renders one {@link Banner}: glyph + title + body, the page's own lines,
+ * the session notes behind one collapsed disclosure, and its forward
+ * actions as buttons — a dismissal as a close control in the
  * corner, never an orphan text button. For the main state banner only its
  * words form the live region (buttons never get read out on each change).
  */
-import { For, Show, type JSX } from 'solid-js';
+import { For, Show, createUniqueId, type JSX } from 'solid-js';
 import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import X from 'lucide-solid/icons/x';
 import type { Banner as BannerData, BannerAction } from './banner-model';
+import { sessionNotesLabel, type NoteText } from './copy';
+import { NoteDisclosure } from './disclosure';
 import { Glyph } from './glyph';
 
 /** A forward action (anything but the dismissal). */
@@ -39,6 +42,9 @@ export interface BannerViewProps {
 export function BannerView(props: BannerViewProps): JSX.Element {
   const forward = (): ForwardAction[] =>
     props.banner.actions.filter((action): action is ForwardAction => action !== 'dismiss');
+  // The notes as one-run note lines (the disclosure's shape).
+  const sessionNotes = (): NoteText[] => props.banner.sessionNotes.map((note) => [note]);
+  const sessionNotesId = createUniqueId();
   return (
     <section class="xo-banner" data-tone={props.banner.tone}>
       <span class="xo-banner-glyph">
@@ -66,6 +72,15 @@ export function BannerView(props: BannerViewProps): JSX.Element {
         <ul class="xo-banner-notes">
           <For each={props.banner.notes}>{(note) => <li>{note}</li>}</For>
         </ul>
+      </Show>
+      <Show when={sessionNotes().length > 0}>
+        <div class="xo-banner-session">
+          <NoteDisclosure
+            id={`xo-session-notes-${sessionNotesId}`}
+            lines={sessionNotes()}
+            label={sessionNotesLabel}
+          />
+        </div>
       </Show>
       <Show when={forward().length > 0}>
         <div class="xo-banner-actions">

@@ -92,6 +92,8 @@ export interface ResourceListPageProps<Row extends ResourceRow, Id extends strin
   featureLabel: string;
   /** Whether that feature's footprint was detected on the page. */
   featurePresent: boolean;
+  /** A verified simulation, not WP Rocket, runs the feature on the page (never with `featurePresent`). */
+  featureSimulated?: boolean;
   /** The view shown in the list region when the page has no rows at all. */
   empty: JSX.Element;
   /** The rows' noun, for announcements. */
@@ -174,6 +176,7 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
       <ResourceSummary
         featureLabel={props.featureLabel}
         featurePresent={props.featurePresent}
+        featureSimulated={props.featureSimulated === true}
         total={rows().length > 0 ? countLabel(rows().length, noun) : undefined}
         notes={props.notes}
       />
@@ -268,10 +271,34 @@ interface ResourceSummaryProps {
   featureLabel: string;
   /** Whether its footprint was detected. */
   featurePresent: boolean;
+  /** A verified simulation runs it instead (info: the extension's, not the site's). */
+  featureSimulated: boolean;
   /** The counted row total ("24 images"); omitted when the page has none. */
   total?: string;
   /** Muted caveat lines. */
   notes?: readonly string[];
+}
+
+/**
+ * The summary badge's kind: detected `ok`, simulated `info`, else `neutral`.
+ *
+ * @param present The feature's footprint was detected.
+ * @param simulated A verified simulation runs it instead.
+ */
+function summaryKind(present: boolean, simulated: boolean): 'ok' | 'info' | 'neutral' {
+  if (present) return 'ok';
+  return simulated ? 'info' : 'neutral';
+}
+
+/**
+ * The summary badge's state word after the feature's name.
+ *
+ * @param present The feature's footprint was detected.
+ * @param simulated A verified simulation runs it instead.
+ */
+function summaryWord(present: boolean, simulated: boolean): string {
+  if (present) return 'detected';
+  return simulated ? 'simulated' : 'not detected';
 }
 
 /**
@@ -284,9 +311,9 @@ interface ResourceSummaryProps {
 function ResourceSummary(props: ResourceSummaryProps): JSX.Element {
   return (
     <div data-fdt="resource-summary" class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-      <StatusBadge kind={props.featurePresent ? 'ok' : 'neutral'} icon>
+      <StatusBadge kind={summaryKind(props.featurePresent, props.featureSimulated)} icon>
         {props.featureLabel}
-        <span class="font-normal">{props.featurePresent ? 'detected' : 'not detected'}</span>
+        <span class="font-normal">{summaryWord(props.featurePresent, props.featureSimulated)}</span>
       </StatusBadge>
       <Show when={props.total}>
         <span data-fdt="resource-total" class="text-2xs text-fg-secondary tabular-nums">

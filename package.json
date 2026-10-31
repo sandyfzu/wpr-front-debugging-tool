@@ -2,7 +2,7 @@
   "name": "wpr-front-debugging-tool",
   "description": "A tool for debugging WP Rocket WordPress plugin.",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.9.0",
   "type": "module",
   "author": {
     "name": "Sandy Figueroa",
@@ -24,6 +24,8 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:shard": "vitest run --coverage --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.reporter=text-summary --reporter=default --reporter=blob",
+    "test:merge": "vitest run --merge-reports --coverage",
     "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
     "bench:detection": "vitest run --config lib/detection/bench/vitest.bench.config.ts --silent=false",
     "check:budgets": "node scripts/check-budgets.mjs",

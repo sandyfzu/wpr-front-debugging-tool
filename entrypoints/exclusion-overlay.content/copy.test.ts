@@ -25,11 +25,17 @@ import {
   saveStateWords,
   sessionIndicator,
   unmodifiedCopy,
+  runtimeUnavailableCopy,
+  simulationListCopy,
   viewCopy
 } from './copy';
 import type { StoredRowDiff } from '../../lib/exclusion-builder/field-text';
 import type { AppliedWarning, SessionView } from './session/session-view';
 import type { OverlayState } from './session/machine';
+import {
+  LATEST_LIST_MISSES,
+  SIMULATION_RUNTIME_UNAVAILABLE_CAUSES
+} from '../../lib/wp-rocket-simulation/spec';
 
 /** Names applied rows by their text (the rows left the lane). */
 const textRefs = (rows: readonly string[]): readonly RowRef[] => rows.map((text) => ({ text }));
@@ -122,6 +128,7 @@ const VIEWS: readonly SessionView[] = [
   { kind: 'off' },
   { kind: 'unavailable', cause: 'detached', retryable: true },
   { kind: 'armed' },
+  { kind: 'unrecorded' },
   { kind: 'applied', reports: [], unmatched: 0, warnings: [], served: undefined },
   { kind: 'applied', reports: [], unmatched: 1, warnings: [], served: undefined },
   { kind: 'applied', reports: [], unmatched: 3, warnings: [], served: undefined },
@@ -150,9 +157,11 @@ describe('viewCopy', () => {
   it('words every view, singular and plural no-match counts included', () => {
     const copies = VIEWS.map(viewCopy);
     for (const copy of copies) expect(copy.title.length).toBeGreaterThan(0);
-    expect(copies[4]?.body).toMatch(/^1 row matches/);
-    expect(copies[5]?.body).toMatch(/^3 rows match/);
+    expect(copies[5]?.body).toMatch(/^1 row matches/);
+    expect(copies[6]?.body).toMatch(/^3 rows match/);
     expect(copies[1]).toBe(UNAVAILABLE_COPY.detached);
+    // Titled like its indicator ("No result").
+    expect(copies[3]?.title).toBe('No result for this page');
   });
 });
 
@@ -202,6 +211,7 @@ describe('sessionIndicator', () => {
       'Not applied',
       'Unavailable',
       'Applied · waiting',
+      'No result',
       'Applied',
       'Applied · no-match rows',
       'Applied · no-match rows',
@@ -622,8 +632,8 @@ describe('lane counts and hints (K.5a.2)', () => {
     expect(LANE_COPY.lazyRender.rowHint).toBe(
       `Text, matched against the element’s opening tag ${ascii}`
     );
-    expect(LANE_COPY.lazyload.rowHint).toMatch(
-      /image’s attributes; upper and lower case must match/
+    expect(LANE_COPY.lazyload.rowHint).toBe(
+      'Text matched against image attributes · case-sensitive · images only'
     );
     for (const lane of ['delayJs', 'deferJs', 'lazyload', 'lazyRender'] as const)
       expect(LANE_COPY[lane].rowHint).not.toMatch(/case-(in)?sensitively/);
@@ -680,5 +690,57 @@ describe('applied warnings in the status banner (K.5c)', () => {
       title: 'Applied',
       body: 'This page was rendered with your exclusions.'
     });
+  });
+});
+
+describe('unmodifiedCopy: runtime unavailable', () => {
+  it('words every cause with a forward action', () => {
+    for (const cause of SIMULATION_RUNTIME_UNAVAILABLE_CAUSES) {
+      const copy = unmodifiedCopy({ kind: 'runtime-unavailable', cause });
+      expect(copy).toBe(runtimeUnavailableCopy(cause));
+      expect(copy).toMatch(
+        /served unmodified\. (?:(?:Reload or reinstall|Update) the extension|Reload the page to retry)/
+      );
+    }
+    // Unreachable is retried on the next document: a page reload, not a reinstall.
+    expect(runtimeUnavailableCopy('asset-unreachable')).toBe(
+      'The packaged simulation data could not be loaded, so the page was served unmodified. Reload the page to retry.'
+    );
+    expect(runtimeUnavailableCopy('hash-mismatch')).toBe(
+      'The packaged simulation data is damaged, so the page was served unmodified. Reload or reinstall the extension.'
+    );
+    // A missing version is this build's gap: reinstalling the same build cannot fix it.
+    expect(runtimeUnavailableCopy('version-missing')).toBe(
+      'The packaged simulation data has no entry for this WP Rocket version, so the page was served unmodified. Update the extension to simulate this version.'
+    );
+  });
+});
+
+describe('simulationListCopy', () => {
+  const NOW = 1_790_000_000_000;
+
+  it('names the latest list with its age', () => {
+    expect(
+      simulationListCopy(
+        { listSource: 'latest', listFetchedAt: NOW - 3 * 3_600_000, wpRocketVersion: '3.24' },
+        NOW
+      )
+    ).toBe('Exclusion list: latest (fetched 3 h ago)');
+  });
+
+  it('names the bundled list with its version and why the latest one did not run', () => {
+    expect(
+      simulationListCopy(
+        { listSource: 'bundled', listMiss: 'never-fetched', wpRocketVersion: '3.23.5.1' },
+        NOW
+      )
+    ).toBe('Exclusion list: bundled with WP Rocket 3.23.5.1 (latest list not fetched yet)');
+    const words = LATEST_LIST_MISSES.map((listMiss) =>
+      simulationListCopy({ listSource: 'bundled', listMiss, wpRocketVersion: '3.24' }, NOW)
+    );
+    // Every miss has its own words.
+    expect(new Set(words).size).toBe(LATEST_LIST_MISSES.length);
+    for (const line of words)
+      expect(line).toMatch(/^Exclusion list: bundled with WP Rocket 3\.24 \(.+\)$/);
   });
 });

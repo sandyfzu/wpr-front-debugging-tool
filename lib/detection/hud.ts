@@ -20,6 +20,7 @@ import type {
   BuilderFact,
   FeatureEvidenceSource,
   FeatureMetaRow,
+  SimulationFact,
   WprDetections
 } from '../wp-rocket/types';
 import type { FeatureState, PageAnalysisReport } from './describe';
@@ -43,7 +44,9 @@ import {
   LABEL_PRELOAD_LINKS,
   LABEL_REMOVE_UNUSED_CSS,
   LABEL_ROCKETCDN,
-  LABEL_SELF_HOST_GOOGLE_FONTS
+  LABEL_SELF_HOST_GOOGLE_FONTS,
+  SHORT_LABEL_DEFER_JS,
+  SHORT_LABEL_DELAY_JS
 } from './labels';
 
 /**
@@ -107,7 +110,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'delay_js',
     label: LABEL_DELAY_JAVASCRIPT_EXECUTION,
-    shortLabel: 'Delay JS',
+    shortLabel: SHORT_LABEL_DELAY_JS,
     group: 'file-optimization',
     unit: SCRIPT_NOUN,
     count: (report) => report[LABEL_DELAY_JAVASCRIPT_EXECUTION]['delayed scripts'],
@@ -116,7 +119,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'defer_all_js',
     label: LABEL_LOAD_JAVASCRIPT_DEFERRED,
-    shortLabel: 'Defer JS',
+    shortLabel: SHORT_LABEL_DEFER_JS,
     group: 'file-optimization',
     unit: SCRIPT_NOUN,
     count: (report) => report[LABEL_LOAD_JAVASCRIPT_DEFERRED]['deferred scripts'],
@@ -310,6 +313,13 @@ export interface HudReading {
    * verdict, never part of it. Present only when the document states one.
    */
   readonly builder?: BuilderFact;
+  /**
+   * Whether the extension simulated this feature in this tab (`simulated`:
+   * the background vouched for the page's marker, so the verdict is not
+   * served) or the page's marker went unverified (verdict as served) — a
+   * modifier on top of the verdict. Present only when the document states one.
+   */
+  readonly simulation?: SimulationFact;
 }
 
 /** A builder fact that turns its feature off in this tab (feature-wide, or Defer for the page). */
@@ -360,13 +370,16 @@ export function readHudFeature(
 ): HudReading {
   const state = report[feature.label].state;
   const source = detections[feature.row].source ?? null;
+  const simulation = simulationFactOf(detections, feature.row);
   // Unknown needs a page WP Rocket handled: on a plugin-absent page every
-  // feature is honestly not applied.
+  // feature is honestly not applied. A verified simulation is no unknown
+  // either: the extension only simulates a feature the page was served without.
   const unknown =
     detections.wpr.present &&
     state === 'not applied' &&
     source === null &&
-    feature.undecided !== null;
+    feature.undecided !== null &&
+    simulation !== 'simulated';
   const verdict: HudVerdict = unknown ? 'unknown' : state;
   const builder = builderFactOf(detections, feature.row);
   return {
@@ -374,8 +387,21 @@ export function readHudFeature(
     count: feature.count === null ? null : feature.count(report),
     source,
     why: unknown ? feature.undecided : verdict === 'collecting' ? COLLECTING_WHY : null,
-    ...(builder === null ? {} : { builder })
+    ...(builder === null ? {} : { builder }),
+    ...(simulation === null ? {} : { simulation })
   };
+}
+
+/**
+ * A row's simulation fact, or null (only the simulated features' rows can
+ * carry one).
+ *
+ * @param detections The engine rows.
+ * @param row The detection row.
+ */
+function simulationFactOf(detections: WprDetections, row: FeatureMetaRow): SimulationFact | null {
+  const entry = detections[row];
+  return 'simulation' in entry && entry.simulation !== undefined ? entry.simulation : null;
 }
 
 /**
@@ -430,9 +456,10 @@ function servedStateLine(feature: HudFeature, reading: HudReading): string {
     case 'not applied':
       // A meta refutation is the plugin's own statement for this render; only
       // an absent footprint can mean a page served before the plugin's work.
-      return reading.source === 'meta'
-        ? "WP Rocket's generator meta does not declare it on this page."
-        : "nothing matched on this page (the page may predate the plugin's work).";
+      if (reading.source === 'meta') {
+        return "WP Rocket's generator meta does not declare it on this page.";
+      }
+      return "nothing matched on this page (the page may predate the plugin's work).";
   }
 }
 
@@ -531,6 +558,70 @@ export function builderModifierCopy(feature: HudFeature, fact: BuilderFact): Bui
       };
 }
 
+/** One simulation fact's row renderings (no tab hint: see {@link simulationTabHint}). */
+export type SimulationModifierCopy = Pick<BuilderModifierCopy, 'chip' | 'sentence'>;
+
+/**
+ * The modifier copy of one simulation fact — the single declaring site the
+ * cards, the strip and the support report render from, beside
+ * {@link builderModifierCopy}. Never claims WP Rocket served the feature.
+ *
+ * @param fact The row's simulation fact.
+ */
+export function simulationModifierCopy(fact: SimulationFact): SimulationModifierCopy {
+  return fact === 'simulated'
+    ? {
+        chip: 'Simulated in this tab',
+        sentence:
+          "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
+      }
+    : {
+        chip: 'Simulation not verified',
+        sentence:
+          "This page claims a simulation the extension can't confirm, so it's read as served."
+      };
+}
+
+/**
+ * The strip tab-level line's hint for a verified simulation (an unverified
+ * marker never joins that line: nothing the extension can vouch for).
+ *
+ * @param feature The HUD row (its compact name).
+ * @returns e.g. "Delay JS simulated".
+ */
+export function simulationTabHint(feature: HudFeature): string {
+  return `${feature.shortLabel} simulated`;
+}
+
+/**
+ * The summary's simulation suffix phrases, each appended like
+ * {@link builderOffSummary}: how many features the extension simulated in
+ * this tab, then whether any marker went unverified.
+ *
+ * @param simulated The features with a verified simulation.
+ * @param unverified The features whose marker went unverified.
+ * @returns e.g. ["1 simulated in this tab"]; empty for neither.
+ */
+export function simulationSummaryParts(simulated: number, unverified: number): string[] {
+  return [
+    ...(simulated > 0 ? [`${formatCount(simulated)} simulated in this tab`] : []),
+    ...(unverified > 0 ? ['simulation not verified'] : [])
+  ];
+}
+
+/**
+ * The report's Optimizations line simulation suffix: the
+ * {@link simulationSummaryParts} joined as text.
+ *
+ * @param simulated The features with a verified simulation.
+ * @param unverified The features whose marker went unverified.
+ * @returns e.g. "1 simulated in this tab", or null for neither.
+ */
+export function simulationSummary(simulated: number, unverified: number): string | null {
+  const parts = simulationSummaryParts(simulated, unverified);
+  return parts.length === 0 ? null : parts.join(LIST_JOINER);
+}
+
 /** The strip's tab-level line: the title and one hint per feature the builder changed. */
 export interface BuilderTabLine {
   readonly title: string;
@@ -546,38 +637,53 @@ const TAB_LINE_DASH = ' — ';
 /** The joiner assistive tech hears where the eye sees {@link LIST_JOINER}. */
 const SPOKEN_JOINER = ', ';
 
-/** One HUD feature with the builder fact the document states for it. */
-interface FeatureBuilderFact {
-  readonly feature: HudFeature;
-  readonly fact: BuilderFact;
+/** The closed pill's glyph kinds: a builder effect, or a verified simulation. */
+export type PageChangeKind = BuilderBadgeKind | 'simulated';
+
+/**
+ * One in-tab change the displayed document states for a feature: a builder
+ * fact, or a verified simulation (an unverified marker changed nothing the
+ * extension can vouch for, so it is no tab-level change).
+ */
+interface TabChange {
+  readonly kind: PageChangeKind;
+  readonly hint: string;
 }
 
 /**
- * The page's builder facts, in HUD order: the single read both the card's
- * tab-level line and the closed pill's glyph derive from, so they are
- * present together by construction.
+ * The page's in-tab changes, in HUD order (per feature: the simulation, then
+ * the builder fact on top of it): the single read both the card's tab-level
+ * line and the closed pill's glyph derive from, so they are present
+ * together by construction.
  *
  * @param detections The engine rows.
- * @returns One entry per HUD feature the document states a fact for.
+ * @returns One entry per change the document states.
  */
-function builderFacts(detections: WprDetections): FeatureBuilderFact[] {
-  return HUD_FEATURES.flatMap((feature) => {
+function tabChanges(detections: WprDetections): TabChange[] {
+  return HUD_FEATURES.flatMap((feature): TabChange[] => {
+    const simulation = simulationFactOf(detections, feature.row);
     const fact = builderFactOf(detections, feature.row);
-    return fact === null ? [] : [{ feature, fact }];
+    const changes: TabChange[] = [];
+    if (simulation === 'simulated') {
+      changes.push({ kind: 'simulated', hint: simulationTabHint(feature) });
+    }
+    if (fact !== null) {
+      changes.push({ kind: builderBadgeKind(fact), hint: builderModifierCopy(feature, fact).hint });
+    }
+    return changes;
   });
 }
 
 /**
  * The tab-level line for a page, from the same facts and copy as the
- * per-feature modifier; null when the document states no builder fact (a
+ * per-feature modifiers (the Exclusion Builder's session both rewrites rows
+ * and runs the simulation); null when the document states neither (a
  * rewrite that only removed a served marker changed no feature: no line).
  *
  * @param detections The engine rows.
  */
 export function builderTabLine(detections: WprDetections): BuilderTabLine | null {
-  const hints = builderFacts(detections).map(
-    ({ feature, fact }) => builderModifierCopy(feature, fact).hint
-  );
+  const hints = tabChanges(detections).map((change) => change.hint);
   if (hints.length === 0) return null;
   const lead = `${BUILDER_TAB_LINE_TITLE}${TAB_LINE_DASH}`;
   return {
@@ -594,17 +700,20 @@ export function builderTabLine(detections: WprDetections): BuilderTabLine | null
 export const BUILDER_PILL_HINT_SPOKEN = ', rewritten by the Exclusion Builder';
 
 /**
- * The page's leading builder effect, drawn as the closed pill's one glyph:
- * `off` when any feature is turned off in this tab (it changes what runs, so
- * it outranks exclusions), else `excluded` — each fact's own badge kind.
- * Read from the same facts as {@link builderTabLine}.
+ * The page's leading in-tab change, drawn as the closed pill's one glyph:
+ * `simulated` when the extension runs a feature WP Rocket did not serve
+ * (the page runs code the site never sent, so it outranks the rest), else
+ * `off` when any feature is turned off in this tab (it changes what runs,
+ * so it outranks exclusions), else `excluded` — each fact's own badge kind.
+ * Read from the same changes as {@link builderTabLine}.
  *
  * @param detections The engine rows.
- * @returns The glyph kind, or null when the document states no builder fact.
+ * @returns The glyph kind, or null when the document states no change.
  */
-export function builderPageKind(detections: WprDetections): BuilderBadgeKind | null {
-  const kinds = builderFacts(detections).map(({ fact }) => builderBadgeKind(fact));
+export function builderPageKind(detections: WprDetections): PageChangeKind | null {
+  const kinds = tabChanges(detections).map((change) => change.kind);
   if (kinds.length === 0) return null;
+  if (kinds.includes('simulated')) return 'simulated';
   return kinds.includes('off') ? 'off' : 'excluded';
 }
 

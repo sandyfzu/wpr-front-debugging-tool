@@ -15,6 +15,7 @@ import { parseBuilderMarker } from './builder-fact';
 import type { BuilderNote } from '../exclusion-builder/builder-marker';
 import { parseFeatureMeta } from './feature-meta';
 import type { FeatureMetaEvidence } from './feature-meta';
+import { readSimulationMarker, type PageSimulationMarker } from './simulation-fact';
 
 /** Classified page content shared by every detection check. */
 export interface ParsedPage {
@@ -42,6 +43,13 @@ export interface ParsedPage {
    * builder marker.
    */
   builderNote: BuilderNote | null;
+  /**
+   * The simulation marker on this document (the simulated features and the
+   * id to verify — null when its copies disagree), parsed once here; null
+   * when the page carries no valid one. Never an authority by itself: only
+   * a background-verified id is.
+   */
+  simulationMarker: PageSimulationMarker | null;
 }
 
 /**
@@ -88,6 +96,7 @@ export function parsePage(html: string): ParsedPage {
     links: [...document.querySelectorAll('link')],
     comments,
     featureMeta: parseFeatureMeta(document),
-    builderNote: parseBuilderMarker(document)
+    builderNote: parseBuilderMarker(document),
+    simulationMarker: readSimulationMarker(document)
   };
 }

@@ -32,6 +32,7 @@ import {
   readIndicator,
   typeRow
 } from '../helpers/exclusion-overlay';
+import { chooseDelayMode } from '../helpers/simulation';
 
 /** Two scripts served as Delay JavaScript execution delays them. */
 const DELAYED = '/exclusion/delayed.html';
@@ -105,6 +106,7 @@ test.describe('exclusion builder editor', () => {
           title: 'Fix 1 row before applying',
           body: 'Each marked row says what is wrong with it.',
           notes: [],
+          sessionNotes: null,
           actions: ['Dismiss: Fix 1 row before applying']
         }
       ]);
@@ -165,10 +167,8 @@ test.describe('exclusion builder editor', () => {
     ]);
     await expect(delay.getByRole('listitem').nth(0)).toContainText('1 match');
 
-    // The feature-wide switch: every delayed script restored, no per-row count.
-    const disable = page.getByRole('switch', { name: `Disable feature: ${DELAY} on this page` });
-    await disable.click();
-    await expect(disable).toHaveAttribute('aria-checked', 'true');
+    // The feature-wide Disabled mode: every delayed script restored, no per-row count.
+    await chooseDelayMode(page, 'Disabled');
     await reloadThroughSession(page, () => applyButton(page).click());
     await expect(
       delay.getByText('All 2 delayed scripts restored (feature disabled)')

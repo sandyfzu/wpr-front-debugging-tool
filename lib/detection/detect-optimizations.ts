@@ -47,6 +47,7 @@ import {
   isDelayJSType
 } from '../wp-rocket/constants';
 import type { ParsedPage } from './parse-page';
+import { servedScriptSrc, servedScriptSrcAttribute } from './served-script-src';
 
 /** Remove Unused CSS: an inline `style` element with the reserved id. */
 export function detectRemoveUnusedCss(page: ParsedPage): WprDetections['remove_unused_css'] {
@@ -152,8 +153,12 @@ function scanLazyloadFootprint(
   let extraFound = false;
   for (const script of [...page.scripts].reverse()) {
     if (scriptPresent && inlinePresent) break;
-    const src = script.getAttribute('src');
-    if (src !== null && LAZYLOAD_SCRIPT_PATTERN.test(src)) {
+    // The served URL: a delayed library (its exclusion row filtered away)
+    // still counts.
+    if (
+      servedScriptSrcAttribute(script) !== null &&
+      LAZYLOAD_SCRIPT_PATTERN.test(servedScriptSrc(script))
+    ) {
       scriptPresent = true;
       continue;
     }
@@ -220,15 +225,17 @@ export function detectMinifyCss(page: ParsedPage): WprDetections['minify_css'] {
   return { present };
 }
 
-/** Minify JS: `cache/min/<n>/<hash>…js` script URLs (resolved). */
+/**
+ * Minify JS: `cache/min/<n>/<hash>…js` script URLs (resolved, served — Delay
+ * JS delays minified files unless an exclusion row matches them).
+ */
 export function detectMinifyJs(page: ParsedPage): WprDetections['minify_js'] {
-  // The engines' falsy gate, kept for exact parity: an empty `src` attribute
+  // The engines' falsy gate, kept for exact parity: an empty served URL
   // never runs the URL check (which would otherwise resolve against the
   // document's own URL).
   const present = page.scripts.some((script) => {
-    const srcAttr = script.getAttribute('src');
-    if (!srcAttr) return false;
-    return MINIFY_JS_URL_PATTERN.test(script.src);
+    if (!servedScriptSrcAttribute(script)) return false;
+    return MINIFY_JS_URL_PATTERN.test(servedScriptSrc(script));
   });
   return { present };
 }

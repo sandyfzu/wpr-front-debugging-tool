@@ -31,6 +31,7 @@ import { onMessage } from '../../lib/messaging';
 import { parseKnownConflicts, type DbUpdateResult } from '../../lib/messaging/validate';
 import { ALARM_ID_UPDATE_KNOWN_CONFLICTS_DB } from '../../lib/wp-rocket/constants';
 import dbSeedUrl from '../../lib/known-conflicts/known-conflicts-db.json?url&no-inline';
+import { fetchFailureKind } from '../../utils/fetch-failure';
 
 const log = createLogger('known-conflicts');
 
@@ -97,13 +98,7 @@ export async function fetchAndStoreKnownConflicts(deps: UpdateDeps): Promise<Upd
       signal: AbortSignal.timeout(DB_FETCH_TIMEOUT_MS)
     });
   } catch (cause) {
-    const mode: UpdateFailureReason =
-      cause instanceof DOMException && cause.name === 'TimeoutError'
-        ? 'timeout'
-        : cause instanceof DOMException && cause.name === 'AbortError'
-          ? 'timeout'
-          : 'network-error';
-    return { status: 'failed', reason: mode, cause };
+    return { status: 'failed', reason: fetchFailureKind(cause), cause };
   }
   if (!response.ok) {
     return {

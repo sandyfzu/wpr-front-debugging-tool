@@ -16,6 +16,9 @@ import type {
 } from '../../../lib/messaging/exclusion-panel';
 import type { StatusKind } from '../../../components/ui/status-badge';
 import { PAGE_UI_MENU_RESCUE, PAGE_UI_OPTIONS_RESCUE } from '../../../lib/page-commands/commands';
+import { hudFeatureOf } from '../../../lib/detection/hud';
+import type { SimulatedFeatureId } from '../../../lib/wp-rocket-simulation/spec';
+import { joinWords } from '../../../utils/text';
 
 /**
  * - `checking` — the first answer has not arrived.
@@ -81,6 +84,40 @@ function hostOf(origin: string): string {
 }
 
 /**
+ * The "On" description's opening, up to the colon: the exclusions, plus the
+ * features the last document was simulated with by their full names — only
+ * a document the step actually simulated (one left as served names no
+ * simulation). Several features read as simulated by the extension, never
+ * the site's configuration.
+ *
+ * @param simulated The features the last document was simulated with.
+ */
+function appliedLead(simulated: readonly SimulatedFeatureId[]): string {
+  const names = simulated.map((id) => hudFeatureOf(id)?.label ?? id);
+  if (names.length === 0) return 'Exclusions are applied in this tab';
+  if (names.length === 1)
+    return `Exclusions and a simulated ${names.join('')} are applied in this tab`;
+  return `Exclusions are applied in this tab, with ${joinWords(names)} simulated by the extension (not the site’s configuration)`;
+}
+
+/**
+ * Said once whenever a feature was simulated: the simulation runs WP Rocket's
+ * own lists plus the builder rows, never the site's saved exclusions (the
+ * extension can't read them).
+ */
+const SITE_EXCLUSIONS_NOTE = 'The site’s own WP Rocket exclusions aren’t part of the simulation.';
+
+/**
+ * The "On" description's site-exclusions sentence, with its leading space.
+ *
+ * @param simulated The features the last document was simulated with.
+ * @returns The sentence, or '' when nothing was simulated.
+ */
+function siteExclusionsNote(simulated: readonly SimulatedFeatureId[]): string {
+  return simulated.length === 0 ? '' : ` ${SITE_EXCLUSIONS_NOTE}`;
+}
+
+/**
  * The entry's words for a state.
  *
  * @param state The session state.
@@ -106,7 +143,7 @@ export function builderEntryView(state: BuilderSessionState): BuilderEntryView {
     case 'active':
       return {
         badge: { kind: 'ok', label: 'On' },
-        description: `Exclusions are applied in this tab: pages of ${hostOf(summary.origin)} load rewritten until Stop or the tab closes. Open the builder to see this page’s result.`
+        description: `${appliedLead(summary.simulated ?? [])}: pages of ${hostOf(summary.origin)} load rewritten until Stop or the tab closes.${siteExclusionsNote(summary.simulated ?? [])} Open the builder to see this page’s result.`
       };
     case 'unavailable':
       return {

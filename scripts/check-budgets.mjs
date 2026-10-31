@@ -18,7 +18,10 @@
  * - `kind: "bytes"` (the default — every row may omit the field): a bundle
  *   surface with `globs` + `maxKb`, measured from the build output below —
  *   the Chromium build, or the build its optional `build` field names
- *   (`firefox-mv2`: skipped, not failed, while that build is absent);
+ *   (`firefox-mv2`: skipped, not failed, while that build is absent); a row
+ *   matching no file reads "absent" (not built yet) unless it is marked
+ *   `required: true` — then each of its globs must match exactly one file,
+ *   so a shipped file renamed, moved or doubled fails the gate;
  * - `kind: "timing"`: a runtime gate this script cannot measure (no globs,
  *   no `maxKb` — carrying either is malformed). Its `maxMs` is asserted by
  *   the runner named in `measuredBy` (a committed spec); this script only
@@ -131,20 +134,39 @@ export function measureSurface(files, globs, readFile = defaultReadFile) {
 }
 
 /**
+ * A required row's globs that do not match exactly one file each.
+ *
+ * @param {string[]} files Files under the build root.
+ * @param {string[]} globs The row's globs.
+ * @returns {Array<{glob: string, matched: number}>} Each offending glob with its match count.
+ */
+export function requiredGlobProblems(files, globs) {
+  return globs
+    .map((glob) => ({ glob, matched: files.filter((file) => matchesGlob(file, glob)).length }))
+    .filter(({ matched }) => matched !== 1);
+}
+
+/**
  * Measure one bytes row against its own build: skipped while that build is
  * absent (only an optional build can be — the Chromium root is checked
- * first), absent when no file matches, else its totals and breaches.
+ * first); a required row whose globs do not each match exactly one file is
+ * unmatched (a breach); otherwise absent when no file matches, else its
+ * totals and breaches.
  *
- * @param {{globs: string[], maxKb: {raw?: number, gzip?: number}, build?: string}} row A validated bytes row.
+ * @param {{globs: string[], maxKb: {raw?: number, gzip?: number}, build?: string, required?: boolean}} row A validated bytes row.
  * @param {(build: string) => string[] | null} filesOf A build's file list, or null when it is not built.
  * @param {(build: string) => (path: string) => Buffer} readerFor A build's file reader.
- * @returns {{status: 'skipped', build: string} | {status: 'absent'} | {status: 'measured', rawBytes: number, gzipBytes: number, rawOver: boolean, gzipOver: boolean}}
+ * @returns {{status: 'skipped', build: string} | {status: 'unmatched', problems: Array<{glob: string, matched: number}>} | {status: 'absent'} | {status: 'measured', rawBytes: number, gzipBytes: number, rawOver: boolean, gzipOver: boolean}}
  *   The row's outcome.
  */
 export function measureRow(row, filesOf, readerFor) {
   const build = buildDirectory(row);
   const files = filesOf(build);
   if (files === null) return { status: 'skipped', build };
+  if (row.required === true) {
+    const problems = requiredGlobProblems(files, row.globs);
+    if (problems.length > 0) return { status: 'unmatched', problems };
+  }
   const { rawBytes, gzipBytes, files: hit } = measureSurface(files, row.globs, readerFor(build));
   if (hit.length === 0) return { status: 'absent' };
   return {
@@ -167,7 +189,7 @@ function defaultReadFile(relativePath) {
  *
  * @param {unknown} raw The parsed JSON of `scripts/budgets.json` (an array of
  *   rows, per the kind taxonomy in the header).
- * @returns {Array<{kind: 'bytes', surface: string, globs: string[], maxKb: {raw?: number, gzip?: number}, build?: string} | {kind: 'timing', surface: string, maxMs: number, measuredBy: string}>}
+ * @returns {Array<{kind: 'bytes', surface: string, globs: string[], maxKb: {raw?: number, gzip?: number}, build?: string, required?: true} | {kind: 'timing', surface: string, maxMs: number, measuredBy: string}>}
  *   Validated rows in file order, normalized to their kind.
  */
 export function parseBudgetRows(raw) {
@@ -226,6 +248,10 @@ export function parseBudgetRows(raw) {
       if (row.build !== undefined && !BUILD_DIRECTORIES.includes(row.build)) {
         problems.push(`${tag} build must be one of ${BUILD_DIRECTORIES.join(', ')}`);
       }
+      // Only `true` means anything; `false` would read like a setting while being the default.
+      if (row.required !== undefined && row.required !== true) {
+        problems.push(`${tag} required must be true when present`);
+      }
     } else if (kind === 'timing') {
       const maxMs = /** @type {{maxMs?: unknown}} */ (row).maxMs;
       if (typeof maxMs !== 'number' || !Number.isFinite(maxMs) || maxMs <= 0) {
@@ -248,6 +274,11 @@ export function parseBudgetRows(raw) {
       if (row.build !== undefined) {
         problems.push(
           `${tag} is a timing row — a timing gate is measured outside the bundle, so it cannot carry build`
+        );
+      }
+      if (row.required !== undefined) {
+        problems.push(
+          `${tag} is a timing row — a timing gate is measured outside the bundle, so it cannot carry required`
         );
       }
     } else {
@@ -385,6 +416,14 @@ async function main() {
       console.log(
         `  ${padded(surface)}  skipped — .output/${build} not built (pnpm build:firefox)`
       );
+      continue;
+    }
+    if (result.status === 'unmatched') {
+      breached = true;
+      const detail = result.problems
+        .map(({ glob, matched }) => `${glob} matched ${matched} files`)
+        .join('; ');
+      console.log(`  ${padded(surface)}  ✗ required: ${detail} (each glob must match exactly 1)`);
       continue;
     }
     if (result.status === 'absent') {

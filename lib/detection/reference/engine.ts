@@ -42,6 +42,15 @@
  *    presence-propagation rule. The port and this reference implement the
  *    same bounded parse and verdict rule independently; the meta expectations
  *    are pinned by their own table-driven suite, not claimed as source parity.
+ * 3. URL-recognized scripts (minify JS, both lazyload scans, the beacon's URL
+ *    fallback) read the served URL: on a delayed tag (`type` ending in
+ *    `rocketlazyloadscript`, any case — the Delay JS runtime's own selector)
+ *    a non-empty `data-rocket-src` (where Delay JS moves `src`) before `src`,
+ *    resolved against the document base; each check's empty-URL gate tests
+ *    that served value. Side effect on undelayed pages: both lazyload scans
+ *    now match the resolved `src` property instead of the raw attribute —
+ *    identical for real URLs, they can differ only on degenerate paths
+ *    (`..` segments, backslashes) that resolution normalizes.
  *
  * The port's contract additions (the cache-marker flag with its comment-only
  * white-label registry and strict display-domain timestamp, the defer count
@@ -70,6 +79,7 @@ import {
   DATA_SRC,
   DELAY_JS_CONTROLLER,
   DELAY_JS_SRC,
+  DELAY_JS_TYPE_OLD,
   DELAY_JS_VERSION_PATTERN,
   FEATURE_COMMENT_PATTERN,
   FEATURE_META_LIMITS,
@@ -281,8 +291,7 @@ function checkLazyLoad({
   let containsLazyloadInlineScript = false;
   for (const script of [...pageScripts].reverse()) {
     if (containsLazyloadScript && containsLazyloadInlineScript) break;
-    const src = script.getAttribute('src');
-    if (src && src.match(LAZYLOAD_SCRIPT_PATTERN)) {
+    if (rawServedSrc(script) && resolvedServedSrc(script).match(LAZYLOAD_SCRIPT_PATTERN)) {
       containsLazyloadScript = true;
       continue;
     }
@@ -319,8 +328,7 @@ function checkLazyLoadIframes({
   let replaceImageScript = false;
   for (const script of [...pageScripts].reverse()) {
     if (containsLazyloadScript && containsLazyloadInlineScript) break;
-    const src = script.getAttribute('src');
-    if (src && src.match(LAZYLOAD_SCRIPT_PATTERN)) {
+    if (rawServedSrc(script) && resolvedServedSrc(script).match(LAZYLOAD_SCRIPT_PATTERN)) {
       containsLazyloadScript = true;
       continue;
     }
@@ -335,6 +343,46 @@ function checkLazyLoadIframes({
   const replaceImage = isPresent && replaceImageScript;
 
   return { present: isPresent, replaceImage };
+}
+
+/**
+ * Delay JS's moved URL (deviation 3): read only on tags its runtime loads —
+ * `type` ending in the delay marker, case-insensitively.
+ *
+ * @param script The script element.
+ * @returns The `data-rocket-src` value on a delayed tag, else `null`.
+ */
+function delayedServedSrc(script: HTMLScriptElement): string | null {
+  const type = (script.getAttribute('type') || '').toLowerCase();
+  if (!type.endsWith(DELAY_JS_TYPE_OLD)) return null;
+  return script.getAttribute(DELAY_JS_SRC);
+}
+
+/**
+ * The served URL as written (deviation 3): a delayed tag's `data-rocket-src`
+ * when non-empty, otherwise `src`.
+ *
+ * @param script The script element.
+ * @returns The raw served URL, or `null` when the tag names none.
+ */
+function rawServedSrc(script: HTMLScriptElement): string | null {
+  return delayedServedSrc(script) || script.getAttribute('src');
+}
+
+/**
+ * The served URL resolved like the `src` property (deviation 3).
+ *
+ * @param script The script element.
+ * @returns The absolute URL; the raw value when it does not parse.
+ */
+function resolvedServedSrc(script: HTMLScriptElement): string {
+  const delayed = delayedServedSrc(script);
+  if (!delayed) return script.src;
+  try {
+    return new URL(delayed, script.baseURI).href;
+  } catch {
+    return delayed;
+  }
 }
 
 function checkMinifyCSS({
@@ -355,8 +403,8 @@ function checkMinifyJS({
   pageScripts
 }: CheckOptimizationFunctionPayload): WprDetections['minify_js'] {
   const isPresent = pageScripts.some((script) => {
-    if (script.getAttribute('src')) {
-      if (script.src?.match(MINIFY_JS_URL_PATTERN)) {
+    if (rawServedSrc(script)) {
+      if (resolvedServedSrc(script).match(MINIFY_JS_URL_PATTERN)) {
         return true;
       }
     }
@@ -474,7 +522,7 @@ function checkPriorityElementsBeacon({
     (script: HTMLScriptElement) => script.getAttribute('data-name') === BEACON_DATA_NAME
   );
   const srcPresent = pageScripts.some((script: HTMLScriptElement) =>
-    BEACON_SRC_PATTERN.test(script.src)
+    BEACON_SRC_PATTERN.test(resolvedServedSrc(script))
   );
   if (!tagPresent && !srcPresent) {
     return { present: false, status: null, isMobile: null };

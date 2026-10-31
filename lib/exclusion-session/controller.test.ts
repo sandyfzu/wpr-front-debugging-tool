@@ -6,6 +6,7 @@
  * unavailable, interception ended), wake re-validation, reset, push
  * failures, and serialized races.
  */
+import { LAZYLOAD_PACKAGE_FIXTURE } from './simulation-package.fixtures';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../logger';
@@ -21,16 +22,29 @@ import {
   putExclusionSessionRecord,
   removeExclusionSessionRecord
 } from '../storage/exclusion-sessions';
-import { getSavedExclusionSet, saveExclusionSet } from '../storage/exclusion-sets';
+import {
+  getSavedExclusionEntry,
+  getSavedExclusionSet,
+  saveExclusionSet
+} from '../storage/exclusion-sets';
 import type { ArmResult, InterceptionBackend, InterceptionHost } from './backend';
 import {
   createExclusionSessionController,
   type ExclusionSessionController,
   type ExclusionSessionControllerDeps
 } from './controller';
-import { DOCUMENT_TRANSFORM_BUDGET_MS, type DocumentTransformRunner } from './document-transform';
+import type { DocumentTransformRunner } from './document-transform';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
-import { INTERCEPTION_HOST_BOUNDS_MS, SESSION_STEP_TIMEOUTS_MS } from './timeouts';
+import {
+  DOCUMENT_TRANSFORM_BUDGET_MS,
+  INTERCEPTION_HOST_BOUNDS_MS,
+  rewriteDocumentBoundMs,
+  SESSION_STEP_TIMEOUTS_MS
+} from './timeouts';
+import { simulateDelayJs } from '../wp-rocket-simulation/delay-js-forward';
+import type { SimulationMarkerEntry } from '../storage/simulation-markers';
+import { createMarkerIdSource, createMarkerSettler } from './simulation-marker-memo';
+import { INERT_SIMULATION_SOURCES, type SimulationSources } from './simulation-sources';
 
 const TAB = 3;
 const ORIGIN = 'https://site.test';
@@ -127,8 +141,8 @@ function rig(
       remove: removeExclusionSessionRecord
     },
     savedSets: {
-      get: getSavedExclusionSet,
-      save: (origin, set) => saveExclusionSet(origin, set, NOW)
+      get: getSavedExclusionEntry,
+      save: (origin, set, simulate) => saveExclusionSet(origin, set, NOW, simulate)
     },
     pushToTab: (tabId, status) => {
       tabPushes.push([tabId, status]);
@@ -262,6 +276,35 @@ describe('apply', () => {
     const r = rig();
     await expect(r.controller.apply(page(), { set: 'nope' })).rejects.toThrow(/malformed payload/);
     expect(r.backend.calls).toEqual([]);
+  });
+
+  it('arms a simulating payload: the record and the saved entry carry its spec', async () => {
+    const r = rig();
+    const simulating = { set: SET, simulate: { features: ['delay_js'] } };
+    await expect(r.controller.apply(page(), simulating)).resolves.toEqual({
+      outcome: 'applying'
+    });
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      state: 'active',
+      set: SET,
+      simulate: { features: ['delay_js'] }
+    });
+    await expect(getSavedExclusionEntry(ORIGIN)).resolves.toMatchObject({
+      set: SET,
+      simulate: { features: ['delay_js'] }
+    });
+  });
+
+  it('rejects a payload simulating a feature its set disables (contradictory pair)', async () => {
+    const r = rig();
+    const contradictory = {
+      set: { ...SET, disable: { ...SET.disable, delayJs: true } },
+      simulate: { features: ['delay_js'] }
+    };
+    await expect(r.controller.apply(page(), contradictory)).rejects.toThrow(/malformed payload/);
+    expect(r.backend.calls).toEqual([]);
+    await expect(getExclusionSessionRecords()).resolves.toEqual({});
   });
 
   it('answers invalid rows without arming or saving', async () => {
@@ -402,7 +445,7 @@ describe('apply', () => {
 
   it('stays applying when saving the set, the reload or a push fails (logged)', async () => {
     const r = rig({
-      savedSets: { get: getSavedExclusionSet, save: () => Promise.reject(new Error('disk')) },
+      savedSets: { get: getSavedExclusionEntry, save: () => Promise.reject(new Error('disk')) },
       reload: () => {
         throw new Error('tab gone');
       },
@@ -418,6 +461,19 @@ describe('apply', () => {
     expect(messages).toContain('error:Tab reload could not be scheduled');
     expect(messages).toContain('debug:Session push without a listener (expected)');
     expect(messages).toContain('error:Session push failed');
+  });
+
+  it('logs a push whose tab receiver went away mid-navigation at debug, never as a failure', async () => {
+    const r = rig({
+      pushToTab: () =>
+        Promise.reject(new Error('The message port closed before a response was received.'))
+    });
+    await expect(r.controller.apply(page(), { set: SET })).resolves.toEqual({
+      outcome: 'applying'
+    });
+    const messages = r.log.lines.map((line) => `${line.level}:${line.message}`);
+    expect(messages).toContain('debug:Session push without a listener (expected)');
+    expect(messages).not.toContain('error:Session push failed');
   });
 });
 
@@ -522,6 +578,16 @@ describe('saved sets', () => {
     await expect(r.controller.savedSet(PANEL)).resolves.toEqual({ set: null });
   });
 
+  it('answers the simulation saved beside the set (absent when none was saved)', async () => {
+    const r = rig();
+    const simulate = { features: ['delay_js' as const] };
+    await saveExclusionSet(ORIGIN, SET, NOW, simulate);
+    const reply = await r.controller.savedSet(page());
+    expect(reply).toEqual({ set: SET, simulate });
+    await saveExclusionSet(ORIGIN, SET, NOW);
+    expect(Object.hasOwn(await r.controller.savedSet(page()), 'simulate')).toBe(false);
+  });
+
   it('rejects when the store read fails', async () => {
     const r = rig({
       savedSets: { get: () => Promise.reject(new Error('io')), save: () => Promise.resolve() }
@@ -547,12 +613,24 @@ describe('saved sets', () => {
       reason: 'invalid-request'
     });
     const failing = rig({
-      savedSets: { get: getSavedExclusionSet, save: () => Promise.reject(new Error('q')) }
+      savedSets: { get: getSavedExclusionEntry, save: () => Promise.reject(new Error('q')) }
     });
     await expect(failing.controller.save(page(), { set: SET })).resolves.toEqual({
       outcome: 'not-saved',
       reason: 'storage-failed'
     });
+  });
+
+  it('saves a simulating draft with its spec; a later plain save drops it', async () => {
+    const r = rig();
+    const simulating = { set: EMPTY_EXCLUSION_SET, simulate: { features: ['delay_js'] } };
+    await expect(r.controller.save(page(), simulating)).resolves.toEqual({ outcome: 'saved' });
+    await expect(getSavedExclusionEntry(ORIGIN)).resolves.toMatchObject({
+      set: EMPTY_EXCLUSION_SET,
+      simulate: { features: ['delay_js'] }
+    });
+    await expect(r.controller.save(page(), { set: SET })).resolves.toEqual({ outcome: 'saved' });
+    await expect(getSavedExclusionEntry(ORIGIN)).resolves.not.toHaveProperty('simulate');
   });
 });
 
@@ -590,11 +668,14 @@ describe('host', () => {
 
   it('gates interception on an active session of the document’s origin', async () => {
     const r = rig();
-    await expect(r.host.shouldIntercept(TAB, `${ORIGIN}/x`)).resolves.toBe(false);
+    await expect(r.host.shouldIntercept(TAB, `${ORIGIN}/x`)).resolves.toBeNull();
     await seedActive();
-    await expect(r.host.shouldIntercept(TAB, `${ORIGIN}/x`)).resolves.toBe(true);
-    await expect(r.host.shouldIntercept(TAB, 'https://other.test/x')).resolves.toBe(false);
-    await expect(r.host.shouldIntercept(TAB, 'not a url')).resolves.toBe(false);
+    // An exclusions-only session: granted the exclusions-only rewrite bound.
+    await expect(r.host.shouldIntercept(TAB, `${ORIGIN}/x`)).resolves.toEqual({
+      rewriteBoundMs: INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument
+    });
+    await expect(r.host.shouldIntercept(TAB, 'https://other.test/x')).resolves.toBeNull();
+    await expect(r.host.shouldIntercept(TAB, 'not a url')).resolves.toBeNull();
   });
 
   it('rewrites a session document and records its outcome', async () => {
@@ -817,7 +898,7 @@ describe('wake re-validation', () => {
     resolveResume(false);
     await revalidation;
     await expect(status).resolves.toEqual({ state: 'inactive' });
-    await expect(gate).resolves.toBe(false);
+    await expect(gate).resolves.toBeNull();
   });
 });
 
@@ -1016,7 +1097,7 @@ describe('time bounds', () => {
     await flush();
     timers.fire();
     await revalidation;
-    await expect(gate).resolves.toBe(false);
+    await expect(gate).resolves.toBeNull();
     await expect(getExclusionSessionRecords()).resolves.toEqual({});
   });
 
@@ -1040,7 +1121,7 @@ describe('time bounds', () => {
     const rewrite = r.host.rewriteDocument(htmlDoc());
     await flush();
     timers.fire();
-    await expect(gate).resolves.toBe(false);
+    await expect(gate).resolves.toBeNull();
     await expect(rewrite).resolves.toBeNull();
   });
 
@@ -1110,7 +1191,24 @@ describe('time bounds', () => {
 });
 
 describe('host safety nets', () => {
-  it('serves unmodified and records nothing when a rewrite runs past its host bound', async () => {
+  it('records timed-out for a page whose runner never settles (past the host bound, then the runner’s)', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    await seedActive();
+    r.backend.runner = () => never();
+    const rewrite = r.host.rewriteDocument(htmlDoc(), () => false);
+    await flush();
+    timers.fire(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
+    await expect(rewrite).resolves.toBeNull();
+    timers.fire(DOCUMENT_TRANSFORM_BUDGET_MS + SESSION_STEP_TIMEOUTS_MS.runnerOverhead);
+    await flush();
+    // The page was served as received: recorded as such, never left waiting.
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'timed-out' }
+    });
+  });
+
+  it('records nothing past the bound when Stop landed meanwhile (that session is gone)', async () => {
     const timers = manualTimers();
     const r = rig({ schedule: timers.schedule });
     await seedActive();
@@ -1129,13 +1227,90 @@ describe('host safety nets', () => {
     await flush();
     timers.fire(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
     await expect(rewrite).resolves.toBeNull();
+    await r.controller.stop(page());
     release();
     await flush();
-    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
-    expect(logged(r.log, 'warn', /past its bound/)).toBe(true);
+    await expect(getExclusionSessionRecords()).resolves.toEqual({});
   });
 
-  it('records nothing and answers null for a document the backend abandoned mid-rewrite', async () => {
+  it('logs a session read that never answers and serves the page unmodified (left to the overlay)', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    await seedActive();
+    r.deps.sessions.read = () => never();
+    const gate = r.host.shouldIntercept(TAB, `${ORIGIN}/`);
+    await flush();
+    timers.fire(SESSION_STEP_TIMEOUTS_MS.store);
+    await expect(gate).resolves.toBeNull();
+    expect(logged(r.log, 'error', /Session read failed/)).toBe(true);
+  });
+
+  it('records a passed session page with its reason and identity; nothing for another origin or tab', async () => {
+    const r = rig();
+    await seedActive();
+    const identity = {
+      token: 'req-206',
+      receivedAt: NOW,
+      wallAt: NOW - 2,
+      speculationRulesHeader: false,
+      servedAsCopy: true,
+      speculationGuard: true,
+      serviceWorkersBypassed: true
+    };
+    await r.host.documentPassed(TAB, 'https://other.test/x', 'ineligible-response', identity);
+    await r.host.documentPassed(4, `${ORIGIN}/x`, 'network-error', identity);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
+    await expect(getExclusionSessionStatus(4)).resolves.toEqual({ state: 'inactive' });
+    await r.host.documentPassed(TAB, `${ORIGIN}/x`, 'ineligible-response', identity);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: {
+        outcome: 'failed',
+        reason: 'ineligible-response',
+        served: { token: 'req-206', receivedAt: NOW - 2 }
+      }
+    });
+    await r.host.documentPassed(TAB, `${ORIGIN}/y`, 'network-error');
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'network-error' }
+    });
+  });
+
+  // Changed for the stuck-armed fix: a rewrite past its bound used to record
+  // nothing, which left the page's overlay waiting forever — it now records
+  // the page as served unmodified (`timed-out`).
+  it('serves unmodified and records timed-out when a rewrite runs past its host bound', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    await seedActive();
+    let release: () => void = () => undefined;
+    r.backend.runner = (request) =>
+      new Promise((resolve) => {
+        release = () => {
+          resolve({
+            ok: true,
+            html: `${request.html}x`,
+            outcome: { outcome: 'rewritten', reports: [] }
+          });
+        };
+      });
+    const rewrite = r.host.rewriteDocument(htmlDoc());
+    await flush();
+    timers.fire(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
+    await expect(rewrite).resolves.toBeNull();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
+    release();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'timed-out' }
+    });
+    expect(logged(r.log, 'warn', /past its bound/)).toBe(true);
+    expect(logged(r.log, 'warn', /came too late/)).toBe(true);
+  });
+
+  // Changed for the stuck-armed fix: an abandoned document used to record
+  // nothing (the overlay then waited forever); it now records the page as
+  // served unmodified (`not-served`) — never the rewrite it did not get.
+  it('records not-served and answers null for a document the backend abandoned mid-rewrite', async () => {
     const r = rig();
     await seedActive();
     let abandoned = false;
@@ -1158,7 +1333,9 @@ describe('host safety nets', () => {
     release();
     await expect(rewrite).resolves.toBeNull();
     await flush();
-    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'not-served' }
+    });
   });
 
   it('still records when the backend has not abandoned the document', async () => {
@@ -1206,10 +1383,22 @@ describe('generations', () => {
     const r = rig();
     const arm = vi.spyOn(r.backend, 'arm');
     await r.controller.apply(page(), { set: SET });
-    expect(arm).toHaveBeenCalledWith(TAB, NOW, ORIGIN);
+    // No simulation applied: the seam's trailing `simulate` is undefined.
+    expect(arm).toHaveBeenCalledWith(TAB, NOW, ORIGIN, undefined);
     const resume = vi.spyOn(r.backend, 'resume');
     await r.controller.revalidate();
-    expect(resume).toHaveBeenCalledWith(TAB, NOW, ORIGIN);
+    expect(resume).toHaveBeenCalledWith(TAB, NOW, ORIGIN, undefined);
+  });
+
+  it('hands the session’s simulation to arm and the stored one to resume', async () => {
+    const r = rig();
+    const arm = vi.spyOn(r.backend, 'arm');
+    const simulate = { features: ['lazyload' as const] };
+    await r.controller.apply(page(), { set: SET, simulate });
+    expect(arm).toHaveBeenCalledWith(TAB, NOW, ORIGIN, simulate);
+    const resume = vi.spyOn(r.backend, 'resume');
+    await r.controller.revalidate();
+    expect(resume).toHaveBeenCalledWith(TAB, NOW, ORIGIN, simulate);
   });
 
   it('issues a fresh start after stop → apply on a fixed clock: the old document never lands', async () => {
@@ -1674,5 +1863,436 @@ describe('served identity and session effects', () => {
     await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/new`), identity: copyIdentity(NOW) });
     await flush();
     expect((await recorded())?.served?.order).toBe(NOW + 5_000_001);
+  });
+});
+
+describe('host — simulating sessions', () => {
+  const PAGE = '<html><head></head><body><script src="/a.js"></script></body></html>';
+  const PACKAGE = {
+    runtime: '/*runtime*/RocketLazyLoadScripts.run();',
+    fallback: 'if(navigator.userAgent.match(/MSIE|Trident/i)){}',
+    bundledListRows: [],
+    bundledDeferLists: { external: [], inline: [] },
+    lazyload: LAZYLOAD_PACKAGE_FIXTURE
+  };
+  const doc = () => ({
+    tabId: TAB,
+    body: encoder.encode(PAGE),
+    contentType: 'text/html; charset=utf-8',
+    documentUrl: `${ORIGIN}/next`,
+    status: 200,
+    method: 'GET'
+  });
+
+  /** Seed an active session simulating Delay JS. */
+  const seedSimulating = () =>
+    putExclusionSessionRecord(TAB, {
+      state: 'active',
+      origin: ORIGIN,
+      set: SET,
+      simulate: { features: ['delay_js'] },
+      startedAt: NOW - 1000,
+      document: null
+    });
+
+  it('serves the page unchanged as runtime-unavailable with the inert sources', async () => {
+    const r = rig();
+    await seedSimulating();
+    await expect(r.host.rewriteDocument(doc())).resolves.toBeNull();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'runtime-unavailable', cause: 'asset-unreachable' }
+    });
+  });
+
+  it('simulates with an injected runtime, records the report, serves the excluded page', async () => {
+    const asked: string[] = [];
+    const r = rig({
+      simulation: {
+        runtime: (version) => {
+          asked.push(version);
+          return Promise.resolve({ ok: true, package: PACKAGE });
+        },
+        list: (_version, bundledRows) =>
+          Promise.resolve({
+            listRows: bundledRows,
+            listSource: 'bundled',
+            listMiss: 'never-fetched'
+          }),
+        lazyloadRuntime: INERT_SIMULATION_SOURCES.lazyloadRuntime,
+        deferLists: INERT_SIMULATION_SOURCES.deferLists,
+        settleMarker: INERT_SIMULATION_SOURCES.settleMarker,
+        markerId: () => Promise.resolve(undefined),
+        csp: () => undefined
+      }
+    });
+    await seedSimulating();
+    const body = await r.host.rewriteDocument(doc());
+    const simulated = simulateDelayJs({
+      html: PAGE,
+      runtime: PACKAGE.runtime,
+      ieFallback: PACKAGE.fallback,
+      listRows: [],
+      rows: []
+    });
+    const expected = applyPipeline(simulated.html, SET);
+    expect(asked).toEqual(['3.24']);
+    expect(body).toEqual(encoder.encode(expected.html));
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      simulate: { features: ['delay_js'] },
+      document: {
+        outcome: 'rewritten',
+        reports: expected.reports,
+        simulation: { feature: 'delay_js', state: 'simulated', delayed: 1, wpRocketVersion: '3.24' }
+      }
+    });
+  });
+
+  it('grants a simulating session the longer rewrite bound', async () => {
+    const r = rig();
+    await seedSimulating();
+    await expect(r.host.shouldIntercept(TAB, `${ORIGIN}/x`)).resolves.toEqual({
+      rewriteBoundMs: rewriteDocumentBoundMs(true)
+    });
+  });
+
+  it('bounds a simulating session’s rewrite by the simulating bound, not the exclusions-only one', async () => {
+    const timers = manualTimers();
+    let answerRuntime: () => void = () => undefined;
+    const r = rig({
+      schedule: timers.schedule,
+      simulation: {
+        runtime: () =>
+          new Promise((resolve) => {
+            answerRuntime = () => {
+              resolve({ ok: false, cause: 'asset-unreachable' });
+            };
+          }),
+        list: () => Promise.reject(new Error('unused')),
+        lazyloadRuntime: INERT_SIMULATION_SOURCES.lazyloadRuntime,
+        deferLists: () => Promise.reject(new Error('unused')),
+        settleMarker: () => Promise.reject(new Error('unused')),
+        markerId: () => Promise.reject(new Error('unused')),
+        csp: () => undefined
+      }
+    });
+    await seedSimulating();
+    let settled = false;
+    const rewrite = r.host.rewriteDocument(doc()).finally(() => {
+      settled = true;
+    });
+    await flush();
+    timers.fire(rewriteDocumentBoundMs(false));
+    await flush();
+    expect(settled).toBe(false);
+    timers.fire(rewriteDocumentBoundMs(true));
+    await expect(rewrite).resolves.toBeNull();
+    expect(logged(r.log, 'warn', /past its bound/)).toBe(true);
+    // Changed for the stuck-armed fix (it recorded nothing): the late source
+    // answer never records its outcome — the host already answered — but the
+    // page is recorded as served unmodified past the bound.
+    answerRuntime();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'timed-out' }
+    });
+  });
+
+  it('never asks a source for a session that does not simulate', async () => {
+    const touched: string[] = [];
+    const r = rig({
+      simulation: {
+        runtime: () => {
+          touched.push('runtime');
+          return Promise.resolve({ ok: false, cause: 'asset-unreachable' });
+        },
+        list: () => Promise.reject(new Error('unused')),
+        lazyloadRuntime: INERT_SIMULATION_SOURCES.lazyloadRuntime,
+        deferLists: () => Promise.reject(new Error('unused')),
+        settleMarker: () => Promise.reject(new Error('unused')),
+        markerId: () => Promise.reject(new Error('unused')),
+        csp: () => undefined
+      }
+    });
+    await seedActive();
+    // Nothing to exclude on this page: served as received, recorded as rewritten.
+    await expect(r.host.rewriteDocument(doc())).resolves.toBeNull();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'rewritten' }
+    });
+    expect(touched).toEqual([]);
+  });
+
+  /** Sources with the injected runtime and the given marker id source. */
+  const markedSources = (markerId: SimulationSources['markerId']): SimulationSources => ({
+    runtime: () => Promise.resolve({ ok: true, package: PACKAGE }),
+    list: (_version, bundledRows) =>
+      Promise.resolve({ listRows: bundledRows, listSource: 'bundled', listMiss: 'never-fetched' }),
+    lazyloadRuntime: INERT_SIMULATION_SOURCES.lazyloadRuntime,
+    deferLists: INERT_SIMULATION_SOURCES.deferLists,
+    settleMarker: INERT_SIMULATION_SOURCES.settleMarker,
+    markerId,
+    csp: () => undefined
+  });
+
+  it('releases a simulated page only once its marker id is in the memo, and the page carries it', async () => {
+    const written: SimulationMarkerEntry[] = [];
+    let finishWrite: () => void = () => undefined;
+    const r = rig({
+      simulation: markedSources(
+        createMarkerIdSource({
+          fill: (bytes) => bytes.fill(0xab),
+          remember: (_tabId, entry) =>
+            new Promise((resolve) => {
+              finishWrite = () => {
+                written.push(entry);
+                resolve(undefined);
+              };
+            })
+        })
+      )
+    });
+    await seedSimulating();
+    let body: Uint8Array | null | undefined;
+    const rewrite = r.host.rewriteDocument(doc()).then((value) => {
+      body = value;
+    });
+    await flush();
+    // The memo write is pending: the backend has nothing to release yet.
+    expect(body).toBeUndefined();
+    finishWrite();
+    await rewrite;
+    const markerId = 'ab'.repeat(16);
+    expect(written).toEqual([{ markerId, origin: ORIGIN, features: ['delay_js'] }]);
+    expect(new TextDecoder().decode(body ?? new Uint8Array())).toContain(
+      `<meta name="wpr-fdt-simulation" content="v1 delay_js=simulated id=${markerId}">`
+    );
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'rewritten', simulation: { state: 'simulated', markerId } }
+    });
+  });
+
+  it('serves the page unmodified when the marker memo cannot be written', async () => {
+    const r = rig({
+      simulation: markedSources(
+        createMarkerIdSource({
+          fill: (bytes) => bytes.fill(1),
+          remember: () => Promise.reject(new Error('session storage quota'))
+        })
+      )
+    });
+    await seedSimulating();
+    await expect(r.host.rewriteDocument(doc())).resolves.toBeNull();
+    await flush();
+    expect(logged(r.log, 'error', /Simulation inputs could not be prepared/)).toBe(true);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'engine-failed' }
+    });
+  });
+
+  describe('with Defer JS requested on a page that already defers', () => {
+    const DEFERRING =
+      '<html><head></head><body><script src="/a.js" data-rocket-defer defer></script></body></html>';
+    const deferringDoc = () => ({ ...doc(), body: encoder.encode(DEFERRING) });
+    const seedBoth = () =>
+      putExclusionSessionRecord(TAB, {
+        state: 'active',
+        origin: ORIGIN,
+        set: SET,
+        simulate: { features: ['defer_all_js', 'delay_js'] },
+        startedAt: NOW - 1000,
+        document: null
+      });
+    const remembered: SimulationMarkerEntry[] = [];
+    /** Sources writing the memo through `remember`, the id 0xcd…. */
+    const bothSources = (
+      remember: (tabId: number, entry: SimulationMarkerEntry) => Promise<unknown>
+    ): SimulationSources => ({
+      ...markedSources(createMarkerIdSource({ fill: (bytes) => bytes.fill(0xcd), remember })),
+      settleMarker: createMarkerSettler({ remember })
+    });
+
+    it('narrows the memo and the marker to the features that simulated', async () => {
+      remembered.length = 0;
+      const r = rig({
+        simulation: bothSources((_tabId, entry) => {
+          remembered.push(entry);
+          return Promise.resolve();
+        })
+      });
+      await seedBoth();
+      const body = await r.host.rewriteDocument(deferringDoc());
+      const markerId = 'cd'.repeat(16);
+      expect(remembered).toEqual([
+        { markerId, origin: ORIGIN, features: ['defer_all_js', 'delay_js'] },
+        { markerId, origin: ORIGIN, features: ['delay_js'] }
+      ]);
+      expect(new TextDecoder().decode(body ?? new Uint8Array())).toContain(
+        `<meta name="wpr-fdt-simulation" content="v1 delay_js=simulated id=${markerId}">`
+      );
+      await flush();
+      await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+        document: {
+          outcome: 'rewritten',
+          simulation: { state: 'simulated', markerId },
+          deferSimulation: { state: 'already-served' }
+        }
+      });
+    });
+
+    it('serves the page unmodified when the memo cannot be narrowed', async () => {
+      let writes = 0;
+      const r = rig({
+        simulation: bothSources(() =>
+          ++writes === 1 ? Promise.resolve() : Promise.reject(new Error('session storage quota'))
+        )
+      });
+      await seedBoth();
+      await expect(r.host.rewriteDocument(deferringDoc())).resolves.toBeNull();
+      await flush();
+      expect(writes).toBe(2);
+      expect(logged(r.log, 'error', /Simulation inputs could not be prepared/)).toBe(true);
+      await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+        document: { outcome: 'failed', reason: 'engine-failed' }
+      });
+    });
+
+    it('writes the memo once when every requested feature simulated', async () => {
+      remembered.length = 0;
+      const r = rig({
+        simulation: bothSources((_tabId, entry) => {
+          remembered.push(entry);
+          return Promise.resolve();
+        })
+      });
+      await seedBoth();
+      await r.host.rewriteDocument(doc());
+      expect(remembered.map((entry) => entry.features)).toEqual([['defer_all_js', 'delay_js']]);
+    });
+  });
+
+  it('logs a preparation failure (not an engine one) and serves unchanged when a source throws (engine-failed)', async () => {
+    const r = rig({
+      simulation: {
+        runtime: () => Promise.reject(new Error('asset read exploded')),
+        list: () => Promise.reject(new Error('unused')),
+        lazyloadRuntime: INERT_SIMULATION_SOURCES.lazyloadRuntime,
+        deferLists: () => Promise.reject(new Error('unused')),
+        settleMarker: () => Promise.reject(new Error('unused')),
+        markerId: () => Promise.reject(new Error('unused')),
+        csp: () => undefined
+      }
+    });
+    await seedSimulating();
+    await expect(r.host.rewriteDocument(doc())).resolves.toBeNull();
+    await flush();
+    expect(logged(r.log, 'error', /Simulation inputs could not be prepared/)).toBe(true);
+    expect(logged(r.log, 'error', /Exclusion engine failed/)).toBe(false);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'engine-failed' }
+    });
+  });
+});
+
+describe('host — simulated runtime requests', () => {
+  const PAGE = '<html><head></head><body><img src="/a.png" width="1" height="1"></body></html>';
+  /** The runtime URL the step writes for {@link PAGE} (no page evidence: the default assets URL). */
+  const RUNTIME_URL = `${ORIGIN}/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js`;
+  const FILE = { url: 'chrome-extension://id/runtime.js', bytes: new Uint8Array([1, 2]) };
+  /** The simulated page's URL. */
+  const PAGE_URL = `${ORIGIN}/next`;
+  /** The page as an identity-giving backend hands it over (records its origin + path). */
+  const doc = () => ({
+    ...htmlDoc(PAGE_URL, PAGE),
+    identity: {
+      token: 'req-1',
+      receivedAt: NOW,
+      speculationRulesHeader: false,
+      servedAsCopy: false,
+      speculationGuard: false,
+      serviceWorkersBypassed: false
+    }
+  });
+
+  /** A rig whose sources serve the fixture package and a sound runtime file. */
+  const simulating = () =>
+    rig({
+      simulation: {
+        ...INERT_SIMULATION_SOURCES,
+        runtime: () =>
+          Promise.resolve({
+            ok: true,
+            package: {
+              runtime: 'RocketLazyLoadScripts.run();',
+              fallback: 'if(0){}',
+              bundledListRows: [],
+              bundledDeferLists: { external: [], inline: [] },
+              lazyload: LAZYLOAD_PACKAGE_FIXTURE
+            }
+          }),
+        lazyloadRuntime: () => Promise.resolve({ ok: true, file: FILE })
+      }
+    });
+
+  const seedLazyload = () =>
+    putExclusionSessionRecord(TAB, {
+      state: 'active',
+      origin: ORIGIN,
+      set: SET,
+      simulate: { features: ['lazyload'] },
+      startedAt: NOW - 1000,
+      document: null
+    });
+
+  it('names the packaged file for the served page’s exact runtime URL — queued behind its record', async () => {
+    const r = simulating();
+    await seedLazyload();
+    await expect(r.host.rewriteDocument(doc())).resolves.not.toBeNull();
+    // Asked at once (no flush): the answer still reads the page's record.
+    await expect(r.host.simulatedRuntime(TAB, RUNTIME_URL, PAGE_URL)).resolves.toEqual(FILE);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { lazyloadSimulation: { state: 'simulated', runtimeUrl: RUNTIME_URL } }
+    });
+  });
+
+  it('names nothing for another URL, another tab, after Stop, or without a simulated page', async () => {
+    const r = simulating();
+    await seedLazyload();
+    await expect(r.host.simulatedRuntime(TAB, RUNTIME_URL, PAGE_URL)).resolves.toBeNull();
+    await r.host.rewriteDocument(doc());
+    await expect(r.host.simulatedRuntime(TAB, `${RUNTIME_URL}?v=1`, PAGE_URL)).resolves.toBeNull();
+    await expect(r.host.simulatedRuntime(4, RUNTIME_URL, PAGE_URL)).resolves.toBeNull();
+    await r.controller.stop(page());
+    await expect(r.host.simulatedRuntime(TAB, RUNTIME_URL, PAGE_URL)).resolves.toBeNull();
+  });
+
+  it('names nothing for the same URL asked by another origin’s page or another page of the origin', async () => {
+    const r = simulating();
+    await seedLazyload();
+    await r.host.rewriteDocument(doc());
+    await expect(
+      r.host.simulatedRuntime(TAB, RUNTIME_URL, 'https://elsewhere.test/next')
+    ).resolves.toBeNull();
+    await expect(r.host.simulatedRuntime(TAB, RUNTIME_URL, `${ORIGIN}/other`)).resolves.toBeNull();
+    await expect(r.host.simulatedRuntime(TAB, RUNTIME_URL, PAGE_URL)).resolves.toEqual(FILE);
+  });
+
+  it('names nothing (logged) when the packaged runtime is unusable', async () => {
+    const r = simulating();
+    await seedLazyload();
+    await r.host.rewriteDocument(doc());
+    await flush();
+    // Another background lifetime over the same record, its runtime file damaged.
+    const broken = rig({
+      simulation: {
+        ...(r.deps.simulation ?? INERT_SIMULATION_SOURCES),
+        lazyloadRuntime: () => Promise.resolve({ ok: false, cause: 'hash-mismatch' })
+      }
+    });
+    await expect(broken.host.simulatedRuntime(TAB, RUNTIME_URL, PAGE_URL)).resolves.toBeNull();
+    expect(logged(broken.log, 'warn', /packaged runtime unusable/)).toBe(true);
   });
 });

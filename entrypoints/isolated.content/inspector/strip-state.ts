@@ -19,6 +19,8 @@
  *   displayed document) ride in-band: a per-row modifier and the tab-level
  *   "rewrote this page" line, from the panel's shared copy and its one
  *   "off in this tab" rule — gone once a reload serves an unmarked page.
+ *   A simulation fact rides the same way (its own row modifier; a verified
+ *   one also joins the tab-level line and leads the pill's glyph).
  * - The card model (identity, cache chip, grouped rows, footer) is one pure
  *   builder the view renders verbatim; every unsure state explains itself in
  *   its tooltip copy and no chip claims more certainty than the scan has.
@@ -32,23 +34,24 @@ import {
   builderBadgeKind,
   builderModifierCopy,
   builderPageKind,
+  simulationModifierCopy,
   builderTabLine,
   builderTurnsOff,
   hudGroupedFeatures,
   hudStateLine,
   readHudFeature,
   SOURCE_COPY,
-  type BuilderBadgeKind,
   type BuilderTabLine,
   type HudFeature,
   type HudGroupId,
   type HudReading,
-  type HudVerdict
+  type HudVerdict,
+  type PageChangeKind
 } from '../../../lib/detection/hud';
-import type { BuilderFact } from '../../../lib/wp-rocket/types';
+import type { BuilderFact, SimulationFact } from '../../../lib/wp-rocket/types';
 import { countNoun } from '../../../utils/format-count';
 import type { FeatureMetaRow, WprDetections } from '../../../lib/wp-rocket/types';
-import { GROUP_ICONS, type StripIconGlyph } from './icons';
+import { GROUP_ICONS, type StripIconGlyph, type StripModifierKind } from './icons';
 
 /** The widget's five chrome moods (`ins-*`; the KC vocabulary generalized). */
 export type InspectorMood = 'green' | 'amber' | 'gray' | 'pulse' | 'red';
@@ -98,15 +101,17 @@ export interface StripCardRow {
   tooltip: string;
   /** The Exclusion Builder's modifier on this feature in this tab, or null. */
   modifier: StripRowModifier | null;
+  /** The simulation modifier (simulated, or marker not verified), or null. */
+  simulation: StripRowModifier | null;
 }
 
 /**
- * One row's Exclusion Builder modifier: the badge (icon kind + short text,
- * the at-a-glance cue) and the full sentence the row shows as visible text —
- * the panel card's words, from the one shared copy.
+ * One row's in-tab modifier (Exclusion Builder or simulation): the badge
+ * (icon kind + short text, the at-a-glance cue) and the full sentence the
+ * row shows as visible text — the panel card's words, from the one shared copy.
  */
 export interface StripRowModifier {
-  kind: BuilderBadgeKind;
+  kind: StripModifierKind;
   chip: string;
   sentence: string;
 }
@@ -135,10 +140,10 @@ export interface StripCardModel {
    */
   builderLine: BuilderTabLine | null;
   /**
-   * The closed pill's builder glyph kind ({@link builderPageKind}): present
+   * The closed pill's glyph kind ({@link builderPageKind}): present
    * exactly when {@link StripCardModel.builderLine} is, null otherwise.
    */
-  builderPill: BuilderBadgeKind | null;
+  builderPill: PageChangeKind | null;
   /** The body's state copy while the pass is pending or failed. */
   stateCopy: { title: string; hint: string } | null;
   /** The footer stamp (`WPR x · WP y · FDT z`). */
@@ -220,6 +225,17 @@ export function stripRowModifier(feature: HudFeature, fact: BuilderFact): StripR
 }
 
 /**
+ * A row's simulation modifier from the shared copy (the panel card's
+ * simulation badge words and sentence).
+ *
+ * @param fact The row's simulation fact.
+ */
+export function stripSimulationModifier(fact: SimulationFact): StripRowModifier {
+  const copy = simulationModifierCopy(fact);
+  return { kind: fact, chip: copy.chip, sentence: copy.sentence };
+}
+
+/**
  * One card row from a feature's reading. The chip keeps the served verdict
  * (the builder fact is a modifier on top, never a verdict flip); a feature
  * the builder turned off in this tab drops its count, which measures the
@@ -239,7 +255,9 @@ export function stripRow(feature: HudFeature, reading: HudReading): StripCardRow
     // The noun form for this count (singular for one).
     unit: feature.unit === null || count === null ? null : countNoun(count, feature.unit),
     tooltip: rowTooltip(feature, reading),
-    modifier: reading.builder === undefined ? null : stripRowModifier(feature, reading.builder)
+    modifier: reading.builder === undefined ? null : stripRowModifier(feature, reading.builder),
+    simulation:
+      reading.simulation === undefined ? null : stripSimulationModifier(reading.simulation)
   };
 }
 

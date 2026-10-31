@@ -12,7 +12,8 @@ import Clock from 'lucide-solid/icons/clock';
 import CircleHelp from 'lucide-solid/icons/circle-question-mark';
 import LoaderCircle from 'lucide-solid/icons/loader-circle';
 import TriangleAlert from 'lucide-solid/icons/triangle-alert';
-import type { Indicator } from './copy';
+import FlaskConical from 'lucide-solid/icons/flask-conical';
+import { SIMULATED_INDICATOR, type Indicator } from './copy';
 
 /** Glyph name → icon component. */
 const GLYPHS = {
@@ -22,7 +23,8 @@ const GLYPHS = {
   alert: TriangleAlert,
   blocked: Ban,
   spinner: LoaderCircle,
-  question: CircleHelp
+  question: CircleHelp,
+  simulated: FlaskConical
 } as const satisfies Record<Indicator['glyph'], unknown>;
 
 /**
@@ -40,5 +42,18 @@ export function Glyph(props: { name: Indicator['glyph']; size?: number }): JSX.E
       aria-hidden="true"
       class={props.name === 'spinner' ? 'xo-spin' : undefined}
     />
+  );
+}
+
+/**
+ * The simulation indicator chip (word + glyph): the page on screen runs a
+ * simulation, not the site's own configuration.
+ */
+export function SimulatedIndicator(): JSX.Element {
+  return (
+    <span class="xo-indicator" data-tone={SIMULATED_INDICATOR.tone} data-indicator="simulated">
+      <Glyph name={SIMULATED_INDICATOR.glyph} size={12} />
+      {SIMULATED_INDICATOR.label}
+    </span>
   );
 }

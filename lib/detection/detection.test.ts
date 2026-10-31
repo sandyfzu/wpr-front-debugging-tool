@@ -655,3 +655,71 @@ describe('run-detection — propagation and timing', () => {
     expect(() => parsePage(null as unknown as string)).toThrow(TypeError);
   });
 });
+
+/**
+ * The served-URL cases every URL-recognizing script check shares: Delay JS
+ * moves `src` to `data-rocket-src`, so a delayed WP Rocket script must still
+ * be recognized by the URL the page serves. `script(attrs)` renders the tag
+ * under test; `matches` is whether that tag names the check's URL.
+ */
+function servedUrlCases(path: string): [string, string, boolean][] {
+  return [
+    ['delayed', `data-rocket-src="https://s.com${path}"`, true],
+    ['plain', `src="https://s.com${path}"`, true],
+    ['both attributes: the delayed URL wins', `src="/other.js" data-rocket-src="${path}"`, true],
+    ['both attributes: a foreign delayed URL', `src="${path}" data-rocket-src="/other.js"`, false],
+    ['empty data-rocket-src falls back to src', `data-rocket-src="" src="${path}"`, true],
+    ['valueless data-rocket-src falls back to src', `data-rocket-src src="${path}"`, true],
+    ['empty data-rocket-src alone', 'data-rocket-src=""', false],
+    ['relative delayed URL', `data-rocket-src="${path}"`, true]
+  ];
+}
+
+describe('served script URL — Delay JS-rewritten tags', () => {
+  const delayType = 'type="rocketlazyloadscript"';
+
+  it.each(servedUrlCases('/wp-content/cache/min/1/app.js'))(
+    'detectMinifyJs: %s',
+    (_case, attrs, matches) => {
+      const parsed = page(`<script ${delayType} ${attrs}></script>`);
+      expect(detectMinifyJs(parsed)).toEqual({ present: matches });
+    }
+  );
+
+  it.each(
+    servedUrlCases('/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js')
+  )('detectLazyload: %s', (_case, attrs, matches) => {
+    const parsed = page(
+      `<script ${delayType} ${attrs}></script><script>window.lazyLoadOptions=[{e:"img[data-lazy-src]"}]</script>`
+    );
+    expect(detectLazyload(parsed).present).toBe(matches);
+  });
+
+  it.each(
+    servedUrlCases('/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js')
+  )('detectLazyloadIframes: %s', (_case, attrs, matches) => {
+    const parsed = page(
+      `<script ${delayType} ${attrs}></script><script>window.lazyLoadOptions=1 iframe[data-lazy-src]</script>`
+    );
+    expect(detectLazyloadIframes(parsed).present).toBe(matches);
+  });
+
+  it('keeps the empty-src gate: an empty URL never resolves to the document', () => {
+    // An empty URL resolves to the document's own URL; on a minified-cache
+    // URL only the gate keeps it from counting as a minified script.
+    const { happyDOM } = window as unknown as { happyDOM: { setURL(url: string): void } };
+    const original = location.href;
+    happyDOM.setURL('https://s.com/wp-content/cache/min/1/x.js');
+    try {
+      const plain = page('<script src=""></script>');
+      // Precondition: without the gate the empty URL would match.
+      expect(plain.scripts[0]?.src).toBe('https://s.com/wp-content/cache/min/1/x.js');
+      expect(detectMinifyJs(plain)).toEqual({ present: false });
+      expect(
+        detectMinifyJs(page(`<script ${delayType} data-rocket-src="" src=""></script>`))
+      ).toEqual({ present: false });
+    } finally {
+      happyDOM.setURL(original);
+    }
+  });
+});

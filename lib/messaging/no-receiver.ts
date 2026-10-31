@@ -6,6 +6,10 @@
  * The failure surfaces, verified against the installed transport:
  * - Chromium's runtime bridge rejects extension sends with *"Could not
  *   establish connection. Receiving end does not exist."* (no listener).
+ * - Chromium rejects a send whose receiver went away before answering (the
+ *   tab's page navigated or unloaded mid-send) with *"The message port
+ *   closed before a response was received."* — observed verbatim in a real
+ *   Chromium run (a session status push racing a reload).
  * - Tab-targeted sends resolve empty when the tab never answered, and the
  *   transport folds that into its own *"No response"* error.
  * - The unit-test double's tab API rejects with *"No listeners available"* —
@@ -15,10 +19,11 @@
  * receiving side, and must be logged loudly, never dropped with the misses.
  */
 
-/** Substrings that identify the no-receiver failures above. */
+/** Substrings that identify the no-receiver (absent or gone) failures above. */
 const NO_RECEIVER_PATTERNS = [
   'No listeners',
   'Could not establish connection',
+  'The message port closed before a response was received',
   'No response'
 ] as const;
 

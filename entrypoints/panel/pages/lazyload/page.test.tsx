@@ -94,6 +94,28 @@ describe('LazyloadPage — frame and summary', () => {
     expect(badge?.className).toContain('text-status-neutral');
   });
 
+  it('spells out a verified simulation as "simulated" (info), its lazy rows and reasons', () => {
+    const data = fixture();
+    const simulated: FdtData = {
+      ...data,
+      wprDetections: {
+        ...data.wprDetections,
+        lazyload: { ...data.wprDetections.lazyload, present: false, simulation: 'simulated' }
+      }
+    };
+    const { root } = renderPage(LazyloadPage, simulated);
+    const badge = root.querySelector('[data-fdt="resource-summary"] [data-fdt="status-badge"]');
+    expect(badge?.textContent).toContain('simulated');
+    expect(badge?.textContent).not.toContain('detected');
+    expect(badge?.className).toContain('text-status-info');
+    expect(root.querySelector('[data-fdt="resource-note"]')?.textContent).toBe(
+      "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
+    );
+    expect(screen.getAllByText('Lazyloaded (Simulated)')).toHaveLength(2);
+    // The exclusion reasons stay meaningful: the simulation lazy loads the page.
+    expect(root.querySelectorAll('[data-fdt="lazyload-reasons"]').length).toBeGreaterThan(0);
+  });
+
   it('puts per-filter counts on the chips', () => {
     const { root } = renderPage(LazyloadPage, fixture());
     expect(screen.getByRole('button', { name: 'Show all 5 matching' })).toBe(chip(root, 'all'));

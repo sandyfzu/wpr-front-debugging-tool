@@ -73,6 +73,17 @@ export const LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS = 'Preconnect to External Doma
 export const LABEL_PRIORITY_ELEMENTS_BEACON = 'Priority Elements beacon';
 
 /**
+ * Compact names where space or a list of several features calls for them
+ * (the HUD strip's chips, a simulated page's banner); LazyLoad is the
+ * settings section title {@link LABEL_IMAGE_LAZYLOAD}'s field sits under.
+ */
+export const SHORT_LABEL_DELAY_JS = 'Delay JS';
+/** See {@link SHORT_LABEL_DELAY_JS}. */
+export const SHORT_LABEL_DEFER_JS = 'Defer JS';
+/** See {@link SHORT_LABEL_DELAY_JS}. */
+export const SHORT_LABEL_LAZYLOAD = 'LazyLoad';
+
+/**
  * Every feature label exactly once — the shape pin the report keys and any
  * feature-name consumer are checked against (drift in either direction
  * fails loudly, never silently ships a renamed feature).

@@ -17,6 +17,7 @@ import {
   codeCaption,
   codeToggleLabel,
   collapsedPreview,
+  delaySummaryBadge,
   countLines,
   estimateRowSize,
   expandedCutNote,
@@ -43,6 +44,14 @@ function script(overrides: Partial<JsScriptResource> = {}): JsScriptResource {
   };
 }
 
+describe('delaySummaryBadge', () => {
+  it('served, simulated (never "Not detected"), absent', () => {
+    expect(delaySummaryBadge(true, false)).toEqual({ label: 'Detected', kind: 'ok' });
+    expect(delaySummaryBadge(false, true)).toEqual({ label: 'Simulated', kind: 'info' });
+    expect(delaySummaryBadge(false, false)).toEqual({ label: 'Not detected', kind: 'neutral' });
+  });
+});
+
 describe('scriptStateBadges', () => {
   it.each([
     [{ delayed: true }, 'Delayed', 'info'],
@@ -68,6 +77,18 @@ describe('scriptStateBadges', () => {
     const badges = scriptStateBadges(script(overrides));
     expect(badges).toHaveLength(2);
     expect(badges[1]).toEqual({ label, kind });
+  });
+
+  it('names a verified Defer JS simulation’s stamp as the simulation’s, never WP Rocket’s', () => {
+    expect(scriptStateBadges(script({ deferredByWPR: true, deferred: true }), true)[1]).toEqual({
+      label: 'Deferred (Simulated)',
+      kind: 'info'
+    });
+    // Only the stamp changes words: a native defer or an excluded script reads as before.
+    expect(scriptStateBadges(script({ deferred: true }), true)[1]?.label).toBe('Deferred');
+    expect(scriptStateBadges(script({ fdtExcluded: 'defer_all_js' }), true)[1]?.label).toBe(
+      'Not deferred (Excluded by FDT)'
+    );
   });
 
   it('gives an inline script the delay state only (it cannot be deferred)', () => {

@@ -39,6 +39,7 @@ import {
   trimExclusionRow
 } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
+import type { DocumentSimulationReport } from '../../../lib/messaging/exclusion-simulation';
 import { createLogger } from '../../../lib/logger';
 import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
 import {
@@ -51,16 +52,23 @@ import {
   PAGE_OFF_ROWS_SHOWN,
   PASTE_COPY,
   ROW_NOTE_COPY,
+  SIMULATION_LANE_COPY,
   appliedRowWarningNote,
+  simulationLaneLimits,
+  simulationListCopy,
   rowWarningNote,
   type LanePageCopy,
-  type NoteText,
   type RowRef
 } from '../copy';
 import { countNoun } from '../../../utils/format-count';
 import type { OverlayController, SettledPasteOutcome } from '../controller';
 import { capText } from '../../../utils/cap-text';
 import { CopyAll } from './copy-all';
+import { NoteDisclosure } from '../disclosure';
+import { NoteRuns } from './note-runs';
+import { SimulationModeControl, SimulationModeNotes } from './simulation-mode-control';
+import { SIMULATION_LANES, isSimulationLane, type SimulationLane } from './simulation-mode';
+import { simulationReports } from '../session/session-view';
 import { laneCounts, rowMatches } from './counts';
 import { isBlankRow, laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
 import type { PageOffRow } from './lane-page';
@@ -102,6 +110,8 @@ export interface LaneProps {
   readonly writeClipboard?: ClipboardWriter | undefined;
   /** The virtualizer seam (tests). */
   readonly createVirtualizer?: VirtualizerFactory | undefined;
+  /** Epoch ms now, for the simulation's list age (default `Date.now`). */
+  readonly now?: (() => number) | undefined;
 }
 
 /**
@@ -147,6 +157,57 @@ function isEditingKey(event: KeyboardEvent): boolean {
 }
 
 /**
+ * A simulated page's count line for its lane: scripts the simulation
+ * delayed, or deferred and wrapped, or images, pictures and background
+ * images it made lazy, then those the rows restored.
+ *
+ * @param simulation The lane's simulation report (`simulated`).
+ * @param excluded What the rows restored (the lane transform's rewrites).
+ */
+function simulationCountLine(simulation: DocumentSimulationReport, excluded: number): string {
+  switch (simulation.feature) {
+    case 'delay_js':
+      return SIMULATION_LANE_COPY.line(simulation.delayed, excluded);
+    case 'defer_all_js':
+      return SIMULATION_LANE_COPY.deferLine(simulation.deferred, simulation.wrapped, excluded);
+    case 'lazyload':
+      return SIMULATION_LANE_COPY.lazyloadLine(simulation, excluded);
+  }
+}
+
+/**
+ * The exclusion-list line of a feature that runs with one (null: LazyLoad,
+ * whose exclusions ship with the version).
+ *
+ * @param simulation The lane's simulation report.
+ * @param now The current time (epoch ms).
+ */
+function listLine(simulation: DocumentSimulationReport, now: number): string | null {
+  return simulation.feature === 'lazyload' ? null : simulationListCopy(simulation, now);
+}
+
+/**
+ * Whether WP Rocket's own Delay JS pattern stopped on the page (an outcome
+ * the lane shows, never a limit).
+ *
+ * @param simulation The lane's simulation report.
+ */
+function regexLimitHit(simulation: DocumentSimulationReport): boolean {
+  return simulation.feature === 'delay_js' && simulation.regexLimitHit === true;
+}
+
+/**
+ * Delay JS's scripts left as served because WP Rocket decides them with
+ * random ids (an outcome the lane shows, never a limit).
+ *
+ * @param simulation The lane's simulation report.
+ * @returns The count (positive), else `undefined`.
+ */
+function undeterminedScripts(simulation: DocumentSimulationReport): number | undefined {
+  return simulation.feature === 'delay_js' ? simulation.undetermined : undefined;
+}
+
+/**
  * The editor lane.
  *
  * @param props See {@link LaneProps}.
@@ -161,6 +222,18 @@ export function Lane(props: LaneProps): JSX.Element {
     return key !== null && props.controller.draft().disable[key];
   };
   const headingId = (): string => `xo-lane-${props.lane}`;
+  /** The mode lane this lane is (its control replaces the disable switch), else null. */
+  const modeLane = (): SimulationLane | null => (isSimulationLane(props.lane) ? props.lane : null);
+  /** The simulation that ran on this applied page for this lane's feature (mode lanes only). */
+  const simulation = createMemo(() => {
+    const lane = modeLane();
+    const view = props.controller.view();
+    if (lane === null || view?.kind !== 'applied') return undefined;
+    const report = simulationReports(view).find(
+      (candidate) => candidate.feature === SIMULATION_LANES[lane]
+    );
+    return report?.state === 'simulated' ? report : undefined;
+  });
   /** The lane's rows read as one set (null: its rows act alone). */
   const page = (): ReturnType<OverlayController['lanePage']> =>
     props.controller.lanePage(props.lane);
@@ -395,10 +468,38 @@ export function Lane(props: LaneProps): JSX.Element {
           <Show when={copy().limitHint}>
             {(hint) => <span class="xo-lane-hint">{hint()}</span>}
           </Show>
+          <Show when={simulation()}>
+            {(simulated) => (
+              <>
+                <span class="xo-lane-count">
+                  {simulationCountLine(simulated(), props.report?.rewritten ?? 0)}
+                </span>
+                <span class="xo-lane-hint">{SIMULATION_LANE_COPY.version(simulated())}</span>
+                <Show when={listLine(simulated(), (props.now ?? Date.now)())}>
+                  {(line) => <span class="xo-lane-hint">{line()}</span>}
+                </Show>
+                <Show when={undeterminedScripts(simulated())}>
+                  {(count) => (
+                    <span class="xo-lane-caveat">{SIMULATION_LANE_COPY.undetermined(count())}</span>
+                  )}
+                </Show>
+                <Show when={regexLimitHit(simulated())}>
+                  <span class="xo-lane-caveat">{SIMULATION_LANE_COPY.regexLimit}</span>
+                </Show>
+                <NoteDisclosure
+                  id={`${headingId()}-limits`}
+                  label={SIMULATION_LANE_COPY.limits}
+                  lines={simulationLaneLimits(simulated(), props.report?.rewritten ?? 0)}
+                />
+              </>
+            )}
+          </Show>
           <Show when={counts()}>
             {(current) => (
               <>
-                <span class="xo-lane-count">{COUNT_COPY.line(current(), copy().noun)}</span>
+                <Show when={simulation() === undefined}>
+                  <span class="xo-lane-count">{COUNT_COPY.line(current(), copy().noun)}</span>
+                </Show>
                 <For each={COUNT_COPY.caveats(current(), copy().noun, rowRefs, copy().page)}>
                   {(caveat) => <span class="xo-lane-caveat">{withCode(caveat)}</span>}
                 </For>
@@ -406,7 +507,16 @@ export function Lane(props: LaneProps): JSX.Element {
             )}
           </Show>
         </div>
-        <Show when={toggleKey()}>
+        <Show when={modeLane()}>
+          {(lane) => (
+            <SimulationModeControl
+              controller={props.controller}
+              lane={lane()}
+              locked={props.locked}
+            />
+          )}
+        </Show>
+        <Show when={modeLane() ? null : toggleKey()}>
           {(key) => (
             <button
               type="button"
@@ -427,6 +537,11 @@ export function Lane(props: LaneProps): JSX.Element {
           )}
         </Show>
       </div>
+      <Show when={modeLane()}>
+        {(lane) => (
+          <SimulationModeNotes controller={props.controller} lane={lane()} locked={props.locked} />
+        )}
+      </Show>
       <Show when={disabled()}>
         <p class="xo-lane-note">
           The whole feature is off for this page; rows are not used while it is.
@@ -597,21 +712,6 @@ function withCode(text: string): JSX.Element {
           <code class="xo-code">{part}</code>
         </Show>
       )}
-    </For>
-  );
-}
-
-/**
- * A note's runs: row texts as code (whatever characters they hold).
- *
- * @param props The note.
- */
-function NoteRuns(props: { readonly note: NoteText }): JSX.Element {
-  return (
-    <For each={props.note}>
-      {(segment) =>
-        typeof segment === 'string' ? segment : <code class="xo-code">{segment.code}</code>
-      }
     </For>
   );
 }

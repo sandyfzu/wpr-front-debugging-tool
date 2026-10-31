@@ -15,7 +15,10 @@
 import type { ExclusionFeatureId } from '../exclusion-builder/set';
 import { EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder/pipeline';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
-import { isCount, isFeatureId, parseExclusionSet } from '../messaging/exclusion-session';
+import { isFeatureId, parseExclusionSet } from '../messaging/exclusion-session';
+import { parseDocumentSimulationInput } from '../messaging/exclusion-simulation';
+import { isCount } from '../messaging/guard-policy';
+import type { SimulationStage } from '../wp-rocket-simulation/spec';
 import { isRecord } from '../../utils/is-record';
 import type { DocumentBytes } from '../exclusion-builder/libxml/charset';
 import {
@@ -27,6 +30,7 @@ import {
   type DocumentTransformRunner,
   type UnmodifiedDocumentOutcome
 } from './document-transform';
+import { simulationStepIds } from './simulation-stage';
 
 /** Extra time (ms) past the budget before a silent worker is killed (messaging latency). */
 export const WORKER_GRACE_MS = 250;
@@ -38,9 +42,17 @@ export interface TransformWorkerRequest {
   readonly request: DocumentTransformRequest;
 }
 
-/** Worker → host: a step started, or the run's result. */
+/**
+ * Worker → host: a step started (`stage: 'simulate'` for a feature's
+ * simulation step, absent for its exclusion step), or the run's result.
+ */
 export type TransformWorkerMessage =
-  | { readonly type: 'step'; readonly id: number; readonly feature: ExclusionFeatureId }
+  | {
+      readonly type: 'step';
+      readonly id: number;
+      readonly feature: ExclusionFeatureId;
+      readonly stage?: SimulationStage;
+    }
   | { readonly type: 'result'; readonly id: number; readonly result: DocumentTransformResult };
 
 /** The port the host drives: a `Worker`, or anything with its shape. */
@@ -66,6 +78,12 @@ export function parseTransformWorkerRequest(data: unknown): TransformWorkerReque
   if (set === null) return null;
   const bytes = parseDocumentBytes(raw['bytes']);
   if (bytes === null) return null;
+  const rawSimulate = raw['simulate'];
+  const simulate =
+    rawSimulate === undefined
+      ? undefined
+      : parseDocumentSimulationInput(rawSimulate, raw['html'].length);
+  if (simulate === null) return null;
   return {
     type: 'transform',
     id: data['id'],
@@ -73,7 +91,8 @@ export function parseTransformWorkerRequest(data: unknown): TransformWorkerReque
       html: raw['html'],
       set,
       budgetMs,
-      ...(bytes === undefined ? {} : { bytes })
+      ...(bytes === undefined ? {} : { bytes }),
+      ...(simulate === undefined ? {} : { simulate })
     }
   };
 }
@@ -113,8 +132,8 @@ export function handleTransformWorkerMessage(
   const parsed = parseTransformWorkerRequest(data);
   if (parsed === null) return;
   const { id, request } = parsed;
-  const result = runDocumentPipeline(request, now, (feature) => {
-    post({ type: 'step', id, feature });
+  const result = runDocumentPipeline(request, now, (feature, stage) => {
+    post({ type: 'step', id, feature, ...(stage === undefined ? {} : { stage }) });
   });
   if (result.ok || result.cause === undefined) {
     post({ type: 'result', id, result });
@@ -128,6 +147,13 @@ export function handleTransformWorkerMessage(
         : 'Non-error engine failure';
   post({ type: 'result', id, result: { ok: false, outcome: result.outcome, cause } });
 }
+
+/** The outcome kinds an unmodified result may carry. */
+const UNMODIFIED_OUTCOMES: readonly UnmodifiedDocumentOutcome['outcome'][] = [
+  'over-budget',
+  'failed',
+  'runtime-unavailable'
+];
 
 /**
  * Parse a worker result (re-checked by shape: the host trusts nothing a
@@ -143,9 +169,17 @@ function parseResult(value: unknown): DocumentTransformResult | null {
     return value as DocumentTransformResult;
   }
   if (value['ok'] !== false) return null;
-  return outcome['outcome'] === 'over-budget' || outcome['outcome'] === 'failed'
+  return UNMODIFIED_OUTCOMES.includes(outcome['outcome'] as UnmodifiedDocumentOutcome['outcome'])
     ? (value as DocumentTransformResult)
     : null;
+}
+
+/**
+ * Whether a request simulates a feature — a step announced as its
+ * simulation is honoured only then (any other `stage` claim is ignored).
+ */
+function simulatesFeature(request: DocumentTransformRequest, feature: ExclusionFeatureId): boolean {
+  return request.simulate?.features.some((id) => id === feature) ?? false;
 }
 
 /** Host options. */
@@ -173,12 +207,20 @@ export interface WorkerTransformRunner {
  * The over-budget outcome of a run killed before the worker announced any
  * step: it was still starting up or validating the set, so no row had run —
  * billed to the first step's feature (the in-process runner bills that
- * setup time to the first step too), naming no row.
+ * setup time to the first step too), naming no row: the first simulation
+ * step (`stage: 'simulate'`) when the request simulates, else the first
+ * exclusion step.
  *
- * @param budgetMs The budget the run overran.
+ * @param request The request the run overran.
  * @throws {@link Error} when the pipeline declares no step (a broken build).
  */
-function overBudgetBeforeAnyStep(budgetMs: number): UnmodifiedDocumentOutcome {
+function overBudgetBeforeAnyStep(request: DocumentTransformRequest): UnmodifiedDocumentOutcome {
+  const { budgetMs } = request;
+  const simulated =
+    request.simulate === undefined ? undefined : simulationStepIds(request.simulate.features)[0];
+  if (simulated !== undefined) {
+    return { outcome: 'over-budget', feature: simulated, row: null, budgetMs, stage: 'simulate' };
+  }
   const first = EXCLUSION_PIPELINE_STEP_IDS[0];
   if (first === undefined) throw new Error('The exclusion pipeline declares no step');
   return { outcome: 'over-budget', feature: first, row: null, budgetMs };
@@ -194,6 +236,8 @@ interface PendingRun {
   running: boolean;
   /** The feature the worker last announced for this run. */
   lastFeature: ExclusionFeatureId | null;
+  /** Whether that announcement was the feature's simulation step (one the request simulates). */
+  lastStage: SimulationStage | undefined;
 }
 
 /**
@@ -235,6 +279,10 @@ export function createWorkerTransformRunner(
     if (run === null || !isRecord(data) || data['id'] !== run.id) return;
     if (data['type'] === 'step' && isFeatureId(data['feature'])) {
       run.lastFeature = data['feature'];
+      run.lastStage =
+        data['stage'] === 'simulate' && simulatesFeature(run.request, data['feature'])
+          ? 'simulate'
+          : undefined;
     } else if (data['type'] === 'result') {
       const result = parseResult(data['result']);
       run.settle(result ?? engineFailed(new Error('Transform worker sent a malformed result')));
@@ -288,6 +336,7 @@ export function createWorkerTransformRunner(
         id: nextId++,
         running: false,
         lastFeature: null,
+        lastStage: undefined,
         settle: (result) => {
           if (settled) return;
           settled = true;
@@ -310,8 +359,13 @@ export function createWorkerTransformRunner(
           ok: false,
           outcome:
             pending.lastFeature === null
-              ? overBudgetBeforeAnyStep(request.budgetMs)
-              : overBudgetOutcome(request.set, pending.lastFeature, request.budgetMs)
+              ? overBudgetBeforeAnyStep(request)
+              : overBudgetOutcome(
+                  request.set,
+                  pending.lastFeature,
+                  request.budgetMs,
+                  pending.lastStage
+                )
         });
       }, request.budgetMs + graceMs);
       pump();

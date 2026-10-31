@@ -3,7 +3,9 @@
  * give: how much of WP Rocket is working on this page ("N of M
  * optimizations active", with a small accent meter right after it — and,
  * when the Exclusion Builder turned served features off in this tab, the
- * reason suffix "· N off in this tab"), plus
+ * reason suffix "· N off in this tab"; when the extension simulated
+ * features here, "· N simulated in this tab", and "· simulation marker not
+ * verified" for an unverified marker), plus
  * the facts the bar lacks or only labels: the cache's absolute generation
  * time (the bar shows its age); for every non-cached state, the same cache
  * label the bar's segment shows, here as the focusable trigger of the
@@ -22,11 +24,15 @@
  * starts at its figure.
  */
 import type { JSX } from 'solid-js';
-import { Show } from 'solid-js';
+import { For, Show } from 'solid-js';
 import { Card } from '../../../../components/ui/card';
 import { Tooltip } from '../../../../components/ui/tooltip';
 import { cacheCopy, cacheLayerCopy, type CacheCopy } from '../../../../lib/detection/cache-context';
-import { builderOffSummary, LIST_JOINER_CONTENT } from '../../../../lib/detection/hud';
+import {
+  builderOffSummary,
+  LIST_JOINER_CONTENT,
+  simulationSummaryParts
+} from '../../../../lib/detection/hud';
 import type { DetectionsSummary } from '../../../../lib/panel/detections-summary';
 
 /**
@@ -142,6 +148,17 @@ export function SummaryStrip(props: SummaryStripProps): JSX.Element {
                   </span>
                 )}
               </Show>
+              <For each={simulationSummaryParts(counts().simulated, counts().unverified)}>
+                {(part) => (
+                  <span
+                    data-fdt-summary-simulation
+                    class={`${GUTTER_DOT} whitespace-nowrap text-fg-secondary`}
+                  >
+                    <span class="sr-only">, </span>
+                    {part}
+                  </span>
+                )}
+              </For>
             </span>
           </p>
           {/* Decorative: the sentence beside it states the same numbers. */}

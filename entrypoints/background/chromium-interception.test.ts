@@ -37,13 +37,6 @@ function stubs(tab: { url?: string; pendingUrl?: string } | Error = { url: 'http
     attach: vi.fn(() => Promise.resolve()),
     detach: vi.fn(() => Promise.resolve()),
     sendCommand: vi.fn(() => Promise.resolve({ ok: true })),
-    getTargets: vi.fn(() =>
-      Promise.resolve([
-        { type: 'page', id: 'OTHER', tabId: 2, attached: false, title: '', url: '' },
-        { type: 'worker', id: 'W', tabId: 1, attached: false, title: '', url: '' },
-        { type: 'page', id: 'MAIN', tabId: 1, attached: false, title: '', url: '' }
-      ])
-    ),
     onEvent,
     onDetach
   };
@@ -78,12 +71,6 @@ describe('createBrowserDebuggerPort', () => {
     expect(api.sendCommand).toHaveBeenCalledWith({ tabId: 1, sessionId: 's' }, 'Fetch.enable', {
       a: 1
     });
-  });
-
-  it('finds the tab’s page target, null when it has none', async () => {
-    const { port } = bind();
-    await expect(port.pageTargetId(1)).resolves.toBe('MAIN');
-    await expect(port.pageTargetId(9)).resolves.toBeNull();
   });
 
   it('reads a tab as web, elsewhere, or gone', async () => {

@@ -1,12 +1,23 @@
 name: WP Rocket parity
 
-# Re-derives lib/exclusion-builder/wp-rocket-parity.fixtures.json with the real
-# plugin (`pnpm parity:wp-rocket`, see its header) on a fresh WP Rocket build:
+# Re-derives, with the real plugin (`pnpm parity:wp-rocket`, see its header) on
+# fresh WP Rocket builds, both parity tables and the simulation data file:
+# lib/exclusion-builder/wp-rocket-parity.fixtures.json,
+# lib/wp-rocket-simulation/simulation-parity.fixtures.json and
+# public/wp-rocket-simulation/simulation-data.json — one run checks all three:
 #
-# - the table's reference tag (`v` + header.plugin) — fails as "table stale"
-#   on any row difference and as "reference drift" when the build vendored
-#   other package versions than header.pluginPackages (`--ci`);
-# - the latest stable tag — warnings only, never a failure (`--compare`).
+# - every supported version (`v` + header.plugins[].version, the registry in
+#   lib/wp-rocket/versions.ts; the same list in both headers): each tag is
+#   built and every case runs under each — fails as "table stale" /
+#   "simulation table stale" / "simulation data file stale" on any row, pin or
+#   data difference and as "reference drift" when a build vendored other
+#   package versions than its header entry (`--ci`);
+# - newer releases: a warning, never a failure, when a wp-media/wp-rocket
+#   release tag is newer than every supported version or is a newer patch of a
+#   supported minor — release flags are not trusted, pre-releases count
+#   (`--release-check`); the newest such tag overall (a new minor wins over a
+#   patch) is then built and compared with the tables, warnings only
+#   (`--compare`).
 #
 # Informational: a separate workflow (the `gates` job in ci.yml is untouched),
 # not a required check — it runs only when the parity inputs change (PRs, and
@@ -21,13 +32,19 @@ on:
       - lib/exclusion-builder/wp-rocket-parity*
       - lib/exclusion-builder/pcre/problems.ts
       - lib/exclusion-builder/stored-row-drops.ts
+      - lib/wp-rocket-simulation/simulation-parity*
+      - lib/wp-rocket-simulation/simulation-data.ts
+      - lib/wp-rocket/constants.ts
+      - lib/wp-rocket/versions.ts
+      - utils/is-record.ts
+      - public/wp-rocket-simulation/**
       - scripts/wp-rocket-parity.*
       - .github/workflows/wp-rocket-parity.yml
   push:
     branches: [main, develop, 'feat/**']
     paths: *parity-paths
   schedule:
-    # Mondays 05:17 UTC: catches a new WP Rocket release and dependency drift.
+    # Mondays 05:17 UTC: catches a newer WP Rocket release and dependency drift.
     - cron: '17 5 * * 1'
   workflow_dispatch:
 
@@ -61,7 +78,11 @@ jobs:
       # (ext-dom/mbstring compiled in), which reproduces every row of the table. The
       # distro PHPs of the runners do not: PCRE2 10.42 (ubuntu-24.04) predates the
       # 10.43 option letters, libxml 2.15 (ubuntu-26.04) re-serializes attributes.
+      # The driver passes `-d pcre.jit=1` on every php call (the JIT moves where the
+      # backtrack limit stops a long match; the headers record `pcreJit`).
       PHP_IMAGE: php@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05
+      # The pinned versions are read here; the simulation table's header lists the
+      # same ones (both are derived from the same zips, so a mismatch fails as stale).
       TABLE: lib/exclusion-builder/wp-rocket-parity.fixtures.json
     steps:
       - name: Checkout
@@ -91,14 +112,14 @@ jobs:
           tools: composer
           coverage: none
 
-      - name: Read the table reference
+      - name: Read the pinned versions
         id: reference
         run: |
-          plugin=$(jq -er '.header.plugin' "$TABLE")
+          versions=$(jq -er '[.header.plugins[].version] | join(" ")' "$TABLE")
           wp=$(jq -er '.header.wp + "-" + .header.wpZipSha1' "$TABLE")
           composer_cache=$(composer config --global cache-dir)
           {
-            echo "tag=v$plugin"
+            echo "versions=$versions"
             echo "wp=$wp"
             echo "composer-cache=$composer_cache"
           } >> "$GITHUB_OUTPUT"
@@ -134,28 +155,43 @@ jobs:
           echo "$dir/bin" >> "$GITHUB_PATH"
           echo "APVM_CACHE_DIR=$RUNNER_TEMP/apvm-cache" >> "$GITHUB_ENV"
 
-      - name: Build WP Rocket ${{ steps.reference.outputs.tag }} (table reference)
+      - name: Build every pinned WP Rocket version
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.reference.outputs.tag }}
+          VERSIONS: ${{ steps.reference.outputs.versions }}
         run: |
-          out="$RUNNER_TEMP/wpr-reference"
           apvm --version
-          apvm build --verbose wp-rocket "tag:$TAG" "$out"
-          zips=("$out"/wp-rocket-*.zip)
-          [ "${#zips[@]}" -eq 1 ] && [ -f "${zips[0]}" ] || { echo "::error::expected one zip in $out"; exit 1; }
           mkdir -p docker/wpr
-          cp "${zips[0]}" docker/wpr/wpr-rocket.zip
+          for version in $VERSIONS; do
+            out="$RUNNER_TEMP/wpr-$version"
+            apvm build --verbose wp-rocket "tag:v$version" "$out"
+            zips=("$out"/wp-rocket-*.zip)
+            [ "${#zips[@]}" -eq 1 ] && [ -f "${zips[0]}" ] || { echo "::error::expected one zip in $out"; exit 1; }
+            cp "${zips[0]}" "docker/wpr/wpr-rocket-$version.zip"
+          done
 
-      - name: Build WP Rocket latest stable
-        id: latest
+      # Release flags are not trusted (a stable release may still be flagged
+      # pre-release): every non-draft release tag counts, ordered by version.
+      - name: Check for WP Rocket releases newer than the pinned versions (warning only)
+        id: releases
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          out="$RUNNER_TEMP/wpr-latest"
-          # Same commit as the reference → an instant hit in this job's APVM cache.
-          apvm build --verbose wp-rocket tag:latest-stable "$out"
+          gh api --paginate 'repos/wp-media/wp-rocket/releases?per_page=100' \
+            --jq '.[] | select(.draft | not) | .tag_name' > "$RUNNER_TEMP/wpr-release-tags"
+          pnpm parity:wp-rocket --release-check < "$RUNNER_TEMP/wpr-release-tags"
+
+      - name: Build the newest newer WP Rocket release
+        id: newer
+        if: ${{ !cancelled() && steps.releases.outputs.newest != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.releases.outputs.newest }}
+        run: |
+          out="$RUNNER_TEMP/wpr-newer"
+          apvm build --verbose wp-rocket "tag:$TAG" "$out"
           zips=("$out"/wp-rocket-*.zip)
           [ "${#zips[@]}" -eq 1 ] && [ -f "${zips[0]}" ] || { echo "::error::expected one zip in $out"; exit 1; }
           echo "zip=${zips[0]}" >> "$GITHUB_OUTPUT"
@@ -179,19 +215,25 @@ jobs:
           echo "$shim" >> "$GITHUB_PATH"
           echo "TMPDIR=$RUNNER_TEMP/parity-tmp" >> "$GITHUB_ENV"
 
-      - name: Check the table against the reference build
+      - name: Check the tables and the data file against the pinned builds
         run: pnpm parity:wp-rocket --ci
 
-      - name: Compare the latest stable WP Rocket with the table (warnings only)
-        if: ${{ !cancelled() && steps.latest.outcome == 'success' }}
+      - name: Compare the newest newer WP Rocket release with the tables (warnings only)
+        if: ${{ !cancelled() && steps.newer.outcome == 'success' }}
         continue-on-error: true
         env:
-          ZIP: ${{ steps.latest.outputs.zip }}
+          ZIP: ${{ steps.newer.outputs.zip }}
         run: pnpm parity:wp-rocket --compare --zip "$ZIP"
 
-      - name: Report a failed latest-stable build (warning only)
-        if: ${{ !cancelled() && steps.latest.outcome == 'failure' }}
+      - name: Report a failed release check or newer-release build (warning only)
+        if: ${{ !cancelled() && (steps.releases.outcome == 'failure' || steps.newer.outcome == 'failure') }}
+        env:
+          TAG: ${{ steps.releases.outputs.newest }}
         run: |
-          message='Could not build WP Rocket tag:latest-stable with APVM; the comparison was skipped (see the build step log).'
-          echo "::warning title=latest stable not compared::$message"
-          printf '### WP Rocket parity: latest stable\n\n⚠️ %s\n' "$message" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$TAG" ]; then
+            message="Could not build WP Rocket tag:$TAG with APVM; the comparison was skipped (see the build step log)."
+          else
+            message='Could not list the WP Rocket releases; the newer-release check was skipped (see its step log).'
+          fi
+          echo "::warning title=newer release not checked::$message"
+          printf '### WP Rocket parity: newer releases\n\n⚠️ %s\n' "$message" >> "$GITHUB_STEP_SUMMARY"

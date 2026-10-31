@@ -4,8 +4,15 @@ import type {
   ExclusionDocumentOutcome
 } from '../../../lib/messaging/exclusion-session';
 import { activeRecord } from '../../../lib/messaging/exclusion-session.fixtures';
+import {
+  deferSimulatedReport,
+  lazyloadSimulatedReport,
+  delaySimulate,
+  simulatedReport
+} from '../../../lib/messaging/exclusion-simulation.fixtures';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import { appliedWarnings, sessionView } from './session-view';
+import { appliedWarnings, awaitsRecord, sessionView, simulationReports } from './session-view';
+import type { PageFacts } from './page-match';
 
 /** The fixture session with another document outcome. */
 function withDocument(document: ExclusionDocumentOutcome | null): ActiveExclusionSession {
@@ -40,6 +47,16 @@ describe('sessionView', () => {
 
   it('is armed before any document lands', () => {
     expect(sessionView(withDocument(null), vi.fn())).toEqual({ kind: 'armed' });
+  });
+
+  it('is unrecorded once the page’s record wait passed without a document', () => {
+    const match = vi.fn();
+    expect(sessionView(withDocument(null), match, true)).toEqual({ kind: 'unrecorded' });
+    expect(match).not.toHaveBeenCalled();
+    // A record landing afterwards wins over the overdue wait.
+    expect(
+      sessionView(withDocument({ outcome: 'rewritten', reports: [] }), () => 'this-page', true)
+    ).toMatchObject({ kind: 'applied' });
   });
 
   it('reports a rewritten page with its no-match count', () => {
@@ -133,5 +150,156 @@ describe('appliedWarnings', () => {
     expect(view).toMatchObject({
       warnings: [{ lane: 'delayJs', kind: 'match-all', positions: [2] }]
     });
+  });
+});
+
+describe('sessionView: the runtime-unavailable outcome', () => {
+  it('reads as unmodified, naming its cause and keeping the served identity', () => {
+    const view = sessionView(
+      {
+        ...withDocument({ outcome: 'runtime-unavailable', cause: 'hash-mismatch' }),
+        simulate: { features: ['delay_js'] }
+      },
+      () => 'this-page'
+    );
+    expect(view).toEqual({
+      kind: 'unmodified',
+      reason: { kind: 'runtime-unavailable', cause: 'hash-mismatch' },
+      served: undefined
+    });
+  });
+});
+
+describe('sessionView: simulation', () => {
+  it('carries the simulation report on the applied view (absent when none)', () => {
+    const simulation = simulatedReport();
+    const session = {
+      ...withDocument({ outcome: 'rewritten', reports: [REPORT], simulation }),
+      simulate: delaySimulate()
+    };
+    const view = sessionView(session, () => 'this-page');
+    expect(view).toMatchObject({ kind: 'applied', simulation });
+    const plain = sessionView(
+      withDocument({ outcome: 'rewritten', reports: [] }),
+      () => 'this-page'
+    );
+    expect(Object.hasOwn(plain, 'simulation')).toBe(false);
+  });
+
+  it('carries the Defer JS report beside the Delay JS one, listed in buffer order', () => {
+    const simulation = simulatedReport();
+    const deferSimulation = deferSimulatedReport();
+    const view = sessionView(
+      {
+        ...withDocument({ outcome: 'rewritten', reports: [REPORT], simulation, deferSimulation }),
+        simulate: { features: ['defer_all_js', 'delay_js'] }
+      },
+      () => 'this-page'
+    );
+    expect(view).toMatchObject({ kind: 'applied', simulation, deferSimulation });
+    if (view.kind !== 'applied') throw new Error('not applied');
+    expect(simulationReports(view)).toEqual([deferSimulation, simulation]);
+    expect(simulationReports({})).toEqual([]);
+    const deferOnly = sessionView(
+      withDocument({ outcome: 'rewritten', reports: [], deferSimulation }),
+      () => 'this-page'
+    );
+    expect(Object.hasOwn(deferOnly, 'simulation')).toBe(false);
+    expect(deferOnly).toMatchObject({ deferSimulation });
+  });
+
+  it('carries the LazyLoad report first: all three listed in buffer order', () => {
+    const simulation = simulatedReport();
+    const deferSimulation = deferSimulatedReport();
+    const lazyloadSimulation = lazyloadSimulatedReport();
+    const view = sessionView(
+      {
+        ...withDocument({
+          outcome: 'rewritten',
+          reports: [REPORT],
+          simulation,
+          deferSimulation,
+          lazyloadSimulation
+        }),
+        simulate: { features: ['lazyload', 'defer_all_js', 'delay_js'] }
+      },
+      () => 'this-page'
+    );
+    expect(view).toMatchObject({ kind: 'applied', lazyloadSimulation });
+    if (view.kind !== 'applied') throw new Error('not applied');
+    expect(simulationReports(view)).toEqual([lazyloadSimulation, deferSimulation, simulation]);
+    const lazyloadOnly = sessionView(
+      withDocument({ outcome: 'rewritten', reports: [], lazyloadSimulation }),
+      () => 'this-page'
+    );
+    expect(Object.hasOwn(lazyloadOnly, 'deferSimulation')).toBe(false);
+    expect(lazyloadOnly).toMatchObject({ lazyloadSimulation });
+  });
+
+  it('marks a row overrun of a simulating session (the simulation shares its budget)', () => {
+    const document = {
+      outcome: 'over-budget',
+      feature: 'delay_js',
+      row: '.*x',
+      budgetMs: 2000
+    } as const;
+    const simulating = sessionView(
+      { ...withDocument(document), simulate: delaySimulate() },
+      () => 'this-page'
+    );
+    expect(simulating).toMatchObject({ reason: { kind: 'over-budget', simulating: true } });
+    const plain = sessionView(withDocument(document), () => 'this-page');
+    expect(plain.kind === 'unmodified' && Object.hasOwn(plain.reason, 'simulating')).toBe(false);
+  });
+
+  it('names a simulation-step overrun by its stage', () => {
+    const view = sessionView(
+      withDocument({
+        outcome: 'over-budget',
+        feature: 'delay_js',
+        row: null,
+        budgetMs: 2000,
+        stage: 'simulate'
+      }),
+      () => 'this-page'
+    );
+    expect(view).toMatchObject({
+      kind: 'unmodified',
+      reason: { kind: 'over-budget', stage: 'simulate' }
+    });
+  });
+});
+
+describe('awaitsRecord', () => {
+  const STARTED = activeRecord().startedAt;
+  /** A page anchored at document_start, its navigation `offset` ms after the apply. */
+  const pageAt = (offset: number, extra: Partial<PageFacts> = {}): PageFacts => ({
+    href: 'https://example.com/',
+    documentUrl: 'https://example.com/',
+    navigationStart: STARTED + offset,
+    anchoredAtStart: true,
+    responseEnd: null,
+    ...extra
+  });
+
+  it('waits for the record of a page loaded after the apply', () => {
+    expect(awaitsRecord(withDocument(null), pageAt(1))).toBe(true);
+  });
+
+  it('does not wait for a page loaded before the apply (the user reloads it)', () => {
+    expect(awaitsRecord(withDocument(null), pageAt(-1))).toBe(false);
+    expect(awaitsRecord(withDocument(null), pageAt(0))).toBe(false);
+  });
+
+  it('does not wait when its navigation start is not anchored, or the page was restored', () => {
+    expect(awaitsRecord(withDocument(null), pageAt(1, { anchoredAtStart: false }))).toBe(false);
+    expect(awaitsRecord(withDocument(null), pageAt(1, { restored: true }))).toBe(false);
+  });
+
+  it('does not wait once a document is recorded, or without an active session', () => {
+    expect(awaitsRecord(withDocument({ outcome: 'rewritten', reports: [] }), pageAt(1))).toBe(
+      false
+    );
+    expect(awaitsRecord({ state: 'inactive' }, pageAt(1))).toBe(false);
   });
 });

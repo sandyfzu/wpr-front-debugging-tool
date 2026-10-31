@@ -4,7 +4,9 @@
  * fixture inputs and prints the observed outputs as JSON. Driven by
  * `scripts/wp-rocket-parity.ts` (`pnpm parity:wp-rocket`), never by hand.
  *
- * Usage: php -n wp-rocket-parity.php <plugin-root> <wp-root> < cases.json > results.json
+ * Usage: php -n -d pcre.jit=1 wp-rocket-parity.php <plugin-root> <wp-root> < cases.json > results.json
+ * (`pcre.jit=1` is PHP's default, which `-n` would not otherwise guarantee:
+ * the JIT changes where `pcre.backtrack_limit` stops a long match.)
  *
  * Only I/O is stubbed (options, transients, translations, cron, notices, the
  * service container). Every save/match decision comes from the plugin's own
@@ -13,10 +15,20 @@
  *
  * Input (stdin): {"cases":[…]} — strings that may be invalid UTF-8 (typed and
  * stored rows) arrive base64-encoded:
- *   save:  {id, kind:"save", feature, typed:[b64…], safeMode:bool}
- *   match: {id, kind:"match", feature, rows:[b64…], html}
- * Output (stdout): {"env":{…}, "results":[…]} (see save_case / match_case);
- * `env.vendorPackages` names the composer packages whose `vendor/` code ran.
+ *   save:     {id, kind:"save", feature, typed:[b64…], safeMode:bool}
+ *   match:    {id, kind:"match", feature, rows:[b64…], html}
+ *   simulate: {id, kind:"simulate", feature:"delay_js"|"defer_all_js"|"lazyload",
+ *              rows:[b64…], listRows:[b64…] | list:"bundled", defer:{…},
+ *              lazyload:{assetsUrl, rows:[b64…]}, html}
+ * A run with simulate cases also sends `sentinels: {runtime, ieFallback}` and
+ * `lazyloadAssetsUrl` (the plugin's assets URL for the whole run: PHP
+ * constants are defined once per process, so every `lazyload.assetsUrl` of
+ * the run must be it).
+ * Output (stdout): {"env":{…}, "results":[…]} (see save_case / match_case /
+ * simulate_case); `env.vendorPackages` names the composer packages whose
+ * `vendor/` code ran, `env.pcreJit` whether PCRE's JIT ran (`on`/`off`); a run given `sentinels` adds `ieFallback` (the plugin's
+ * own IE fallback text, which the simulate cases replace by the sentinel)
+ * and `lazyload` (see lazyload_texts).
  */
 
 declare(strict_types=1);
@@ -75,12 +87,18 @@ function delete_transient($key) {}
 function add_settings_error($setting, $code, $message, $type = 'error') {} // The drop itself is read from the returned rows.
 function wp_next_scheduled($hook) { return false; }
 function create_rocket_uniqid() { return 'parity'; }
+// The request a simulated page answers: a front-end page view (LazyLoad's should_lazyload gates).
+function is_admin() { return false; }
+function is_feed($feeds = '') { return false; }
+function is_preview() { return false; }
+function is_search() { return false; }
 
 // --- WordPress core functions the Lazyload pass reaches, copied verbatim from
 // the pinned core (their files pull in far more than the harness loads):
 // `absint` (wp-includes/load.php; `width`/`height` attributes),
 // `wp_allowed_protocols` (wp-includes/functions.php; `esc_url` on absolute and
-// `data:` sources), `array_any` (the PHP 8.4 polyfill in wp-includes/compat.php,
+// `data:` sources), `wp_parse_args` (wp-includes/functions.php; the LazyLoad
+// script texts' arguments), `array_any` (the PHP 8.4 polyfill in wp-includes/compat.php,
 // reached by kses on PHP < 8.4).
 function absint( $maybeint ) {
 	return abs( (int) $maybeint );
@@ -97,6 +115,20 @@ function wp_allowed_protocols() {
 	}
 
 	return $protocols;
+}
+function wp_parse_args( $args, $defaults = array() ) {
+	if ( is_object( $args ) ) {
+		$parsed_args = get_object_vars( $args );
+	} elseif ( is_array( $args ) ) {
+		$parsed_args =& $args;
+	} else {
+		wp_parse_str( $args, $parsed_args );
+	}
+
+	if ( is_array( $defaults ) && $defaults ) {
+		return array_merge( $defaults, $parsed_args );
+	}
+	return $parsed_args;
 }
 if ( ! function_exists( 'array_any' ) ) {
 	function array_any( array $array, callable $callback ): bool {
@@ -147,11 +179,13 @@ use WP_Rocket\Engine\Media\Lazyload\Subscriber as LazyloadSubscriber;
 use WP_Rocket\Engine\Optimization\DeferJS\DeferJS;
 use WP_Rocket\Engine\Optimization\DelayJS\Admin\Settings as DelaySettings;
 use WP_Rocket\Engine\Optimization\DelayJS\HTML as DelayHtml;
+use WP_Rocket\Engine\Optimization\DelayJS\Subscriber as DelaySubscriber;
 use WP_Rocket\Engine\Optimization\DynamicLists\DefaultLists\DataManager;
 use WP_Rocket\Engine\Optimization\IEConditionalSubscriber;
 use WP_Rocket\Engine\Optimization\LazyRenderContent\Frontend\Controller as LazyRenderController;
 use WP_Rocket\Engine\Optimization\LazyRenderContent\Frontend\Processor\Dom as LazyRenderDom;
 use WP_Rocket\Engine\Optimization\LazyRenderContent\Frontend\Processor\Processor as LazyRenderProcessor;
+use WP_Rocket\Event_Management\Event_Manager;
 use WP_Rocket\Logger\Logger;
 
 /** Option key of each feature's settings field (the fixture feature ids are the extension's). */
@@ -352,6 +386,16 @@ function buffer_pass(callable $pass, string $html): string {
 function delay_pass(array $rows, string $html): string {
 	$options = new Options_Data(['delay_js' => 1, 'delay_js_exclusions' => $rows]);
 	$pass    = new DelayHtml($options, lists(['delay_js_exclusions' => []]), new Logger());
+	return tolerating_delay_row_warnings(static fn(): string => buffer_pass([$pass, 'delay_js'], $html));
+}
+
+/**
+ * Run Delay JS code tolerating only the warning a row PCRE rejects raises in
+ * DelayJS/HTML.php's own preg_match (once per script, as live).
+ *
+ * @param callable():string $run
+ */
+function tolerating_delay_row_warnings(callable $run): string {
 	set_error_handler(static function (int $no, string $message, string $file, int $line): bool {
 		if ($no === E_WARNING && str_starts_with($message, 'preg_match(): ') && str_ends_with($file, '/DelayJS/HTML.php')) {
 			return true;
@@ -359,7 +403,7 @@ function delay_pass(array $rows, string $html): string {
 		throw new ErrorException("$message ($file:$line)", 0, $no, $file, $line);
 	});
 	try {
-		return buffer_pass([$pass, 'delay_js'], $html);
+		return $run();
 	} finally {
 		restore_error_handler();
 	}
@@ -580,11 +624,426 @@ function match_case(array $case): array {
 }
 
 // ---------------------------------------------------------------------------
+// Simulate: the page WP Rocket serves with Delay JS on, from a page without it.
+// ---------------------------------------------------------------------------
 
-$input   = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-$results = [];
+/**
+ * One of the plugin's dynamic lists as shipped (plugin-root
+ * `dynamic-lists.json`, the file a fresh install reads before any update).
+ *
+ * @param string $name e.g. `delay_js_exclusions`, `defer_js_external_exclusions`.
+ * @return string[]
+ */
+function bundled_list(string $plugin, string $name): array {
+	static $files = [];
+	$lists = $files[$plugin] ??= json_decode((string) file_get_contents($plugin . '/dynamic-lists.json'), true, 512, JSON_THROW_ON_ERROR);
+	if (!isset($lists[$name]) || !is_array($lists[$name])) {
+		throw new RuntimeException("$plugin/dynamic-lists.json has no $name list");
+	}
+	return $lists[$name];
+}
+
+/**
+ * The Defer JS passes of a served page: the real DeferJS::defer_js then
+ * DeferJS::defer_inline_js (buffer priorities 24 and 25), with the rows as the
+ * stored option and the given dynamic lists. Runs inside the caller's buffer.
+ * A list row holding the `/` delimiter breaks the inline-exclusions pattern
+ * where the build quotes for `#` (its preg_match warns, as live, and fails):
+ * only that warning, raised in DeferJS.php, is tolerated.
+ *
+ * @param string[] $rows Stored `exclude_defer_js` rows.
+ * @param array{external:string[],inline:string[]} $lists
+ * @return callable(string):string
+ */
+function simulate_defer(array $rows, array $lists): callable {
+	$options = new Options_Data(['defer_all_js' => 1, 'exclude_defer_js' => $rows]);
+	$pass    = new DeferJS($options, lists(['defer_js_external_exclusions' => $lists['external'], 'defer_js_inline_exclusions' => $lists['inline']]));
+	return static function (string $page) use ($pass): string {
+		set_error_handler(static function (int $no, string $message, string $file, int $line): bool {
+			if (!(error_reporting() & $no)) {
+				return false; // @-silenced by the plugin itself (its joined-pattern pre-check).
+			}
+			if ($no === E_WARNING && str_starts_with($message, 'preg_match(): ') && str_ends_with($file, '/DeferJS/DeferJS.php')) {
+				return true;
+			}
+			throw new ErrorException("$message ($file:$line)", 0, $no, $file, $line);
+		});
+		try {
+			return $pass->defer_inline_js($pass->defer_js($page));
+		} finally {
+			restore_error_handler();
+		}
+	};
+}
+
+/**
+ * The full Delay JS buffer work of a served page: the real
+ * DelayJS\Subscriber's `delay_js` then `add_delay_js_script` (both priority
+ * 26), inside the IE extract/inject — with the list rows as the dynamic list,
+ * the rows as the stored option, a filesystem double whose runtime file is the
+ * runtime sentinel and an HTML whose IE fallback is the fallback sentinel.
+ * `$before` runs the earlier passes of the same buffer (LazyLoad, Defer JS).
+ *
+ * @param string[] $rows      Stored `delay_js_exclusions` rows.
+ * @param string[] $listRows  The dynamic list's `delay_js_exclusions` rows.
+ * @param array{runtime:string,ieFallback:string} $sentinels
+ */
+function simulate_pass(array $rows, array $listRows, array $sentinels, string $html, ?callable $before = null): string {
+	$options = new Options_Data(['delay_js' => 1, 'delay_js_exclusions' => $rows]);
+	$pass    = new class($options, lists(['delay_js_exclusions' => $listRows]), new Logger(), $sentinels['ieFallback']) extends DelayHtml {
+		private string $fallback;
+		public function __construct(Options_Data $options, DataManager $lists, Logger $logger, string $fallback) {
+			parent::__construct($options, $lists, $logger);
+			$this->fallback = $fallback;
+		}
+		public function get_ie_fallback(): string { return $this->fallback; }
+	};
+	$filesystem = new class($sentinels['runtime']) {
+		private string $runtime;
+		public function __construct(string $runtime) { $this->runtime = $runtime; }
+		public function exists($path) { return true; }
+		public function get_contents($path) { return $this->runtime; }
+	};
+	$subscriber = new DelaySubscriber($pass, $filesystem);
+	return tolerating_delay_row_warnings(static fn(): string => buffer_pass(
+		static fn(string $page): string => $subscriber->add_delay_js_script($subscriber->delay_js($before === null ? $page : $before($page))),
+		$html
+	));
+}
+
+/** The keys a simulate case may carry (anything else is a driver defect). */
+const SIMULATE_KEYS = ['id', 'kind', 'feature', 'rows', 'listRows', 'list', 'defer', 'lazyload', 'html'];
+
+/** The features a simulate case may name (the last pass of its buffer). */
+const SIMULATE_FEATURES = ['delay_js', 'defer_all_js', 'lazyload'];
+
+/** The keys a case's `defer` may carry. */
+const DEFER_KEYS = ['rows', 'lists'];
+
+/**
+ * A case's Defer JS pass, or null without `defer`: base64 rows, and the lists
+ * given or (`"bundled"`) the zip's own.
+ *
+ * @return callable(string):string|null
+ */
+function case_defer(array $case, string $plugin): ?callable {
+	if (!isset($case['defer'])) {
+		return null;
+	}
+	$unknown = array_diff(array_keys($case['defer']), DEFER_KEYS);
+	if ($unknown !== []) {
+		throw new RuntimeException("simulate {$case['id']}: unknown defer key(s) " . implode(', ', $unknown));
+	}
+	$lists = $case['defer']['lists'] === 'bundled'
+		? ['external' => bundled_list($plugin, 'defer_js_external_exclusions'), 'inline' => bundled_list($plugin, 'defer_js_inline_exclusions')]
+		: ['external' => array_map('base64_decode', $case['defer']['lists']['external']), 'inline' => array_map('base64_decode', $case['defer']['lists']['inline'])];
+	return simulate_defer(array_map('base64_decode', $case['defer']['rows']), $lists);
+}
+
+/**
+ * One simulate case: `served` = the page WP Rocket serves for `html` with
+ * Delay JS on (`delay_js`), Defer JS on (`defer_all_js`) or LazyLoad for
+ * images on (`lazyload`) — the feature named is the buffer's last pass; with
+ * `lazyload` (LazyLoad, priority 18) and `defer` (Defer JS, 24/25) the case
+ * also runs those earlier passes in the same buffer, as WP Rocket orders them.
+ * `rocket_disable_meta_generator` is on for the case, so the passes write no
+ * `wpr_*` comment (the extension never writes one); match cases keep theirs.
+ *
+ * @return array{id:string,served:string}
+ * @throws RuntimeException on an unknown feature or key.
+ */
+function simulate_case(array $case, ?array $sentinels, string $plugin): array {
+	if ($sentinels === null) {
+		throw new RuntimeException("simulate {$case['id']}: the input has no sentinels");
+	}
+	if (!in_array($case['feature'], SIMULATE_FEATURES, true)) {
+		throw new RuntimeException("simulate {$case['id']}: unknown feature {$case['feature']}");
+	}
+	$unknown = array_diff(array_keys($case), SIMULATE_KEYS);
+	if ($unknown !== []) {
+		throw new RuntimeException("simulate {$case['id']}: unknown key(s) " . implode(', ', $unknown) . ' (allowed: ' . implode(', ', SIMULATE_KEYS) . ')');
+	}
+	$defer    = case_defer($case, $plugin);
+	$lazyRows = case_lazyload($case);
+	$hasDelay = isset($case['rows']) || isset($case['listRows']) || isset($case['list']);
+	if ($case['feature'] === 'lazyload' && ($lazyRows === null || $defer !== null || $hasDelay)) {
+		throw new RuntimeException("simulate {$case['id']}: a LazyLoad case has lazyload and no Defer JS or Delay JS input");
+	}
+	if ($case['feature'] === 'defer_all_js' && ($defer === null || $hasDelay)) {
+		throw new RuntimeException("simulate {$case['id']}: a Defer JS case has defer and no Delay JS input");
+	}
+	$noMeta = static fn(): bool => true;
+	add_filter('rocket_disable_meta_generator', $noMeta);
+	try {
+		$serve = static function (string $page, ?callable $lazyload) use ($case, $defer, $sentinels, $plugin): string {
+			$before = chain_passes($lazyload, $defer);
+			if ($case['feature'] !== 'delay_js') {
+				return buffer_pass($before, $page);
+			}
+			$rows     = array_map('base64_decode', $case['rows']);
+			$listRows = ($case['list'] ?? null) === 'bundled'
+				? bundled_list($plugin, 'delay_js_exclusions')
+				: array_map('base64_decode', $case['listRows']);
+			return simulate_pass($rows, $listRows, $sentinels, $page, $before);
+		};
+		return ['id' => $case['id'], 'served' => with_lazyload($case['id'], $lazyRows, $case['html'], $serve)];
+	} finally {
+		remove_filter('rocket_disable_meta_generator', $noMeta);
+	}
+}
+
+/**
+ * The given passes as one, in order (absent ones skipped).
+ *
+ * @param callable(string):string|null ...$passes
+ * @return callable(string):string
+ */
+function chain_passes(?callable ...$passes): callable {
+	$present = array_values(array_filter($passes));
+	return static fn(string $page): string => array_reduce(
+		$present,
+		static fn(string $html, callable $pass): string => $pass($html),
+		$page
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Simulate: LazyLoad for images (option `lazyload`; iframes and YouTube off).
+// ---------------------------------------------------------------------------
+
+/** The option set simulated: images only (pictures, images, inline-style background images). */
+const LAZYLOAD_OPTIONS = ['lazyload' => 1, 'lazyload_iframes' => 0, 'lazyload_youtube' => 0];
+
+/** The keys a case's `lazyload` may carry (an option-set key is a driver defect). */
+const LAZYLOAD_KEYS = ['assetsUrl', 'rows'];
+
+/** The buffer priority LazyLoad's pass runs at (after image dimensions, 17; before Minify JS, 22). */
+const LAZYLOAD_BUFFER_PRIORITY = 18;
+
+/**
+ * The WordPress hooks LazyLoad prints from. Each must print last
+ * (PHP_INT_MAX): the harness places their output right before the element
+ * end a theme template writes right after the hook.
+ */
+const LAZYLOAD_PRINT_HOOKS = ['wp_head', 'wp_enqueue_scripts', 'wp_footer'];
+
+/**
+ * A case's stored `exclude_lazyload` rows, or null without `lazyload`.
+ *
+ * @return string[]|null
+ * @throws RuntimeException naming the offending field: `lazyload` not an
+ *   object, an unknown or missing key, another assets URL than the run's,
+ *   `rows` not a list of base64 strings.
+ */
+function case_lazyload(array $case): ?array {
+	if (!array_key_exists('lazyload', $case)) {
+		return null;
+	}
+	$lazyload = $case['lazyload'];
+	if (!is_array($lazyload) || array_is_list($lazyload) && $lazyload !== []) {
+		throw new RuntimeException("simulate {$case['id']}: lazyload must be an object {assetsUrl, rows}");
+	}
+	$unknown = array_diff(array_keys($lazyload), LAZYLOAD_KEYS);
+	if ($unknown !== []) {
+		throw new RuntimeException("simulate {$case['id']}: unknown lazyload key(s) " . implode(', ', $unknown) . ' (the option set is fixed: images only)');
+	}
+	$missing = array_diff(LAZYLOAD_KEYS, array_keys($lazyload));
+	if ($missing !== []) {
+		throw new RuntimeException("simulate {$case['id']}: lazyload is missing " . implode(', ', $missing));
+	}
+	if (!defined('WP_ROCKET_ASSETS_URL') || $lazyload['assetsUrl'] !== WP_ROCKET_ASSETS_URL) {
+		throw new RuntimeException("simulate {$case['id']}: lazyload.assetsUrl is not the run's lazyloadAssetsUrl");
+	}
+	$rows = $lazyload['rows'];
+	if (!is_array($rows) || !array_is_list($rows)) {
+		throw new RuntimeException("simulate {$case['id']}: lazyload.rows must be an array of base64 strings");
+	}
+	return array_map(static function (mixed $row, int $at) use ($case): string {
+		$text = is_string($row) ? base64_decode($row, true) : false;
+		if ($text === false) {
+			throw new RuntimeException("simulate {$case['id']}: lazyload.rows[$at] is not a base64 string");
+		}
+		return $text;
+	}, $rows, array_keys($rows));
+}
+
+/**
+ * The real LazyLoad Subscriber under the simulated option set.
+ *
+ * @param string[] $rows Stored `exclude_lazyload` rows.
+ */
+function lazyload_subscriber(array $rows): LazyloadSubscriber {
+	$options = new Options_Data(LAZYLOAD_OPTIONS + ['exclude_lazyload' => $rows]);
+	return new LazyloadSubscriber($options, new Assets(), new Image(), new Iframe());
+}
+
+/**
+ * What one WordPress hook prints (only the harness's subscriber is on it).
+ *
+ * @throws RuntimeException when a callback on it runs before PHP_INT_MAX.
+ */
+function printed(string $hook): string {
+	global $wp_filter;
+	$priorities = isset($wp_filter[$hook]) ? array_keys($wp_filter[$hook]->callbacks) : [];
+	if ($priorities !== [] && $priorities !== [PHP_INT_MAX]) {
+		throw new RuntimeException("LazyLoad prints on $hook at priority " . implode(', ', $priorities) . ', not last (PHP_INT_MAX)');
+	}
+	ob_start();
+	try {
+		do_action($hook);
+	} finally {
+		$out = (string) ob_get_clean();
+	}
+	return $out;
+}
+
+/**
+ * WP Rocket's generator meta as its buffer writes it, abutting `</head>`
+ * (`Meta::add_meta_generator`, at PHP_INT_MAX: after every template hook).
+ */
+const WPR_GENERATOR_META = '#<meta name="generator" content="WP Rocket[^"]*" data-wpr-features="[^"]*" />$#D';
+
+/**
+ * WP Rocket's beacon block as its buffer writes it, abutting the last
+ * `</body>` (performance hints, rocket_buffer 17): the data script (JSON with
+ * `/` escaped, so it holds no `</script>`) then the beacon tag.
+ */
+const WPR_BEACON_BLOCK = '#<script>var rocket_beacon_data = (?:(?!</script>).)*+</script><script data-name="wpr-wpr-beacon" src=\'[^\']*\' async></script>$#sD';
+
+/**
+ * Where a hook's text lands on a served page whose element end is at `$end`:
+ * a theme prints the hook right before that end, and WP Rocket's buffer later
+ * writes its own block (`$abutting`) there too — after the hook's text. So the
+ * text goes before that block when the page ends the element with it, else
+ * right before the end.
+ *
+ * @param string $html The served page.
+ * @param int $end Offset of the element end (`</head>`, `</body>`).
+ * @param string $abutting Pattern of the buffer block, anchored at the end.
+ * @return int The text's offset.
+ * @throws RuntimeException when PCRE fails on the page.
+ */
+function hook_text_offset(string $html, int $end, string $abutting): int {
+	$found = preg_match($abutting, substr($html, 0, $end), $match, PREG_OFFSET_CAPTURE);
+	if ($found === false) {
+		throw new RuntimeException('hook placement: ' . preg_last_error_msg() . " on $abutting");
+	}
+	return $found === 1 ? $match[0][1] : $end;
+}
+
+/**
+ * Run `$work` with a LazyLoad subscriber wired as WP Rocket wires it (its
+ * own Event_Manager), then unwire it. `$work` gets the page as WordPress
+ * prints it with LazyLoad on — the `wp_head` output right before `</head>`,
+ * the `wp_footer` output right before `</body>` (a theme closes each element
+ * right after the hook; matched case-insensitively), each before the block
+ * WP Rocket's buffer adds there when the page carries it (generator meta,
+ * beacon block: see hook_text_offset) — and the buffer pass.
+ * Only pages with one of each are taken: where a theme prints the hooks on
+ * other pages is the theme's, not WP Rocket's. Without rows (`null`), `$work`
+ * gets the page unchanged and no pass.
+ *
+ * @param string[]|null $rows Stored `exclude_lazyload` rows.
+ * @param callable(string, ?callable):string $work
+ * @throws RuntimeException when the page has not exactly one `</head>` then
+ *   one `</body>`, or the plugin's wiring moved (buffer priority, print order).
+ */
+function with_lazyload(string $id, ?array $rows, string $html, callable $work): string {
+	if ($rows === null) {
+		return $work($html, null);
+	}
+	$subscriber = lazyload_subscriber($rows);
+	$events     = new Event_Manager();
+	$events->add_subscriber($subscriber);
+	try {
+		if (has_filter('rocket_buffer', [$subscriber, 'lazyload']) !== LAZYLOAD_BUFFER_PRIORITY) {
+			throw new RuntimeException('LazyLoad no longer runs at rocket_buffer ' . LAZYLOAD_BUFFER_PRIORITY);
+		}
+		$texts = array_combine(LAZYLOAD_PRINT_HOOKS, array_map('printed', LAZYLOAD_PRINT_HOOKS));
+		if ($texts['wp_enqueue_scripts'] !== '') {
+			throw new RuntimeException("simulate $id: LazyLoad enqueued output under the images-only option set");
+		}
+		$headAt = stripos($html, '</head>');
+		$bodyAt = stripos($html, '</body>');
+		if (substr_count(strtolower($html), '</head>') !== 1 || substr_count(strtolower($html), '</body>') !== 1 || $bodyAt < $headAt) {
+			throw new RuntimeException("simulate $id: a LazyLoad page needs exactly one </head>, then exactly one </body> (where its hooks print)");
+		}
+		$headAt = hook_text_offset($html, $headAt, WPR_GENERATOR_META);
+		$bodyAt = hook_text_offset($html, $bodyAt, WPR_BEACON_BLOCK);
+		$page   = substr($html, 0, $headAt) . $texts['wp_head']
+			. substr($html, $headAt, $bodyAt - $headAt) . $texts['wp_footer'] . substr($html, $bodyAt);
+		return $work($page, static fn(string $buffer): string => tolerating_lazyload_pattern_warnings(
+			static fn(): string => $subscriber->lazyload($buffer)
+		));
+	} finally {
+		$events->remove_subscriber($subscriber);
+	}
+}
+
+/**
+ * Run LazyLoad's pass tolerating only the warning a pattern PCRE rejects
+ * raises in RocketLazyload/Image.php (a picture's image too long for the
+ * pattern the plugin compiles from it: the plugin skips that picture, as live).
+ *
+ * @param callable():string $run
+ */
+function tolerating_lazyload_pattern_warnings(callable $run): string {
+	set_error_handler(static function (int $no, string $message, string $file, int $line): bool {
+		if (!(error_reporting() & $no)) {
+			return false; // @-silenced by the plugin itself (its background-regex check).
+		}
+		if ($no === E_WARNING && str_starts_with($message, 'preg_') && str_ends_with($file, '/RocketLazyload/Image.php')) {
+			return true;
+		}
+		throw new ErrorException("$message ($file:$line)", 0, $no, $file, $line);
+	});
+	try {
+		return $run();
+	} finally {
+		restore_error_handler();
+	}
+}
+
+/**
+ * LazyLoad's own texts under the simulated option set and no stored rows:
+ * what `wp_head` and `wp_footer` print, and the image exclusion literals
+ * (the attribute and src lists the image passes test, unfiltered).
+ *
+ * @return array{assetsUrl:string,head:string,footer:string,excludedAttributes:string[],excludedSrc:string[]}
+ */
+function lazyload_texts(): array {
+	$image = new Image();
+	$texts = [
+		'assetsUrl'          => WP_ROCKET_ASSETS_URL,
+		'excludedAttributes' => $image->getExcludedAttributes(),
+		'excludedSrc'        => $image->getExcludedSrc(),
+	];
+	with_lazyload('lazyload texts', [], '</head></body>', static function (string $page) use (&$texts): string {
+		[$texts['head'], $texts['footer']] = explode('</head>', substr($page, 0, -strlen('</body>')), 2);
+		return $page;
+	});
+	return $texts;
+}
+
+// ---------------------------------------------------------------------------
+
+$input     = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+$sentinels = $input['sentinels'] ?? null;
+if ($sentinels !== null) {
+	if (!is_string($input['lazyloadAssetsUrl'] ?? null) || $input['lazyloadAssetsUrl'] === '') {
+		throw new RuntimeException('a run with sentinels needs lazyloadAssetsUrl');
+	}
+	// As wp-rocket.php defines them from the plugin URL.
+	define('WP_ROCKET_ASSETS_URL', $input['lazyloadAssetsUrl']);
+	define('WP_ROCKET_ASSETS_JS_URL', WP_ROCKET_ASSETS_URL . 'js/');
+}
+$results   = [];
 foreach ($input['cases'] as $case) {
-	$results[] = $case['kind'] === 'save' ? save_case($case) : match_case($case);
+	$results[] = match ($case['kind']) {
+		'save'     => save_case($case),
+		'match'    => match_case($case),
+		'simulate' => simulate_case($case, $sentinels, $PLUGIN),
+	};
 }
 /**
  * The composer packages (`vendor/<vendor>/<name>/`) whose files were loaded:
@@ -616,10 +1075,15 @@ echo json_encode(
 		'env'     => [
 			'php'            => PHP_VERSION,
 			'pcre2'          => explode(' ', PCRE_VERSION)[0],
+			// Effective JIT: enabled by the ini AND compiled into this PCRE build.
+			'pcreJit'        => PCRE_JIT_SUPPORT && (bool) ini_get('pcre.jit') ? 'on' : 'off',
 			'libxml'         => LIBXML_DOTTED_VERSION,
 			'vendorPackages' => loaded_vendor_packages($PLUGIN),
 		],
 		'results' => $results,
-	],
+	] + ($sentinels === null ? [] : [
+		'ieFallback' => (new DelayHtml(new Options_Data([]), lists([]), new Logger()))->get_ie_fallback(),
+		'lazyload'   => lazyload_texts(),
+	]),
 	JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
 );

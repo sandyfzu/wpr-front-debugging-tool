@@ -1,9 +1,18 @@
 name: CI
 
 # Every gate runs on every PR and on pushes to the main branches — quality gates are
-# enforced machine-side, not only locally. `build:firefox` joins the matrix later in
-# the port (hardening phase); the speed bench stays local because its ≥30% ratio
-# assertion is machine-relative and would flake on shared runners.
+# enforced machine-side, not only locally. The speed bench stays local because its
+# ≥30% ratio assertion is machine-relative and would flake on shared runners.
+#
+# Layout (parallel, same strictness as one serial job):
+# - `checks`: compile, lint, format, Chromium + Firefox builds, size budgets.
+# - `tests`: the unit tests split over 3 shards (`pnpm test:shard`); each uploads its
+#   Vitest blob (results + raw coverage). Coverage thresholds are not checked per
+#   shard — a third of the files can't meet an aggregate floor.
+# - `coverage`: merges the 3 blobs (`pnpm test:merge`) — the full test report and the
+#   90 % thresholds over the merged coverage; red on any failed test, missing blob,
+#   failed shard, or coverage below the floor.
+# - `gates`: the required check — green only when every job above succeeded.
 #
 # `workflow_dispatch` also lets maintainers run the gates on demand — from the Actions
 # tab or `gh workflow run ci.yml --ref <branch>` — without opening a PR. The optional
@@ -20,13 +29,23 @@ on:
         required: false
         type: string
 
+# A new push to a PR supersedes its running checks, so those are cancelled (one group
+# per PR). Pushes to main/develop and manual runs get a group of their own (the run id):
+# a shared group would still drop a queued run when a third one arrives, even without
+# cancel-in-progress — every pushed commit keeps a full, final result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+# Least privilege: the workflow only needs to read the code (artifact upload/download
+# within the run uses the runtime token, not these scopes).
+permissions:
+  contents: read
+
 jobs:
-  gates:
+  checks:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Least privilege: the workflow only needs to read the code.
-    permissions:
-      contents: read
     steps:
       - name: Checkout ${{ inputs.ref || github.ref }}
         uses: actions/checkout@v7
@@ -58,9 +77,6 @@ jobs:
       - name: Format check
         run: pnpm format:check
 
-      - name: Tests (with coverage thresholds)
-        run: pnpm test
-
       - name: Build
         run: pnpm build
 
@@ -71,3 +87,119 @@ jobs:
 
       - name: Size budgets
         run: pnpm check:budgets
+
+  tests:
+    name: tests (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # Every shard finishes, so the merged report shows all failures at once.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - name: Checkout ${{ inputs.ref || github.ref }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Install pnpm (version from package.json `packageManager`)
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node (version from .nvmrc)
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Tests (shard ${{ matrix.shard }}/3, coverage collected)
+        run: pnpm test:shard --shard=${{ matrix.shard }}/3
+
+      # Uploaded even when tests failed: the blob carries the failures to the merged
+      # report. Missing blob (the run crashed) fails here; `coverage` fails too.
+      - name: Upload Vitest blob
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-blob-${{ matrix.shard }}
+          path: .vitest/blob/
+          # `.vitest` is a dot-directory: excluded by default.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  coverage:
+    needs: tests
+    # Runs after failed shards too (full report), but never after a cancellation.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout ${{ inputs.ref || github.ref }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Install pnpm (version from package.json `packageManager`)
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node (version from .nvmrc)
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Download Vitest blobs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: vitest-blob-*
+          # `pnpm test:merge` reads `.vitest/blob` (Vitest's default blob directory).
+          path: .vitest/blob/
+          merge-multiple: true
+
+      # Fails on any failed test in any blob, or merged coverage below the thresholds.
+      - name: Merged report + coverage thresholds
+        run: pnpm test:merge
+
+      # A shard that crashed before writing its blob leaves a partial merge that can
+      # still pass: the merge above is only trusted with every shard green.
+      - name: Require every shard to have succeeded
+        if: ${{ !cancelled() }}
+        env:
+          TESTS_RESULT: ${{ needs.tests.result }}
+        run: |
+          blobs=$(find .vitest/blob -maxdepth 1 -name 'blob-*.json' | wc -l)
+          echo "tests job: $TESTS_RESULT, blobs: $blobs/3"
+          if [ "$TESTS_RESULT" != success ] || [ "$blobs" -ne 3 ]; then
+            echo "::error::Unit test shards did not all succeed (tests: $TESTS_RESULT, blobs: $blobs/3)"
+            exit 1
+          fi
+
+  # The single required check: one stable name that is red whenever any job failed,
+  # was cancelled, or was skipped.
+  gates:
+    needs: [checks, tests, coverage]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every job to have succeeded
+        env:
+          RESULTS: ${{ needs.checks.result }} ${{ needs.tests.result }} ${{ needs.coverage.result }}
+        run: |
+          echo "checks tests coverage: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != success ]; then
+              echo "::error::A CI job did not succeed (checks tests coverage: $RESULTS)"
+              exit 1
+            fi
+          done

@@ -34,12 +34,17 @@
  *   the origin a session was applied from are rewritten; anything else in
  *   the tab passes through untouched and unrecorded. Bytes are served only
  *   when the session that ran the engine is still the tab's live one.
+ * - **Runtime requests**: answered with a packaged file only for the exact
+ *   runtime URL of the live session's latest simulated document,
+ *   requested by that very document (`./simulated-runtime`); everything
+ *   else goes to the site.
  * - Pushes tolerate the no-receiver case; every other failure is logged.
  */
 import { createLogger, type Logger } from '../logger';
 import { notStoredRows } from '../exclusion-builder/field-text';
 import { prevalidateExclusionSet } from '../exclusion-builder/validate';
 import type { ExclusionSet } from '../exclusion-builder/set';
+import type { SimulateSpec } from '../wp-rocket-simulation/spec';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
 import {
   invalidApplyReply,
@@ -49,6 +54,7 @@ import {
   parseServedDocument,
   type ActiveExclusionSession,
   type ExclusionApplyReply,
+  type ExclusionDocumentFailure,
   type ExclusionDocumentOutcome,
   type ExclusionSaveReply,
   type ExclusionServedDocument,
@@ -89,16 +95,29 @@ import {
   INACTIVE,
   observableStatus,
   transition,
+  withSimulate,
   type SessionEffect,
   type SessionEvent,
   type SessionMachineState
 } from './machine';
 import { servedUrl } from './served-url';
+import { resolveSimulatedRuntime } from './simulated-runtime';
+import {
+  deadlinedSources,
+  INERT_SIMULATION_SOURCES,
+  SimulationPreparationError,
+  simulationMarkerSettler,
+  simulationPreparer,
+  type SimulationSources
+} from './simulation-sources';
 import {
   DeadlineExceededError,
+  DOCUMENT_TRANSFORM_BUDGET_MS,
   INTERCEPTION_HOST_BOUNDS_MS,
+  rewriteDocumentBoundMs,
   SESSION_STEP_TIMEOUTS_MS as STEPS,
-  withinDeadline
+  withinDeadline,
+  withinExtensibleDeadline
 } from './timeouts';
 
 /** The per-tab session store (the `session:` helpers' shape). */
@@ -109,10 +128,18 @@ export interface SessionRecordStore {
   remove(tabId: number): Promise<void>;
 }
 
+/** One origin's saved set with what was simulated beside it (absent: nothing). */
+export interface SavedSetEntry {
+  readonly set: ExclusionSet;
+  readonly simulate?: SimulateSpec;
+}
+
 /** The per-origin saved sets (the `local:` helpers' shape). */
 export interface SavedSetStore {
-  get(origin: string): Promise<ExclusionSet | null>;
-  save(origin: string, set: ExclusionSet): Promise<unknown>;
+  /** The origin's entry, or null when it has none. */
+  get(origin: string): Promise<SavedSetEntry | null>;
+  /** Save `set` with its simulation (absent: none — a stored one is replaced). */
+  save(origin: string, set: ExclusionSet, simulate?: SimulateSpec): Promise<unknown>;
 }
 
 /** Everything the controller needs from the browser, injected. */
@@ -135,6 +162,8 @@ export interface ExclusionSessionControllerDeps {
   readonly extensionId: string;
   /** The fallback engine runner; defaults to in-process. */
   readonly runner?: DocumentTransformRunner;
+  /** Where a simulating session's inputs come from; defaults to the inert sources. */
+  readonly simulation?: SimulationSources;
   /** The logger; defaults to the `exclusion-session` logger. */
   readonly log?: Logger;
   /** Timer seam for every deadline; defaults to `setTimeout`. */
@@ -230,6 +259,9 @@ export function createExclusionSessionController(
   const log = deps.log ?? createLogger('exclusion-session');
   const enqueue = createKeyedQueue();
   const fallbackRunner = deps.runner ?? createInProcessTransformRunner();
+  const simulationSources = deps.simulation ?? INERT_SIMULATION_SOURCES;
+  /** The sources a runtime request reads, each under its own deadline. */
+  const runtimeSources = deadlinedSources(simulationSources, deps.schedule);
   /** Settles once the wake re-validation ran; asks and documents wait for it (bounded). */
   let ready: Promise<void> = Promise.resolve();
   let backend: InterceptionBackend | null = null;
@@ -302,8 +334,12 @@ export function createExclusionSessionController(
     bounded('Session removal', STEPS.store, () => deps.sessions.remove(tabId));
 
   /** Save an origin's set, bounded. */
-  const saveSet = (origin: string, set: ExclusionSet): Promise<unknown> =>
-    bounded('Saved-set write', STEPS.store, () => deps.savedSets.save(origin, set));
+  const saveSet = (
+    origin: string,
+    set: ExclusionSet,
+    simulate: SimulateSpec | undefined
+  ): Promise<unknown> =>
+    bounded('Saved-set write', STEPS.store, () => deps.savedSets.save(origin, set, simulate));
 
   /**
    * Queue an ask's task behind the tab's earlier events, giving up when it
@@ -336,7 +372,7 @@ export function createExclusionSessionController(
     }
   };
 
-  /** Push a status to the tab and the panels; a missing receiver is expected. */
+  /** Push a status to the tab and the panels; a missing or departed receiver is expected. */
   const notify = async (tabId: number, status: ExclusionSessionStatus): Promise<void> => {
     const pushes: [string, () => Promise<unknown>][] = [
       ['tab', () => deps.pushToTab(tabId, status)],
@@ -374,10 +410,13 @@ export function createExclusionSessionController(
     armer: InterceptionBackend,
     tabId: number,
     generation: number,
-    origin: string
+    origin: string,
+    simulate: SimulateSpec | undefined
   ): Promise<ArmResult> => {
     try {
-      return await bounded('Backend arm', STEPS.arm, () => armer.arm(tabId, generation, origin));
+      return await bounded('Backend arm', STEPS.arm, () =>
+        armer.arm(tabId, generation, origin, simulate)
+      );
     } catch (cause) {
       if (!timedOut(cause)) throw cause;
       log.warn('Backend arm timed out — interception unavailable', { tabId, cause });
@@ -402,12 +441,13 @@ export function createExclusionSessionController(
       // Checked before attaching anything; the store re-checks on write (another tab may race).
       if (othersActive >= EXCLUSION_SESSION_LIMIT)
         return { type: 'arm-unavailable', cause: 'session-limit', at: deps.now() };
-      const armed = await armBackend(armer, tabId, state.startedAt, state.origin);
+      const armed = await armBackend(armer, tabId, state.startedAt, state.origin, state.simulate);
       if (!armed.armed) return { type: 'arm-unavailable', cause: armed.cause, at: deps.now() };
       const record: ActiveExclusionSession = {
         state: 'active',
         origin: state.origin,
         set: state.set,
+        ...withSimulate(state.simulate),
         startedAt: state.startedAt,
         document: null
       };
@@ -458,7 +498,7 @@ export function createExclusionSessionController(
         return true;
       case 'save-set':
         try {
-          await saveSet(effect.origin, effect.set);
+          await saveSet(effect.origin, effect.set, effect.simulate);
         } catch (cause) {
           log.error('Applied set not saved for its origin', { tabId, cause });
         }
@@ -533,17 +573,23 @@ export function createExclusionSessionController(
   // ── Host side ──────────────────────────────────────────────────────────
 
   /**
-   * Run a host method within its bound: past it (or on an unexpected
-   * fault) the backend gets `fallback` — the host never rejects.
+   * Answer a host method from its already-bounded work: past the bound (or
+   * on an unexpected fault) the backend gets `fallback` — the host never
+   * rejects.
+   *
+   * @param method The host method (names the step).
+   * @param fallback The safe answer past the bound or on a fault.
+   * @param boundedWork The method's work under its deadline (named by `step`).
+   * @param onExpired Called once the bound passed (before `fallback` is answered).
    */
-  const hostCall = async <T>(
+  const hostGuard = async <T>(
     method: keyof typeof INTERCEPTION_HOST_BOUNDS_MS,
     fallback: T,
-    work: () => Promise<T>,
+    boundedWork: (step: string) => Promise<T>,
     onExpired?: () => void
   ): Promise<T> => {
     try {
-      return await bounded(`Host ${method}`, INTERCEPTION_HOST_BOUNDS_MS[method], work);
+      return await boundedWork(`Host ${method}`);
     } catch (cause) {
       if (timedOut(cause)) {
         onExpired?.();
@@ -554,6 +600,14 @@ export function createExclusionSessionController(
       return fallback;
     }
   };
+
+  /** {@link hostGuard} under the method's declared bound. */
+  const hostCall = <T>(
+    method: keyof typeof INTERCEPTION_HOST_BOUNDS_MS,
+    fallback: T,
+    work: () => Promise<T>
+  ): Promise<T> =>
+    hostGuard(method, fallback, (step) => bounded(step, INTERCEPTION_HOST_BOUNDS_MS[method], work));
 
   /** The tab's active session for a document URL, or null (no session, another origin, not ready). */
   const activeFor = async (
@@ -644,59 +698,126 @@ export function createExclusionSessionController(
       (backend?.runner ?? fallbackRunner)(request)
     );
 
-  /** Rewrite one eligible document of the tab's live session (see the seam). */
-  const rewriteForSession = async (
+  /**
+   * The engine's run on one document of `session`: the bytes to serve (null:
+   * the original) and the outcome to record — never rejects (an unexpected
+   * fault is `engine-failed`, so the page still gets its record).
+   */
+  const runForSession = async (
     document: InterceptedDocument,
-    expired: () => boolean,
-    abandoned: () => boolean
-  ): Promise<Uint8Array | null> => {
-    if (!isRewritableResponse(document)) return null;
-    const session = await activeFor(document.tabId, document.documentUrl);
-    if (session === null) return null;
-    const result = await rewriteDocument(document, session.set, boundedRunner);
-    if (result.cause !== undefined) {
-      log.error('Exclusion engine failed — document served unmodified', {
-        tabId: document.tabId,
-        cause: result.cause
-      });
-    }
-    // A copy-serving backend serves the original unless the exclusions
-    // changed the document (a copy costs the page its real security state
-    // and timing); its page guard removes the rules instead.
-    const copies = document.identity?.servedAsCopy === true;
-    let body = copies && result.rulesOnly === true ? null : result.body;
-    let outcome = checkedOutcome(
-      session,
-      withServed(
-        result.outcome,
-        await servedIdentity(
-          document,
-          body === null ? 0 : (result.speculationRulesRemoved ?? 0),
-          copies && body !== null
+    session: ActiveExclusionSession
+  ): Promise<{ body: Uint8Array | null; outcome: ExclusionDocumentOutcome }> => {
+    try {
+      const result = await rewriteDocument(
+        document,
+        session.set,
+        boundedRunner,
+        DOCUMENT_TRANSFORM_BUDGET_MS,
+        session.simulate === undefined
+          ? undefined
+          : simulationPreparer(session.simulate, document, simulationSources),
+        simulationMarkerSettler(document, simulationSources)
+      );
+      if (result.cause !== undefined) {
+        log.error(
+          result.cause instanceof SimulationPreparationError
+            ? 'Simulation inputs could not be prepared — document served unmodified'
+            : 'Exclusion engine failed — document served unmodified',
+          { tabId: document.tabId, cause: result.cause }
+        );
+      }
+      // A copy-serving backend serves the original unless the exclusions
+      // changed the document (a copy costs the page its real security state
+      // and timing); its page guard removes the rules instead.
+      const copies = document.identity?.servedAsCopy === true;
+      const body = copies && result.rulesOnly === true ? null : result.body;
+      const outcome = checkedOutcome(
+        session,
+        withServed(
+          result.outcome,
+          await servedIdentity(
+            document,
+            body === null ? 0 : (result.speculationRulesRemoved ?? 0),
+            copies && body !== null
+          )
         )
-      )
-    );
-    if (outcome === null) {
+      );
+      if (outcome !== null) return { body, outcome };
       log.error('Engine outcome failed validation — document served unmodified', {
         tabId: document.tabId
       });
-      body = null;
-      outcome = withServed(
-        { outcome: 'failed', reason: 'engine-failed' },
-        await servedIdentity(document, 0, false)
-      );
+    } catch (cause) {
+      log.error('Document rewrite failed unexpectedly — served unmodified', {
+        tabId: document.tabId,
+        cause
+      });
     }
-    // Stop or a re-apply may have landed while the engine ran, or the
-    // backend may have served the original already: serve (and record) only
-    // for the session that is still live and a backend still waiting.
-    if (!(await stillLive(document.tabId, session.startedAt)) || expired() || abandoned()) {
+    return { body: null, outcome: await unservedOutcome(document, 'engine-failed') };
+  };
+
+  /** A served-unmodified outcome for `reason`, with the document's identity when it has one. */
+  const unservedOutcome = async (
+    document: Pick<InterceptedDocument, 'documentUrl' | 'identity'>,
+    reason: ExclusionDocumentFailure
+  ): Promise<ExclusionDocumentOutcome> => {
+    let served: ExclusionServedDocument | null = null;
+    try {
+      served = await servedIdentity(document, 0, false);
+    } catch (cause) {
+      // Recorded without it: the page's overlay then cannot verify, but never waits.
+      log.error('Document identity unavailable — recorded without it', { cause });
+    }
+    return withServed({ outcome: 'failed', reason }, served);
+  };
+
+  /** Record a document outcome on the session started at `startedAt` (queued; never rejects). */
+  const recordDocument = (
+    tabId: number,
+    startedAt: number,
+    outcome: ExclusionDocumentOutcome
+  ): Promise<void> =>
+    driveQuietly(tabId, { type: 'document', startedAt, outcome }, 'document record');
+
+  /**
+   * Rewrite one eligible document of the tab's live session (see the seam).
+   * Once the session is known, the document gets exactly one record — unless
+   * Stop or a re-apply landed meanwhile (that session's pages are no longer
+   * this one's to describe): its outcome, or — when the host bound passed
+   * (`timed-out`) or the backend stopped waiting (`not-served`) — served
+   * unmodified, since the backend served the original then.
+   *
+   * @param document The intercepted document.
+   * @param expired Whether the host bound already passed.
+   * @param abandoned Whether the backend stopped waiting.
+   * @param extendBound Lengthens the host bound to a simulating session's —
+   *   called once the session is known to simulate, before its preparation.
+   */
+  const rewriteForSession = async (
+    document: InterceptedDocument,
+    expired: () => boolean,
+    abandoned: () => boolean,
+    extendBound: () => void
+  ): Promise<Uint8Array | null> => {
+    if (!isRewritableResponse(document)) return null;
+    // Null on a failed or slow read too: left unrecorded (the overlay's
+    // bounded wait names a page without a record).
+    const session = await activeFor(document.tabId, document.documentUrl);
+    if (session === null) return null;
+    if (session.simulate !== undefined) extendBound();
+    const { body, outcome } = await runForSession(document, session);
+    // Stop or a re-apply may have landed while the engine ran: serve (and
+    // record) only for the session that is still live.
+    if (!(await stillLive(document.tabId, session.startedAt))) return null;
+    const late = expired() ? 'timed-out' : abandoned() ? 'not-served' : null;
+    if (late !== null) {
+      log.warn('Session page served unmodified — its rewrite came too late', {
+        tabId: document.tabId,
+        reason: late
+      });
+      void recordDocument(document.tabId, session.startedAt, await unservedOutcome(document, late));
       return null;
     }
-    void driveQuietly(
-      document.tabId,
-      { type: 'document', startedAt: session.startedAt, outcome },
-      'document record'
-    );
+    void recordDocument(document.tabId, session.startedAt, outcome);
     return body;
   };
 
@@ -710,36 +831,41 @@ export function createExclusionSessionController(
     tabId: number,
     documentUrl: string,
     identity: InterceptedResponseIdentity | undefined,
-    reason: 'body-unavailable' | 'not-served'
+    reason: ExclusionDocumentFailure
   ): Promise<void> => {
     const session = await activeFor(tabId, documentUrl);
     if (session === null) return;
-    const served = await servedIdentity({ documentUrl, identity }, 0, false);
-    await driveQuietly(
+    await recordDocument(
       tabId,
-      {
-        type: 'document',
-        startedAt: session.startedAt,
-        outcome: withServed({ outcome: 'failed', reason }, served)
-      },
-      'document record'
+      session.startedAt,
+      await unservedOutcome({ documentUrl, identity }, reason)
     );
   };
 
   const host: InterceptionHost = {
     shouldIntercept: (tabId, documentUrl) =>
-      hostCall(
-        'shouldIntercept',
-        false,
-        async () => (await activeFor(tabId, documentUrl)) !== null
-      ),
+      hostCall('shouldIntercept', null, async () => {
+        const session = await activeFor(tabId, documentUrl);
+        return session === null
+          ? null
+          : { rewriteBoundMs: rewriteDocumentBoundMs(session.simulate !== undefined) };
+      }),
 
+    // Bounded from the call: the exclusions-only bound, lengthened to the
+    // simulating one only once the session read shows it simulates.
     rewriteDocument: (document, abandoned = () => false) => {
       let expired = false;
-      return hostCall(
+      return hostGuard(
         'rewriteDocument',
         null,
-        () => rewriteForSession(document, () => expired, abandoned),
+        (step) =>
+          withinExtensibleDeadline(
+            step,
+            rewriteDocumentBoundMs(false),
+            rewriteDocumentBoundMs(true),
+            (extend) => rewriteForSession(document, () => expired, abandoned, extend),
+            deps.schedule
+          ),
         () => {
           expired = true;
         }
@@ -755,6 +881,25 @@ export function createExclusionSessionController(
       hostCall('documentNotServed', undefined, () =>
         recordUnserved(tabId, documentUrl, identity, 'not-served')
       ),
+
+    documentPassed: (tabId, documentUrl, reason, identity) =>
+      hostCall('documentPassed', undefined, () =>
+        recordUnserved(tabId, documentUrl, identity, reason)
+      ),
+
+    // Queued behind the tab's events: the document record of the page that
+    // makes this request is written before the request is answered.
+    simulatedRuntime: (tabId, requestUrl, documentUrl) =>
+      hostCall('simulatedRuntime', null, async () => {
+        if (!(await awaitReady('runtime request left to the site'))) return null;
+        const status = await enqueueAsk(tabId, 'simulatedRuntime', () => readSession(tabId));
+        return resolveSimulatedRuntime(
+          status,
+          { url: requestUrl, documentUrl },
+          runtimeSources,
+          log
+        );
+      }),
 
     interceptionEnded: (tabId: number, cause: InterceptionEndCause, generation: number) =>
       hostCall('interceptionEnded', undefined, async () => {
@@ -803,13 +948,14 @@ export function createExclusionSessionController(
   const resumeLive = async (
     tabId: number,
     generation: number,
-    origin: string
+    origin: string,
+    simulate: SimulateSpec | undefined
   ): Promise<boolean> => {
     const resumer = backend;
     if (resumer === null) return false;
     try {
       return await bounded('Backend resume', STEPS.resume, () =>
-        resumer.resume(tabId, generation, origin)
+        resumer.resume(tabId, generation, origin, simulate)
       );
     } catch (cause) {
       log.error('Wake resume failed — session treated as stale', { tabId, cause });
@@ -824,7 +970,7 @@ export function createExclusionSessionController(
       return;
     }
     if (record.state !== 'active') return;
-    if (!(await resumeLive(tabId, record.startedAt, record.origin))) {
+    if (!(await resumeLive(tabId, record.startedAt, record.origin, record.simulate))) {
       log.info('Stale session cleared at wake — tab served unmodified', { tabId });
       await driveQuietly(tabId, { type: 'stale' }, 'stale cleanup');
     }
@@ -856,6 +1002,7 @@ export function createExclusionSessionController(
           type: 'apply',
           origin: page.origin,
           set: payload.set,
+          ...withSimulate(payload.simulate),
           at: issueStart()
         })
       );
@@ -885,9 +1032,12 @@ export function createExclusionSessionController(
     async savedSet(sender) {
       const page = pageSender(sender, 'getSavedExclusionSet');
       if (page === null) return { set: null };
-      return {
-        set: await bounded('Saved-set read', STEPS.store, () => deps.savedSets.get(page.origin))
-      };
+      const entry = await bounded('Saved-set read', STEPS.store, () =>
+        deps.savedSets.get(page.origin)
+      );
+      if (entry === null) return { set: null };
+      // The mode restores with the rows; restoring never arms by itself.
+      return { set: entry.set, ...withSimulate(entry.simulate) };
     },
 
     async save(sender, data) {
@@ -896,7 +1046,7 @@ export function createExclusionSessionController(
       const payload = parseExclusionSetPayload(data);
       if (payload === null) return { outcome: 'not-saved', reason: 'invalid-request' };
       try {
-        await saveSet(page.origin, payload.set);
+        await saveSet(page.origin, payload.set, payload.simulate);
         return { outcome: 'saved' };
       } catch (cause) {
         log.error('Exclusion set save failed', { cause });

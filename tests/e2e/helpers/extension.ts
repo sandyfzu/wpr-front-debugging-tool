@@ -43,6 +43,8 @@ import {
   type Worker
 } from '@playwright/test';
 
+import { LATEST_LIST_ENDPOINT } from '../../../lib/wp-rocket-simulation/latest-list';
+
 /**
  * Bounded launch wait. Playwright applies its launch `timeout` only with the
  * explicit option here: verified live on this Chromium build, a wrong
@@ -61,6 +63,18 @@ export const EXTENSION_PATH = path.resolve(
   '.output',
   'chrome-mv3'
 );
+
+/**
+ * Remote hosts the browser resolves to nothing (`~NOTFOUND`, Chromium's
+ * host-resolver rule): the background fetches the latest exclusion list at
+ * every start, and a test run must never reach the real endpoint. Its
+ * refresh therefore misses with a network error, and the simulation runs
+ * the bundled list unless a suite keeps a copy (`helpers/simulation.ts`).
+ */
+const BLOCKED_REMOTE_HOSTS: readonly string[] = [new URL(LATEST_LIST_ENDPOINT).hostname];
+
+/** Chromium's resolver rule for {@link BLOCKED_REMOTE_HOSTS}. */
+const HOST_RESOLVER_RULES = `--host-resolver-rules=${BLOCKED_REMOTE_HOSTS.map((host) => `MAP ${host} ~NOTFOUND`).join(', ')}`;
 
 /** The fixture server's primary local origin (`localhost`; `127.0.0.1` is
  * the distinct-origin partner, exercised through the cross-origin fixture's
@@ -185,6 +199,8 @@ export class ExtensionDriver {
         args: [
           `--disable-extensions-except=${EXTENSION_PATH}`,
           `--load-extension=${EXTENSION_PATH}`,
+          // Every launch, relaunches included: no run ever reaches these hosts.
+          HOST_RESOLVER_RULES,
           ...extraArgs
         ]
       });

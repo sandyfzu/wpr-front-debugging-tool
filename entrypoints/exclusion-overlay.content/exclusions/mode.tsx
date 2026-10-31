@@ -59,6 +59,7 @@ export function ExclusionsConfig(props: OverlayModePanelProps): JSX.Element {
     return (
       LANE_ORDER.every((lane) => draft.rows[lane].length === 0) &&
       !draft.disable.delayJs &&
+      draft.simulate === undefined &&
       !draft.disable.deferJs &&
       !draft.disable.lazyRender
     );

@@ -14,8 +14,10 @@ import {
   createRowCarry,
   createRowValidator,
   draftChars,
+  draftLaneMode,
   draftFromSet,
   draftToSet,
+  setLaneMode,
   holdsCandidate,
   insertRows,
   isBlankRow,
@@ -799,5 +801,109 @@ describe('blankRowWarning', () => {
     // A blank pattern row is an unfinished edit: no warning (its `''` is never sent).
     expect(blankRowWarning('delayJs', '')).toBeNull();
     expect(blankRowWarning('deferJs', '')).toBeNull();
+  });
+});
+
+describe('Delay JS mode in the draft', () => {
+  const SIMULATE = { features: ['delay_js' as const] };
+
+  it('restores the simulate spec beside the set, leaving the set unchanged', () => {
+    const draft = draftFromSet(EMPTY_EXCLUSION_SET, createIdSource(), SIMULATE);
+    expect(draftLaneMode(draft, 'delayJs')).toBe('simulated');
+    expect(draft.simulate).toEqual(SIMULATE);
+    expect(draftToSet(draft)).toEqual(EMPTY_EXCLUSION_SET);
+  });
+
+  it('drops a contradictory simulation on restore (the disable wins)', () => {
+    const set = {
+      ...EMPTY_EXCLUSION_SET,
+      disable: { ...EMPTY_EXCLUSION_SET.disable, delayJs: true }
+    };
+    const { draft } = restoreDraft(set, createIdSource(), SIMULATE);
+    expect(draftLaneMode(draft, 'delayJs')).toBe('disabled');
+    expect(draft.simulate).toBeUndefined();
+  });
+
+  it('sets the mode as one pair, rows untouched; the same mode is a no-op', () => {
+    const start = draftFromSet(validSet(), createIdSource());
+    const simulated = setLaneMode(start, 'delayJs', 'simulated');
+    expect(simulated.rows).toBe(start.rows);
+    expect(simulated.simulate).toEqual(SIMULATE);
+    expect(simulated.disable.deferJs).toBe(start.disable.deferJs);
+    expect(setLaneMode(simulated, 'delayJs', 'simulated')).toBe(simulated);
+    const disabled = setLaneMode(simulated, 'delayJs', 'disabled');
+    expect(disabled.disable.delayJs).toBe(true);
+    expect(disabled.simulate).toBeUndefined();
+    expect(draftLaneMode(setLaneMode(disabled, 'delayJs', 'served'), 'delayJs')).toBe('served');
+  });
+
+  it('ends the Delay JS simulation when the feature is disabled; other toggles keep it', () => {
+    const simulated = setLaneMode(
+      draftFromSet(EMPTY_EXCLUSION_SET, createIdSource()),
+      'delayJs',
+      'simulated'
+    );
+    expect(setDisable(simulated, 'deferJs', true).simulate).toEqual(SIMULATE);
+    expect(setDisable(simulated, 'delayJs', true).simulate).toBeUndefined();
+  });
+
+  it('carries both mode lanes in one spec, each reconciled with its own disable', () => {
+    const start = draftFromSet(EMPTY_EXCLUSION_SET, createIdSource());
+    const both = setLaneMode(setLaneMode(start, 'delayJs', 'simulated'), 'deferJs', 'simulated');
+    expect(both.simulate).toEqual({ features: ['defer_all_js', 'delay_js'] });
+    expect(draftLaneMode(both, 'deferJs')).toBe('simulated');
+    const deferOff = setDisable(both, 'deferJs', true);
+    expect(deferOff.simulate).toEqual(SIMULATE);
+    expect(draftLaneMode(deferOff, 'deferJs')).toBe('disabled');
+    // A stored contradictory pair restores as Disabled, the other lane kept.
+    const restored = draftFromSet(
+      { ...EMPTY_EXCLUSION_SET, disable: { ...EMPTY_EXCLUSION_SET.disable, deferJs: true } },
+      createIdSource(),
+      { features: ['defer_all_js', 'delay_js'] }
+    );
+    expect(restored.simulate).toEqual(SIMULATE);
+    expect(restored.disable.deferJs).toBe(true);
+  });
+});
+
+describe('LazyLoad mode in the draft', () => {
+  const LAZYLOAD = { features: ['lazyload' as const] };
+
+  it('restores a simulated LazyLoad whatever the set disables (it has no disable)', () => {
+    const allOff = { delayJs: true, deferJs: true, lazyRender: true };
+    const draft = draftFromSet({ ...EMPTY_EXCLUSION_SET, disable: allOff }, createIdSource(), {
+      features: ['lazyload', 'defer_all_js', 'delay_js']
+    });
+    expect(draftLaneMode(draft, 'lazyload')).toBe('simulated');
+    // The disabled features' simulation is dropped; LazyLoad's is kept.
+    expect(draft.simulate).toEqual(LAZYLOAD);
+    expect(draft.disable).toEqual(allOff);
+  });
+
+  it('sets Simulated and As served without touching any disable', () => {
+    const start = draftFromSet(validSet(), createIdSource());
+    const simulated = setLaneMode(start, 'lazyload', 'simulated');
+    expect(simulated.simulate).toEqual(LAZYLOAD);
+    expect(simulated.disable).toEqual(start.disable);
+    expect(simulated.rows).toBe(start.rows);
+    const served = setLaneMode(simulated, 'lazyload', 'served');
+    expect(served.simulate).toBeUndefined();
+    expect(draftLaneMode(served, 'lazyload')).toBe('served');
+  });
+
+  it('refuses Disabled: the lane offers none', () => {
+    expect(() =>
+      setLaneMode(draftFromSet(EMPTY_EXCLUSION_SET, createIdSource()), 'lazyload', 'disabled')
+    ).toThrow('The lazyload lane offers no disabled mode');
+  });
+
+  it('keeps LazyLoad simulated across every other lane’s disable', () => {
+    const simulated = setLaneMode(
+      draftFromSet(EMPTY_EXCLUSION_SET, createIdSource()),
+      'lazyload',
+      'simulated'
+    );
+    expect(setDisable(simulated, 'delayJs', true).simulate).toEqual(LAZYLOAD);
+    expect(setDisable(simulated, 'lazyRender', true).simulate).toEqual(LAZYLOAD);
   });
 });

@@ -7,6 +7,7 @@ import {
   parseParityInputs,
   parseParityTable,
   comparedFields,
+  parseHeaderFields,
   pendingOwner,
   typedLineBytes
 } from './wp-rocket-parity-table';
@@ -20,10 +21,12 @@ function validTable(): { header: Json; rows: Json[] } {
       plugin: '3.0',
       pluginZipSha256: 'aa',
       pluginPackages: { 'a/b': 'v1' },
+      plugins: [{ version: '3.0', zipSha256: 'aa', packages: { 'a/b': 'v1' } }],
       wp: '7.0',
       wpZipSha1: 'bb',
       php: '8.1',
       pcre2: '10.49',
+      pcreJit: 'on',
       libxml: '2.9',
       generatedBy: 'test'
     },
@@ -144,6 +147,17 @@ describe('parseParityTable', () => {
     rejects((table) => delete table.header.php, '"php" must be a string');
     rejects((table) => (table.header.php = ''), 'header "php" must not be empty');
     rejects((table) => (table.header.extra = 'x'), 'unknown key "extra"');
+  });
+
+  it('reads pcreJit as "on" or "off" only', () => {
+    const table = validTable();
+    table.header.pcreJit = 'off';
+    expect(parseParityTable(table).header.pcreJit).toBe('off');
+    rejects((table) => delete table.header.pcreJit, '"pcreJit" must be a string');
+    rejects(
+      (table) => (table.header.pcreJit = '1'),
+      'header "pcreJit" must be "on" or "off", got "1"'
+    );
   });
 
   it('parses pluginPackages as a non-empty map of non-empty version strings', () => {
@@ -435,6 +449,40 @@ describe('parseParityTable', () => {
       '"rows" must equal the stored rows of "save-a"'
     );
   });
+
+  it("reads a row's version-keyed expectations, each as consistent as the reference outputs", () => {
+    const table = validTable();
+    row(table, 'save-a').byVersion = { '3.23.5.1': { stored: ['b'] } };
+    row(table, 'match-a').byVersion = { '3.23.5.1': { rows: ['b'], excluded: [] } };
+    const parsed = parseParityTable(table);
+    expect(parsed.rows[0]?.byVersion).toEqual({ '3.23.5.1': { stored: ['b'] } });
+    expect(parsed.rows[1]?.byVersion).toEqual({ '3.23.5.1': { rows: ['b'], excluded: [] } });
+    // A derived row's rows follow its source row per version.
+    rejects((t) => {
+      row(t, 'save-a').byVersion = { '3.23.5.1': { stored: ['b'] } };
+    }, '"rows" must equal the stored rows of "save-a" (WP Rocket 3.23.5.1)');
+    // An override is checked like the reference outputs (here: excluded ⊆ candidates).
+    rejects((t) => {
+      row(t, 'match-c').byVersion = { '3.23.5.1': { excluded: ['z'] } };
+    }, 'match-c');
+    // Only outputs are overridable; `rows` only on a derived row.
+    rejects((t) => {
+      row(t, 'match-b').byVersion = { '3.23.5.1': { rows: ['x'] } };
+    }, 'has "rows", which is not an output of this row');
+    rejects((t) => {
+      row(t, 'save-a').byVersion = { '3.23.5.1': { typed: ['x'] } };
+    }, 'has "typed", which is not an output of this row');
+  });
+
+  it('checks a null override (that version derives no such output) against the row shape', () => {
+    // Every output here is bound to its row shape: a version cannot lack one.
+    rejects((t) => {
+      row(t, 'match-c').byVersion = { '3.23.5.1': { rekeyed: null } };
+    }, '"hashed"/"rekeyed" are present exactly on lazy rendering rows');
+    rejects((t) => {
+      row(t, 'match-b').byVersion = { '3.23.5.1': { inlineWrapped: null } };
+    }, '"inlineWrapped" is present exactly on Defer JS rows');
+  });
 });
 
 describe('parseParityInputs', () => {
@@ -516,5 +564,82 @@ describe('typedLineBytes', () => {
   it('encodes text as UTF-8 and decodes base64 lines to their bytes', () => {
     expect([...typedLineBytes('é')]).toEqual([0xc3, 0xa9]);
     expect([...typedLineBytes({ b64: '/2Jh' })]).toEqual([0xff, 0x62, 0x61]);
+  });
+});
+
+describe('parseHeaderFields', () => {
+  it('reads the reference fields and leaves other keys to the caller', () => {
+    const header = { ...validTable().header, simulation: {} };
+    expect(Object.keys(parseHeaderFields(header))).toEqual(Object.keys(validTable().header));
+  });
+
+  it("names the caller's table in errors", () => {
+    const header = { ...validTable().header, wp: '' };
+    expect(() => parseHeaderFields(header, 'other fixtures')).toThrow(
+      'other fixtures: header "wp" must not be empty'
+    );
+    expect(() => parseHeaderFields({ ...header, pluginPackages: [] }, 'other fixtures')).toThrow(
+      'other fixtures: header "pluginPackages" must be a non-empty {name: version} object'
+    );
+  });
+});
+
+describe('header "plugins" (every pinned build)', () => {
+  /** A second pinned build. */
+  const other = { version: '2.9', zipSha256: 'cc', packages: { 'a/b': 'v0' } };
+
+  it('parses every build, the reference included', () => {
+    const table = validTable();
+    table.header.plugins = [...(table.header.plugins as Json[]), other];
+    expect(parseParityTable(table).header.plugins).toEqual([
+      { version: '3.0', zipSha256: 'aa', packages: { 'a/b': 'v1' } },
+      other
+    ]);
+  });
+
+  it('rejects a missing, empty or malformed list', () => {
+    const list = 'header "plugins" must be a non-empty array';
+    rejects((table) => delete table.header.plugins, list);
+    rejects((table) => (table.header.plugins = []), list);
+    rejects((table) => (table.header.plugins = {}), list);
+    rejects((table) => (table.header.plugins = [null]), 'header "plugins"[0] must be an object');
+    rejects(
+      (table) => (table.header.plugins = [{ ...other, extra: 1 }]),
+      'header "plugins"[0] has unknown key "extra"'
+    );
+    rejects(
+      (table) => (table.header.plugins = [{ ...other, version: '' }]),
+      'header "plugins"[0] "version" must be a non-empty string'
+    );
+    rejects(
+      (table) => (table.header.plugins = [{ ...other, zipSha256: 1 }]),
+      'header "plugins"[0] "zipSha256" must be a non-empty string'
+    );
+    rejects(
+      (table) => (table.header.plugins = [{ ...other, packages: {} }]),
+      'header "plugins"[0] "packages" must be a non-empty {name: version} object'
+    );
+  });
+
+  it('rejects a version listed twice', () => {
+    rejects(
+      (table) => (table.header.plugins = [other, other]),
+      'header "plugins" must name each version once'
+    );
+  });
+
+  it('requires the reference build exactly as the reference fields name it', () => {
+    const message = 'header "plugins" must hold the reference build (3.0)';
+    rejects((table) => (table.header.plugins = [other]), message);
+    rejects(
+      (table) =>
+        (table.header.plugins = [{ version: '3.0', zipSha256: 'xx', packages: { 'a/b': 'v1' } }]),
+      message
+    );
+    rejects(
+      (table) =>
+        (table.header.plugins = [{ version: '3.0', zipSha256: 'aa', packages: { 'a/b': 'v2' } }]),
+      message
+    );
   });
 });

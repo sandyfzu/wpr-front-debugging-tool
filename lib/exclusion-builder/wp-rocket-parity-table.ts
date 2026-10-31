@@ -26,6 +26,13 @@
  * Runtime imports carry their `.ts` extension and reach only leaf modules, so
  * the dev script can load this module under Node's native TypeScript.
  */
+import {
+  VERSION_EXPECTATIONS_KEY,
+  expectationsFor,
+  parseVersionExpectations,
+  withOverrides,
+  type VersionedRow
+} from './parity-version-expectations.ts';
 import { NON_BLOCKING_PROBLEMS, PROBLEM_IDS, type ProblemId } from './pcre/problems.ts';
 import { STORED_ROW_DROP_REASONS, type StoredRowDropReason } from './stored-row-drops.ts';
 import type { ExclusionFeatureId } from './set';
@@ -117,13 +124,39 @@ export interface ParityHeader {
    * so a rebuild of the same tag may vendor other versions).
    */
   readonly pluginPackages: Readonly<Record<string, string>>;
+  /**
+   * Every pinned plugin build the rows were derived under (one per
+   * supported WP Rocket version; `plugin`/`pluginZipSha256`/`pluginPackages`
+   * repeat the reference one): each must produce every row's outputs.
+   */
+  readonly plugins: readonly PinnedPlugin[];
   readonly wp: string;
   readonly wpZipSha1: string;
   readonly php: string;
   readonly pcre2: string;
+  /**
+   * Whether PCRE's JIT ran (`on`/`off`): it moves where `pcre.backtrack_limit`
+   * stops a long match, so outputs near that limit depend on it.
+   */
+  readonly pcreJit: string;
   readonly libxml: string;
   readonly generatedBy: string;
 }
+
+/** One pinned plugin build of a table header (see `ParityHeader.plugins`). */
+export interface PinnedPlugin {
+  readonly version: string;
+  readonly zipSha256: string;
+  /** As `ParityHeader.pluginPackages`, for this build. */
+  readonly packages: Readonly<Record<string, string>>;
+}
+
+/** A pinned plugin's keys, in file order. */
+export const PINNED_PLUGIN_KEYS: readonly (keyof PinnedPlugin)[] = [
+  'version',
+  'zipSha256',
+  'packages'
+];
 
 /** A typed line the settings form drops. */
 export interface DroppedLine {
@@ -215,8 +248,11 @@ export interface MatchRow extends MatchInput {
 /** The authored part of any row (what the dev script feeds the harness). */
 export type ParityInput = SaveInput | MatchInput;
 
-/** A complete row: authored inputs plus the harness-derived outputs. */
-export type ParityRow = SaveRow | MatchRow;
+/**
+ * A complete row: authored inputs plus the harness-derived outputs (the
+ * reference version's), and `byVersion` where another supported version differs.
+ */
+export type ParityRow = (SaveRow | MatchRow) & VersionedRow;
 
 /** The whole table. */
 export interface ParityTable {
@@ -229,10 +265,12 @@ export const HEADER_KEYS: readonly (keyof ParityHeader)[] = [
   'plugin',
   'pluginZipSha256',
   'pluginPackages',
+  'plugins',
   'wp',
   'wpZipSha1',
   'php',
   'pcre2',
+  'pcreJit',
   'libxml',
   'generatedBy'
 ];
@@ -326,10 +364,13 @@ export function comparedFields(row: {
   return ['candidates', 'excluded', ...warned];
 }
 
+/** This table's name in parse errors. */
+const TABLE_LABEL = 'wp-rocket-parity fixtures';
+
 /** A parse failure naming the table and, when known, the offending row. */
-function fail(id: string | null, problem: string): never {
+function fail(id: string | null, problem: string, table = TABLE_LABEL): never {
   const where = id === null ? '' : ` row "${id}":`;
-  throw new Error(`wp-rocket-parity fixtures:${where} ${problem}`);
+  throw new Error(`${table}:${where} ${problem}`);
 }
 
 /** Narrow to a plain JSON object. */
@@ -585,12 +626,12 @@ function parseInput(value: unknown, index: number): ParityInput {
   if (!ROW_ID.test(id)) fail(id, 'ids are save-… / match-… in lowercase kebab case');
   if (value.kind === 'save') {
     if (!id.startsWith('save-')) fail(id, 'save row ids start with "save-"');
-    checkKeys(id, value, [...SAVE_INPUT_KEYS, ...SAVE_OUTPUT_KEYS]);
+    checkKeys(id, value, [...SAVE_INPUT_KEYS, ...SAVE_OUTPUT_KEYS, VERSION_EXPECTATIONS_KEY]);
     return saveInput(id, value);
   }
   if (value.kind === 'match') {
     if (!id.startsWith('match-')) fail(id, 'match row ids start with "match-"');
-    checkKeys(id, value, [...MATCH_INPUT_KEYS, ...MATCH_OUTPUT_KEYS]);
+    checkKeys(id, value, [...MATCH_INPUT_KEYS, ...MATCH_OUTPUT_KEYS, VERSION_EXPECTATIONS_KEY]);
     return matchInput(id, value);
   }
   return fail(id, '"kind" must be "save" or "match"');
@@ -628,34 +669,147 @@ export function parseParityInputs(value: unknown): ParityInput[] {
   return inputs;
 }
 
-/** Parse `pluginPackages`: a non-empty `{name: version}` map of non-empty strings. */
-function packageVersions(value: unknown): Record<string, string> {
+/**
+ * Parse a packages map: a non-empty `{name: version}` map of non-empty strings.
+ *
+ * @param value The raw field.
+ * @param table The table's name in error messages.
+ * @param field The field's name in error messages.
+ */
+function packageVersions(
+  value: unknown,
+  table: string,
+  field = 'header "pluginPackages"'
+): Record<string, string> {
   if (!isRecord(value) || Object.keys(value).length === 0) {
-    return fail(null, 'header "pluginPackages" must be a non-empty {name: version} object');
+    return fail(null, `${field} must be a non-empty {name: version} object`, table);
   }
   for (const [name, version] of Object.entries(value)) {
     if (typeof version !== 'string' || version === '') {
-      fail(null, `header "pluginPackages" "${name}" must be a non-empty version string`);
+      fail(null, `${field} "${name}" must be a non-empty version string`, table);
     }
   }
   return value as Record<string, string>;
+}
+
+/**
+ * Parse one `plugins` entry: exact keys, non-empty strings, a packages map.
+ *
+ * @param value The raw entry.
+ * @param index Its position (error messages).
+ * @param table The table's name in error messages.
+ */
+function pinnedPlugin(value: unknown, index: number, table: string): PinnedPlugin {
+  const where = `header "plugins"[${String(index)}]`;
+  if (!isRecord(value)) return fail(null, `${where} must be an object`, table);
+  for (const key of Object.keys(value)) {
+    if (!(PINNED_PLUGIN_KEYS as readonly string[]).includes(key)) {
+      fail(null, `${where} has unknown key "${key}"`, table);
+    }
+  }
+  for (const key of ['version', 'zipSha256'] as const) {
+    const field = value[key];
+    if (typeof field !== 'string' || field === '') {
+      fail(null, `${where} "${key}" must be a non-empty string`, table);
+    }
+  }
+  return {
+    version: value.version as string,
+    zipSha256: value.zipSha256 as string,
+    packages: packageVersions(value.packages, table, `${where} "packages"`)
+  };
+}
+
+/**
+ * Parse `plugins`: a non-empty list of builds, one per version, holding the
+ * reference build exactly as the reference fields name it.
+ *
+ * @param value The raw field.
+ * @param reference The parsed reference fields.
+ * @param table The table's name in error messages.
+ */
+function pinnedPlugins(
+  value: unknown,
+  reference: Pick<ParityHeader, 'plugin' | 'pluginZipSha256' | 'pluginPackages'>,
+  table: string
+): PinnedPlugin[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return fail(null, 'header "plugins" must be a non-empty array', table);
+  }
+  const plugins = value.map((entry: unknown, index) => pinnedPlugin(entry, index, table));
+  const versions = new Set(plugins.map((plugin) => plugin.version));
+  if (versions.size !== plugins.length) {
+    fail(null, 'header "plugins" must name each version once', table);
+  }
+  const own = plugins.find((plugin) => plugin.version === reference.plugin);
+  if (
+    own?.zipSha256 !== reference.pluginZipSha256 ||
+    JSON.stringify(own.packages) !== JSON.stringify(reference.pluginPackages)
+  ) {
+    fail(
+      null,
+      `header "plugins" must hold the reference build (${reference.plugin}) with the header's own zip sha256 and packages`,
+      table
+    );
+  }
+  return plugins;
+}
+
+/**
+ * The reference fields ({@link HEADER_KEYS}) of a table header, each required
+ * and non-empty; other keys are the caller's to check. Shared by every table
+ * the parity script derives from the same plugin zips.
+ *
+ * @param value The header object.
+ * @param table The table's name in error messages.
+ * @returns The fields, in {@link HEADER_KEYS} order.
+ * @throws {@link Error} naming the table and the offending field.
+ */
+export function parseHeaderFields(
+  value: Record<string, unknown>,
+  table: string = TABLE_LABEL
+): ParityHeader {
+  const header: Partial<Record<keyof ParityHeader, unknown>> = {};
+  for (const key of HEADER_KEYS) {
+    if (key === 'pluginPackages') {
+      header[key] = packageVersions(value[key], table);
+      continue;
+    }
+    if (key === 'plugins') {
+      // After `plugin`, `pluginZipSha256` and `pluginPackages` (file order): they are parsed.
+      header[key] = pinnedPlugins(value[key], header as ParityHeader, table);
+      continue;
+    }
+    const field = value[key];
+    if (typeof field !== 'string') fail(null, `"${key}" must be a string`, table);
+    if (field === '') fail(null, `header "${key}" must not be empty`, table);
+    if (key === 'pcreJit' && field !== 'on' && field !== 'off') {
+      fail(null, `header "pcreJit" must be "on" or "off", got "${field}"`, table);
+    }
+    header[key] = field;
+  }
+  return header as ParityHeader;
 }
 
 /** Parse the header strictly. */
 function parseHeader(value: unknown): ParityHeader {
   if (!isRecord(value)) return fail(null, '"header" must be an object');
   checkKeys(null, value, HEADER_KEYS);
-  const header: Partial<Record<keyof ParityHeader, unknown>> = {};
-  for (const key of HEADER_KEYS) {
-    if (key === 'pluginPackages') {
-      header[key] = packageVersions(value[key]);
-      continue;
-    }
-    const field = stringField(null, value, key);
-    if (field === '') fail(null, `header "${key}" must not be empty`);
-    header[key] = field;
-  }
-  return header as ParityHeader;
+  return parseHeaderFields(value);
+}
+
+/**
+ * The outputs a row's version-keyed expectations may override: a save row's
+ * outputs; a match row's, plus `rows` when it is derived (`from`).
+ *
+ * @param input The row's authored part.
+ */
+export function overridableKeys(input: {
+  readonly kind: string;
+  readonly from?: string;
+}): readonly string[] {
+  if (input.kind === 'save') return SAVE_OUTPUT_KEYS;
+  return input.from === undefined ? MATCH_OUTPUT_KEYS : [...MATCH_OUTPUT_KEYS, 'rows'];
 }
 
 /** Same JSON value (typed lines are strings or {b64}). */
@@ -764,13 +918,33 @@ export function parseParityTable(value: unknown): ParityTable {
   const records = rowsOf(value) as Record<string, unknown>[];
   const rows = parseParityInputs(value).map((input, index): ParityRow => {
     const record = records[index] as Record<string, unknown>;
-    return input.kind === 'save' ? saveRow(input, record) : matchRow(input, record);
+    const complete = (fields: Record<string, unknown>): SaveRow | MatchRow =>
+      input.kind === 'save' ? saveRow(input, fields) : matchRow(input, fields);
+    const row = complete(record);
+    const byVersion = parseVersionExpectations(
+      record,
+      overridableKeys(input),
+      header.plugin,
+      (problem) => fail(input.id, problem)
+    );
+    if (byVersion === undefined) return row;
+    // Each version's outputs must be as consistent as the reference's.
+    for (const fields of Object.values(byVersion)) complete(withOverrides(record, fields));
+    return { ...row, byVersion };
   });
   for (const row of rows) {
     if (row.kind !== 'match' || row.from === undefined) continue;
-    const source = rows.find((candidate) => candidate.id === row.from) as SaveRow;
-    if (JSON.stringify(source.stored) !== JSON.stringify(row.rows)) {
-      fail(row.id, `"rows" must equal the stored rows of "${row.from}"`);
+    const source = rows.find((candidate) => candidate.id === row.from) as SaveRow & VersionedRow;
+    const versions = new Set([
+      header.plugin,
+      ...Object.keys(source.byVersion ?? {}),
+      ...Object.keys(row.byVersion ?? {})
+    ]);
+    for (const version of versions) {
+      const stored = expectationsFor(source, version).stored;
+      if (JSON.stringify(stored) !== JSON.stringify(expectationsFor(row, version).rows)) {
+        fail(row.id, `"rows" must equal the stored rows of "${row.from}" (WP Rocket ${version})`);
+      }
     }
   }
   return { header, rows };

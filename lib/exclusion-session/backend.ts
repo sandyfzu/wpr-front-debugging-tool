@@ -17,9 +17,11 @@
  * **Time bounds.** The controller time-boxes every backend call (a timed-
  * out `arm` answers `attach-denied`; a timed-out `resume` is stale; a
  * timed-out `disarm` is logged), and every host method resolves within
- * `INTERCEPTION_HOST_BOUNDS_MS` (`./timeouts`). A backend still never
- * trusts the host with a paused response: it arms its own release deadline
- * above that bound and, when it passes, serves the response unmodified
+ * `INTERCEPTION_HOST_BOUNDS_MS` (`./timeouts`) — `rewriteDocument` within
+ * the bound its gate granted ({@link InterceptionGrant}: longer only for a
+ * session that simulates). A backend still never trusts the host with a
+ * paused response: it arms its own release deadline above that bound and,
+ * when it passes, serves the response unmodified
  * (CDP: continue; stream filter: write the buffered bytes through). An
  * `arm` or `resume` that settles after its timeout — or after a `disarm` —
  * must not leave interception behind: per tab, the latest of
@@ -28,15 +30,30 @@
  *
  * **Eligibility.** Before reading or decoding any body, a backend passes
  * only `isRewritableResponse` (`./document-transform`) responses to the host; every other
- * response is passed through (continued) unrecorded — never reported via
- * `documentBodyUnavailable`. The host re-checks it.
+ * response is passed through (continued) — never reported via
+ * `documentBodyUnavailable`. The host re-checks it. A passed top-level
+ * response that still becomes the tab's page (`rendersAsPage`), or a
+ * network failure of one, is reported via `documentPassed`.
+ *
+ * **One record per session page.** Every top-level document of a session
+ * tab on the session's origin that reaches a backend while the session is
+ * live ends in exactly one record: the host records the outcome of every
+ * document it is asked to rewrite (served, unmodified, past its bound,
+ * abandoned); the backend reports what it passed without asking. Left
+ * unrecorded, by design: a page whose session read fails (the overlay's
+ * bounded wait names it), and a document arriving while the session stops.
  */
-import type { InterceptionUnavailableCause } from '../messaging/exclusion-session';
+import type {
+  InterceptionUnavailableCause,
+  PassedDocumentFailure
+} from '../messaging/exclusion-session';
 import type {
   DocumentTransformRunner,
   InterceptedDocumentBody,
   InterceptedResponseFacts
 } from './document-transform';
+import type { PackagedRuntimeFile } from './simulation-sources';
+import type { SimulateSpec } from '../wp-rocket-simulation/spec';
 
 /** Why arming failed — every cause but the live-session cap (the controller's own check). */
 export type ArmUnavailableCause = Exclude<InterceptionUnavailableCause, 'session-limit'>;
@@ -107,6 +124,15 @@ export interface InterceptedDocument extends InterceptedDocumentBody, Intercepte
 }
 
 /**
+ * The host's yes to intercepting one document: the bound (ms) its
+ * `rewriteDocument` resolves within — the backend's release deadline sits
+ * above it.
+ */
+export interface InterceptionGrant {
+  readonly rewriteBoundMs: number;
+}
+
+/**
  * The controller side a backend calls. Every method resolves (never
  * rejects) and is safe to call for any tab — a tab without an active
  * session is answered "do nothing". A backend must not await these from
@@ -115,11 +141,12 @@ export interface InterceptedDocument extends InterceptedDocumentBody, Intercepte
  */
 export interface InterceptionHost {
   /**
-   * Whether the tab's next top-level document should be intercepted: an
-   * active session whose origin is the document's. The per-navigation gate
-   * for backends that choose per request (e.g. a streaming filter).
+   * Whether the tab's next top-level document should be intercepted (an
+   * active session whose origin is the document's): its grant, or null.
+   * The per-navigation gate for backends that choose per request (e.g. a
+   * streaming filter).
    */
-  shouldIntercept(tabId: number, documentUrl: string): Promise<boolean>;
+  shouldIntercept(tabId: number, documentUrl: string): Promise<InterceptionGrant | null>;
   /**
    * Rewrite one intercepted top-level document and record its outcome.
    *
@@ -127,8 +154,10 @@ export interface InterceptionHost {
    * @param abandoned Optional: whether the backend has stopped waiting for
    *   this answer (it already served the original — its own deadline passed,
    *   the stream failed or was withdrawn). Checked right before the outcome
-   *   is recorded: an abandoned document records nothing and answers null,
-   *   so the record never claims a rewrite that was not served.
+   *   is recorded: an abandoned document answers null and is recorded as
+   *   served unmodified (`not-served`; `timed-out` once the host's own
+   *   bound passed), so the record never claims a rewrite that was not
+   *   served.
    *
    * @returns The bytes to serve, or null to serve the original bytes
    *   (no active session for the tab, another origin, an ineligible
@@ -172,6 +201,35 @@ export interface InterceptionHost {
     identity?: InterceptedResponseIdentity
   ): Promise<void>;
   /**
+   * A top-level document the backend passed without asking for a rewrite,
+   * though it becomes the tab's page: its response is one the session never
+   * rewrites (`ineligible-response`), or it failed on the network
+   * (`network-error`) — recorded as served unmodified (with the response's
+   * identity when given), so the page's overlay never waits for a record.
+   */
+  documentPassed(
+    tabId: number,
+    documentUrl: string,
+    reason: PassedDocumentFailure,
+    identity?: InterceptedResponseIdentity
+  ): Promise<void>;
+  /**
+   * The packaged file answering a script request of the tab's top-level
+   * page for a simulated runtime — non-null only when `requestUrl` is the
+   * runtime URL of the tab's latest recorded document's simulation (its
+   * runtime simulated there) in the live session, and the requesting
+   * document (`documentUrl`: the tab's top-level document as the browser
+   * reports it) is that recorded document on the session's origin.
+   * Nothing is answered once the session ends, the tab's next document is
+   * recorded without it, or the tab shows another page; never for any
+   * other URL: those requests go to the site as made.
+   */
+  simulatedRuntime(
+    tabId: number,
+    requestUrl: string,
+    documentUrl: string
+  ): Promise<PackagedRuntimeFile | null>;
+  /**
    * The browser ended the tab's interception tagged `generation` (the
    * value the backend was armed or resumed with). An end whose generation
    * is not the live session's is dropped.
@@ -193,8 +251,15 @@ export interface InterceptionBackend {
    *
    * @param origin Optional: the session's origin — scopes the backend's
    *   per-origin session effects (e.g. a page guard) to its documents.
+   * @param simulate Optional: what the session simulates — lets a backend
+   *   hold per-feature request hooks only for the tabs that need them.
    */
-  arm(tabId: number, generation: number, origin?: string): Promise<ArmResult>;
+  arm(
+    tabId: number,
+    generation: number,
+    origin?: string,
+    simulate?: SimulateSpec
+  ): Promise<ArmResult>;
   /** Drop the tab's interception and any bookkeeping; a no-op when unarmed. */
   disarm(tabId: number): Promise<void>;
   /**
@@ -205,8 +270,14 @@ export interface InterceptionBackend {
    * (the host waits for the re-validation `resume` is part of).
    *
    * @param origin Optional: the stored session's origin (see {@link arm}).
+   * @param simulate Optional: the stored session's simulation (see {@link arm}).
    */
-  resume(tabId: number, generation: number, origin?: string): Promise<boolean>;
+  resume(
+    tabId: number,
+    generation: number,
+    origin?: string,
+    simulate?: SimulateSpec
+  ): Promise<boolean>;
   /** A preempting engine runner (e.g. worker-hosted); absent → in-process. */
   readonly runner?: DocumentTransformRunner;
 }

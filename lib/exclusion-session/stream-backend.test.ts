@@ -8,9 +8,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../logger';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
-import type { InterceptedDocument, InterceptedResponseIdentity, InterceptionHost } from './backend';
+import type { PassedDocumentFailure } from '../messaging/exclusion-session';
+import type {
+  InterceptedDocument,
+  InterceptedResponseIdentity,
+  InterceptionGrant,
+  InterceptionHost
+} from './backend';
 import {
   createStreamInterceptionBackend,
+  releaseExtensionMs,
   responseContentType,
   responseFacts,
   streamTimerMs,
@@ -19,12 +26,17 @@ import {
 } from './stream-backend';
 import {
   INTERCEPTION_HOST_BOUNDS_MS,
+  rewriteDocumentBoundMs,
+  SIMULATION_PREPARATION_BOUND_MS,
   STREAM_FACTS_WAIT_MS,
-  STREAM_HOLD_WORST_CASE_MS,
-  STREAM_SETTLE_WAIT_MS
+  STREAM_RELEASE_MARGIN_MS,
+  STREAM_SETTLE_WAIT_MS,
+  streamHoldWorstCaseMs
 } from './timeouts';
 
 const TAB = 4;
+/** An exclusions-only session's grant (the harness gate's default answer). */
+const GRANT: InterceptionGrant = { rewriteBoundMs: INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument };
 const RELEASE_MS = streamTimerMs('release');
 const SETTLE_MS = STREAM_SETTLE_WAIT_MS;
 const URL = 'https://site.test/page';
@@ -135,27 +147,39 @@ interface Harness {
     gates: string[];
     unavailable: string[];
     unavailableIdentities: (InterceptedResponseIdentity | undefined)[];
+    passed: [string, PassedDocumentFailure, InterceptedResponseIdentity | undefined][];
     notServed: string[];
   };
   timers: ReturnType<typeof manualTimers>;
   log: ReturnType<typeof quietLog>;
   /** The next host rewrite answer (default: resolved null). */
   answer: { next: Promise<Uint8Array | null> };
-  gateAnswer: { next: Promise<boolean> };
+  gateAnswer: { next: Promise<InterceptionGrant | null> };
 }
 
 function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } = {}): Harness {
   const filters: FakeFilter[] = [];
   const answer = { next: Promise.resolve<Uint8Array | null>(null) };
-  const gateAnswer = { next: Promise.resolve(true) };
+  const gateAnswer = { next: Promise.resolve<InterceptionGrant | null>(GRANT) };
   const rewrites: InterceptedDocument[] = [];
   const abandons: (() => boolean)[] = [];
   const gates: string[] = [];
   const unavailable: string[] = [];
   const unavailableIdentities: (InterceptedResponseIdentity | undefined)[] = [];
   const notServed: string[] = [];
+  const passed: [string, PassedDocumentFailure, InterceptedResponseIdentity | undefined][] = [];
   const host = {
     notServed,
+    passed,
+    documentPassed: (
+      _tabId: number,
+      url: string,
+      reason: PassedDocumentFailure,
+      identity?: InterceptedResponseIdentity
+    ) => {
+      passed.push([url, reason, identity]);
+      return Promise.resolve();
+    },
     documentNotServed: (_tabId: number, url: string) => {
       notServed.push(url);
       return Promise.resolve();
@@ -183,7 +207,8 @@ function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } 
       unavailableIdentities.push(identity);
       return Promise.resolve();
     },
-    interceptionEnded: () => Promise.resolve()
+    interceptionEnded: () => Promise.resolve(),
+    simulatedRuntime: () => Promise.resolve(null)
   };
   const timers = manualTimers();
   const log = quietLog();
@@ -404,12 +429,47 @@ describe('stream backend — the rewrite path', () => {
   });
 
   it('declares the longest hold of a navigation: settle + late facts + release', () => {
-    expect(STREAM_HOLD_WORST_CASE_MS).toBe(
-      streamTimerMs('settle') + streamTimerMs('facts') + streamTimerMs('release')
-    );
-    // The release timer starts only once the body is settled: settling never
-    // eats into the host's rewrite bound.
-    expect(streamTimerMs('release')).toBeGreaterThan(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
+    for (const bound of [rewriteDocumentBoundMs(false), rewriteDocumentBoundMs(true)]) {
+      const release = streamTimerMs('release') + releaseExtensionMs(bound);
+      expect(streamHoldWorstCaseMs(bound)).toBe(
+        streamTimerMs('settle') + streamTimerMs('facts') + release
+      );
+      // The release timer starts only once the body is settled: settling
+      // never eats into the host's rewrite bound.
+      expect(release).toBeGreaterThan(bound);
+    }
+  });
+
+  it('keeps an exclusions-only release at the host bound + margin; extends it only for a longer grant', () => {
+    expect(RELEASE_MS).toBe(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument + STREAM_RELEASE_MARGIN_MS);
+    expect(releaseExtensionMs(null)).toBe(0);
+    expect(releaseExtensionMs(rewriteDocumentBoundMs(false))).toBe(0);
+    expect(releaseExtensionMs(1)).toBe(0);
+    expect(releaseExtensionMs(rewriteDocumentBoundMs(true))).toBe(SIMULATION_PREPARATION_BOUND_MS);
+  });
+
+  it('extends the release deadline once for a simulating session’s grant', async () => {
+    const h = harness();
+    h.gateAnswer.next = Promise.resolve({ rewriteBoundMs: rewriteDocumentBoundMs(true) });
+    h.answer.next = new Promise(() => undefined);
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('orig');
+    stopAndSettle(h, filter);
+    await settle();
+    expect(h.timers.pending()).toEqual([RELEASE_MS]);
+    h.timers.fire(RELEASE_MS);
+    await settle();
+    // Still held: the extension is armed, nothing written yet.
+    expect(h.timers.pending()).toEqual([SIMULATION_PREPARATION_BOUND_MS]);
+    expect(filter.written).toEqual([]);
+    h.timers.fire(SIMULATION_PREPARATION_BOUND_MS);
+    await settle();
+    expect(filter.written).toEqual(['orig']);
+    expect(filter.ends).toBe(1);
+    // Fired once: not extended again.
+    expect(h.timers.pending()).toEqual([]);
   });
 
   it('serves the original when the host rejects (it never should)', async () => {
@@ -475,7 +535,7 @@ describe('stream backend — pass-through and failure arms', () => {
 
   it('passes through when the session does not want the document (gate denied)', async () => {
     const h = harness();
-    h.gateAnswer.next = Promise.resolve(false);
+    h.gateAnswer.next = Promise.resolve(null);
     const filter = await openArmed(h);
     h.backend.responseStarted(HTML_HEADERS);
     filter.start();
@@ -904,5 +964,101 @@ describe('stream backend — a failing not-served report', () => {
     stopAndSettle(h, filter);
     await settle();
     expect(h.log.lines).toContain('Stream not-served report failed');
+  });
+});
+
+describe('stream backend — session pages passed without a rewrite (one record each)', () => {
+  /** Response facts for r1 with these overrides. */
+  const facts = (overrides: Partial<StreamResponseDetails> = {}): StreamResponseDetails => ({
+    ...HTML_HEADERS,
+    ...overrides
+  });
+
+  it.each([
+    ['a partial 206 HTML response', facts({ statusCode: 206 })],
+    ['a non-HTML page', facts({ responseHeaders: [{ name: 'Content-Type', value: 'text/plain' }] })]
+  ])('reports %s as ineligible-response, once', async (_case, details) => {
+    const h = harness();
+    const filter = await openArmed(h);
+    filter.start();
+    h.backend.responseStarted(details);
+    h.backend.responseStarted(details);
+    h.backend.requestFailed({ requestId: 'r1', tabId: TAB, error: 'NS_ERROR_NET_RESET' });
+    await settle();
+    expect(h.host.passed).toEqual([[URL, 'ineligible-response', expect.anything()]]);
+    expect(h.host.passed[0]?.[2]?.token).toBe('r1');
+  });
+
+  it('reports a request failing before its response as network-error', async () => {
+    const h = harness();
+    await openArmed(h);
+    h.backend.requestFailed({ requestId: 'r1', tabId: TAB, error: 'NS_ERROR_CONNECTION_REFUSED' });
+    await settle();
+    expect(h.host.passed).toEqual([[URL, 'network-error', expect.anything()]]);
+  });
+
+  it.each([
+    ['a redirect hop', () => facts({ statusCode: 302 }), null],
+    ['204 No Content', () => facts({ statusCode: 204 }), null],
+    [
+      'a download',
+      () =>
+        facts({
+          responseHeaders: [
+            { name: 'Content-Type', value: 'application/zip' },
+            { name: 'Content-Disposition', value: 'attachment' }
+          ]
+        }),
+      'NS_ERROR_FAILURE'
+    ],
+    [
+      'a zip served without a disposition, failing with an unlisted error',
+      () => facts({ responseHeaders: [{ name: 'Content-Type', value: 'application/zip' }] }),
+      'NS_ERROR_FAILURE'
+    ],
+    [
+      'an octet stream',
+      () =>
+        facts({
+          statusCode: 200,
+          responseHeaders: [{ name: 'content-type', value: 'APPLICATION/OCTET-STREAM' }]
+        }),
+      null
+    ],
+    ['a response without a content type', () => facts({ responseHeaders: [] }), null],
+    [
+      'a feed handed to the download manager',
+      () =>
+        facts({
+          statusCode: 200,
+          responseHeaders: [{ name: 'Content-Type', value: 'application/rss+xml; charset=UTF-8' }]
+        }),
+      'NS_ERROR_FAILURE'
+    ],
+    ['a cancelled load', null, 'NS_BINDING_ABORTED'],
+    ['a load handed to a download', null, 'NS_BINDING_RETARGETED']
+  ] as const)('reports nothing for %s', async (_case, details, error) => {
+    const h = harness();
+    await openArmed(h);
+    if (details !== null) h.backend.responseStarted(details());
+    if (error !== null) h.backend.requestFailed({ requestId: 'r1', tabId: TAB, error });
+    await settle();
+    expect(h.host.passed).toEqual([]);
+  });
+
+  it('leaves an eligible page’s failure to the host’s own record (never also network-error)', async () => {
+    const h = harness();
+    const filter = await openArmed(h);
+    filter.start();
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.data('<p>');
+    h.backend.requestFailed({
+      requestId: 'r1',
+      tabId: TAB,
+      error: 'NS_ERROR_NET_PARTIAL_TRANSFER'
+    });
+    await settle();
+    expect(h.host.unavailable).toEqual([URL]);
+    expect(h.host.passed).toEqual([]);
   });
 });

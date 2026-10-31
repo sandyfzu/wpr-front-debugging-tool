@@ -81,7 +81,7 @@ const UA_REDIRECT_SCRIPT_PATTERN = /navigator\.userAgent\.match((.|\n|\r)*)\?now
  * The inline delay controller's run invocation — removing the invocation
  * script stops the whole delay machinery on the reloaded page.
  */
-const CONTROLLER_RUN_MARKER = `${DELAY_JS_CONTROLLER}.run`;
+export const CONTROLLER_RUN_MARKER = `${DELAY_JS_CONTROLLER}.run`;
 
 /** The Elementor animation helper the plugin serves alongside Delay JS. */
 const ELEMENTOR_ANIMATION_RUN_MARKER = 'RocketElementorAnimation.run';
@@ -91,10 +91,10 @@ const ELEMENTOR_ANIMATION_RUN_MARKER = 'RocketElementorAnimation.run';
  * (`<\s*script(…)?>(?<content>.*?)?<\s*\/\s*script\s*>`, `ims`): PCRE's
  * `\s` (no UTF) and an ASCII-caseless `script`, written out.
  */
-const DELAY_SCRIPT_END = new RegExp(
-  `<[${PCRE_SPACE_CHARS}]*\\/[${PCRE_SPACE_CHARS}]*[Ss][Cc][Rr][Ii][Pp][Tt][${PCRE_SPACE_CHARS}]*>`,
-  'g'
-);
+export const DELAY_SCRIPT_END_SOURCE = `<[${PCRE_SPACE_CHARS}]*\\/[${PCRE_SPACE_CHARS}]*[Ss][Cc][Rr][Ii][Pp][Tt][${PCRE_SPACE_CHARS}]*>`;
+
+/** {@link DELAY_SCRIPT_END_SOURCE}, global (this module's searches). */
+const DELAY_SCRIPT_END = new RegExp(DELAY_SCRIPT_END_SOURCE, 'g');
 
 /**
  * The script as WP Rocket's Delay JS matched it: from its `<script` to the

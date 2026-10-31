@@ -30,9 +30,25 @@ import {
   type ExclusionSetRows,
   type ExclusionSetToggles
 } from '../exclusion-builder/set';
-import { hasOnlyKeys, isRecord, ownValue } from '../../utils/is-record';
+import { isRecord, ownValue } from '../../utils/is-record';
 import { isHttpOrigin, isHttpUrl, parseUrl } from '../../utils/urls';
 import { isPrintable } from './error-words';
+import { isCount, keysAllowed, type UnknownKeyPolicy } from './guard-policy';
+import {
+  isSimulatedFeatureId,
+  isSimulationRuntimeUnavailableCause,
+  optionalSimulateFor,
+  parseDocumentSimulationReport,
+  type DeferSimulationReport,
+  type LazyloadSimulationReport,
+  type DelaySimulationReport
+} from './exclusion-simulation';
+import type {
+  SimulateSpec,
+  SimulatedFeatureId,
+  SimulationRuntimeUnavailableCause,
+  SimulationStage
+} from '../wp-rocket-simulation/spec';
 import { numericTabId } from './sender';
 
 /** Characters per row — declared once: the reason cap derives from it. */
@@ -62,9 +78,6 @@ export const EXCLUSION_SET_LIMITS = {
   /** Characters of a session's origin (an http(s) origin — host names cap at 253). */
   originChars: 512
 } as const;
-
-/** How a guard treats keys it does not know (see the module doc). */
-export type UnknownKeyPolicy = 'reject' | 'ignore';
 
 /**
  * Why interception cannot run for a tab, with whether retrying can help —
@@ -100,23 +113,38 @@ export type InterceptionUnavailableCause = keyof typeof INTERCEPTION_UNAVAILABLE
  * Why one intercepted document was served unmodified (the session itself
  * stays active): its body could not be read, it could not be decoded with
  * its declared charset, the rewritten text could not be encoded back into
- * that charset, the engine failed unexpectedly, or the rewrite could not be
+ * that charset, the engine failed unexpectedly, the rewrite could not be
  * delivered (`not-served`: the browser had already dropped the response —
  * its navigation abandoned or the session ended first — so whatever the
- * page shows was not served by the session). Additive: a newer
- * build's reason fails an older build's guard (its read-back drops that
- * record — never a fabricated one).
+ * page shows was not served by the session), the rewrite missed its time
+ * bound (`timed-out`: the original was served meanwhile), the response is
+ * a page the session never rewrites (`ineligible-response`: e.g. a partial
+ * `206`, XHTML or plain text), or it failed on the network
+ * (`network-error`). Additive: a newer build's reason fails an older
+ * build's guard (its read-back drops that record — never a fabricated one).
  */
 export const EXCLUSION_DOCUMENT_FAILURES = [
   'body-unavailable',
   'decode-failed',
   'encode-failed',
   'engine-failed',
-  'not-served'
+  'not-served',
+  'timed-out',
+  'ineligible-response',
+  'network-error'
 ] as const;
 
 /** One unmodified-document reason (see {@link EXCLUSION_DOCUMENT_FAILURES}). */
 export type ExclusionDocumentFailure = (typeof EXCLUSION_DOCUMENT_FAILURES)[number];
+
+/**
+ * The reasons a backend reports for a session page it passed without asking
+ * for a rewrite (the response itself rules a rewrite out).
+ */
+export type PassedDocumentFailure = Extract<
+  ExclusionDocumentFailure,
+  'ineligible-response' | 'network-error'
+>;
 
 /** Upper bound of a reported engine wall-time budget (a sanity cap, not the budget). */
 const MAX_BUDGET_MS = 600_000;
@@ -129,16 +157,39 @@ const MAX_BUDGET_MS = 600_000;
  *   was served unmodified. Names the feature (and the row, when the
  *   overrun is attributable to one; `null` for a feature-wide run).
  * - `failed` — served unmodified for a {@link ExclusionDocumentFailure}.
+ * - `runtime-unavailable` — a simulating session's packaged runtime could
+ *   not be loaded or verified: served unmodified (never simulated without
+ *   it), for a {@link SimulationRuntimeUnavailableCause}.
+ *
+ * A simulating session's `rewritten` outcome carries its Delay JS
+ * `simulation` report, its Defer JS `deferSimulation` report and its
+ * LazyLoad `lazyloadSimulation` report (each when
+ * that feature is simulated), and an overrun of the simulation step names `stage: 'simulate'`
+ * (its feature the simulated one, no row — the step is feature-wide).
  */
 export type ExclusionDocumentOutcome = (
-  | { readonly outcome: 'rewritten'; readonly reports: readonly TransformReport[] }
+  | {
+      readonly outcome: 'rewritten';
+      readonly reports: readonly TransformReport[];
+      /** The Delay JS simulation's report (feature `delay_js`). */
+      readonly simulation?: DelaySimulationReport;
+      /** The Defer JS simulation's report (feature `defer_all_js`). */
+      readonly deferSimulation?: DeferSimulationReport;
+      /** The LazyLoad simulation's report (feature `lazyload`). */
+      readonly lazyloadSimulation?: LazyloadSimulationReport;
+    }
   | {
       readonly outcome: 'over-budget';
       readonly feature: ExclusionFeatureId;
       readonly row: string | null;
       readonly budgetMs: number;
+      readonly stage?: SimulationStage;
     }
   | { readonly outcome: 'failed'; readonly reason: ExclusionDocumentFailure }
+  | {
+      readonly outcome: 'runtime-unavailable';
+      readonly cause: SimulationRuntimeUnavailableCause;
+    }
 ) & {
   /** Which response the outcome is for and what the session did to it (absent when the backend gives no identity). */
   readonly served?: ExclusionServedDocument;
@@ -230,6 +281,8 @@ export interface ActiveExclusionSession {
   readonly origin: string;
   /** The applied set — authoritative for this tab, whatever the editor holds. */
   readonly set: ExclusionSet;
+  /** What the session simulates on each document (absent: nothing). */
+  readonly simulate?: SimulateSpec;
   /** Epoch ms of the apply. */
   readonly startedAt: number;
   /** The last intercepted document's outcome; `null` until the first one lands. */
@@ -262,6 +315,8 @@ export type ExclusionSessionRecord = ActiveExclusionSession | UnavailableExclusi
  */
 export interface ExclusionSetPayload {
   readonly set: ExclusionSet;
+  /** What to simulate with the set (absent: nothing); never a feature the set disables. */
+  readonly simulate?: SimulateSpec;
 }
 
 /**
@@ -285,6 +340,8 @@ export type ExclusionApplyReply =
  */
 export interface SavedExclusionSetReply {
   readonly set: ExclusionSet | null;
+  /** The simulation saved with the set (only beside a set; absent: none). */
+  readonly simulate?: SimulateSpec;
 }
 
 /**
@@ -340,7 +397,9 @@ export const EXCLUSION_SESSION_DEADLINES_MS = {
   status: 5_000,
   savedSet: 5_000,
   save: 5_000,
-  openOverlay: 5_000
+  openOverlay: 5_000,
+  /** One background storage read, like `status`. */
+  verifyMarker: 5_000
 } as const;
 
 /** The set's row-list keys, in registry order (registry-derived, never re-typed). */
@@ -352,24 +411,6 @@ const ROWS_KEYS: readonly (keyof ExclusionSetRows)[] = EXCLUSION_FEATURES.map(
 const TOGGLE_KEYS: readonly (keyof ExclusionSetToggles)[] = EXCLUSION_FEATURES.flatMap((feature) =>
   feature.toggleKey === null ? [] : [feature.toggleKey]
 );
-
-/**
- * Whether a record's keys pass the policy: under `'reject'` every own key
- * must be one of `allowed`; `'ignore'` lets unknown keys through (the
- * rebuild copies only known ones).
- */
-function keysAllowed(
-  record: Record<string, unknown>,
-  allowed: readonly string[],
-  policy: UnknownKeyPolicy
-): boolean {
-  return policy === 'ignore' || hasOnlyKeys(record, allowed);
-}
-
-/** A non-negative safe integer (counts, indices, epoch ms, run ids). */
-export function isCount(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-}
 
 /** Whether a value is one of the engine's feature ids (registry-derived). */
 export function isFeatureId(value: unknown): value is ExclusionFeatureId {
@@ -775,19 +816,79 @@ function withServed(
   return served === null ? null : { ...outcome, served };
 }
 
+/** A `rewritten` outcome's simulation report fields → the feature each one reports. */
+const SIMULATION_REPORT_FIELDS = [
+  ['simulation', 'delay_js'],
+  ['deferSimulation', 'defer_all_js'],
+  ['lazyloadSimulation', 'lazyload']
+] as const satisfies readonly (readonly [string, SimulatedFeatureId])[];
+
+/**
+ * Parse a `rewritten` outcome's optional simulation reports (absent stays
+ * absent; a malformed one, one for another feature than its field's, or
+ * one from a session that does not simulate it, fails the whole outcome).
+ */
+function withSimulation(
+  outcome: Extract<ExclusionDocumentOutcome, { outcome: 'rewritten' }>,
+  input: Record<string, unknown>,
+  simulate: SimulateSpec | undefined,
+  policy: UnknownKeyPolicy
+): ExclusionDocumentOutcome | null {
+  let parsed: Extract<ExclusionDocumentOutcome, { outcome: 'rewritten' }> = outcome;
+  for (const [field, feature] of SIMULATION_REPORT_FIELDS) {
+    const raw = ownValue(input, field);
+    if (raw === undefined) continue;
+    const report = parseDocumentSimulationReport(raw, simulate, policy);
+    if (report?.feature !== feature) return null;
+    parsed = { ...parsed, [field]: report };
+  }
+  return parsed;
+}
+
+/**
+ * Parse an over-budget outcome's optional stage: absent, or `simulate` —
+ * then for a feature the session simulates, naming no row.
+ *
+ * @returns The stage (`undefined` when absent), or `null` when invalid.
+ */
+function overBudgetStage(
+  input: Record<string, unknown>,
+  feature: ExclusionFeatureId,
+  row: string | null,
+  simulate: SimulateSpec | undefined
+): SimulationStage | undefined | null {
+  const stage = ownValue(input, 'stage');
+  if (stage === undefined) return undefined;
+  if (stage !== 'simulate' || row !== null || simulate === undefined) return null;
+  return isSimulatedFeatureId(feature) && simulate.features.includes(feature) ? stage : null;
+}
+
 /**
  * Parse a document outcome (see {@link ExclusionDocumentOutcome}) against
- * the session's set: reports and an over-budget row must come from it.
+ * the session's set and simulate spec: reports and an over-budget row must
+ * come from the set; a simulation report, a simulate-stage overrun and a
+ * runtime-unavailable outcome only from a session that simulates.
  */
 function parseDocumentOutcome(
   input: unknown,
   set: ExclusionSet,
+  simulate: SimulateSpec | undefined,
   policy: UnknownKeyPolicy
 ): ExclusionDocumentOutcome | null {
   if (!isRecord(input)) return null;
   switch (ownValue(input, 'outcome')) {
     case 'rewritten': {
-      if (!keysAllowed(input, ['outcome', 'reports', 'served'], policy)) return null;
+      const keys = [
+        'outcome',
+        'reports',
+        'simulation',
+        'deferSimulation',
+        'lazyloadSimulation',
+        'served'
+      ];
+      if (!keysAllowed(input, keys, policy)) {
+        return null;
+      }
       const raw = ownValue(input, 'reports');
       if (!Array.isArray(raw) || raw.length > EXCLUSION_FEATURES.length) return null;
       const reports: TransformReport[] = [];
@@ -799,12 +900,12 @@ function parseDocumentOutcome(
         }
         reports.push(report);
       }
-      return withServed({ outcome: 'rewritten', reports }, input, policy);
+      const rewritten = withSimulation({ outcome: 'rewritten', reports }, input, simulate, policy);
+      return rewritten === null ? null : withServed(rewritten, input, policy);
     }
     case 'over-budget': {
-      if (!keysAllowed(input, ['outcome', 'feature', 'row', 'budgetMs', 'served'], policy)) {
-        return null;
-      }
+      const keys = ['outcome', 'feature', 'row', 'budgetMs', 'stage', 'served'];
+      if (!keysAllowed(input, keys, policy)) return null;
       const feature = ownValue(input, 'feature');
       const row = ownValue(input, 'row');
       const budgetMs = ownValue(input, 'budgetMs');
@@ -813,7 +914,19 @@ function parseDocumentOutcome(
         return null;
       }
       if (!isCount(budgetMs) || budgetMs < 1 || budgetMs > MAX_BUDGET_MS) return null;
-      return withServed({ outcome: 'over-budget', feature, row, budgetMs }, input, policy);
+      const stage = overBudgetStage(input, feature, row, simulate);
+      if (stage === null) return null;
+      return withServed(
+        {
+          outcome: 'over-budget',
+          feature,
+          row,
+          budgetMs,
+          ...(stage === undefined ? {} : { stage })
+        },
+        input,
+        policy
+      );
     }
     case 'failed': {
       if (!keysAllowed(input, ['outcome', 'reason', 'served'], policy)) return null;
@@ -822,6 +935,12 @@ function parseDocumentOutcome(
       return known === undefined
         ? null
         : withServed({ outcome: 'failed', reason: known }, input, policy);
+    }
+    case 'runtime-unavailable': {
+      if (!keysAllowed(input, ['outcome', 'cause', 'served'], policy)) return null;
+      const cause = ownValue(input, 'cause');
+      if (simulate === undefined || !isSimulationRuntimeUnavailableCause(cause)) return null;
+      return withServed({ outcome: 'runtime-unavailable', cause }, input, policy);
     }
     default:
       return null;
@@ -851,7 +970,9 @@ export function parseExclusionSessionRecord(
     return { state: 'unavailable', cause, at };
   }
   if (state !== 'active') return null;
-  if (!keysAllowed(input, ['state', 'origin', 'set', 'startedAt', 'document'], policy)) {
+  if (
+    !keysAllowed(input, ['state', 'origin', 'set', 'simulate', 'startedAt', 'document'], policy)
+  ) {
     return null;
   }
   const origin = ownValue(input, 'origin');
@@ -861,10 +982,22 @@ export function parseExclusionSessionRecord(
   if (!isCount(startedAt)) return null;
   const set = parseExclusionSet(ownValue(input, 'set'), policy);
   if (set === null) return null;
+  // A record is written through the reject guard only, so a malformed or
+  // contradictory simulate is corruption under either policy: the record goes.
+  const simulate = optionalSimulateFor(ownValue(input, 'simulate'), set, policy);
+  if (simulate === null) return null;
   const documentRaw = ownValue(input, 'document');
-  const document = documentRaw === null ? null : parseDocumentOutcome(documentRaw, set, policy);
+  const document =
+    documentRaw === null ? null : parseDocumentOutcome(documentRaw, set, simulate, policy);
   if (documentRaw !== null && document === null) return null;
-  return { state: 'active', origin, set, startedAt, document };
+  return {
+    state: 'active',
+    origin,
+    set,
+    ...(simulate === undefined ? {} : { simulate }),
+    startedAt,
+    document
+  };
 }
 
 /**
@@ -881,30 +1014,48 @@ export function parseExclusionSessionStatus(input: unknown): ExclusionSessionSta
 }
 
 /**
+ * Read a set plus its optional simulate spec from a `{ set, simulate? }`
+ * record (exact keys).
+ *
+ * @returns Both, or null on any violation — a contradictory pair (the set
+ *   disables a feature the spec simulates) included.
+ */
+function parseSetWithSimulate(
+  input: Record<string, unknown>
+): { readonly set: ExclusionSet; readonly simulate?: SimulateSpec } | null {
+  if (!keysAllowed(input, ['set', 'simulate'], 'reject')) return null;
+  const set = parseExclusionSet(ownValue(input, 'set'), 'reject');
+  if (set === null) return null;
+  const simulate = optionalSimulateFor(ownValue(input, 'simulate'), set, 'reject');
+  if (simulate === null) return null;
+  return simulate === undefined ? { set } : { set, simulate };
+}
+
+/**
  * Parse an apply or save request.
  *
  * @param input The untrusted payload.
- * @returns The request, or null on any violation (exact keys).
+ * @returns The request, or null on any violation (exact keys; a simulate
+ *   spec for a feature the set disables is refused).
  */
 export function parseExclusionSetPayload(input: unknown): ExclusionSetPayload | null {
-  if (!isRecord(input) || !keysAllowed(input, ['set'], 'reject')) return null;
-  const set = parseExclusionSet(ownValue(input, 'set'), 'reject');
-  return set === null ? null : { set };
+  return isRecord(input) ? parseSetWithSimulate(input) : null;
 }
 
 /**
  * Parse the saved-set answer.
  *
  * @param input The untrusted value.
- * @returns The answer (`set: null` when the origin has none), or null on
- *   any violation (exact keys).
+ * @returns The answer (`set: null` when the origin has none — then no
+ *   simulate), or null on any violation (exact keys; a contradictory pair
+ *   is refused).
  */
 export function parseSavedExclusionSetReply(input: unknown): SavedExclusionSetReply | null {
-  if (!isRecord(input) || !keysAllowed(input, ['set'], 'reject')) return null;
-  const raw = ownValue(input, 'set');
-  if (raw === null) return { set: null };
-  const set = parseExclusionSet(raw, 'reject');
-  return set === null ? null : { set };
+  if (!isRecord(input)) return null;
+  if (ownValue(input, 'set') === null) {
+    return keysAllowed(input, ['set'], 'reject') ? { set: null } : null;
+  }
+  return parseSetWithSimulate(input);
 }
 
 /**

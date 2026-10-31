@@ -322,7 +322,7 @@ class Parser {
       this.checkReferences();
       if (compiledSize(alternatives) > COMPILED_SIZE_BOUND) {
         const shown = Math.min(this.src.length, STOP_CONSTRUCT_LENGTH);
-        this.issue('unknown', 0, shown, 'may exceed PCRE’s compiled pattern size');
+        this.issue('unknown', 0, shown, COMPILED_SIZE_DETAIL);
       }
       if (nullableRepeats(alternatives, 1) >= NULLABLE_REPEAT_BOUND) {
         const shown = Math.min(this.src.length, STOP_CONSTRUCT_LENGTH);
@@ -1320,6 +1320,9 @@ function isLookaround(kind: GroupKind): boolean {
  */
 const COMPILED_SIZE_BOUND = 30_000;
 
+/** The detail of the issue a pattern past {@link COMPILED_SIZE_BOUND} carries. */
+const COMPILED_SIZE_DETAIL = 'may exceed PCRE’s compiled pattern size';
+
 /**
  * Nested repeat counts over items that can match empty, from which a
  * pattern's verdict is not claimed. PCRE2 rejects some such patterns at
@@ -1488,6 +1491,20 @@ function nodeLength(node: PatternNode): Length {
     case 'opaque':
       return UNMEASURED;
   }
+}
+
+/**
+ * Whether PCRE2 is claimed to compile a pattern within its compiled-size
+ * cap: the whole pattern parsed and its estimate within
+ * {@link COMPILED_SIZE_BOUND} (half the cap, a deliberately high estimate).
+ * `false` claims nothing either way.
+ *
+ * @param src The pattern between its delimiters, as a byte string.
+ * @param caseless Whether it runs with PCRE's `i`.
+ */
+export function compiledSizeClaimed(src: string, caseless: boolean): boolean {
+  const parsed = parsePcre(src, caseless);
+  return parsed.complete && !parsed.issues.some((issue) => issue.detail === COMPILED_SIZE_DETAIL);
 }
 
 /**

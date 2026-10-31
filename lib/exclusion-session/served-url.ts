@@ -6,6 +6,7 @@
  */
 import { SERVED_DOCUMENT_LIMITS } from '../messaging/exclusion-session';
 import { parseUrl } from '../../utils/urls';
+import { webSha256Hex } from '../../utils/web-sha256';
 
 /** A document URL reduced to what a record may hold. */
 export interface ServedUrl {
@@ -13,11 +14,6 @@ export interface ServedUrl {
   readonly urlPath: string;
   /** SHA-256 of the URL without its fragment, lowercase hex. */
   readonly urlDigest: string;
-}
-
-/** Lowercase hex of bytes. */
-function hex(bytes: ArrayBuffer): string {
-  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -32,9 +28,9 @@ export async function servedUrl(url: string): Promise<ServedUrl | null> {
   const parsed = parseUrl(url);
   if (parsed === null) return null;
   parsed.hash = '';
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(parsed.href));
+  const urlDigest = await webSha256Hex(parsed.href);
   return {
     urlPath: `${parsed.origin}${parsed.pathname}`.slice(0, SERVED_DOCUMENT_LIMITS.urlPathChars),
-    urlDigest: hex(digest)
+    urlDigest
   };
 }

@@ -12,7 +12,8 @@
  * held) · reloading · reload overdue (notice: Reload, Stop, keep editing) ·
  * applied (counts per lane and row) · applied with no-match rows ·
  * served unmodified · interception unavailable (cause + remedy, Retry when
- * transient) · not intercepted · can't verify · a feature absent from the
+ * transient) · not intercepted · can't verify · loaded without the
+ * session's result (Reload; Stop / Re-apply in the footer) · a feature absent from the
  * page (per lane) · the last action's notice · paused under a page modal
  * dialog.
  *
@@ -57,7 +58,7 @@ import { DRAFT_TOO_LARGE_WORDS, TOOL_TITLE, sessionIndicator } from './copy';
 import { draftTooLarge, footerLine as footerLineFor } from './footer-line';
 import type { OverlayController } from './controller';
 import { LANE_ORDER } from './exclusions/draft';
-import { Glyph } from './glyph';
+import { Glyph, SimulatedIndicator } from './glyph';
 import { retryFocus } from './focus-retry';
 import { createAnnouncer } from './announcer';
 import {
@@ -167,11 +168,13 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   const held = (): boolean => !c.editable();
   const paused = (): boolean => props.page.pageModal();
   const indicator = createMemo(() => sessionIndicator(state(), c.view()));
+  /** The page on screen runs a simulation: said beside the session's indicator, folded too. */
+  const simulated = createMemo(() => c.runsSimulation());
   const banner = createMemo(() => stateBanner(state(), c.view()));
   const notice = createMemo(() => {
     const current = state();
     return current.phase === 'ready' && current.notice !== null
-      ? noticeBanner(current.notice)
+      ? noticeBanner(current.notice, simulated())
       : null;
   });
   const sessionState = (): 'inactive' | 'active' | 'unavailable' | null => {
@@ -571,6 +574,9 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                   {indicator().label}
                 </span>
               </span>
+              <Show when={simulated()}>
+                <SimulatedIndicator />
+              </Show>
               <span class="xo-origin" title={props.origin}>
                 {hostOf(props.origin)}
               </span>
@@ -727,6 +733,9 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
             <Glyph name={paused() ? 'idle' : indicator().glyph} size={12} />
             {paused() ? 'Paused: page dialog open' : indicator().label}
           </span>
+          <Show when={simulated() && !paused()}>
+            <SimulatedIndicator />
+          </Show>
           <span class="xo-sr-only"> — open the exclusion builder</span>
         </button>
       </Show>

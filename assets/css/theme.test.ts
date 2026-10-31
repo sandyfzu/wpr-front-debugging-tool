@@ -130,7 +130,16 @@ const REQUIRED_PAIRS: RequiredPair[] = [
   // 0–2; nothing places it on the raised hover levels 3–4.
   ...FILL_SURFACES.map((background) => ({ foreground: 'accent-strong', background, min: 3 })),
   // A checked switch's thumb: a `surface-0` dot on the accent track (non-text).
-  { foreground: 'surface-0', background: 'accent-strong', min: 3 }
+  { foreground: 'surface-0', background: 'accent-strong', min: 3 },
+  // The open session-notes disclosure on a tinted banner (the accent fill
+  // misses 3:1 on the dark soft tints): its `accent` border is the non-text
+  // indicator, on each banner tint and on its own `surface-2` fill.
+  ...['ok', 'warn', 'error', 'info'].map((status) => ({
+    foreground: 'accent',
+    background: `status-${status}-soft`,
+    min: 3
+  })),
+  { foreground: 'accent', background: 'surface-2', min: 3 }
 ];
 
 describe('contrast math', () => {

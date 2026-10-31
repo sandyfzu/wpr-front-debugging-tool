@@ -9,6 +9,8 @@ import { applyPipeline, EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
 import type { DocumentTransformRequest } from './document-transform';
+import type { DocumentSimulationInput } from '../messaging/exclusion-simulation';
+import { simulationInput } from '../messaging/exclusion-simulation.fixtures';
 import {
   createWorkerTransformRunner,
   handleTransformWorkerMessage,
@@ -515,5 +517,146 @@ describe('createWorkerTransformRunner', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('simulation fields', () => {
+  const valid = { type: 'transform', id: 1, request: REQUEST };
+  /** A simulation input carrying no CSP meta (the fixture's meta offset may lie past {@link DELAYED}). */
+  const simulate = {
+    ...simulationInput(),
+    csp: { browser: 'chromium', headers: [], metas: [] }
+  } as const satisfies DocumentSimulationInput;
+  /** {@link REQUEST} simulating Delay JS. */
+  const SIMULATING: DocumentTransformRequest = { ...REQUEST, simulate };
+
+  it('carries a valid simulation input through the request guard', () => {
+    const data = { ...valid, request: { ...REQUEST, simulate } };
+    expect(parseTransformWorkerRequest(data)?.request).toEqual({ ...REQUEST, simulate });
+  });
+
+  it('rejects a malformed input of its own (runtime), never the page-derived parts', () => {
+    const bad = { ...valid, request: { ...REQUEST, simulate: { ...simulate, runtime: '' } } };
+    expect(parseTransformWorkerRequest(bad)).toBeNull();
+  });
+
+  it('degrades unfit page-derived parts instead of dropping the request', () => {
+    const past = {
+      ...simulate,
+      csp: { ...simulate.csp, metas: [{ content: '', offset: DELAYED.length + 1 }] }
+    };
+    const huge = {
+      ...simulate,
+      siteVersion: '9'.repeat(65),
+      csp: { ...simulate.csp, headers: [{ name: 'csp', value: 'v'.repeat(32 * 1024 + 1) }] }
+    };
+    // `toEqual` reads an `undefined` property as absent.
+    const withoutCsp = { ...simulate, csp: undefined };
+    expect(
+      parseTransformWorkerRequest({ ...valid, request: { ...REQUEST, simulate: past } })?.request
+        .simulate
+    ).toEqual({ ...withoutCsp, cspUnavailable: 'unreadable' });
+    expect(
+      parseTransformWorkerRequest({ ...valid, request: { ...REQUEST, simulate: huge } })?.request
+        .simulate
+    ).toEqual({ ...withoutCsp, cspUnavailable: 'oversized' });
+  });
+
+  it('names the simulate stage of a run killed in its simulation step (no row)', async () => {
+    const timers = manualTimers();
+    const host = createWorkerTransformRunner({
+      spawn: () =>
+        new FakePort((self, message) => {
+          self.emit({ type: 'step', id: message.id, feature: 'delay_js', stage: 'simulate' });
+        }),
+      schedule: timers.schedule,
+      graceMs: 5
+    });
+    const run = host.run(SIMULATING);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    timers.fire();
+    await expect(run).resolves.toEqual({
+      ok: false,
+      outcome: {
+        outcome: 'over-budget',
+        feature: 'delay_js',
+        row: null,
+        budgetMs: 100,
+        stage: 'simulate'
+      }
+    });
+  });
+
+  it('ignores a simulate stage for a feature the request does not simulate', async () => {
+    for (const [request, feature, row] of [
+      [REQUEST, 'delay_js', 'a\\.js'],
+      [SIMULATING, 'defer_all_js', null]
+    ] as const) {
+      const timers = manualTimers();
+      const host = createWorkerTransformRunner({
+        spawn: () =>
+          new FakePort((self, message) => {
+            self.emit({ type: 'step', id: message.id, feature, stage: 'simulate' });
+          }),
+        schedule: timers.schedule,
+        graceMs: 5
+      });
+      const run = host.run(request);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      timers.fire();
+      await expect(run).resolves.toEqual({
+        ok: false,
+        outcome: { outcome: 'over-budget', feature, row, budgetMs: 100 }
+      });
+    }
+  });
+
+  it('a later stage-less step clears the stage (an unknown stage reads as none)', async () => {
+    const timers = manualTimers();
+    const host = createWorkerTransformRunner({
+      spawn: () =>
+        new FakePort((self, message) => {
+          self.emit({ type: 'step', id: message.id, feature: 'delay_js', stage: 'simulate' });
+          self.emit({ type: 'step', id: message.id, feature: 'delay_js', stage: 'other' });
+        }),
+      schedule: timers.schedule,
+      graceMs: 5
+    });
+    const run = host.run(SIMULATING);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    timers.fire();
+    await expect(run).resolves.toEqual({
+      ok: false,
+      outcome: { outcome: 'over-budget', feature: 'delay_js', row: 'a\\.js', budgetMs: 100 }
+    });
+  });
+
+  it('passes a runtime-unavailable worker result through', async () => {
+    const result = {
+      ok: false,
+      outcome: { outcome: 'runtime-unavailable', cause: 'hash-mismatch' }
+    };
+    const host = createWorkerTransformRunner({
+      spawn: () =>
+        new FakePort((self, message) => {
+          self.emit({ type: 'result', id: message.id, result });
+        }),
+      schedule: manualTimers().schedule
+    });
+    await expect(host.run(REQUEST)).resolves.toEqual(result);
+  });
+
+  it('still refuses an unknown unmodified outcome', async () => {
+    const result = { ok: false, outcome: { outcome: 'skipped' } };
+    const host = createWorkerTransformRunner({
+      spawn: () =>
+        new FakePort((self, message) => {
+          self.emit({ type: 'result', id: message.id, result });
+        }),
+      schedule: manualTimers().schedule
+    });
+    const answer = await host.run(REQUEST);
+    expect(answer.ok).toBe(false);
+    expect(answer.outcome).toEqual({ outcome: 'failed', reason: 'engine-failed' });
   });
 });

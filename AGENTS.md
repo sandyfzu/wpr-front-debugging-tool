@@ -73,6 +73,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   │                          #   four transforms, one pipeline (+ PHP parity table and fixtures)
 │   ├── exclusion-session/     # backend-agnostic interception session: controller, state machines,
 │   │                          #   charset round trip, budgeted document step, CDP + stream backends
+│   ├── wp-rocket-simulation/  # WP Rocket simulation (P21): the simulation data file's format + reader, the plugin-oracle
+│   │                          #   table (`simulation-parity.fixtures.json`, dev/test only)
 │   ├── page-commands/         # the on-page command vocabulary (labels the menu + palette share), the
 │   │                          #   palette's executor contract and the view↔module bridge
 │   └── <domain>/              # one folder per feature; its data files colocated
@@ -96,6 +98,7 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 - **Apply modes:** Apply arms an interception session for the tab and reloads it; the served HTML is rewritten before parse — Chromium: `debugger` + CDP `Fetch` (in-process engine, 2 s budget between steps), Firefox: `webRequest.filterResponseData` (engine in `exclusion-transform-worker`, preempted at the budget). Unavailable interception (attach denied, debugging policy, cancelled infobar, detached, unsupported page or browser, session limit) is a warning state naming cause + remedy (Retry when transient) — there is **no fallback**. A session lasts across the tab's navigations until Stop, tab close or extension reload.
 - **DevTools interplay:** the mode is decided by attempting the attach, never assumed; on Chromium the attach worked with DevTools open (CDP is multi-client; stable-Chrome manual check open in P15B). The panel shows the session in its status strip and detection cards ("Disabled in this tab by the Exclusion Builder").
 - **Reset / Stop:** Reset is held while the draft equals the applied set; with edits it discards them and re-applies the session's stored set. Stop ends the session without navigating (the rewritten page and the draft stay); the next load is served as WP Rocket serves it.
+- **Page records:** every page of the session's origin loaded in the tab gets exactly one record — rewritten, or served unmodified with its reason (past its time bound, a response the engine never rewrites such as a `206` or XHTML, a network error, …); a response the browser does not render inline (a download: `attachment`, or a type outside `rendersInline` — e.g. a zip, an octet stream, a missing type) is never recorded, so it cannot overwrite the visible page's record. Every pass of a session page on the session's origin is logged at info (`Session page served as received`, origin + path only). A page loaded after Apply whose record never lands (e.g. a failed session read) shows "No result for this page" once the record wait passes (`documentRecordWaitMs`, `lib/exclusion-session/document-hold.ts`): Reload, Stop or Re-apply — never an endless "waiting".
 - Decisions, limits + open items: [`docs/plans/completed-exclusion-builder.md`](docs/plans/completed-exclusion-builder.md).
 
 ## Commands
@@ -110,23 +113,31 @@ pnpm lint            # eslint — strict typescript-eslint + Solid rules + depen
 pnpm lint:fix        # eslint --fix
 pnpm format          # prettier --write .
 pnpm format:check    # prettier --check .
-pnpm test            # vitest run with coverage — the test gate; thresholds over lib/** + utils/** fail below 90 % (lines/functions)
+pnpm test            # vitest run with coverage — the test gate; thresholds over lib/** + utils/** fail below 90 % (lines/functions/branches)
 pnpm test:watch      # vitest in watch mode (no coverage in the loop)
 pnpm test:coverage   # same as pnpm test, for when `test` is re-pointed later
+pnpm test:shard --shard=<i>/<n> # one CI test shard: coverage collected, thresholds off (a shard can't meet
+                     #   the aggregate floor), Vitest blob written to `.vitest/blob/` (git-ignored)
+pnpm test:merge      # merges the `.vitest/blob/` blobs: full report + the 90 % thresholds on the merged coverage
 pnpm test:e2e        # browser-test tier (tests/e2e/): Playwright, headless Chromium + the unpacked extension; E2E_HEADED=1 for headed, local-only — rebuilds a stale `pnpm build` or fails fast with the diff (`E2E_BUILD_STRICT=1` opts into fail-fast)
 pnpm bench:detection # checks-phase speed gate: port vs reference engine over the fixture corpus (local only, never CI)
 pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build, on the
-                     #   .nvmrc Node (gzip sizes depend on its zlib: another major is refused)
-pnpm parity:wp-rocket # WP Rocket parity table (lib/exclusion-builder/wp-rocket-parity.fixtures.json): re-derives its
-                     #   expected outputs with the real plugin under `php -n` (needs PHP >= 8.1 + ext-dom/mbstring,
-                     #   compiled in or shared, `unzip`, docker/wpr/wpr-rocket.zip; network on the first run only — the
-                     #   pinned WordPress zip is then cached in .cache/) — fails when stale; --write regenerates;
-                     #   --ci / --compare [--zip <zip>] are the parity workflow's modes (see its header)
+                     #   .nvmrc Node (gzip sizes depend on its zlib: another major is refused); a row with
+                     #   `required: true` fails unless each of its globs matches exactly one built file
+pnpm parity:wp-rocket # WP Rocket parity tables (lib/exclusion-builder/wp-rocket-parity.fixtures.json + lib/wp-rocket-
+                     #   simulation/simulation-parity.fixtures.json) + the generated simulation data file (public/wp-rocket-
+                     #   simulation/simulation-data.json) and packaged LazyLoad runtime (public/wp-rocket-simulation/<jsPath>,
+                     #   WP Rocket's bytes, pinned in the data file; lint/format-ignored): re-derives their
+                     #   expected outputs with the real plugin under `php -n -d pcre.jit=1` (needs PHP >= 8.1 + ext-dom/mbstring,
+                     #   compiled in or shared, `unzip`, one pinned zip per supported version (lib/wp-rocket/versions.ts)
+                     #   at docker/wpr/wpr-rocket-<version>.zip; network on the first run only — the pinned WordPress
+                     #   zip is then cached in .cache/) — fails when stale; --write regenerates; --ci / --compare
+                     #   --zip <zip> / --release-check are the parity workflow's modes (see its header)
 docker/scripts/up.sh # local WordPress debugging site lifecycle — up / down.sh / reset.sh; URLs, credentials
                      #   location, reset semantics, scenario flags, apvm build path: docs/local-site-runbook.md
 ```
 
-CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `build:firefox` + `check:budgets` on every PR and push to `main`/`develop`, and on demand via `workflow_dispatch` (Actions tab, or `gh workflow run ci.yml --ref <branch>`; `-f ref=<branch|tag|sha>` tests a different ref). `test:e2e` is deliberately **never wired into CI** (it needs this machine's real Chrome build and the docker site — the owner's environment contract; see `tests/e2e/README.md`); `bench:detection` stays local too. A separate, informational workflow (`.github/workflows/wp-rocket-parity.yml`, not a required check) builds WP Rocket with a pinned APVM and runs `parity:wp-rocket --ci` against the table's reference tag (fails on a stale table or reference drift) and `--compare` against the latest stable tag (warnings only) — on PRs and pushes to `main`/`develop`/`feat/**` touching the parity files, weekly, and on dispatch (`gh workflow run wp-rocket-parity.yml --ref <branch>`; cron and dispatch work only once the file is on `develop`, GitHub's default branch).
+CI (`.github/workflows/ci.yml`) runs, in parallel, `checks` (`compile` + `lint` + `format:check` + `build` + `build:firefox` + `check:budgets`) and `tests` (3 × `test:shard`), then `coverage` (`test:merge`: fails on any failed test, missing blob/shard or merged coverage below the floor) — `gates` is the one required check, red when any of them is not green — on every PR and push to `main`/`develop`, and on demand via `workflow_dispatch` (Actions tab, or `gh workflow run ci.yml --ref <branch>`; `-f ref=<branch|tag|sha>` tests a different ref); a newer push to a PR cancels that PR's older run; `main`/`develop` and manual runs are never cancelled. `test:e2e` is deliberately **never wired into CI** (it needs this machine's real Chrome build and the docker site — the owner's environment contract; see `tests/e2e/README.md`); `bench:detection` stays local too. A separate, informational workflow (`.github/workflows/wp-rocket-parity.yml`, not a required check) builds every supported WP Rocket version (`lib/wp-rocket/versions.ts`, owner-pinned) with a pinned APVM and runs `parity:wp-rocket --ci` under each (fails on a stale table or data file, or reference drift), warns (never fails) when a release tag newer than every supported version, or a newer patch of a supported minor, exists — release flags ignored — and `--compare`s the newest such tag (warnings only) — on PRs and pushes to `main`/`develop`/`feat/**` touching the parity files, weekly, and on dispatch (`gh workflow run wp-rocket-parity.yml --ref <branch>`; cron and dispatch work only once the file is on `develop`, GitHub's default branch).
 
 ## Non-negotiable rules
 
@@ -223,7 +234,7 @@ Requirements, not suggestions:
 
 - **Conventional Commits** — enforced by the `commit-msg` hook (`commitlint`); non-conforming messages are rejected. The `pre-commit` hook runs `lint-staged` (eslint --fix + prettier) on staged files with `--no-stash`: worktrees share one `refs/stash` and lint-staged drops its backup by stash index, so a concurrent commit elsewhere could drop the wrong entry; partially staged files stay protected by its patch in the per-worktree git dir (trade-off: a failing task no longer auto-reverts the tree). Hooks are husky v9 — activated by `pnpm install` (`prepare` script).
 - **Semantic Versioning** — bump `package.json` version for every store upload.
-- **Known Conflicts DB snapshot MUST be re-synced with the server before every release.** `lib/known-conflicts/known-conflicts-db.json` is the offline/first-run fallback seed, and a stale seed ships a blind spot on offline installs; it must mirror the live endpoint (`DB_ENDPOINT` in `entrypoints/background/known-conflicts.ts`) at release time. Refresh it verbatim from that URL, format it with Prettier, then re-pin the row count (the comment in `lib/storage/known-conflicts-seed.ts` + the exact-count assertion in `lib/storage/storage.test.ts`) and re-derive the `known-conflicts DB seed asset` ceiling in `scripts/budgets.json` from the new byte size — the payload is server-owned data that grows over time, so raising that one row is expected, never a code regression to hide.
+- **Known Conflicts DB snapshot MUST be re-synced with the server before every release.** `lib/known-conflicts/known-conflicts-db.json` is the offline/first-run fallback seed, and a stale seed ships a blind spot on offline installs; it must mirror the live endpoint (`DB_ENDPOINT` in `entrypoints/background/known-conflicts.ts`) at release time. Refresh it verbatim from that URL, format it with Prettier, then re-pin the row count (the comment in `lib/storage/known-conflicts-seed.ts` + the exact-count assertion in `lib/storage/storage.test.ts`) and re-derive the ceiling of both `known-conflicts DB seed asset (background-owned)` rows (Chromium, and the `required` `firefox-mv2` twin) in `scripts/budgets.json` from the new byte size — the payload is server-owned data that grows over time, so raising those rows is expected, never a code regression to hide.
 - Never commit secrets or build output (`.output/`, `.wxt/`).
 
 ## When to update this file

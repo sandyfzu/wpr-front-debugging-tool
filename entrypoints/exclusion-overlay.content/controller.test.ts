@@ -6,6 +6,7 @@ import {
   type ExclusionSessionStatus
 } from '../../lib/messaging/exclusion-session';
 import { activeRecord, validSet } from '../../lib/messaging/exclusion-session.fixtures';
+import { delaySimulate } from '../../lib/messaging/exclusion-simulation.fixtures';
 import {
   AUTOSAVE_DELAY_MS,
   PASTE_AT_ONCE,
@@ -27,6 +28,8 @@ import { SET_READING_DELAY_MS } from './exclusions/set-readings';
 import { ROW_REASONS } from '../../lib/exclusion-builder/row-reasons';
 import { prevalidateExclusionSet } from '../../lib/exclusion-builder/validate';
 import type { ExclusionSessionPort, PortOutcome } from './session/port';
+import type { PageFacts } from './session/page-match';
+import { documentRecordWaitMs } from '../../lib/exclusion-session/document-hold';
 
 /** A manual timer queue standing in for the context's timers. */
 function timers() {
@@ -89,7 +92,13 @@ function ticking(step = 1) {
 async function started(
   port: ExclusionSessionPort,
   pasteAtOnce?: { rows: number; chars: number },
-  sliceClock: () => number = ticking()
+  sliceClock: () => number = ticking(),
+  pageFacts: PageFacts = {
+    href: 'https://example.com/',
+    documentUrl: 'https://example.com/',
+    navigationStart: 0,
+    responseEnd: null
+  }
 ) {
   const clock = timers();
   const reload = vi.fn();
@@ -98,12 +107,7 @@ async function started(
   const dispose = createRoot((disposeRoot) => {
     controller = createOverlayController({
       port,
-      pageFacts: () => ({
-        href: 'https://example.com/',
-        documentUrl: 'https://example.com/',
-        navigationStart: 0,
-        responseEnd: null
-      }),
+      pageFacts: () => pageFacts,
       now: () => 4242,
       schedule: clock.schedule,
       reload,
@@ -162,6 +166,77 @@ describe('loading', () => {
     controller.dispose();
     fake.push({ state: 'inactive' });
     expect(controller.view()?.kind).toBe('unavailable');
+  });
+});
+
+describe('a page loaded through the session without a record (bounded wait)', () => {
+  const armedRecord = (): ExclusionSessionStatus => ({ ...activeRecord(), document: null });
+  /** This page's facts: anchored at document_start, its navigation `offset` ms after the apply. */
+  const loadedAt = (offset: number): PageFacts => ({
+    href: 'https://example.com/',
+    documentUrl: 'https://example.com/',
+    navigationStart: activeRecord().startedAt + offset,
+    anchoredAtStart: true,
+    responseEnd: 40
+  });
+  const WAIT = documentRecordWaitMs(false);
+
+  it('re-reads the status at the deadline and shows unrecorded when it is still missing', async () => {
+    const { port } = fakePort(armedRecord());
+    const { controller, clock } = await started(port, undefined, undefined, loadedAt(50));
+    expect(controller.view()).toEqual({ kind: 'armed' });
+    expect(clock.pending(WAIT)).toBe(1);
+    expect(port.status).toHaveBeenCalledTimes(1);
+    clock.fire(WAIT);
+    await settle();
+    expect(port.status).toHaveBeenCalledTimes(2);
+    expect(controller.view()).toEqual({ kind: 'unrecorded' });
+    // Settled: no second wait for the same session.
+    expect(clock.pending(WAIT)).toBe(0);
+  });
+
+  it('shows the record the re-read finds instead', async () => {
+    const { port } = fakePort(armedRecord());
+    const { controller, clock } = await started(port, undefined, undefined, loadedAt(50));
+    port.status.mockImplementation(() =>
+      reply<ExclusionSessionStatus>({
+        ...activeRecord(),
+        document: { outcome: 'failed', reason: 'timed-out' }
+      })
+    );
+    clock.fire(WAIT);
+    await settle();
+    // The record (here without an identity: unverifiable) replaces the wait.
+    expect(controller.view()).toEqual({ kind: 'cant-tell' });
+  });
+
+  it('drops the wait once a pushed record lands', async () => {
+    const { port, push } = fakePort(armedRecord());
+    const { controller, clock } = await started(port, undefined, undefined, loadedAt(50));
+    push({ ...activeRecord(), document: { outcome: 'failed', reason: 'ineligible-response' } });
+    expect(clock.pending(WAIT)).toBe(0);
+    expect(controller.view()).toEqual({ kind: 'cant-tell' });
+  });
+
+  it('keeps a page loaded before the apply armed, with no wait (the user reloads it)', async () => {
+    const { port } = fakePort(armedRecord());
+    const { controller, clock } = await started(port, undefined, undefined, loadedAt(-5_000));
+    expect(controller.view()).toEqual({ kind: 'armed' });
+    expect(clock.pending(WAIT)).toBe(0);
+  });
+
+  it('waits a simulating session’s longer bound', async () => {
+    const { port } = fakePort({ ...activeRecord(), simulate: delaySimulate(), document: null });
+    const { clock } = await started(port, undefined, undefined, loadedAt(50));
+    expect(clock.pending(WAIT)).toBe(0);
+    expect(clock.pending(documentRecordWaitMs(true))).toBe(1);
+  });
+
+  it('cancels the wait when the overlay is disposed', async () => {
+    const { port } = fakePort(armedRecord());
+    const { controller, clock } = await started(port, undefined, undefined, loadedAt(50));
+    controller.dispose();
+    expect(clock.pending(WAIT)).toBe(0);
   });
 });
 

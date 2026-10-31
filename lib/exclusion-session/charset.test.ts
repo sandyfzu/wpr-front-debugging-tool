@@ -12,6 +12,7 @@ import {
   encodeDocument,
   encodingForLabel,
   isRoundTripEncoding,
+  isUtf16Encoding,
   metaContentCharset,
   PRESCAN_BYTE_LIMIT,
   prescanEncoding,
@@ -413,5 +414,15 @@ describe('decodeDocument / encodeDocument round trip', () => {
     expect(isRoundTripEncoding('iso-8859-8-i')).toBe(true);
     expect(isRoundTripEncoding('shift_jis')).toBe(false);
     expect(isRoundTripEncoding('replacement')).toBe(false);
+  });
+});
+
+describe('isUtf16Encoding', () => {
+  it('is true for exactly the two UTF-16 WHATWG names', () => {
+    expect(isUtf16Encoding('utf-16le')).toBe(true);
+    expect(isUtf16Encoding('utf-16be')).toBe(true);
+    for (const other of ['utf-8', 'windows-1252', 'utf-16', 'UTF-16LE', '']) {
+      expect(isUtf16Encoding(other)).toBe(false);
+    }
   });
 });

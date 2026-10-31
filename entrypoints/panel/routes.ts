@@ -18,6 +18,7 @@ import Stethoscope from 'lucide-solid/icons/stethoscope';
 import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
 import { IMAGE_NOUN } from '../../lib/detection/count-nouns';
+import { runtimeOnPage } from '../../lib/detection/simulation-fact';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
 import { listCapped, countLabel } from '../../lib/panel/list-behavior';
@@ -117,7 +118,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     icon: FileCode,
     group: 'Inspect',
     liveState: (data) => {
-      if (data === null || !data.wprDetections.delay_js.present) return null;
+      if (data === null || !runtimeOnPage(data.wprDetections.delay_js)) return null;
       const { delayedScripts, scripts, truncated } = data.wprDetections.delay_js;
       // The delayed count is the whole page's: never print it over a shorter
       // shown list without the lower-bound marker.

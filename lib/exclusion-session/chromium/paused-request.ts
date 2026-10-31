@@ -1,8 +1,9 @@
 /**
- * The pure side of one paused navigation response (`Fetch.requestPaused`
- * at the Response stage): the event validated at the boundary, the
- * decision whether it is a rewrite candidate, the body read back into
- * bytes, and the `Fetch.fulfillRequest` parameters for a rewritten body.
+ * The pure side of one paused request (`Fetch.requestPaused`): the event
+ * validated at the boundary, the decision whether it is a rewrite
+ * candidate (a navigation response) or a script request a session may
+ * answer (Request stage), the body read back into bytes, and the
+ * `Fetch.fulfillRequest` parameters for a rewritten body or a runtime.
  *
  * Protocol facts relied on (CDP `Fetch`; Chromium `fetch_handler.cc` /
  * `devtools_url_loader_interceptor.cc`, verified 2026-10-20 and observed
@@ -18,7 +19,13 @@
  */
 import { isRecord } from '../../../utils/is-record';
 import { base64ToBytes, bytesToBase64 } from '../../../utils/base64';
-import { isRewritableResponse, type InterceptedResponseFacts } from '../document-transform';
+import {
+  isRewritableResponse,
+  rendersAsPage,
+  type InterceptedResponseFacts
+} from '../document-transform';
+import type { PassedDocumentFailure } from '../../messaging/exclusion-session';
+import { cspHeaderFacts } from '../../wp-rocket-simulation/csp-headers';
 
 /** One response header line. */
 export interface HeaderEntry {
@@ -47,7 +54,7 @@ export interface PausedRequest {
 
 /** Why a paused request is passed through unrewritten. */
 export type PassReason =
-  /** Paused before the response (never requested — answered anyway). */
+  /** A non-script request paused before the response (continued to the network). */
   | 'request-stage'
   /** The response is a network error. */
   | 'network-error'
@@ -56,10 +63,29 @@ export type PassReason =
   /** A response the engine never rewrites (`isRewritableResponse`; redirects included). */
   | 'ineligible';
 
-/** What to do with a paused request before any frame check or body read. */
+/**
+ * What to do with a paused request before any frame check or body read: a
+ * pass-through, a document response the engine may rewrite, or a script
+ * request (only a simulated runtime's name pauses one) the session may
+ * answer itself.
+ */
 export type PauseDisposition =
   | { readonly kind: 'pass'; readonly reason: PassReason }
-  | { readonly kind: 'candidate'; readonly facts: InterceptedResponseFacts };
+  | { readonly kind: 'candidate'; readonly facts: InterceptedResponseFacts }
+  | { readonly kind: 'script-request' };
+
+/** The resource type of a script request (`Network.ResourceType`). */
+const SCRIPT_RESOURCE = 'Script';
+
+/**
+ * The response headers a simulated runtime is served with: a classic
+ * script's type (charset declared: the runtime is UTF-8), and never stored
+ * — a cached copy would outlive the session and answer the URL after Stop.
+ */
+export const RUNTIME_RESPONSE_HEADERS: readonly HeaderEntry[] = [
+  { name: 'content-type', value: 'text/javascript; charset=utf-8' },
+  { name: 'cache-control', value: 'no-store' }
+];
 
 /**
  * The response header that adds speculation rules to a document (lowercase
@@ -177,23 +203,65 @@ export function headerValue(headers: readonly HeaderEntry[], name: string): stri
 }
 
 /**
- * Decide what a paused request is before any I/O: a pass-through, or a
- * document response the engine may rewrite (pending the top-frame check).
+ * Decide what a paused request is before any I/O: a pass-through, a
+ * document response the engine may rewrite, or a script request the
+ * session may answer (both pending the top-frame check).
  *
  * @param pause The paused request.
  */
 export function classifyPause(pause: PausedRequest): PauseDisposition {
   if (pause.errorReason !== null) return { kind: 'pass', reason: 'network-error' };
-  if (pause.status === null) return { kind: 'pass', reason: 'request-stage' };
+  if (pause.status === null) {
+    return pause.resourceType === SCRIPT_RESOURCE
+      ? { kind: 'script-request' }
+      : { kind: 'pass', reason: 'request-stage' };
+  }
   if (pause.resourceType !== 'Document') return { kind: 'pass', reason: 'not-document' };
   const facts: InterceptedResponseFacts = {
     status: pause.status,
     method: pause.method,
-    contentType: headerValue(pause.headers, 'content-type')
+    contentType: headerValue(pause.headers, 'content-type'),
+    // One entry per header line, report-only under its own name.
+    ...cspHeaderFacts(pause.headers)
   };
   return isRewritableResponse(facts)
     ? { kind: 'candidate', facts }
     : { kind: 'pass', reason: 'ineligible' };
+}
+
+/**
+ * The network error reason of a navigation the browser cancelled (another
+ * navigation, a stop): the current page stays, so nothing is recorded.
+ */
+const ABORTED_ERROR_REASON = 'Aborted';
+
+/**
+ * What a passed document response becomes on the tab, as the session
+ * records it (when it is the session tab's top-level page on the session's
+ * origin): `ineligible-response` for a response the engine never rewrites
+ * that still becomes the page ({@link rendersAsPage}), `network-error` for a
+ * failed one (the browser's error page replaces the page) — or null when it
+ * is not a page at all (not a document, a redirect hop, no content, a
+ * download, a cancelled navigation, a request-stage pause).
+ *
+ * @param pause The paused request.
+ * @param reason Why it is passed.
+ */
+export function passedPageFailure(
+  pause: PausedRequest,
+  reason: PassReason
+): PassedDocumentFailure | null {
+  if (pause.resourceType !== 'Document') return null;
+  if (reason === 'network-error')
+    return pause.errorReason === ABORTED_ERROR_REASON ? null : 'network-error';
+  if (reason !== 'ineligible' || pause.status === null) return null;
+  const page = rendersAsPage({
+    status: pause.status,
+    method: pause.method,
+    disposition: headerValue(pause.headers, 'content-disposition'),
+    contentType: headerValue(pause.headers, 'content-type')
+  });
+  return page ? 'ineligible-response' : null;
 }
 
 /**
@@ -269,4 +337,50 @@ export function continueWithoutRulesHeaderParams(
     ),
     ...(pause.statusText.length > 0 && { responsePhrase: pause.statusText })
   };
+}
+
+/**
+ * The `Fetch.fulfillRequest` parameters answering a paused script request
+ * (before it reached the network) with a simulated runtime's bytes.
+ *
+ * @param requestId The paused (request-stage) request's id.
+ * @param body The runtime's bytes.
+ */
+export function runtimeFulfillParams(requestId: string, body: Uint8Array): Record<string, unknown> {
+  return {
+    requestId,
+    responseCode: 200,
+    responseHeaders: RUNTIME_RESPONSE_HEADERS,
+    body: bytesToBase64(body)
+  };
+}
+
+/**
+ * The top-level document's URL in a `Page.getFrameTree` result (the root
+ * frame's `url` — the document's URL without its fragment), or null when
+ * the result lacks it (validated: protocol results are untrusted).
+ *
+ * @param result The command's result.
+ */
+export function frameTreeDocumentUrl(result: unknown): string | null {
+  return frameTreeRoot(result, 'url');
+}
+
+/**
+ * The root frame's id in a `Page.getFrameTree` result — the top frame of
+ * the session that answered it (`Page.Frame.id`) — or null when the result
+ * lacks it (validated: protocol results are untrusted).
+ *
+ * @param result The command's result.
+ */
+export function frameTreeRootId(result: unknown): string | null {
+  return frameTreeRoot(result, 'id');
+}
+
+/** One non-empty string field of a frame-tree result's root frame, or null. */
+function frameTreeRoot(result: unknown, field: 'url' | 'id'): string | null {
+  if (!isRecord(result) || !isRecord(result.frameTree) || !isRecord(result.frameTree.frame)) {
+    return null;
+  }
+  return text(result.frameTree.frame[field]);
 }

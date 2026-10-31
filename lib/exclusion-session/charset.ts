@@ -36,14 +36,31 @@
 /** The bytes the `<meta>` prescan reads at most (the spec's recommended window). */
 export const PRESCAN_BYTE_LIMIT = 1024;
 
+/** UTF-16 little-endian's WHATWG encoding name. */
+export const UTF16LE = 'utf-16le';
+
+/** UTF-16 big-endian's WHATWG encoding name. */
+export const UTF16BE = 'utf-16be';
+
+/**
+ * Whether an encoding (WHATWG name) is UTF-16 — the encodings where ASCII
+ * is not one byte, so a `<meta>` naming one means UTF-8 (the bytes it was
+ * read from were ASCII) and byte measures over its text differ.
+ *
+ * @param encoding The WHATWG encoding name.
+ */
+export function isUtf16Encoding(encoding: string): boolean {
+  return encoding === UTF16LE || encoding === UTF16BE;
+}
+
 /** The encodings a byte order mark identifies, with their BOM bytes. */
 const BYTE_ORDER_MARKS: readonly {
   readonly encoding: string;
   readonly bytes: readonly number[];
 }[] = [
   { encoding: 'utf-8', bytes: [0xef, 0xbb, 0xbf] },
-  { encoding: 'utf-16be', bytes: [0xfe, 0xff] },
-  { encoding: 'utf-16le', bytes: [0xff, 0xfe] }
+  { encoding: UTF16BE, bytes: [0xfe, 0xff] },
+  { encoding: UTF16LE, bytes: [0xff, 0xfe] }
 ];
 
 /**
@@ -490,7 +507,7 @@ function processMeta(cursor: PrescanCursor): string | null {
   }
   if (needPragma === null || (needPragma && !gotPragma)) return null;
   if (charset === null || charset === undefined) return null;
-  if (charset === 'utf-16be' || charset === 'utf-16le') return 'utf-8';
+  if (isUtf16Encoding(charset)) return 'utf-8';
   if (charset === 'x-user-defined') return 'windows-1252';
   return charset;
 }
@@ -540,7 +557,7 @@ function xmlDeclarationEncoding(bytes: Uint8Array): string | null {
   const label = head.slice(index + 1, close);
   if (label === '' || hasControlOrSpace(label)) return null;
   const encoding = encodingForLabel(label);
-  return encoding === 'utf-16be' || encoding === 'utf-16le' ? 'utf-8' : encoding;
+  return encoding !== null && isUtf16Encoding(encoding) ? 'utf-8' : encoding;
 }
 
 /**
@@ -556,8 +573,8 @@ function xmlDeclarationEncoding(bytes: Uint8Array): string | null {
 export function prescanEncoding(bytes: Uint8Array): string | null {
   const window = bytes.subarray(0, PRESCAN_BYTE_LIMIT);
   const cursor = new PrescanCursor(window);
-  if (cursor.startsWith([0x3c, 0x00, 0x3f, 0x00, 0x78, 0x00])) return 'utf-16le';
-  if (cursor.startsWith([0x00, 0x3c, 0x00, 0x3f, 0x00, 0x78])) return 'utf-16be';
+  if (cursor.startsWith([0x3c, 0x00, 0x3f, 0x00, 0x78, 0x00])) return UTF16LE;
+  if (cursor.startsWith([0x00, 0x3c, 0x00, 0x3f, 0x00, 0x78])) return UTF16BE;
   try {
     for (; cursor.position < window.length; cursor.position++) {
       if (cursor.startsWith([0x3c, 0x21, 0x2d, 0x2d])) {
@@ -641,12 +658,7 @@ export type DecodedDocument =
 
 /** Whether this module can re-encode text in an encoding. */
 export function isRoundTripEncoding(encoding: string): boolean {
-  return (
-    encoding === 'utf-8' ||
-    encoding === 'utf-16le' ||
-    encoding === 'utf-16be' ||
-    SINGLE_BYTE_ENCODINGS.has(encoding)
-  );
+  return encoding === 'utf-8' || isUtf16Encoding(encoding) || SINGLE_BYTE_ENCODINGS.has(encoding);
 }
 
 /**
@@ -765,9 +777,9 @@ export function encodeDocument(text: string, codec: DocumentCodec): Uint8Array |
     case 'utf-8':
       // TextEncoder would silently turn a lone surrogate into U+FFFD.
       return text.isWellFormed() ? withBom(codec.bom, utf8Encoder.encode(text)) : null;
-    case 'utf-16le':
+    case UTF16LE:
       return withBom(codec.bom, encodeUtf16(text, true));
-    case 'utf-16be':
+    case UTF16BE:
       return withBom(codec.bom, encodeUtf16(text, false));
     default: {
       if (!SINGLE_BYTE_ENCODINGS.has(codec.encoding)) return null;

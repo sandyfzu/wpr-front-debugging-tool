@@ -17,6 +17,8 @@ import {
   type ExclusionSessionStatus
 } from '../../lib/messaging/exclusion-session';
 import type { Logger } from '../../lib/logger';
+import type { SimulateSpec } from '../../lib/wp-rocket-simulation/spec';
+import { isWordPressAdminScreen } from '../../lib/wp-rocket-simulation/admin-screen';
 import {
   LANE_ORDER,
   addCandidate,
@@ -39,7 +41,9 @@ import {
   removeRow,
   blankRowWarning,
   sameSet,
+  setLaneMode,
   setDisable,
+  draftLaneMode,
   updateRow,
   type CandidateOutcome,
   type Committed,
@@ -62,12 +66,36 @@ import {
   type DraftNotes
 } from './exclusions/row-notes';
 import { rowVerdict, type LanePage, type RowVerdict } from './exclusions/lane-page';
+import { laneReport } from './exclusions/counts';
+import {
+  SIMULATION_LANES,
+  laneDisabled,
+  laneModeBlocks,
+  laneModes,
+  draftModeBlock,
+  realFeatureState,
+  REPORT_PROVES_SERVED,
+  runsSimulation,
+  sameSimulate,
+  type DraftModeBlock,
+  type ModeBlock,
+  type RealFeatureState,
+  type SimulationLane,
+  type SimulationMode,
+  type SimulationPageEvidence
+} from './exclusions/simulation-mode';
 import { createSetReadings } from './exclusions/set-readings';
 import { INITIAL_OVERLAY_STATE, canStart, overlayTransition } from './session/machine';
 import type { OverlayEvent, OverlayState, SessionAction } from './session/machine';
 import { matchServedDocument, type PageFacts } from './session/page-match';
 import type { ExclusionSessionPort, PortOutcome, SessionProblem } from './session/port';
-import { sessionView, type SessionView } from './session/session-view';
+import {
+  awaitsRecord,
+  sessionView,
+  simulationReports,
+  type SessionView
+} from './session/session-view';
+import { documentRecordWaitMs } from '../../lib/exclusion-session/document-hold';
 
 /** How long a typing pause waits before the draft is saved. */
 export const AUTOSAVE_DELAY_MS = 800;
@@ -112,6 +140,43 @@ export interface OverlayControllerDeps {
    * one is sliced. Tests compare the two paths with it.
    */
   readonly pasteAtOnce?: PasteBounds;
+  /**
+   * What the live page shows of each mode lane's feature (reactive): with
+   * the session's reports, it decides which modes the page allows. Absent
+   * (a host that cannot read the page): every mode is offered, none blocked.
+   */
+  readonly simulationEvidence?: Accessor<SimulationPageEvidence>;
+}
+
+/** One mode lane's reading of the page (reactive). */
+interface LaneModel {
+  /** The page's real state of the lane's feature (null: not read). */
+  readonly state: Accessor<RealFeatureState | null>;
+  /** Why each mode is unavailable (null: every mode offered). */
+  readonly blocks: Accessor<Readonly<Record<SimulationMode, ModeBlock | null>> | null>;
+  /** The draft's mode (always the one shown checked). */
+  readonly mode: Accessor<SimulationMode>;
+  /** Why the page does not allow the draft's mode (null: it does). */
+  readonly blocked: Accessor<DraftModeBlock | null>;
+}
+
+/** What the draft saves: its set and what is simulated beside it. */
+interface SavedDraft {
+  readonly set: ExclusionSet;
+  readonly simulate: SimulateSpec | undefined;
+}
+
+/** Nothing saved yet. */
+const EMPTY_SAVED_DRAFT: SavedDraft = { set: EMPTY_EXCLUSION_SET, simulate: undefined };
+
+/**
+ * Whether two saved drafts are the same.
+ *
+ * @param a One.
+ * @param b The other.
+ */
+function sameSavedDraft(a: SavedDraft, b: SavedDraft): boolean {
+  return sameSet(a.set, b.set) && sameSimulate(a.simulate, b.simulate);
 }
 
 /** How much a paste may commit in one task: rows and their characters. */
@@ -325,6 +390,35 @@ export interface OverlayController {
   removeRow(lane: LaneKey, id: string): void;
   setDisable(key: ToggleKey, value: boolean): void;
   /**
+   * A mode lane's mode shown checked: always the draft's, even when the page
+   * does not allow it (see {@link OverlayController.blockedLaneMode}).
+   */
+  laneMode(lane: SimulationLane): SimulationMode;
+  /**
+   * The page's real state of a mode lane's feature — the session's report
+   * of this page first, then the extension's markers, then the live page
+   * (null: the host cannot read the page, so every mode is offered).
+   */
+  laneState(lane: SimulationLane): RealFeatureState | null;
+  /** Why each of a mode lane's modes is unavailable here (null: every mode is offered). */
+  laneBlocks(lane: SimulationLane): Readonly<Record<SimulationMode, ModeBlock | null>> | null;
+  /**
+   * Why the page does not allow a lane's draft mode (null: it does), so the
+   * lane shows it dimmed and says so. Display only: the draft keeps the mode
+   * — not dirty, and an apply re-sends it — until the user picks another
+   * (As served, never blocked, clears it).
+   */
+  blockedLaneMode(lane: SimulationLane): DraftModeBlock | null;
+  /**
+   * Choose a mode lane's mode (ignored when not editable, when the lane
+   * does not offer it, or when the page does not allow it).
+   */
+  setLaneMode(lane: SimulationLane, mode: SimulationMode): void;
+  /** The page on screen runs a simulation (any feature: the session's, or one kept). */
+  readonly runsSimulation: Accessor<boolean>;
+  /** The page is a WordPress admin or login screen (a simulation there is warned about, never blocked). */
+  readonly adminScreen: Accessor<boolean>;
+  /**
    * Add a picked candidate.
    *
    * @param focus Move focus to its row (a pointer pick) or leave focus where
@@ -394,8 +488,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const afterPaste: HeldAction[] = [];
   const atOnce = deps.pasteAtOnce ?? PASTE_AT_ONCE;
   const clock = deps.clock ?? (() => performance.now());
-  /** The set last known stored (the autosave compares against it). */
-  let lastSaved: ExclusionSet = EMPTY_EXCLUSION_SET;
+  /** The draft last known stored (the autosave compares against it). */
+  let lastSaved: SavedDraft = EMPTY_SAVED_DRAFT;
   let cancelAutosave: (() => void) | null = null;
   let cancelStall: (() => void) | null = null;
   let disposed = false;
@@ -414,18 +508,86 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     return current.phase === 'ready' ? current.status : null;
   };
 
+  /** The session start whose page-record wait passed without a record (`unrecorded`). */
+  const [overdueStart, setOverdueStart] = createSignal<number | null>(null);
+  /** The running page-record wait: the session start it is for, and its cancel. */
+  let recordWait: { readonly startedAt: number; readonly cancel: () => void } | null = null;
+
   const view = createMemo<SessionView | null>(() => {
     const current = status();
     if (current === null) return null;
-    return sessionView(current, (served) => matchServedDocument(served, deps.pageFacts()));
+    const overdue = current.state === 'active' && overdueStart() === current.startedAt;
+    return sessionView(current, (served) => matchServedDocument(served, deps.pageFacts()), overdue);
   });
 
   const draftSet = createMemo(() => draftToSet(draft()));
+  const draftSaved = createMemo((): SavedDraft => ({
+    set: draftSet(),
+    simulate: draft().simulate
+  }));
 
   const dirty = createMemo(() => {
     const current = status();
-    return current?.state === 'active' && !sameSet(draftSet(), current.set);
+    return (
+      current?.state === 'active' &&
+      !sameSavedDraft(draftSaved(), { set: current.set, simulate: current.simulate })
+    );
   });
+
+  /**
+   * One mode lane's reading of the page: its real state, why each mode is
+   * unavailable, and the mode shown for the draft's.
+   *
+   * @param lane The mode lane.
+   * @param delayState The real Delay JS state (the Defer JS lane reads it).
+   */
+  const laneModel = (
+    lane: SimulationLane,
+    delayState: Accessor<RealFeatureState | null>
+  ): LaneModel => {
+    const state = createMemo((): RealFeatureState | null => {
+      const evidence = deps.simulationEvidence;
+      if (evidence === undefined) return null;
+      const current = status();
+      const shown = view();
+      const feature = SIMULATION_LANES[lane];
+      // The session speaks for the page only when its rewrite is the page on screen.
+      const session =
+        current?.state === 'active' && shown?.kind === 'applied'
+          ? {
+              simulation: simulationReports(shown).find((report) => report.feature === feature),
+              disabled: laneDisabled(current.set.disable, lane),
+              report: laneReport(shown.reports, lane),
+              reportProvesServed: REPORT_PROVES_SERVED[lane]
+            }
+          : null;
+      return realFeatureState(session, evidence()[lane], current?.state === 'active');
+    });
+    const blocks = createMemo(() => {
+      const real = state();
+      return real === null ? null : laneModeBlocks(lane, real, delayState());
+    });
+    const mode = createMemo(() => draftLaneMode(draft(), lane));
+    // A mode the page does not allow (restored, or applied on a page that
+    // turned out not to allow it) stays shown, dimmed and said in the lane;
+    // the draft keeps it, so the session's mode for the site's other pages stays.
+    const blocked = createMemo(() => {
+      const real = state();
+      return real === null ? null : draftModeBlock(lane, mode(), real, delayState());
+    });
+    return { state, blocks, mode, blocked };
+  };
+  const delayLane = laneModel('delayJs', () => null);
+  const laneModels: Readonly<Record<SimulationLane, LaneModel>> = {
+    delayJs: delayLane,
+    deferJs: laneModel('deferJs', delayLane.state),
+    // LazyLoad runs first in WP Rocket's buffer: no other feature decides it.
+    lazyload: laneModel('lazyload', () => null)
+  };
+  const simulationRuns = createMemo(() =>
+    Object.values(laneModels).some((model) => runsSimulation(model.state()))
+  );
+  const adminScreen = createMemo(() => isWordPressAdminScreen(deps.pageFacts().href));
 
   const editable = createMemo(() => {
     const current = state();
@@ -489,6 +651,39 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     return count;
   });
 
+  // A page loaded through the session waits for its record only so long:
+  // past the wait the status is read again, and a page still without a
+  // record says so (`unrecorded`) instead of waiting forever.
+  createEffect(() => {
+    const current = status();
+    const due = current?.state === 'active' && awaitsRecord(current, deps.pageFacts());
+    if (current?.state !== 'active' || !due) {
+      recordWait?.cancel();
+      recordWait = null;
+      return;
+    }
+    const { startedAt } = current;
+    if (recordWait?.startedAt === startedAt || overdueStart() === startedAt) return;
+    recordWait?.cancel();
+    recordWait = {
+      startedAt,
+      cancel: deps.schedule(
+        () => {
+          void settleRecordWait(startedAt);
+        },
+        documentRecordWaitMs(current.simulate !== undefined)
+      )
+    };
+  });
+
+  /** The record wait for the session started at `startedAt` passed: re-read, then mark it overdue. */
+  const settleRecordWait = async (startedAt: number): Promise<void> => {
+    await refreshStatus();
+    if (disposed || recordWait?.startedAt !== startedAt) return;
+    recordWait = null;
+    setOverdueStart(startedAt);
+  };
+
   // The fix-rows notice is true only while a row has a problem: it leaves
   // with the last one (judged once the set readings caught up with the rows).
   createEffect(() => {
@@ -504,8 +699,9 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   });
 
   /** Save the draft unless it equals what is stored. */
-  const saveNow = async (set: ExclusionSet): Promise<void> => {
-    if (sameSet(set, lastSaved)) {
+  const saveNow = async (saved: SavedDraft): Promise<void> => {
+    const set = saved.set;
+    if (sameSavedDraft(saved, lastSaved)) {
       setSaveState({ kind: 'idle' });
       return;
     }
@@ -521,16 +717,19 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       return;
     }
     setSaveState({ kind: 'saving' });
-    const outcome = await deps.port.save(set);
+    // The spec rides only when there is one (an absent one is "nothing simulated").
+    const outcome = await (saved.simulate === undefined
+      ? deps.port.save(set)
+      : deps.port.save(set, saved.simulate));
     if (disposed) return;
     if (outcome.kind === 'problem') {
       setSaveState({ kind: 'not-saved', reason: outcome.problem });
     } else if (outcome.reply.outcome === 'not-saved') {
       setSaveState({ kind: 'not-saved', reason: outcome.reply.reason });
     } else {
-      lastSaved = set;
+      lastSaved = saved;
       // A newer edit may have been typed while the save was in flight.
-      setSaveState(sameSet(draftSet(), set) ? { kind: 'saved' } : { kind: 'saving' });
+      setSaveState(sameSavedDraft(draftSaved(), saved) ? { kind: 'saved' } : { kind: 'saving' });
     }
   };
 
@@ -543,7 +742,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     cancelAutosave();
     cancelAutosave = null;
     // Not the memo: the reactive root may already be gone.
-    void saveNow(draftToSet(draft()));
+    const current = draft();
+    void saveNow({ set: draftToSet(current), simulate: current.simulate });
   };
 
   /** (Re)arm the autosave after an edit. */
@@ -552,7 +752,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     // eslint-disable-next-line solid/reactivity -- a timer callback: reads the draft untracked, when it fires
     cancelAutosave = deps.schedule(() => {
       cancelAutosave = null;
-      void saveNow(draftSet());
+      void saveNow(draftSaved());
     }, AUTOSAVE_DELAY_MS);
   };
 
@@ -862,11 +1062,13 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     // draft holds edits made since the apply (an apply saves its set, so the
     // two differ only by those edits): reopen on the edits, marked dirty.
     const saved = savedReply.reply.set;
-    const set =
-      saved ?? (current.reply.state === 'active' ? current.reply.set : EMPTY_EXCLUSION_SET);
-    lastSaved = saved ?? EMPTY_EXCLUSION_SET;
+    const active = current.reply.state === 'active' ? current.reply : null;
+    const set = saved ?? active?.set ?? EMPTY_EXCLUSION_SET;
+    // The mode lanes' modes restore with their rows (never arming by themselves).
+    const simulate = saved === null ? active?.simulate : savedReply.reply.simulate;
+    lastSaved = saved === null ? EMPTY_SAVED_DRAFT : { set: saved, simulate };
     // A set saved before rows were stored this way opens in the stored form.
-    const restored = restoreDraft(set, nextId);
+    const restored = restoreDraft(set, nextId, simulate);
     uncommitted.clear();
     batch(() => {
       setDraftSignal(restored.draft);
@@ -909,7 +1111,10 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const runApply = async (action: SessionAction, applied: Draft): Promise<void> => {
     statusBeforeApply = status() ?? statusBeforeApply;
     dispatch({ type: 'request', action });
-    const outcome = await deps.port.apply(draftToSet(applied));
+    const set = draftToSet(applied);
+    const outcome = await (applied.simulate === undefined
+      ? deps.port.apply(set)
+      : deps.port.apply(set, applied.simulate));
     if (disposed) return;
     if (outcome.kind === 'problem') {
       dispatch({ type: 'action-failed', problem: outcome.problem });
@@ -1038,7 +1243,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (heldForPaste({ kind: 'reset' })) return;
       const current = status();
       if (current?.state !== 'active' || !canStart(state(), 'reset')) return;
-      const restored = draftFromSet(current.set, nextId);
+      const restored = draftFromSet(current.set, nextId, current.simulate);
       uncommitted.clear();
       batch(() => {
         setDraftSignal(restored);
@@ -1173,6 +1378,19 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (!editable()) return;
       setDraft(setDisable(draft(), key, value));
     },
+    laneMode: (lane) => laneModels[lane].mode(),
+    laneState: (lane) => laneModels[lane].state(),
+    laneBlocks: (lane) => laneModels[lane].blocks(),
+    blockedLaneMode: (lane) => laneModels[lane].blocked(),
+    runsSimulation: simulationRuns,
+    adminScreen,
+    setLaneMode: (lane, mode) => {
+      // A mode the lane does not offer (Disabled without a feature-wide disable) is ignored.
+      if (!editable() || !laneModes(lane).includes(mode)) return;
+      const blocks = laneModels[lane].blocks();
+      if (blocks !== null && blocks[mode] !== null) return;
+      setDraft(setLaneMode(draft(), lane, mode));
+    },
     addCandidate: (lane, row, focus) => {
       if (!editable()) return 'held';
       const added = addCandidate(draft(), lane, row, nextId);
@@ -1193,6 +1411,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     dispose: () => {
       disposed = true;
       cancelStall?.();
+      recordWait?.cancel();
       if (finishPaste !== null) {
         // A long paste still committing lands now; its landing saves (no pasted line is lost).
         finishPaste();

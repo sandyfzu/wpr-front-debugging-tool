@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Delay JS simulation fixture</title>
+  </head>
+  <body>
+    <!-- No WP Rocket on this page: a simulation brings its own runtime. Each script tags the
+         root once it runs, the hover handler once hovered (WP Rocket's runtime takes `on…`
+         handlers over for the delay with `new Function`: what a policy without eval refuses). -->
+    <h1>Delay JS simulation fixture</h1>
+    <p id="hover" onmouseover="document.documentElement.dataset.handlerRan = '1'">hover target</p>
+    <script src="/simulation/external.js"></script>
+    <script>
+      document.documentElement.dataset.inlineRan = '1';
+    </script>
+  </body>
+</html>

@@ -21,17 +21,20 @@ import {
   type ExclusionSet
 } from '../exclusion-builder/set';
 import type { ExclusionDocumentOutcome } from '../messaging/exclusion-session';
+import type {
+  DocumentSimulationInput,
+  SimulationCspHeader
+} from '../messaging/exclusion-simulation';
+import {
+  SIMULATED_FEATURES,
+  type SimulatedFeatureId,
+  type SimulationStage
+} from '../wp-rocket-simulation/spec';
 import { decodeDocument, encodeDocument, extractMimeType } from './charset';
+import type { MarkerSettler, SimulationPreparer } from './simulation-sources';
+import { simulationStage } from './simulation-stage';
 import { removeSpeculationRules } from './speculation-rules';
-
-/**
- * The engine's wall-time budget per document (ms). Measured 2026-10-20 on
- * the local WP site's home page (84 KiB) repeated to size, five-feature
- * set: 84 KiB ≈ 1 ms, 844 KiB ≈ 14 ms, 4.1 MiB ≈ 270 ms — the budget keeps
- * ~7× headroom over a worst-case-sized document on a slower machine while
- * capping what a pathological row can add to a navigation.
- */
-export const DOCUMENT_TRANSFORM_BUDGET_MS = 2_000;
+import { DOCUMENT_TRANSFORM_BUDGET_MS } from './engine-budget';
 
 /**
  * The largest body a backend buffers for rewriting (bytes). Larger bodies
@@ -54,6 +57,8 @@ export interface DocumentTransformRequest {
   readonly budgetMs: number;
   /** How the text was decoded from the served bytes, when known. */
   readonly bytes?: DocumentBytes;
+  /** What to simulate before the exclusions, with its packaged inputs (absent: nothing). */
+  readonly simulate?: DocumentSimulationInput;
 }
 
 /**
@@ -100,13 +105,18 @@ export function overrunRow(set: ExclusionSet, feature: ExclusionFeatureId): stri
  * @param set The set the run used.
  * @param feature The feature that overran.
  * @param budgetMs The budget it overran.
+ * @param stage `simulate` when the overrun was the feature's simulation
+ *   step — feature-wide, so it names no row.
  */
 export function overBudgetOutcome(
   set: ExclusionSet,
   feature: ExclusionFeatureId,
-  budgetMs: number
+  budgetMs: number,
+  stage?: SimulationStage
 ): UnmodifiedDocumentOutcome {
-  return { outcome: 'over-budget', feature, row: overrunRow(set, feature), budgetMs };
+  return stage === undefined
+    ? { outcome: 'over-budget', feature, row: overrunRow(set, feature), budgetMs }
+    : { outcome: 'over-budget', feature, row: null, budgetMs, stage };
 }
 
 /** The `engine-failed` result, carrying its cause for the log (every runner's one builder). */
@@ -114,24 +124,30 @@ export function engineFailed(cause: unknown): DocumentTransformResult {
   return { ok: false, outcome: { outcome: 'failed', reason: 'engine-failed' }, cause };
 }
 
+/** Called as each step starts: its feature, and `stage` for a simulation step. */
+export type StepStartListener = (feature: ExclusionFeatureId, stage?: SimulationStage) => void;
+
 /**
- * Run the exclusion pipeline (`runExclusionPipeline`), checking the cumulative wall
- * time after each step: the step that crosses the budget is the overrun
- * (its output is discarded, nothing is served rewritten). A run within the
- * budget ends with the builder marker step.
+ * Run the exclusion pipeline (`runExclusionPipeline`) — after the
+ * request's simulation steps when it simulates — checking the cumulative
+ * wall time after each step: the step that crosses the budget is the
+ * overrun (its output is discarded, nothing is served rewritten; a
+ * simulation step's overrun names `stage: 'simulate'`). A run within the
+ * budget ends with the marker steps.
  *
- * @param request The text, set, budget and decoding facts.
+ * @param request The text, set, budget, decoding facts and simulation input.
  * @param now A monotonic clock (ms).
- * @param onStepStart Called with each feature as its step starts (lets a
- *   preempting host know which feature a killed run was in).
- * @returns The rewritten text and reports, or the unmodified outcome:
- *   `over-budget`, or `engine-failed` (an invalid set — the apply gate
- *   should have refused it — or an engine throw).
+ * @param onStepStart Called with each feature (and stage) as its step
+ *   starts (lets a preempting host know which step a killed run was in).
+ * @returns The rewritten text and reports (with the simulation's report
+ *   when the request simulates), or the unmodified outcome: `over-budget`,
+ *   or `engine-failed` (an invalid set — the apply gate should have
+ *   refused it — or an engine throw).
  */
 export function runDocumentPipeline(
   request: DocumentTransformRequest,
   now: () => number,
-  onStepStart?: (feature: ExclusionFeatureId) => void
+  onStepStart?: StepStartListener
 ): DocumentTransformResult {
   try {
     const started = now();
@@ -139,17 +155,34 @@ export function runDocumentPipeline(
     const run = runExclusionPipeline(request.html, request.set, {
       ...(request.bytes === undefined ? {} : { bytes: request.bytes }),
       ...(onStepStart === undefined ? {} : { onStepStart }),
-      stopAfter: () => now() - started > request.budgetMs
+      stopAfter: () => now() - started > request.budgetMs,
+      ...(request.simulate === undefined
+        ? {}
+        : { pre: simulationStage(request.simulate, request.bytes, request.set.rows.deferJs) })
     });
     if (!run.completed) {
       return {
         ok: false,
-        outcome: overBudgetOutcome(request.set, run.stoppedAt, request.budgetMs)
+        outcome: overBudgetOutcome(request.set, run.stoppedAt, request.budgetMs, run.stage)
       };
     }
-    // The marker step ran after the last budget check, unbudgeted: one
-    // linear scan; only a preempting runner's deadline bounds it.
-    return { ok: true, html: run.html, outcome: { outcome: 'rewritten', reports: run.reports } };
+    // One report per simulated feature, each in its own outcome field.
+    const simulation = run.simulation?.find((report) => report.feature === 'delay_js');
+    const deferSimulation = run.simulation?.find((report) => report.feature === 'defer_all_js');
+    const lazyloadSimulation = run.simulation?.find((report) => report.feature === 'lazyload');
+    // The marker steps ran after the last budget check, unbudgeted: linear
+    // scans; only a preempting runner's deadline bounds them.
+    return {
+      ok: true,
+      html: run.html,
+      outcome: {
+        outcome: 'rewritten',
+        reports: run.reports,
+        ...(simulation === undefined ? {} : { simulation }),
+        ...(deferSimulation === undefined ? {} : { deferSimulation }),
+        ...(lazyloadSimulation === undefined ? {} : { lazyloadSimulation })
+      }
+    };
   } catch (cause) {
     return engineFailed(cause);
   }
@@ -216,6 +249,12 @@ export interface InterceptedResponseFacts {
   readonly method: string;
   /** The response's `Content-Type` value (several headers joined with `, `), or null. */
   readonly contentType: string | null;
+  /**
+   * The response's Content Security Policy header lines (enforcing and
+   * report-only), as received — absent when it has none (every backend
+   * reads the response headers).
+   */
+  readonly cspHeaders?: readonly SimulationCspHeader[];
 }
 
 /**
@@ -254,6 +293,73 @@ export function isRewritableResponse(response: InterceptedResponseFacts): boolea
   return extractMimeType(contentType)?.essence === 'text/html';
 }
 
+/** Media types (essences) a browser renders in the tab rather than downloading. */
+const INLINE_MEDIA_TYPES: ReadonlySet<string> = new Set([
+  'application/xhtml+xml',
+  'application/xml',
+  'application/json',
+  'application/pdf'
+]);
+
+/**
+ * `+xml` types a browser may download instead of rendering: Firefox hands
+ * feeds (e.g. WordPress `/feed/`) to the download manager, so following a
+ * feed link must never record against the page still shown.
+ */
+const DOWNLOADED_XML_TYPES: ReadonlySet<string> = new Set([
+  'application/rss+xml',
+  'application/atom+xml'
+]);
+
+/** Top-level types a browser renders in the tab (`text/*`, `image/*`, …). */
+const INLINE_TOP_LEVEL_TYPES: ReadonlySet<string> = new Set(['text', 'image', 'audio', 'video']);
+
+/**
+ * Whether a `Content-Type` value names a type the browser renders in the
+ * tab: `text/*`, `image/*`, `audio/*`, `video/*`, `+xml` (feeds excepted),
+ * XML, JSON or PDF. A missing or unparsable type is not counted: the browser sniffs the
+ * bytes then (an archive becomes a download), and nothing else known before
+ * the release tells which — an unrecorded page reads "no result", a wrong
+ * record would overwrite the visible page's.
+ *
+ * @param contentType The header value, or null when absent.
+ */
+export function rendersInline(contentType: string | null): boolean {
+  const essence = extractMimeType(contentType)?.essence;
+  if (essence === undefined) return false;
+  if (DOWNLOADED_XML_TYPES.has(essence)) return false;
+  if (INLINE_MEDIA_TYPES.has(essence) || essence.endsWith('+xml')) return true;
+  return INLINE_TOP_LEVEL_TYPES.has(essence.slice(0, essence.indexOf('/')));
+}
+
+/**
+ * Whether a top-level response the engine does not rewrite still becomes
+ * the tab's page when served as it is — so a session records it (the
+ * page's overlay would otherwise wait for a record that never comes). Not:
+ * a 1xx or 3xx (a redirect's next hop is the page), 204/205 (the current
+ * page stays), `HEAD`, a download (`Content-Disposition: attachment`), or
+ * a type the browser does not render inline ({@link rendersInline} — e.g. a
+ * zip, which the browser downloads without any disposition).
+ * A 304 never reaches here alone (the cached response is what is paused).
+ *
+ * @param response The final status, the method, the response's
+ *   `Content-Disposition` and `Content-Type` (null when absent).
+ */
+export function rendersAsPage(response: {
+  readonly status: number;
+  readonly method: string;
+  readonly disposition: string | null;
+  readonly contentType: string | null;
+}): boolean {
+  const { status, method, disposition, contentType } = response;
+  if (!Number.isInteger(status) || status < 200 || status > 599) return false;
+  if ((status >= 300 && status <= 399) || status === 204 || status === 205) return false;
+  if (method.toUpperCase() === 'HEAD') return false;
+  // RFC 6266: the disposition type comes first, case-insensitive.
+  if (disposition !== null && /^\s*attachment\s*(?:;|$)/i.test(disposition)) return false;
+  return rendersInline(contentType);
+}
+
 /** The text served for a run, its rules removed, encoded — or null when it equals the original. */
 function servedBytes(
   text: string,
@@ -269,6 +375,40 @@ function servedBytes(
 }
 
 /**
+ * The features whose report names the marker the run wrote, in registry
+ * order (empty: no marker written).
+ *
+ * @param outcome The run's `rewritten` outcome.
+ */
+export function markedFeatures(outcome: RewrittenDocumentOutcome): SimulatedFeatureId[] {
+  const reports = [outcome.lazyloadSimulation, outcome.deferSimulation, outcome.simulation];
+  return SIMULATED_FEATURES.map(({ id }) => id).filter((id) =>
+    reports.some((report) => report?.feature === id && report.markerId !== undefined)
+  );
+}
+
+/**
+ * After a run that wrote a marker, narrow its memo entry to the features
+ * that simulated (only when they differ from the requested ones).
+ *
+ * @param input The run's simulation input.
+ * @param result The run's result.
+ * @param settle The session's marker settler.
+ * @throws Whatever the settler rejects with.
+ */
+async function settleMarker(
+  input: DocumentSimulationInput,
+  result: DocumentTransformResult,
+  settle: MarkerSettler
+): Promise<void> {
+  if (!result.ok || input.markerId === undefined) return;
+  const marked = markedFeatures(result.outcome);
+  const requested = new Set(input.features);
+  const narrowed = marked.length < requested.size || marked.some((id) => !requested.has(id));
+  if (marked.length > 0 && narrowed) await settle(input.markerId, marked);
+}
+
+/**
  * Rewrite one intercepted document: guard the size, decode in its charset,
  * run the engine through `runner`, remove the document's speculation rules
  * (a session effect, applied whatever the engine did — see
@@ -278,6 +418,13 @@ function servedBytes(
  * @param set The session's exclusion set.
  * @param runner The engine runner (in-process or preempting).
  * @param budgetMs The engine budget; defaults to {@link DOCUMENT_TRANSFORM_BUDGET_MS}.
+ * @param simulate The session's simulation preparer (absent: nothing
+ *   simulated). A document it cannot give a runtime for is
+ *   `runtime-unavailable` (served without exclusions, never simulated
+ *   without one); a preparer that throws is `engine-failed`.
+ * @param settle The session's marker settler, run after a simulating run
+ *   whose marker names fewer features than requested, before the document
+ *   is released; one that rejects is `engine-failed`.
  * @returns The outcome and the bytes to serve. Never rejects: an oversized
  *   body is `body-unavailable` and a body that cannot be decoded in its
  *   charset (unsupported encoding, malformed bytes) `decode-failed` — both
@@ -292,7 +439,9 @@ export async function rewriteDocument(
   document: InterceptedDocumentBody,
   set: ExclusionSet,
   runner: DocumentTransformRunner,
-  budgetMs: number = DOCUMENT_TRANSFORM_BUDGET_MS
+  budgetMs: number = DOCUMENT_TRANSFORM_BUDGET_MS,
+  simulate?: SimulationPreparer,
+  settle?: MarkerSettler
 ): Promise<DocumentRewrite> {
   if (document.body.length > DOCUMENT_BODY_BYTE_LIMIT) {
     return { outcome: { outcome: 'failed', reason: 'body-unavailable' }, body: null };
@@ -302,14 +451,22 @@ export async function rewriteDocument(
   let result: DocumentTransformResult;
   try {
     const bytes = { encoding: decoded.codec.encoding, bom: decoded.codec.bom.length > 0 };
-    result = await runner({
-      html: decoded.text,
-      set,
-      budgetMs,
-      bytes
-    });
+    const prepared = simulate === undefined ? undefined : await simulate(decoded.text);
+    result =
+      prepared?.ok === false
+        ? { ok: false, outcome: { outcome: 'runtime-unavailable', cause: prepared.cause } }
+        : await runner({
+            html: decoded.text,
+            set,
+            budgetMs,
+            bytes,
+            ...(prepared === undefined ? {} : { simulate: prepared.input })
+          });
+    if (prepared?.ok === true && settle !== undefined) {
+      await settleMarker(prepared.input, result, settle);
+    }
   } catch (cause) {
-    // A runner must never reject; one that does is an engine failure.
+    // A runner (or preparer) must never reject; one that does is an engine failure.
     result = engineFailed(cause);
   }
   let outcome: ExclusionDocumentOutcome = result.outcome;

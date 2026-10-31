@@ -38,8 +38,6 @@ export interface DebuggerPort {
   detach(tabId: number): Promise<void>;
   /** Send one protocol command; resolves with its result object. */
   send(target: DebuggerTarget, method: string, params?: Record<string, unknown>): Promise<unknown>;
-  /** The id of the tab's page target (its main frame's protocol frame id), or null. */
-  pageTargetId(tabId: number): Promise<string | null>;
   /** What the tab is now (never rejects: an unreadable tab is `elsewhere`, a missing one `gone`). */
   tabPresence(tabId: number): Promise<TabPresence>;
   /** Register the event handlers (synchronously — no wake event may be missed). */

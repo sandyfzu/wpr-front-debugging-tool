@@ -3,7 +3,7 @@
     "surface": "background service worker",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 213.2
+      "raw": 329.9
     }
   },
   {
@@ -11,7 +11,55 @@
     "globs": ["assets/background.json"],
     "maxKb": {
       "raw": 85
-    }
+    },
+    "required": true
+  },
+  {
+    "surface": "known-conflicts DB seed asset (background-owned)",
+    "globs": ["assets/background.json"],
+    "maxKb": {
+      "raw": 85
+    },
+    "build": "firefox-mv2",
+    "required": true
+  },
+  {
+    "surface": "simulation data (packaged, background-loaded)",
+    "globs": ["wp-rocket-simulation/simulation-data.json"],
+    "maxKb": {
+      "raw": 26.7,
+      "gzip": 8.0
+    },
+    "required": true
+  },
+  {
+    "surface": "simulation data (packaged, background-loaded)",
+    "globs": ["wp-rocket-simulation/simulation-data.json"],
+    "maxKb": {
+      "raw": 26.7,
+      "gzip": 8.0
+    },
+    "build": "firefox-mv2",
+    "required": true
+  },
+  {
+    "surface": "LazyLoad runtime (packaged, served for WP Rocket's runtime URL)",
+    "globs": ["wp-rocket-simulation/lazyload/*/lazyload.min.js"],
+    "maxKb": {
+      "raw": 8.7,
+      "gzip": 3.0
+    },
+    "required": true
+  },
+  {
+    "surface": "LazyLoad runtime (packaged, served for WP Rocket's runtime URL)",
+    "globs": ["wp-rocket-simulation/lazyload/*/lazyload.min.js"],
+    "maxKb": {
+      "raw": 8.7,
+      "gzip": 3.0
+    },
+    "build": "firefox-mv2",
+    "required": true
   },
   {
     "surface": "popup JS",
@@ -31,16 +79,16 @@
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
-      "raw": 165.3,
-      "gzip": 56.6
+      "raw": 171.7,
+      "gzip": 58.9
     }
   },
   {
     "surface": "exclusion builder overlay (runtime content script, loaded on open)",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 265.6,
-      "gzip": 90.0
+      "raw": 327.4,
+      "gzip": 109.7
     }
   },
   {
@@ -48,15 +96,15 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 265.6,
-      "gzip": 90.0
+      "raw": 327.4,
+      "gzip": 109.7
     }
   },
   {
     "surface": "command palette view (runtime content script, loaded on open)",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 116.7,
+      "raw": 116.8,
       "gzip": 40.5
     }
   },
@@ -65,7 +113,7 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 116.7,
+      "raw": 116.8,
       "gzip": 40.5
     }
   },
@@ -123,7 +171,7 @@
     "build": "firefox-mv2",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 209.6
+      "raw": 326.8
     }
   },
   {
@@ -131,15 +179,15 @@
     "build": "firefox-mv2",
     "globs": ["exclusion-transform-worker.js"],
     "maxKb": {
-      "raw": 103.3,
-      "gzip": 35.4
+      "raw": 185.6,
+      "gzip": 64.6
     }
   },
   {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1635.4
+      "raw": 1828.3
     }
   }
 ]

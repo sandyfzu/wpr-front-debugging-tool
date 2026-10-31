@@ -63,9 +63,11 @@ import { ScriptRow, type CodeBlockSeams } from './script-row';
 import {
   JS_VIEW_RESOURCES,
   buildChips,
+  delaySummaryBadge,
   estimateRowSize,
   pruneRowFlags,
   toggleRowFlag,
+  type ScriptBadge,
   type ScriptRowView
 } from './script-view';
 import { contentCaptures, scriptListCut } from './capture-bounds';
@@ -124,11 +126,23 @@ export function JavaScriptPage(): JSX.Element {
  */
 export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
   const delayJs = createMemo(() => props.data().wprDetections.delay_js);
-  const views = createMemo<readonly ScriptRowView[]>(
-    (previous) =>
-      reconcileRowViews(previous, buildScriptRows(delayJs()), contentCaptures(delayJs())),
-    []
+  const deferSimulated = createMemo(
+    () => props.data().wprDetections.defer_all_js.simulation === 'simulated'
   );
+  // The views a pass reconciled against, with the Defer JS fact they were built under.
+  let builtDeferSimulated = false;
+  const views = createMemo<readonly ScriptRowView[]>((previous) => {
+    const simulated = deferSimulated();
+    // A changed fact re-derives every badge (reuse would keep the old words).
+    const reusable = simulated === builtDeferSimulated ? previous : [];
+    builtDeferSimulated = simulated;
+    return reconcileRowViews(
+      reusable,
+      buildScriptRows(delayJs()),
+      contentCaptures(delayJs()),
+      simulated
+    );
+  }, []);
   const listCut = createMemo(() => scriptListCut(delayJs()));
   // Inline scripts are named by their ordinal among inline scripts; kept out
   // of the (reused) views, so a script added above renumbers without a
@@ -207,6 +221,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
       <div class="flex w-full flex-1 flex-col gap-3">
         <ScriptSummary
           present={delayJs().present}
+          simulated={delayJs().simulation === 'simulated'}
           version={delayJs().version}
           total={views().length}
           partial={listCut()}
@@ -324,8 +339,10 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
 
 /** Props of {@link ScriptSummary}. */
 interface ScriptSummaryProps {
-  /** Whether Delay JS runs on the page. */
+  /** Whether WP Rocket served Delay JS on the page. */
   present: boolean;
+  /** Whether a verified simulation runs Delay JS here instead (never with `present`). */
+  simulated: boolean;
   /** The Delay JS script's version, when it announces one. */
   version: string | null;
   /** Scripts received. */
@@ -342,6 +359,7 @@ interface ScriptSummaryProps {
  * @param props See {@link ScriptSummaryProps}.
  */
 function ScriptSummary(props: ScriptSummaryProps): JSX.Element {
+  const state = (): ScriptBadge => delaySummaryBadge(props.present, props.simulated);
   return (
     <div
       data-fdt="script-summary"
@@ -349,8 +367,8 @@ function ScriptSummary(props: ScriptSummaryProps): JSX.Element {
     >
       {/* Flat items, so a compact strip wraps into two lines, never three. */}
       <span class="me-0.5 font-medium text-fg-primary">{getRealOptionName('delay_js')}</span>
-      <StatusBadge kind={props.present ? 'ok' : 'neutral'} icon>
-        {props.present ? 'Detected' : 'Not detected'}
+      <StatusBadge kind={state().kind} icon>
+        {state().label}
       </StatusBadge>
       <Show when={props.present && props.version}>
         {(version) => (

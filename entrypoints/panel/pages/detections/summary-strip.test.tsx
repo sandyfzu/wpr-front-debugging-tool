@@ -22,7 +22,7 @@ function summary(overrides?: Partial<DetectionsSummary>): DetectionsSummary {
     cache: { kind: 'bypass-requested' },
     server: 'nginx',
     platform: null,
-    optimizations: { active: 3, total: 12, offInTab: 0 },
+    optimizations: { active: 3, total: 12, offInTab: 0, simulated: 0, unverified: 0 },
     wordpressVersion: null,
     cacheLayer: null,
     ...overrides
@@ -68,7 +68,11 @@ describe('SummaryStrip', () => {
     const headline = (offInTab: number): string => {
       cleanup();
       render(() => (
-        <SummaryStrip summary={summary({ optimizations: { active: 1, total: 16, offInTab } })} />
+        <SummaryStrip
+          summary={summary({
+            optimizations: { active: 1, total: 16, offInTab, simulated: 0, unverified: 0 }
+          })}
+        />
       ));
       return document.querySelector('[data-fdt-summary-headline]')?.textContent ?? '';
     };
@@ -142,7 +146,7 @@ describe('SummaryStrip', () => {
         summary={summary({
           wpr: { present: false },
           cache: { kind: 'not-applicable' },
-          optimizations: { active: 0, total: 14, offInTab: 0 }
+          optimizations: { active: 0, total: 14, offInTab: 0, simulated: 0, unverified: 0 }
         })}
       />
     ));

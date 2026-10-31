@@ -5,8 +5,10 @@
  * document step and serves the result (`fulfillRequest` — a substituted
  * copy, so only when the exclusions changed the document) or the original
  * (`continueRequest`, or `continueResponse` to drop a `Speculation-Rules`
- * header — the real response, connection and security state kept). Runs
- * over an injected {@link DebuggerPort}.
+ * header — the real response, connection and security state kept). A
+ * simulated page's runtime request is paused before it leaves and
+ * answered with the packaged file the host names (`no-store`), or
+ * continued. Runs over an injected {@link DebuggerPort}.
  *
  * Rules it owns (on top of the seam's, `../backend`):
  * - **Every paused request is released exactly once** — fulfilled or
@@ -15,8 +17,8 @@
  *   continued), unexpected fault. A detach releases what is still paused
  *   (the browser continues it), so a release after one is a no-op.
  * - **Every debugger call is time-boxed** ({@link CHROMIUM_TIMEOUTS_MS}),
- *   and the host gets {@link CHROMIUM_TIMEOUTS_MS.release} — above its own
- *   bound — before the response is served unmodified. Each arm/resume/
+ *   and the host gets {@link chromiumReleaseMs} of its gate's grant — above
+ *   its own bound — before the response is served unmodified. Each arm/resume/
  *   disarm runs inside one budget ({@link CHROMIUM_OPERATION_BUDGETS_MS},
  *   from the moment it is called, queue wait included) below the
  *   controller's deadline for it, so it always answers first.
@@ -37,8 +39,16 @@
  *   detached session's new-document scripts go with it). The
  *   service-worker bypass is tab-wide (the protocol cannot scope it).
  * - **Top frame only**: a document response is a candidate only when its
- *   frame is the tab's page target (iframes are documents too); the page
- *   target id is cached per tab and re-read on any mismatch.
+ *   frame is the root frame of the attached session's own frame tree
+ *   (`Page.getFrameTree` — iframes are documents too; another page target
+ *   of the tab, e.g. a prerender, is not this session's); the root frame
+ *   id is cached per tab and re-read on any mismatch.
+ * - **One record per session page** (see the seam): a top-frame page passed
+ *   without a rewrite that still becomes the tab's page (`rendersAsPage`),
+ *   or that failed on the network, is reported to the host; a rewrite
+ *   abandoned at the release deadline is reported by the host itself.
+ *   Every pass of a session tab's top-frame page is logged once, at info
+ *   level, with why (`./pause-release`).
  * - **Identity**: each candidate is handed to the host with its request id,
  *   a monotonic arrival stamp (the host orders a tab's documents by it),
  *   whether it carries a `Speculation-Rules` header — dropped from every
@@ -60,18 +70,16 @@ import type {
   ArmUnavailableCause,
   InterceptedResponseIdentity,
   InterceptionBackend,
+  InterceptionGrant,
   InterceptionHost
 } from '../backend';
 import { DOCUMENT_BODY_BYTE_LIMIT, type InterceptedResponseFacts } from '../document-transform';
 import { speculationRulesGuardSource } from '../speculation-rules';
 import { createMonotonicStamp } from '../../../utils/monotonic-stamp';
+import { LAZYLOAD_RUNTIME_FILE } from '../../wp-rocket-simulation/simulation-data';
 import { parseUrl } from '../../../utils/urls';
-import {
-  DeadlineExceededError,
-  INTERCEPTION_HOST_BOUNDS_MS,
-  SESSION_STEP_TIMEOUTS_MS,
-  withinDeadline
-} from '../timeouts';
+import { CHROMIUM_RELEASE_MARGIN_MS, chromiumReleaseMs } from '../document-hold';
+import { DeadlineExceededError, SESSION_STEP_TIMEOUTS_MS, withinDeadline } from '../timeouts';
 import {
   DETACHED,
   mayRewrite,
@@ -88,9 +96,14 @@ import {
   fulfillParams,
   headerValue,
   parsePausedRequest,
+  passedPageFailure,
   pausedRequestId,
+  frameTreeDocumentUrl,
+  frameTreeRootId,
   responseBodyBytes,
+  runtimeFulfillParams,
   SPECULATION_RULES_HEADER,
+  type PassReason,
   type PausedRequest
 } from './paused-request';
 import type { DebuggerPort, DebuggerTarget, TabPresence } from './port';
@@ -110,9 +123,12 @@ export const CHROMIUM_TIMEOUTS_MS = {
    * once it is complete) and recorded as unreadable.
    */
   bodyRead: 10_000,
-  /** The host's rewrite, above its own bound: past it, the original is served. */
-  release: INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument + 1_000
+  /** How far the release deadline sits past the host's rewrite bound ({@link chromiumReleaseMs}). */
+  releaseMargin: CHROMIUM_RELEASE_MARGIN_MS
 } as const;
+
+// Declared beside the other document holds (the overlay's record wait reads it).
+export { chromiumReleaseMs };
 
 /** What each operation keeps free below the controller's deadline for it (ms). */
 const OPERATION_MARGIN_MS = 100;
@@ -129,8 +145,17 @@ export const CHROMIUM_OPERATION_BUDGETS_MS = {
   disarm: SESSION_STEP_TIMEOUTS_MS.disarm - OPERATION_MARGIN_MS
 } as const;
 
-/** The interception patterns: every document response, paused once its headers arrive. */
-const FETCH_PATTERNS = [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Response' }];
+/**
+ * The interception patterns: every document response, paused once its
+ * headers arrive; and every script request named like a simulated
+ * runtime, paused before it leaves (`*` and `?` are the protocol's
+ * wildcards; the name holds neither) — answered only when the host
+ * names its packaged file, continued to the site otherwise.
+ */
+export const FETCH_PATTERNS = [
+  { urlPattern: '*', resourceType: 'Document', requestStage: 'Response' },
+  { urlPattern: `*/${LAZYLOAD_RUNTIME_FILE}`, resourceType: 'Script', requestStage: 'Request' }
+] as const;
 
 /**
  * The session's commands after attaching, in order, each idempotent:
@@ -215,8 +240,8 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
   const attachments = new Map<number, Attachment>();
   /** Per tab, the cause of an arm whose attachment the browser ended mid-arm (held only during an operation). */
   const aborts = new Map<number, Promise<ArmUnavailableCause>>();
-  /** Per tab, the last known page target id (its main frame's protocol frame id). */
-  const pageTargets = new Map<number, string>();
+  /** Per tab, the last known root frame id of its attached session (its top frame). */
+  const topFrames = new Map<number, string>();
   /** Per tab, the clock reading when its armed session was last established or confirmed. */
   const confirmedAt = new Map<number, number>();
   /** Per tab, the speculation-rules guard its session installed (one at a time). */
@@ -335,14 +360,32 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     guards.set(tabId, { identifier, origin });
   };
 
-  /** Learn the tab's page target id (best-effort: a miss is re-read on the first pause). */
-  const learnPageTarget = async (ops: OperationBudget, tabId: number): Promise<void> => {
+  /**
+   * Read the tab's top frame id — the root of its attached session's frame
+   * tree — into the cache (cleared when the answer lacks one).
+   *
+   * @param send Runs the command under the caller's deadline.
+   * @returns The id, or null.
+   * @throws What the browser rejects with, or the deadline's error.
+   */
+  const readTopFrame = async (
+    send: (step: string, work: () => Promise<unknown>) => Promise<unknown>,
+    tabId: number
+  ): Promise<string | null> => {
+    const id = frameTreeRootId(
+      await send('Page.getFrameTree', () => port.send({ tabId }, 'Page.getFrameTree'))
+    );
+    if (id === null) topFrames.delete(tabId);
+    else topFrames.set(tabId, id);
+    return id;
+  };
+
+  /** Learn the tab's top frame id (best-effort: a miss is re-read on the first pause). */
+  const learnTopFrame = async (ops: OperationBudget, tabId: number): Promise<void> => {
     try {
-      const id = await ops.call('Page target', () => port.pageTargetId(tabId));
-      if (id === null) pageTargets.delete(tabId);
-      else pageTargets.set(tabId, id);
+      await readTopFrame((step, work) => ops.call(step, work), tabId);
     } catch (cause) {
-      log.debug('Page target not learned at arm — read on first pause', { tabId, cause });
+      log.debug('Top frame not learned at arm — read on first pause', { tabId, cause });
     }
   };
 
@@ -359,7 +402,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     tabId: number,
     held: boolean
   ): Promise<void> => {
-    pageTargets.delete(tabId);
+    topFrames.delete(tabId);
     try {
       await ops.call('Debugger detach', () => port.detach(tabId));
     } catch (cause) {
@@ -464,7 +507,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
       return { armed: false, cause: await abortCause(tabId) };
     }
     confirmedAt.set(tabId, clock());
-    await learnPageTarget(ops, tabId);
+    await learnTopFrame(ops, tabId);
     return { armed: true };
   };
 
@@ -504,20 +547,18 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     });
 
   /**
-   * Whether a paused document is the tab's top-level one: the cached page
-   * target id first; on a mismatch (an iframe, or the tab's page target
-   * changed) it is re-read once.
+   * Whether a paused document is the tab's top-level one: the cached top
+   * frame id first; on a mismatch (an iframe, or the top frame changed —
+   * e.g. a prerendered page activated) it is re-read once.
    */
   const isTopFrame = async (target: DebuggerTarget, frameId: string): Promise<boolean> => {
     // A child session is never the tab's page.
     if (target.sessionId !== undefined) return false;
-    if (pageTargets.get(target.tabId) === frameId) return true;
+    if (topFrames.get(target.tabId) === frameId) return true;
     try {
-      const id = await call('Page target', () => port.pageTargetId(target.tabId));
-      if (id !== null) pageTargets.set(target.tabId, id);
-      return id === frameId;
+      return (await readTopFrame(call, target.tabId)) === frameId;
     } catch (cause) {
-      log.warn('Page target unknown — document served unmodified', { cause });
+      log.warn('Top frame unknown — document served unmodified', { tabId: target.tabId, cause });
       return false;
     }
   };
@@ -536,28 +577,130 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     }
   };
 
-  /** The host's rewrite under the release deadline; null = serve the original. */
+  /**
+   * The host's rewrite under the release deadline; null = serve the
+   * original. Past the deadline the host is told it was abandoned, so it
+   * records the page as served unmodified, never as rewritten.
+   */
   const hostRewrite = async (
     target: DebuggerTarget,
     pause: PausedRequest,
     facts: InterceptedResponseFacts,
     body: Uint8Array,
-    identity: InterceptedResponseIdentity
+    identity: InterceptedResponseIdentity,
+    grant: InterceptionGrant
   ): Promise<Uint8Array | null> => {
+    let gaveUp = false;
     try {
-      return await bounded('Host rewrite', CHROMIUM_TIMEOUTS_MS.release, () =>
-        host.rewriteDocument({
-          tabId: target.tabId,
-          documentUrl: pause.url,
-          body,
-          ...facts,
-          identity
-        })
+      return await bounded('Host rewrite', chromiumReleaseMs(grant.rewriteBoundMs), () =>
+        host.rewriteDocument(
+          { tabId: target.tabId, documentUrl: pause.url, body, ...facts, identity },
+          () => gaveUp
+        )
       );
     } catch (cause) {
-      log.warn('Rewrite past the release deadline — served unmodified', { cause });
+      gaveUp = true;
+      log.warn('Rewrite past the release deadline — served unmodified', {
+        tabId: target.tabId,
+        cause
+      });
       return null;
     }
+  };
+
+  /**
+   * The URL of the tab's top-level document (the one making a top-frame
+   * request), or null (logged) when unreadable.
+   */
+  const topDocumentUrl = async (target: DebuggerTarget): Promise<string | null> => {
+    try {
+      const tree = await call('Page.getFrameTree', () => port.send(target, 'Page.getFrameTree'));
+      const url = frameTreeDocumentUrl(tree);
+      if (url === null) log.warn('Top document URL missing — runtime request left to the site');
+      return url;
+    } catch (cause) {
+      log.warn('Top document unknown — runtime request left to the site', { cause });
+      return null;
+    }
+  };
+
+  /**
+   * Answer a paused script request with the simulated runtime the host
+   * names (its packaged bytes — the site never sees the request), else
+   * continue it to the site. A refused answer is logged and the request
+   * continued: the page then runs without the runtime, as on the site.
+   */
+  const handleScriptRequest = async (
+    target: DebuggerTarget,
+    pause: PausedRequest,
+    release: PauseRelease
+  ): Promise<void> => {
+    if (!mayRewrite(attachmentOf(target.tabId))) return release.pass('stopping');
+    if (!(await isTopFrame(target, pause.frameId))) return release.pass('sub-frame');
+    const documentUrl = await topDocumentUrl(target);
+    if (documentUrl === null) return release.pass('document-unknown');
+    const file = await host.simulatedRuntime(target.tabId, pause.url, documentUrl);
+    if (file === null) return release.pass('not-a-simulated-runtime');
+    const answered = await release.fulfill(runtimeFulfillParams(pause.requestId, file.bytes));
+    if (answered === 'fulfilled') return;
+    const details = { tabId: target.tabId, result: answered };
+    if (answered === 'gone') {
+      log.info('Simulated runtime not delivered — its request was already gone', details);
+      return;
+    }
+    log.warn('Simulated runtime not delivered — answer refused, request left to the site', details);
+    await release.pass('runtime-refused');
+  };
+
+  /**
+   * Whether a URL is on the origin of the tab's installed session guard —
+   * the session's origin as this backend knows it (false when unknown).
+   *
+   * @param tabId The session tab.
+   * @param url The document's URL.
+   */
+  const onSessionOrigin = (tabId: number, url: string): boolean => {
+    const origin = guards.get(tabId)?.origin;
+    return origin !== undefined && origin === parseUrl(url)?.origin;
+  };
+
+  /**
+   * Pass a paused request the engine never rewrites. A top-frame document
+   * of a live session tab that still becomes the tab's page (or failed on
+   * the network) loses its rules header when it carries one and is
+   * reported to the host once released (the host records it when it is on
+   * the session's origin). Its pass is logged only when it is on the
+   * session's origin as known here (the guard's), and — when a rules header
+   * made the host be asked — the host granted it.
+   */
+  const passPause = async (
+    target: DebuggerTarget,
+    pause: PausedRequest,
+    release: PauseRelease,
+    reason: PassReason,
+    arrival: Arrival
+  ): Promise<void> => {
+    const failure = passedPageFailure(pause, reason);
+    if (
+      failure === null ||
+      !mayRewrite(attachmentOf(target.tabId)) ||
+      !(await isTopFrame(target, pause.frameId))
+    )
+      return release.pass(reason);
+    // A session document the engine never rewrites (e.g. XHTML) still
+    // loses its rules header — a cheap check, for documents carrying one.
+    const carriesRules = headerValue(pause.headers, SPECULATION_RULES_HEADER) !== null;
+    const granted = carriesRules && (await host.shouldIntercept(target.tabId, pause.url)) !== null;
+    if (onSessionOrigin(target.tabId, pause.url) && (granted || !carriesRules))
+      release.markSessionPage(pause.url);
+    if (granted) await release.passWithoutRulesHeader(reason, pause);
+    else await release.pass(reason);
+    await host.documentPassed(
+      target.tabId,
+      pause.url,
+      failure,
+      identityOf(target.tabId, pause, arrival)
+    );
   };
 
   /** Handle one validated paused request; every path ends in its release. */
@@ -568,21 +711,22 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     arrival: Arrival
   ): Promise<void> => {
     const disposition = classifyPause(pause);
-    if (disposition.kind === 'pass') {
-      // A session document the engine never rewrites (e.g. XHTML) still
-      // loses its rules header — a cheap check, for documents carrying one.
-      if (
-        disposition.reason === 'ineligible' &&
-        (await isRulesHeaderSessionDocument(target, pause))
-      )
-        return release.passWithoutRulesHeader('ineligible', pause);
-      return release.pass(disposition.reason);
+    if (disposition.kind === 'script-request') return handleScriptRequest(target, pause, release);
+    if (disposition.kind === 'pass')
+      return passPause(target, pause, release, disposition.reason, arrival);
+    if (!mayRewrite(attachmentOf(target.tabId))) {
+      // Ending: the session records nothing more (a cached top frame only — no read now).
+      if (topFrames.get(target.tabId) === pause.frameId && onSessionOrigin(target.tabId, pause.url))
+        release.markSessionPage(pause.url);
+      return release.pass('stopping');
     }
-    if (!mayRewrite(attachmentOf(target.tabId))) return release.pass('stopping');
     if (!(await isTopFrame(target, pause.frameId))) return release.pass('sub-frame');
-    // Another origin in the session tab (or no session): its body is none
-    // of the session's business — never read, passed through.
-    if (!(await host.shouldIntercept(target.tabId, pause.url))) return release.pass('no-session');
+    // Another origin in the session tab (or no session, or its read failed —
+    // logged by the host): its body is none of the session's business —
+    // never read, passed through, its pass not logged as a session page's.
+    const grant = await host.shouldIntercept(target.tabId, pause.url);
+    if (grant === null) return release.pass('no-session');
+    release.markSessionPage(pause.url);
     const identity = identityOf(target.tabId, pause, arrival);
     const body = await readBody(target, pause);
     if (body === null) {
@@ -590,7 +734,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
       await host.documentBodyUnavailable(target.tabId, pause.url, identity);
       return;
     }
-    const rewritten = await hostRewrite(target, pause, disposition.facts, body, identity);
+    const rewritten = await hostRewrite(target, pause, disposition.facts, body, identity, grant);
     if (rewritten === null) return release.passWithoutRulesHeader('unmodified', pause);
     const fulfilled = await release.fulfill(fulfillParams(pause, rewritten));
     if (fulfilled === 'fulfilled') return;
@@ -610,20 +754,9 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     wallAt: arrival.wallAt,
     speculationRulesHeader: headerValue(pause.headers, SPECULATION_RULES_HEADER) !== null,
     servedAsCopy: true,
-    speculationGuard: guards.get(tabId)?.origin === parseUrl(pause.url)?.origin,
+    speculationGuard: onSessionOrigin(tabId, pause.url),
     serviceWorkersBypassed: true
   });
-
-  /** Whether a passed-through response is a top-level session document carrying a rules header. */
-  const isRulesHeaderSessionDocument = async (
-    target: DebuggerTarget,
-    pause: PausedRequest
-  ): Promise<boolean> =>
-    pause.resourceType === 'Document' &&
-    pause.status !== null &&
-    headerValue(pause.headers, SPECULATION_RULES_HEADER) !== null &&
-    (await isTopFrame(target, pause.frameId)) &&
-    (await host.shouldIntercept(target.tabId, pause.url));
 
   /** A `Fetch.requestPaused` event: validate, handle, and always release. */
   const onPaused = async (target: DebuggerTarget, params: unknown): Promise<void> => {
@@ -653,7 +786,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
 
   /** `onDetach`: move synchronously, then work out the cause and report or abort. */
   const onDetached = (tabId: number, reason: unknown): void => {
-    pageTargets.delete(tabId);
+    topFrames.delete(tabId);
     const step = apply(tabId, { type: 'browser-detached' });
     const effect = step?.effect ?? null;
     if (effect === null) return;

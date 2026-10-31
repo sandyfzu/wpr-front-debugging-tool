@@ -12,15 +12,18 @@ import {
   ACTION_FAILED_TITLE,
   COUNT_WORDS,
   PROBLEM_COPY,
+  SERVED_NOTE_COPY,
   SESSION_ON_NOTE,
   SESSION_PERSISTS_NOTE,
+  simulationLimitLines,
+  stoppedBody,
   viewCopy,
   type Indicator,
   type IndicatorTone
 } from './copy';
 import { countNoun } from '../../utils/format-count';
 import type { ActionNotice, OverlayState } from './session/machine';
-import type { SessionView } from './session/session-view';
+import { simulationReports, type SessionView } from './session/session-view';
 
 /** A banner's forward action. */
 export type BannerAction = 'retry-load' | 'retry-apply' | 'retry-action' | 'reload' | 'dismiss';
@@ -31,40 +34,43 @@ export interface Banner {
   readonly glyph: Indicator['glyph'];
   readonly title: string;
   readonly body: string;
-  /** Side notes (what the session changed besides the exclusions). */
+  /** Lines this page shows (a simulation's page-found caveats and CSP limits): always visible. */
   readonly notes: readonly string[];
+  /**
+   * The session's generic notes (how long it lasts, what it changed besides
+   * the exclusions): behind one collapsed disclosure.
+   */
+  readonly sessionNotes: readonly string[];
   readonly actions: readonly BannerAction[];
 }
 
 /**
- * What the session changed on a served page besides the exclusions — said
- * plainly, because each changes what the user sees or measures.
+ * What the session changed on a served page besides the exclusions — each
+ * said only when it happened, because each changes what the user sees or
+ * measures.
  *
  * @param served The served document's identity.
  */
 export function servedNotes(served: ExclusionServedDocument | undefined): string[] {
   if (served === undefined) return [];
   const notes: string[] = [];
-  if (served.copy)
-    notes.push(
-      'The security indicator and timings describe the rewritten copy, not the network response.'
-    );
-  if (served.serviceWorkersBypassed)
-    notes.push('Service workers are bypassed while the session runs.');
+  if (served.copy) notes.push(SERVED_NOTE_COPY.copy);
+  if (served.serviceWorkersBypassed) notes.push(SERVED_NOTE_COPY.serviceWorkersBypassed);
   const rules = served.speculationRules;
   if (rules.removedFromDocument > 0 || rules.headerRemoved || rules.guarded) {
-    notes.push('Link prefetching is off while the session runs.');
+    notes.push(SERVED_NOTE_COPY.prefetchOff);
   }
   return notes;
 }
 
 /**
  * The session banner of a loaded overlay (none when nothing is applied).
- * Every active session's banner says the session outlives the page.
+ * Every active session's banner says, in its session notes, that the
+ * session outlives the page.
  */
 function viewBanner(view: SessionView): Banner | null {
   const { title, body } = viewCopy(view);
-  const base = { title, body, notes: [SESSION_PERSISTS_NOTE] };
+  const base = { title, body, notes: [], sessionNotes: [SESSION_PERSISTS_NOTE] };
   switch (view.kind) {
     case 'off':
       // Nothing to report: the header's indicator already says "Not
@@ -74,20 +80,35 @@ function viewBanner(view: SessionView): Banner | null {
       return {
         ...base,
         // Nothing runs: no session to outlive the page.
-        notes: [],
+        sessionNotes: [],
         tone: 'error',
         glyph: 'blocked',
         actions: view.retryable ? ['retry-apply'] : []
       };
     case 'armed':
       return { ...base, tone: 'info', glyph: 'waiting', actions: ['reload'] };
+    case 'unrecorded':
+      // Stop and Re-apply are the footer's (always beside an active session).
+      return {
+        ...base,
+        tone: 'warn',
+        glyph: 'alert',
+        sessionNotes: [SESSION_ON_NOTE],
+        actions: ['reload']
+      };
     case 'applied': {
-      const clean = view.unmatched === 0 && view.warnings.length === 0;
+      const reports = simulationReports(view);
+      // A simulation that did not run here, or one the page limits, warns.
+      const limits = reports.flatMap(simulationLimitLines);
+      const notSimulated = reports.some((report) => report.state !== 'simulated');
+      const clean =
+        view.unmatched === 0 && view.warnings.length === 0 && limits.length === 0 && !notSimulated;
       return {
         ...base,
         tone: clean ? 'ok' : 'warn',
         glyph: clean ? 'check' : 'alert',
-        notes: [...base.notes, ...servedNotes(view.served)],
+        notes: limits,
+        sessionNotes: [...base.sessionNotes, ...servedNotes(view.served)],
         actions: []
       };
     }
@@ -96,13 +117,13 @@ function viewBanner(view: SessionView): Banner | null {
         ...base,
         tone: 'warn',
         glyph: 'alert',
-        notes: [SESSION_ON_NOTE, ...servedNotes(view.served)],
+        sessionNotes: [SESSION_ON_NOTE, ...servedNotes(view.served)],
         actions: ['reload']
       };
     case 'not-intercepted':
       return {
         ...base,
-        notes: [SESSION_ON_NOTE],
+        sessionNotes: [SESSION_ON_NOTE],
         tone: 'warn',
         glyph: 'alert',
         actions: ['reload']
@@ -110,7 +131,7 @@ function viewBanner(view: SessionView): Banner | null {
     case 'cant-tell':
       return {
         ...base,
-        notes: [SESSION_ON_NOTE],
+        sessionNotes: [SESSION_ON_NOTE],
         tone: 'warn',
         glyph: 'question',
         actions: ['reload']
@@ -136,6 +157,7 @@ export function stateBanner(state: OverlayState, view: SessionView | null): Bann
         title: 'Couldn’t load the session',
         body: PROBLEM_COPY[state.problem],
         notes: [],
+        sessionNotes: [],
         // A dead context cannot be retried from here: the words name the
         // way back (reopen the builder).
         actions: state.problem === 'context-invalidated' ? [] : ['retry-load']
@@ -147,6 +169,7 @@ export function stateBanner(state: OverlayState, view: SessionView | null): Bann
         title: 'Reloading with your exclusions',
         body: 'The page reloads now; the builder comes back with the result.',
         notes: [],
+        sessionNotes: [],
         actions: []
       };
     case 'ready':
@@ -158,8 +181,10 @@ export function stateBanner(state: OverlayState, view: SessionView | null): Bann
  * The banner of the last action's outcome.
  *
  * @param notice The notice.
+ * @param simulated The page on screen still runs a simulation (the stopped
+ *   notice says the reload removes it too).
  */
-export function noticeBanner(notice: ActionNotice): Banner {
+export function noticeBanner(notice: ActionNotice, simulated = false): Banner {
   switch (notice.kind) {
     case 'action-failed':
       return {
@@ -168,6 +193,7 @@ export function noticeBanner(notice: ActionNotice): Banner {
         title: ACTION_FAILED_TITLE[notice.action],
         body: PROBLEM_COPY[notice.problem],
         notes: [],
+        sessionNotes: [],
         // Transient problems can be retried; a dead context cannot.
         actions:
           notice.problem === 'context-invalidated' ? ['dismiss'] : ['retry-action', 'dismiss']
@@ -179,6 +205,7 @@ export function noticeBanner(notice: ActionNotice): Banner {
         title: `Fix ${String(notice.rows)} ${countNoun(notice.rows, COUNT_WORDS.row)} before applying`,
         body: 'Each marked row says what is wrong with it.',
         notes: [],
+        sessionNotes: [],
         actions: ['dismiss']
       };
     case 'too-large':
@@ -188,6 +215,7 @@ export function noticeBanner(notice: ActionNotice): Banner {
         title: 'Too many exclusions to apply',
         body: `All rows together must stay under ${EXCLUSION_SET_LIMITS.totalChars.toLocaleString('en-US')} characters. Remove some rows, then apply.`,
         notes: [],
+        sessionNotes: [],
         actions: ['dismiss']
       };
     case 'check-failed':
@@ -197,6 +225,7 @@ export function noticeBanner(notice: ActionNotice): Banner {
         title: 'Couldn’t check the rows before applying',
         body: 'Checking how the rows work together stopped with an error. Nothing was applied: try again.',
         notes: [],
+        sessionNotes: [],
         actions: ['retry-action', 'dismiss']
       };
     case 'reload-stalled':
@@ -206,6 +235,7 @@ export function noticeBanner(notice: ActionNotice): Banner {
         title: 'The page didn’t reload',
         body: 'Reload to render the page with your exclusions, or keep editing.',
         notes: [],
+        sessionNotes: [],
         actions: ['reload', 'dismiss']
       };
     case 'stopped':
@@ -213,8 +243,9 @@ export function noticeBanner(notice: ActionNotice): Banner {
         tone: 'info',
         glyph: 'check',
         title: 'Session stopped',
-        body: 'Reload to see the page without exclusions.',
+        body: stoppedBody(simulated),
         notes: [],
+        sessionNotes: [],
         actions: ['reload', 'dismiss']
       };
   }

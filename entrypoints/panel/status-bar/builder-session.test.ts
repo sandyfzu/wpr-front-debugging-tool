@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { ExclusionSessionSummary } from '../../../lib/messaging/exclusion-panel';
+import {
+  parseExclusionSessionSummary,
+  type ExclusionSessionSummary
+} from '../../../lib/messaging/exclusion-panel';
 import {
   BUILDER_SESSION_CHECKING,
   builderEntryView,
@@ -72,6 +75,75 @@ describe('builderEntryView', () => {
       kind: 'error',
       label: 'Unavailable'
     });
+  });
+
+  it('names the simulation only when the last document was simulated', () => {
+    const view = builderEntryView({
+      kind: 'known',
+      summary: { ...ACTIVE, simulated: ['delay_js'] }
+    });
+    expect(view.badge).toEqual({ kind: 'ok', label: 'On' });
+    expect(view.description).toBe(
+      'Exclusions and a simulated Delay JavaScript execution are applied in this tab: pages of example.com:8443 load rewritten until Stop or the tab closes. The site’s own WP Rocket exclusions aren’t part of the simulation. Open the builder to see this page’s result.'
+    );
+    // Both features: each named, buffer order.
+    expect(
+      builderEntryView({
+        kind: 'known',
+        summary: { ...ACTIVE, simulated: ['defer_all_js', 'delay_js'] }
+      }).description
+    ).toBe(
+      'Exclusions are applied in this tab, with Load JavaScript deferred and Delay JavaScript execution simulated by the extension (not the site’s configuration): pages of example.com:8443 load rewritten until Stop or the tab closes. The site’s own WP Rocket exclusions aren’t part of the simulation. Open the builder to see this page’s result.'
+    );
+    // All three features: a list, buffer order.
+    expect(
+      builderEntryView({
+        kind: 'known',
+        summary: { ...ACTIVE, simulated: ['lazyload', 'defer_all_js', 'delay_js'] }
+      }).description
+    ).toBe(
+      'Exclusions are applied in this tab, with LazyLoad for images, Load JavaScript deferred and Delay JavaScript execution simulated by the extension (not the site’s configuration): pages of example.com:8443 load rewritten until Stop or the tab closes. The site’s own WP Rocket exclusions aren’t part of the simulation. Open the builder to see this page’s result.'
+    );
+    // LazyLoad alone.
+    expect(
+      builderEntryView({ kind: 'known', summary: { ...ACTIVE, simulated: ['lazyload'] } })
+        .description
+    ).toMatch(/^Exclusions and a simulated LazyLoad for images are applied in this tab: /);
+    // Defer JS alone: the single-feature words.
+    expect(
+      builderEntryView({ kind: 'known', summary: { ...ACTIVE, simulated: ['defer_all_js'] } })
+        .description
+    ).toMatch(/^Exclusions and a simulated Load JavaScript deferred are applied in this tab: /);
+    // A document left as served (or none yet): the plain words, no simulation.
+    expect(builderEntryView({ kind: 'known', summary: ACTIVE }).description).not.toMatch(
+      /simulat/i
+    );
+    expect(
+      builderEntryView({ kind: 'known', summary: { ...ACTIVE, simulated: [] } }).description
+    ).not.toContain('WP Rocket exclusions');
+  });
+
+  it('words each document state through the parsed summary (simulated only names it)', () => {
+    const record = (state: string) => ({
+      state: 'active',
+      origin: 'https://example.com:8443',
+      simulate: { features: ['delay_js'] },
+      document: { outcome: 'rewritten', reports: [], simulation: { feature: 'delay_js', state } }
+    });
+    const words = (input: unknown) => {
+      const summary = parseExclusionSessionSummary(input);
+      if (summary === null) throw new Error('summary refused');
+      return builderEntryView({ kind: 'known', summary }).description;
+    };
+    expect(words(record('simulated'))).toMatch(/^Exclusions and a simulated Delay JavaScript/);
+    for (const state of ['already-served', 'csp-blocked', 'not-applicable']) {
+      expect(words(record(state)), state).toMatch(/^Exclusions are applied in this tab: /);
+    }
+    const unmodified = {
+      ...record('simulated'),
+      document: { outcome: 'failed', reason: 'engine-failed' }
+    };
+    expect(words(unmodified)).toMatch(/^Exclusions are applied in this tab: /);
   });
 
   it('says an active session persists for the tab until Stop or close, naming the host', () => {

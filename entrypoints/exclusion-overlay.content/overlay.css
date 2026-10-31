@@ -31,7 +31,10 @@
   margin: 0;
   padding: 0;
   border: 0;
-  overflow: hidden;
+  /* Clip, never hidden: a hidden box still scrolls programmatically, so a
+   * focus move to anything laid out past the viewport would scroll the whole
+   * layer and carry the panel off screen; a clipped box never scrolls. */
+  overflow: clip;
   background: transparent;
   pointer-events: none;
   /* Only matters where the top layer is unavailable (the fixed fallback). */
@@ -384,6 +387,11 @@
 /* ---- Body ------------------------------------------------------------------- */
 
 .xo-body {
+  /* The containing block of the absolutely positioned bits inside (visually
+   * hidden radio inputs, screen-reader text): without it they resolve against
+   * the panel, escape this scroller's clip, and a focus move to one scrolls
+   * the layer instead of this body. */
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -489,6 +497,25 @@
   list-style: none;
   color: var(--fg-secondary);
   font-size: 11px;
+}
+
+/* The session notes' disclosure: under the page's own lines, in the text column. */
+.xo-banner-session {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: 2px;
+}
+
+/* Open on a tinted banner: the accent fill misses 3:1 against the dark soft
+ * tints, so the open state is the accent border (plus the turned chevron) on
+ * the resting surface. Four classes match the open fill's hover rule's
+ * specificity and come after it, so it holds under the pointer too. */
+.xo-banner-session .xo-note-disclosure.xo-disclosure[aria-expanded='true'] {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  color: var(--fg-primary);
 }
 
 .xo-banner-actions {
@@ -674,6 +701,15 @@
 .xo-lane-hint {
   font-size: 11px;
   color: var(--fg-muted);
+  /* Page-derived URLs (LazyLoad's script address) wrap instead of widening the lane. */
+  overflow-wrap: anywhere;
+}
+
+/* A URL in a lane hint is information: neutral ground, never the error tint. */
+.xo-lane-hint .xo-code,
+.xo-note-disclosure-item .xo-code {
+  background: var(--surface-3);
+  color: var(--fg-secondary);
 }
 
 .xo-lane-count {
@@ -688,6 +724,40 @@
   font-size: 11px;
   color: var(--fg-secondary);
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* The note disclosure (a simulated lane's limits, a banner's session
+ * notes): a compact toggle, opening in place onto one line per note. */
+.xo-note-disclosure {
+  align-self: flex-start;
+  min-height: 24px;
+  margin-top: 2px;
+  padding: 0 8px;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.xo-note-disclosure-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin-top: 2px;
+  /* Revealed content: a fade on insert (reduced motion collapses it). */
+  transition: opacity var(--motion-base) var(--ease-entrance);
+}
+
+@starting-style {
+  .xo-note-disclosure-list {
+    opacity: 0;
+  }
+}
+
+.xo-note-disclosure-item {
+  font-size: 11px;
+  color: var(--fg-secondary);
+  /* Page-derived URLs (LazyLoad's script address) wrap instead of widening the lane. */
   overflow-wrap: anywhere;
 }
 
@@ -742,6 +812,98 @@
   padding: 0 10px 8px;
   color: var(--fg-muted);
   font-size: 11px;
+}
+
+/*
+ * The Delay JS lane's mode control: the shared choice group, styled here
+ * through its data attributes (an injected UI carries no utility classes).
+ * Selection is state, swapped instantly — never animated.
+ */
+.xo-mode-choice {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--surface-1);
+}
+
+.xo-mode-choice [data-fdt='choice'] {
+  display: inline-flex;
+  border-radius: 4px;
+}
+
+/* The hidden radio keeps keyboard focus: the tile shows it. */
+.xo-mode-choice [data-fdt='choice']:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.xo-mode-choice label {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  color: var(--fg-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.xo-mode-choice label:not([data-checked], [data-disabled]):hover {
+  background: var(--surface-3);
+  color: var(--fg-primary);
+}
+
+.xo-mode-choice label[data-checked] {
+  background: var(--accent-strong);
+  color: var(--on-accent);
+}
+
+/* Unavailable (the lane says why): dimmed, never hidden. */
+.xo-mode-choice label[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The lines under the control: the warning keeps its glyph (never color alone). */
+.xo-mode-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 10px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--status-warn);
+  border-radius: 6px;
+  background: var(--status-warn-soft);
+  color: var(--fg-primary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.xo-mode-warning > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--status-warn);
+}
+
+/* Compact panels: the control takes the lane's full width under the title. */
+@container xo-panel (width < 360px) {
+  .xo-mode-choice {
+    display: flex;
+    width: 100%;
+  }
+  .xo-mode-choice [data-fdt='choice'] {
+    flex: 1 1 auto;
+  }
+  .xo-mode-choice label {
+    flex: 1;
+    justify-content: center;
+  }
 }
 
 /* A lane's page-wide warning: names its rows, never blocks (icon + words, never color alone). */
