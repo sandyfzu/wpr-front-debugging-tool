@@ -502,7 +502,7 @@ Depends: P21G, P21N, P21H, P21J, P21K. Parallel: none (serial e2e, port 8891). E
 - Overlay panel pinned (small Chrome + Firefox window, e.g. 760×480): on each lane Simulated → Apply → As served ⇒ the panel stays put (no jump off the top; only its body scrolls).
 - Real latest list (both browsers, network on, fresh profile): first Apply after install ⇒ "Exclusion list: latest (fetched …)"; offline + extension reload with no kept copy ⇒ "bundled with WP Rocket 3.24 (latest list unreachable: network error)".
 
-Owner receipt (2026-10-30): Delay JS, Defer JS and LazyLoad simulated live (Chrome + Firefox) — working; overlay panel pinned on a small window — passed after the fix. Open: Firefox edge legs (on page, CSP pages, Stop + reload, `/wp-login.php`, forged marker) unless covered by the live run; stable Chrome infobar + DevTools status bar; real latest list online/offline; a look at the dense lanes.
+Owner receipt (2026-10-30): Delay JS, Defer JS and LazyLoad simulated live (Chrome + Firefox) — working; overlay panel pinned on a small window — passed after the fix; the stuck "Applied — waiting" case retried after 6fe1f44 — not reproduced (Chrome + Firefox). Open: Firefox edge legs (on page, CSP pages, Stop + reload, `/wp-login.php`, forged marker) unless covered by the live run; stable Chrome infobar + DevTools status bar; real latest list online/offline; a look at the dense lanes.
 
 DoD: suites green locally (serial), Firefox arms receipted by the owner, P21 closed into a completed record.
 
