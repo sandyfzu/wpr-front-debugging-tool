@@ -198,13 +198,13 @@ describe('LazyLoad mode: availability from its own evidence', () => {
     expect(controller.draft().simulate).toBeUndefined();
   });
 
-  it('opens a saved Simulated as replaced on a search page (the draft keeps it)', async () => {
+  it('opens a saved Simulated as blocked on a search page (the draft keeps it)', async () => {
     const { controller } = await started(
       fakePort({ state: 'inactive' }, { set: SET, simulate: LAZYLOAD }),
       lazyloadPage({ skip: 'search' })
     );
-    expect(controller.laneMode('lazyload')).toBeNull();
-    expect(controller.replacedLaneMode('lazyload')).toBe('simulated');
+    expect(controller.laneMode('lazyload')).toBe('simulated');
+    expect(controller.blockedLaneMode('lazyload')).toBe('search');
     expect(controller.draft().simulate).toEqual(LAZYLOAD);
   });
 

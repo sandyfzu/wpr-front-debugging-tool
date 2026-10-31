@@ -15,7 +15,10 @@ import {
   LABEL_AUTOMATIC_LAZY_RENDERING,
   LABEL_DELAY_JAVASCRIPT_EXECUTION,
   LABEL_IMAGE_LAZYLOAD,
-  LABEL_LOAD_JAVASCRIPT_DEFERRED
+  LABEL_LOAD_JAVASCRIPT_DEFERRED,
+  SHORT_LABEL_DEFER_JS,
+  SHORT_LABEL_DELAY_JS,
+  SHORT_LABEL_LAZYLOAD
 } from '../../lib/detection/labels';
 import { LAZY_RENDER_EXCLUSIONS_FILTER } from '../../lib/exclusion-builder/copy-form';
 import { storedText, trimExclusionRow } from '../../lib/exclusion-builder/field-text';
@@ -52,7 +55,12 @@ import type {
   LazyloadSimulationReport,
   SimulationListProvenance
 } from '../../lib/messaging/exclusion-simulation';
-import type { ModeBlock, SimulationLane, SimulationMode } from './exclusions/simulation-mode';
+import type {
+  DraftModeBlock,
+  ModeBlock,
+  SimulationLane,
+  SimulationMode
+} from './exclusions/simulation-mode';
 import { LATEST_LIST_MAX_AGE_MS } from '../../lib/exclusion-session/latest-list-source';
 import { relativeAge } from '../../utils/relative-age';
 import { joinWords } from '../../utils/text';
@@ -81,7 +89,8 @@ export const COUNT_WORDS = {
   image: { one: 'image', other: 'images' },
   picture: { one: 'picture', other: 'pictures' },
   backgroundImage: { one: 'background image', other: 'background images' },
-  limit: { one: 'limit', other: 'limits' }
+  limit: { one: 'limit', other: 'limits' },
+  sessionNote: { one: 'session note', other: 'session notes' }
 } as const satisfies Readonly<Record<string, CountNoun>>;
 
 /** The tool's name (the overlay's heading). */
@@ -624,7 +633,10 @@ export const COPY_ALL_COPY = {
     'Copy failed: this page refused clipboard access. Select Copy all again, or copy each row from its field.'
 } as const;
 
-/** The feature names by engine id (report → words). */
+/**
+ * The lanes' headings by engine id — WP Rocket's settings labels: a row's
+ * timeout names the lane its row sits in by the heading it carries.
+ */
 export const FEATURE_NAMES: Readonly<Record<ExclusionFeatureId, string>> = {
   delay_js: LANE_COPY.delayJs.label,
   defer_all_js: LANE_COPY.deferJs.label,
@@ -759,7 +771,7 @@ export function unmodifiedCopy(reason: UnmodifiedReason): string {
   if (reason.kind === 'failed') return DOCUMENT_FAILURE_COPY[reason.reason];
   if (reason.kind === 'runtime-unavailable') return runtimeUnavailableCopy(reason.cause);
   if (reason.stage === 'simulate') {
-    return `Simulating ${FEATURE_NAMES[reason.feature]} took longer than ${String(reason.budgetMs)} ms (the simulation counts toward the time budget), so the page was served unmodified. Reload to try again, or choose As served to apply your exclusions without the simulation.`;
+    return `Simulating ${bannerFeatureName(reason.feature)} took longer than ${String(reason.budgetMs)} ms (the simulation counts toward the time budget), so the page was served unmodified. Reload to try again, or choose As served to apply your exclusions without the simulation.`;
   }
   const row = reason.row === null ? '' : ` (row ${reason.row})`;
   if (reason.simulating === true) {
@@ -800,11 +812,10 @@ export const ACTION_FAILED_TITLE: Readonly<Record<SessionAction, string>> = {
 };
 
 /**
- * How long a session lasts, said on every banner of an active session
- * (it outlives the page until it is stopped or the tab closes).
+ * How long a session lasts, a session note of every banner of an active
+ * session (it outlives the page until it is stopped or the tab closes).
  */
-export const SESSION_ON_NOTE =
-  'The session stays on in this tab until you stop it or close the tab.';
+export const SESSION_ON_NOTE = 'Stays on in this tab until Stop or the tab closes.';
 
 /**
  * The same, plus what it does to the next pages — said only where this
@@ -812,7 +823,26 @@ export const SESSION_ON_NOTE =
  * the session did not (or may not have) rewritten, that promise would not
  * be honest.
  */
-export const SESSION_PERSISTS_NOTE = `${SESSION_ON_NOTE.slice(0, -1)}: each page of this site you open here loads with these exclusions.`;
+export const SESSION_PERSISTS_NOTE = `${SESSION_ON_NOTE.slice(0, -1)}; every page of this site you open here loads with these exclusions.`;
+
+/**
+ * What the session changed on a served document besides the exclusions,
+ * each a session note said only when it happened (see `servedNotes`).
+ */
+export const SERVED_NOTE_COPY = {
+  /** The page is the extension's rewritten copy (security indicator, timings). */
+  copy: 'The security indicator and timings describe the rewritten copy.',
+  serviceWorkersBypassed: 'Service workers are bypassed.',
+  prefetchOff: 'Link prefetching is off.'
+} as const;
+
+/**
+ * The banner's session-notes disclosure label: "1 session note", "3 session notes".
+ *
+ * @param count Notes behind it (≥ 1).
+ */
+export const sessionNotesLabel = (count: number): string =>
+  `${String(count)} ${countNoun(count, COUNT_WORDS.sessionNote)}`;
 
 /**
  * An applied warning as the page-wide announcement says it: the lane, then
@@ -858,7 +888,10 @@ function appliedCopy(view: Extract<SessionView, { kind: 'applied' }>): StateCopy
       body: `${String(view.unmatched)} ${countNoun(view.unmatched, COUNT_WORDS.rowMatches)} no element on this page. Check the rows marked “No match”.${note === null ? '' : ` ${note}`}${tail}`
     };
   }
-  const rendered = reports.length === 0 ? RENDER_WORDS : simulatedRenderWords(reports);
+  const rendered =
+    reports.length === 0
+      ? RENDER_WORDS
+      : simulatedRenderWords(reports.map((report) => report.feature));
   return warnings.length === 0
     ? { title: 'Applied', body: rendered }
     : { title: 'Applied, with warnings', body: `${rendered}${tail}` };
@@ -867,13 +900,12 @@ function appliedCopy(view: Extract<SessionView, { kind: 'applied' }>): StateCopy
 /** What an applied page shows. */
 const RENDER_WORDS = 'This page was rendered with your exclusions.';
 
-/**
- * Why a simulated feature can still differ from the site: the simulation runs
- * WP Rocket's own lists plus the builder rows, never the exclusions saved in
- * the site's WP Rocket settings (unreadable without site access).
- */
-const SITE_EXCLUSIONS_NOT_SIMULATED =
-  'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them';
+/** The simulated features' compact names (a banner lists several in one sentence). */
+const FEATURE_SHORT_NAMES: Readonly<Record<SimulatedFeatureId, string>> = {
+  lazyload: SHORT_LABEL_LAZYLOAD,
+  defer_all_js: SHORT_LABEL_DEFER_JS,
+  delay_js: SHORT_LABEL_DELAY_JS
+};
 
 /**
  * Per simulated feature whose rows cover less than the site's own exclusions
@@ -881,13 +913,26 @@ const SITE_EXCLUSIONS_NOT_SIMULATED =
  * LazyLoad exclusions also cover pictures and background images).
  */
 const ROW_SCOPE: Readonly<Partial<Record<SimulatedFeatureId, string>>> = {
-  lazyload: 'LazyLoad: images only'
+  lazyload: `${SHORT_LABEL_LAZYLOAD}: images only`
 };
 
 /**
- * The site-exclusions note for a page whose given features were simulated —
- * said once in the Applied banner (each simulated lane's version line says
- * it in short, {@link SIMULATION_LANE_COPY}), never where nothing was simulated.
+ * A feature's banner name: its compact name when the extension simulates it
+ * (every banner names a simulated feature alike), else its lane's heading.
+ *
+ * @param id The feature.
+ */
+function bannerFeatureName(id: ExclusionFeatureId): string {
+  const short: Readonly<Partial<Record<ExclusionFeatureId, string>>> = FEATURE_SHORT_NAMES;
+  return short[id] ?? FEATURE_NAMES[id];
+}
+
+/**
+ * The site-exclusions note for a page whose given features were simulated:
+ * the simulation runs WP Rocket's own lists plus the builder rows, never the
+ * exclusions saved in the site's settings (unreadable without site access).
+ * Said once in the banner (each simulated lane's version line says it in
+ * short, {@link SIMULATION_LANE_COPY}), never where nothing was simulated.
  *
  * @param features The simulated features (any order; repeats ignored).
  * @returns The note, with each feature's narrower row scope in parentheses.
@@ -897,7 +942,7 @@ export function siteExclusionsNote(features: readonly SimulatedFeatureId[]): str
     features.includes(id) ? (ROW_SCOPE[id] ?? []) : []
   );
   const scope = scopes.length === 0 ? '' : ` (${scopes.join('; ')})`;
-  return `${SITE_EXCLUSIONS_NOT_SIMULATED}${scope}.`;
+  return `The site’s own WP Rocket exclusions aren’t included; add them as rows${scope}.`;
 }
 
 /**
@@ -914,21 +959,26 @@ function simulatedNote(reports: readonly DocumentSimulationReport[]): string | n
 
 /**
  * What an applied, simulated page shows — never mistaken for the site's own
- * configuration, and naming the site exclusions the simulation lacks.
+ * configuration, and naming the site exclusions the simulation lacks. The
+ * features go by their compact names, in registry order (WP Rocket's buffer
+ * order), so one sentence holds all of them.
  *
- * @param reports The simulation reports (every one `simulated`).
+ * @param features The simulated features (any order; repeats ignored).
  */
-function simulatedRenderWords(reports: readonly DocumentSimulationReport[]): string {
-  return `This page was rendered with your exclusions and WP Rocket’s ${featureList(reports)} simulated — not the site’s real configuration. ${siteExclusionsNote(reports.map((report) => report.feature))}`;
+export function simulatedRenderWords(features: readonly SimulatedFeatureId[]): string {
+  const names = SIMULATED_FEATURES.flatMap(({ id }) =>
+    features.includes(id) ? [FEATURE_SHORT_NAMES[id]] : []
+  );
+  return `Rendered with your exclusions and simulated ${joinWords(names)} — not the site’s real setup. ${siteExclusionsNote(features)}`;
 }
 
 /**
- * The reports' feature names, joined ("A", "A and B", "A, B and C").
+ * The reports' compact feature names, joined ("A", "A and B", "A, B and C").
  *
  * @param reports The reports, in buffer order.
  */
 function featureList(reports: readonly DocumentSimulationReport[]): string {
-  return joinWords(reports.map((report) => FEATURE_NAMES[report.feature]));
+  return joinWords(reports.map((report) => FEATURE_SHORT_NAMES[report.feature]));
 }
 
 /** The session view's banner words. */
@@ -1073,6 +1123,19 @@ function isSaveFailure(
   return Object.hasOwn(SAVE_FAILURE_COPY, reason);
 }
 
+/**
+ * Why the page does not allow the draft's mode, short (inside the blocked
+ * note's parentheses); the lane's own block line says it in full.
+ */
+const DRAFT_MODE_BLOCK_REASONS: Readonly<Record<DraftModeBlock, string>> = {
+  'already-served': 'WP Rocket already does it',
+  'delay-served': 'WP Rocket delays scripts here',
+  amp: 'AMP page',
+  preview: 'preview',
+  search: 'search results',
+  'page-builder-editor': 'page builder editor'
+};
+
 /** The mode control's words every mode lane shares. */
 const SHARED_MODE_COPY = {
   labels: {
@@ -1081,13 +1144,13 @@ const SHARED_MODE_COPY = {
     disabled: 'Disabled'
   } satisfies Readonly<Record<SimulationMode, string>>,
   /**
-   * The draft's mode the page does not allow: no option is checked and the
-   * page runs as served (the draft keeps the mode for other pages).
+   * The draft's mode the page does not allow: shown checked, dimmed (the
+   * draft keeps it for the site's other pages); As served clears it.
    *
-   * @param mode The replaced mode.
+   * @param block Why the page does not allow it.
    */
-  replaced: (mode: SimulationMode): string =>
-    `${SHARED_MODE_COPY.labels[mode]} doesn’t apply here, so this page runs as served (${SHARED_MODE_COPY.labels[mode]} stays set for other pages).`,
+  blockedDraft: (block: DraftModeBlock): string =>
+    `Set for this site; doesn’t apply on this page (${DRAFT_MODE_BLOCK_REASONS[block]}). Choose As served to clear it.`,
   /** Why the control is held (its tooltip): an action is in flight. */
   held: 'Wait for the current action to finish.',
   /** The page still runs a simulation the session no longer applies (e.g. after Stop). */
@@ -1350,7 +1413,7 @@ function otherOutcomeSentence(
   first: DocumentSimulationReport,
   other: DocumentSimulationReport
 ): string | null {
-  const name = FEATURE_NAMES[other.feature];
+  const name = FEATURE_SHORT_NAMES[other.feature];
   if (first.reason === 'delay-js-served' && other.state === 'already-served') return null;
   if (other.state !== 'simulated') return `${ownOutcomeCopy(other, []).title} (${name}).`;
   // Every body but an already-served one names the simulated features already.
@@ -1367,7 +1430,7 @@ function ownOutcomeCopy(
   simulation: DocumentSimulationReport,
   simulated: readonly DocumentSimulationReport[]
 ): StateCopy {
-  const name = FEATURE_NAMES[simulation.feature];
+  const name = FEATURE_SHORT_NAMES[simulation.feature];
   if (simulation.state === 'already-served') {
     const opener = simulated.length === 0 ? 'Nothing was simulated' : `${name} wasn’t simulated`;
     return {

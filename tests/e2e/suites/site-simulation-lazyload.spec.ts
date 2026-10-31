@@ -28,7 +28,14 @@
 import type { CDPSession, Locator, Page } from '@playwright/test';
 
 import { readBadge } from '../helpers/badge';
-import { LAZYLOAD, clearDrafts, lane, readBanners, typeRow } from '../helpers/exclusion-overlay';
+import {
+  LAZYLOAD,
+  clearDrafts,
+  lane,
+  openSessionNotes,
+  readBanners,
+  typeRow
+} from '../helpers/exclusion-overlay';
 import { expect, test, type ExtensionDriver } from '../helpers/extension';
 import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
 import {
@@ -109,9 +116,9 @@ const LAZY_IMAGE = /<img\b[^>]*\bdata-lazy-src=/g;
 /** The words the surfaces carry. */
 const WORDS = {
   appliedBody:
-    'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).',
+    'Rendered with your exclusions and simulated LazyLoad — not the site’s real setup. The site’s own WP Rocket exclusions aren’t included; add them as rows (LazyLoad: images only).',
   appliedAllBody:
-    'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images, Load JavaScript deferred and Delay JavaScript execution simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).',
+    'Rendered with your exclusions and simulated LazyLoad, Defer JS and Delay JS — not the site’s real setup. The site’s own WP Rocket exclusions aren’t included; add them as rows (LazyLoad: images only).',
   alreadyServed:
     'WP Rocket already lazy loads images on this page — exclusions apply to its output.',
   search:
@@ -119,7 +126,10 @@ const WORDS = {
   preview: 'WP Rocket never lazy loads images on a preview, so LazyLoad can’t be simulated here.',
   /** The banner's site-exclusions sentence: never a lane line (the version line says it in short). */
   siteExclusions:
-    'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).',
+    'The site’s own WP Rocket exclusions aren’t included; add them as rows (LazyLoad: images only).',
+  /** The session note every applied banner holds (behind its disclosure). */
+  persists:
+    'Stays on in this tab until Stop or the tab closes; every page of this site you open here loads with these exclusions.',
   versionTail: ' · without the site’s own exclusions',
   /** The lane's every-page limits (behind its disclosure). */
   everyPageLimits: [
@@ -408,9 +418,11 @@ test.describe('LazyLoad simulation over real sessions', () => {
       // The lane's limits: collapsed, then exactly the page's lines, its script address first.
       const toggle = lane(page, LAZYLOAD).getByRole('button', { name: /^\d+ limits?$/ });
       await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-      await expect(lane(page, LAZYLOAD).locator('.xo-lane-limit')).toHaveCount(0);
+      await expect(lane(page, LAZYLOAD).locator('.xo-note-disclosure-item')).toHaveCount(0);
       await toggle.click();
-      const limits = await lane(page, LAZYLOAD).locator('.xo-lane-limit').allTextContents();
+      const limits = await lane(page, LAZYLOAD)
+        .locator('.xo-note-disclosure-item')
+        .allTextContents();
       expect(limits).toEqual(expect.arrayContaining([...WORDS.everyPageLimits]));
       const source = report.assetsUrlSource;
       if (source === undefined)
@@ -523,6 +535,13 @@ test.describe('LazyLoad simulation over real sessions', () => {
       expect(await documentSimulation(extension, tabId)).toMatchObject({ state: 'simulated' });
       const banners = await readBanners(page);
       expect(banners[0]).toMatchObject({ title: 'Applied', body: WORDS.appliedAllBody });
+      // The generic notes: collapsed behind one toggle, the persistence note first.
+      expect(banners[0]?.sessionNotes).toMatch(/^\d session notes?$/);
+      const sessionNotes = await openSessionNotes(page);
+      expect(sessionNotes[0]).toBe(WORDS.persists);
+      expect(banners[0]?.sessionNotes).toBe(
+        `${String(sessionNotes.length)} session ${sessionNotes.length === 1 ? 'note' : 'notes'}`
+      );
       await page.getByRole('button', { name: 'Stop' }).click();
 
       await writeSettings();

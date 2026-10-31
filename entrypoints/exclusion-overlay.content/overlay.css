@@ -499,6 +499,25 @@
   font-size: 11px;
 }
 
+/* The session notes' disclosure: under the page's own lines, in the text column. */
+.xo-banner-session {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: 2px;
+}
+
+/* Open on a tinted banner: the accent fill misses 3:1 against the dark soft
+ * tints, so the open state is the accent border (plus the turned chevron) on
+ * the resting surface. Four classes match the open fill's hover rule's
+ * specificity and come after it, so it holds under the pointer too. */
+.xo-banner-session .xo-note-disclosure.xo-disclosure[aria-expanded='true'] {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  color: var(--fg-primary);
+}
+
 .xo-banner-actions {
   grid-column: 2;
   display: flex;
@@ -688,7 +707,7 @@
 
 /* A URL in a lane hint is information: neutral ground, never the error tint. */
 .xo-lane-hint .xo-code,
-.xo-lane-limit .xo-code {
+.xo-note-disclosure-item .xo-code {
   background: var(--surface-3);
   color: var(--fg-secondary);
 }
@@ -708,9 +727,9 @@
   overflow-wrap: anywhere;
 }
 
-/* A simulated lane's limits disclosure: a compact toggle under its version
- * line, opening in place onto one line per limit. */
-.xo-lane-limits {
+/* The note disclosure (a simulated lane's limits, a banner's session
+ * notes): a compact toggle, opening in place onto one line per note. */
+.xo-note-disclosure {
   align-self: flex-start;
   min-height: 24px;
   margin-top: 2px;
@@ -719,7 +738,7 @@
   font-size: 11px;
 }
 
-.xo-lane-limit-list {
+.xo-note-disclosure-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -730,12 +749,12 @@
 }
 
 @starting-style {
-  .xo-lane-limit-list {
+  .xo-note-disclosure-list {
     opacity: 0;
   }
 }
 
-.xo-lane-limit {
+.xo-note-disclosure-item {
   font-size: 11px;
   color: var(--fg-secondary);
   /* Page-derived URLs (LazyLoad's script address) wrap instead of widening the lane. */

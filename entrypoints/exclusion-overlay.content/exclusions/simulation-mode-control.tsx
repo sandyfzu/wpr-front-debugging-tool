@@ -3,7 +3,7 @@
  * feature has a feature-wide disable; the options the page does not allow
  * dimmed — and the lines under it: why an option is
  * unavailable, a shown Disabled that changes nothing here, a draft mode
- * the page does not allow (shown as As served), a simulation the page keeps
+ * the page does not allow (still shown, dimmed), a simulation the page keeps
  * after the session left it, and the admin-screen warning (word + glyph,
  * never blocking; under the first mode control only — it concerns the page).
  */
@@ -127,8 +127,8 @@ export function SimulationModeNotes(props: SimulationModeProps): JSX.Element {
       >
         <p class="xo-lane-note">{copy().disabledChangesNothing}</p>
       </Show>
-      <Show when={props.controller.replacedLaneMode(props.lane)}>
-        {(mode) => <p class="xo-lane-note">{copy().replaced(mode())}</p>}
+      <Show when={props.controller.blockedLaneMode(props.lane)}>
+        {(block) => <p class="xo-lane-note">{copy().blockedDraft(block())}</p>}
       </Show>
       <Show when={kept()}>
         <p class="xo-lane-note">{copy().kept}</p>

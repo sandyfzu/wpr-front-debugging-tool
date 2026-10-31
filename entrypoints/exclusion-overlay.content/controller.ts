@@ -72,11 +72,12 @@ import {
   laneDisabled,
   laneModeBlocks,
   laneModes,
-  shownLaneMode,
+  draftModeBlock,
   realFeatureState,
   REPORT_PROVES_SERVED,
   runsSimulation,
   sameSimulate,
+  type DraftModeBlock,
   type ModeBlock,
   type RealFeatureState,
   type SimulationLane,
@@ -136,7 +137,7 @@ export interface OverlayControllerDeps {
   /**
    * What the live page shows of each mode lane's feature (reactive): with
    * the session's reports, it decides which modes the page allows. Absent
-   * (a host that cannot read the page): every mode is offered, none replaced.
+   * (a host that cannot read the page): every mode is offered, none blocked.
    */
   readonly simulationEvidence?: Accessor<SimulationPageEvidence>;
 }
@@ -147,10 +148,10 @@ interface LaneModel {
   readonly state: Accessor<RealFeatureState | null>;
   /** Why each mode is unavailable (null: every mode offered). */
   readonly blocks: Accessor<Readonly<Record<SimulationMode, ModeBlock | null>> | null>;
-  /** The mode shown checked (null: none). */
-  readonly mode: Accessor<SimulationMode | null>;
-  /** The draft's mode the page does not allow (null: none). */
-  readonly replaced: Accessor<SimulationMode | null>;
+  /** The draft's mode (always the one shown checked). */
+  readonly mode: Accessor<SimulationMode>;
+  /** Why the page does not allow the draft's mode (null: it does). */
+  readonly blocked: Accessor<DraftModeBlock | null>;
 }
 
 /** What the draft saves: its set and what is simulated beside it. */
@@ -383,11 +384,10 @@ export interface OverlayController {
   removeRow(lane: LaneKey, id: string): void;
   setDisable(key: ToggleKey, value: boolean): void;
   /**
-   * A mode lane's mode shown checked: the draft's, else none when the page
-   * does not allow it — the page runs as served, and As served stays a real
-   * choice (see {@link OverlayController.replacedLaneMode}).
+   * A mode lane's mode shown checked: always the draft's, even when the page
+   * does not allow it (see {@link OverlayController.blockedLaneMode}).
    */
-  laneMode(lane: SimulationLane): SimulationMode | null;
+  laneMode(lane: SimulationLane): SimulationMode;
   /**
    * The page's real state of a mode lane's feature — the session's report
    * of this page first, then the extension's markers, then the live page
@@ -397,12 +397,12 @@ export interface OverlayController {
   /** Why each of a mode lane's modes is unavailable here (null: every mode is offered). */
   laneBlocks(lane: SimulationLane): Readonly<Record<SimulationMode, ModeBlock | null>> | null;
   /**
-   * The draft's mode of a lane when the page does not allow it, so the lane
-   * checks nothing and says the page runs as served (null: none). Display
-   * only: the draft keeps the mode — not dirty, and an apply re-sends it —
-   * until the user picks another (As served included).
+   * Why the page does not allow a lane's draft mode (null: it does), so the
+   * lane shows it dimmed and says so. Display only: the draft keeps the mode
+   * — not dirty, and an apply re-sends it — until the user picks another
+   * (As served, never blocked, clears it).
    */
-  replacedLaneMode(lane: SimulationLane): SimulationMode | null;
+  blockedLaneMode(lane: SimulationLane): DraftModeBlock | null;
   /**
    * Choose a mode lane's mode (ignored when not editable, when the lane
    * does not offer it, or when the page does not allow it).
@@ -555,19 +555,15 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       const real = state();
       return real === null ? null : laneModeBlocks(lane, real, delayState());
     });
+    const mode = createMemo(() => draftLaneMode(draft(), lane));
     // A mode the page does not allow (restored, or applied on a page that
-    // turned out not to allow it) leaves the lane unchecked, said in the lane;
+    // turned out not to allow it) stays shown, dimmed and said in the lane;
     // the draft keeps it, so the session's mode for the site's other pages stays.
-    const shownMode = createMemo(() => {
+    const blocked = createMemo(() => {
       const real = state();
-      const mode = draftLaneMode(draft(), lane);
-      return real === null
-        ? { mode, replaced: null }
-        : shownLaneMode(lane, mode, real, delayState());
+      return real === null ? null : draftModeBlock(lane, mode(), real, delayState());
     });
-    const mode = createMemo(() => shownMode().mode);
-    const replaced = createMemo(() => shownMode().replaced);
-    return { state, blocks, mode, replaced };
+    return { state, blocks, mode, blocked };
   };
   const delayLane = laneModel('delayJs', () => null);
   const laneModels: Readonly<Record<SimulationLane, LaneModel>> = {
@@ -1340,7 +1336,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     laneMode: (lane) => laneModels[lane].mode(),
     laneState: (lane) => laneModels[lane].state(),
     laneBlocks: (lane) => laneModels[lane].blocks(),
-    replacedLaneMode: (lane) => laneModels[lane].replaced(),
+    blockedLaneMode: (lane) => laneModels[lane].blocked(),
     runsSimulation: simulationRuns,
     adminScreen,
     setLaneMode: (lane, mode) => {

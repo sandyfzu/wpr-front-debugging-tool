@@ -1,7 +1,7 @@
 /**
  * The Delay JS lane's mode control as rendered: options per real state
  * (unavailable ones dimmed, the reason said; a no-op Disabled said, never
- * dimmed), the replaced-mode note, focus kept across state changes, the
+ * dimmed), the blocked draft-mode note (As served clears it), focus kept across state changes, the
  * admin-screen warning that never blocks, the kept-simulation note, and the
  * simulated page's count, version and list lines and its limits disclosure
  * — then the Defer JS and LazyLoad lanes' own options, notes and lines.
@@ -31,6 +31,7 @@ import {
   ADMIN_WARNING_LANE,
   NO_PAGE_EVIDENCE,
   NO_SIMULATION_EVIDENCE,
+  type DraftModeBlock,
   type LanePageEvidence
 } from './simulation-mode';
 import { Lane } from './lane';
@@ -202,7 +203,7 @@ describe('Delay JS lane mode control', () => {
     expect(radio('Disabled').disabled).toBe(false);
   });
 
-  it('keeps a saved Disabled on a page without Delay JS (never replaced)', async () => {
+  it('keeps a saved Disabled on a page without Delay JS (never blocked)', async () => {
     const disabled: ExclusionSet = {
       ...EMPTY_EXCLUSION_SET,
       disable: { ...EMPTY_EXCLUSION_SET.disable, delayJs: true }
@@ -210,7 +211,7 @@ describe('Delay JS lane mode control', () => {
     const controller = await ready(NO_PAGE_EVIDENCE, { saved: { set: disabled } });
     mount(controller);
     expect(radio('Disabled').checked).toBe(true);
-    expect(controller.replacedLaneMode('delayJs')).toBeNull();
+    expect(controller.blockedLaneMode('delayJs')).toBeNull();
   });
 
   it('keeps keyboard focus on a radio when the page’s state changes (checking → verified)', async () => {
@@ -242,23 +243,28 @@ describe('Delay JS lane mode control', () => {
     expect(screen.getByText(DELAY_MODE_COPY.blocks.amp)).toBeTruthy();
   });
 
-  it('checks nothing for a restored mode the page does not allow, said; As served stays a real choice', async () => {
+  it('shows a restored mode the page does not allow as it is, dimmed, said, the draft kept', async () => {
     const controller = await ready(
       { ...NO_PAGE_EVIDENCE, footprints: true },
       { saved: { set: EMPTY_EXCLUSION_SET, simulate: SIMULATE } }
     );
     mount(controller);
-    expect(radio('As served').checked).toBe(false);
-    expect(radio('Simulated').checked).toBe(false);
-    expect(radio('Disabled').checked).toBe(false);
+    expect(radio('Simulated').checked).toBe(true);
     expect(radio('Simulated').disabled).toBe(true);
-    expect(screen.getByText(DELAY_MODE_COPY.replaced('simulated'))).toBeTruthy();
-    // Clicking As served is an edit: it drops the simulation from the draft.
+    expect(radio('As served').checked).toBe(false);
+    expect(radio('Disabled').checked).toBe(false);
+    const note = DELAY_MODE_COPY.blockedDraft('already-served');
+    expect(note).toBe(
+      'Set for this site; doesn’t apply on this page (WP Rocket already does it). Choose As served to clear it.'
+    );
+    expect(screen.getByText(note)).toBeTruthy();
+    expect(controller.dirty()).toBe(false);
+    // As served is a real click: it drops the simulation from the draft.
     fireEvent.click(screen.getByText('As served'));
     expect(controller.laneMode('delayJs')).toBe('served');
     expect(controller.draft().simulate).toBeUndefined();
     expect(radio('As served').checked).toBe(true);
-    expect(screen.queryByText(DELAY_MODE_COPY.replaced('simulated'))).toBeNull();
+    expect(screen.queryByText(note)).toBeNull();
   });
 
   it('never says Disabled changes nothing while a marker is being verified', async () => {
@@ -579,7 +585,7 @@ describe('LazyLoad lane mode control', () => {
     // Script line + one fallback + the noscript note + 3 every-page caveats.
     expect(toggle.textContent).toBe('6 limits');
     expect(screen.queryByText(/^Script address guessed/)).toBeNull();
-    expect(document.querySelector('.xo-lane-limit')).toBeNull();
+    expect(document.querySelector('.xo-note-disclosure-item')).toBeNull();
   });
 
   it('opens in place onto exactly the page’s limit lines, and closes again', async () => {
@@ -606,7 +612,7 @@ describe('LazyLoad lane mode control', () => {
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.hasAttribute('aria-controls')).toBe(false);
-    expect(document.querySelector('.xo-lane-limit')).toBeNull();
+    expect(document.querySelector('.xo-note-disclosure-item')).toBeNull();
     expect(radio('Simulated').checked).toBe(true);
     expect(radio('Simulated').disabled).toBe(false);
   });
@@ -659,5 +665,155 @@ describe('site-exclusions note on a mixed page', () => {
     expect(
       screen.getByText(`Simulated · WP Rocket 3.24 (the site serves 3.12.1)${SITE_TAIL}`)
     ).toBeTruthy();
+  });
+});
+
+describe('As served by default (no session, no saved draft)', () => {
+  /** The evidence of a page WP Rocket serves the feature on. */
+  const SERVED: LanePageEvidence = { ...NO_PAGE_EVIDENCE, footprints: true };
+
+  it.each(['delayJs', 'deferJs', 'lazyload'] as const)(
+    'checks As served on the %s lane of a page served without the feature, and with it',
+    async (lane) => {
+      for (const evidence of [NO_PAGE_EVIDENCE, SERVED]) {
+        const controller = await ready(
+          lane === 'delayJs' ? evidence : NO_PAGE_EVIDENCE,
+          lane === 'deferJs'
+            ? { defer: evidence }
+            : lane === 'lazyload'
+              ? { lazyload: evidence }
+              : {}
+        );
+        mount(controller, undefined, { locked: false }, lane);
+        expect(radio('As served').checked).toBe(true);
+        expect(radio('Simulated').checked).toBe(false);
+        expect(controller.laneMode(lane)).toBe('served');
+        expect(controller.blockedLaneMode(lane)).toBeNull();
+        expect(controller.dirty()).toBe(false);
+        cleanup();
+      }
+    }
+  );
+
+  it('keeps As served shown while the page is still read (Simulated dimmed, said)', async () => {
+    const controller = await ready({ ...NO_PAGE_EVIDENCE, marker: 'checking' });
+    mount(controller);
+    expect(radio('As served').checked).toBe(true);
+    expect(radio('Simulated').disabled).toBe(true);
+    expect(screen.getByText(DELAY_MODE_COPY.blocks.checking)).toBeTruthy();
+  });
+});
+
+describe('As served clears a draft mode the page does not allow', () => {
+  /** Evidence of a page WP Rocket serves the feature on. */
+  const SERVED: LanePageEvidence = { ...NO_PAGE_EVIDENCE, footprints: true };
+  const AMP: LanePageEvidence = { ...NO_PAGE_EVIDENCE, amp: true };
+  /** A set disabling a lane's feature. */
+  const disabling = (key: 'delayJs' | 'deferJs'): ExclusionSet => ({
+    ...EMPTY_EXCLUSION_SET,
+    disable: { ...EMPTY_EXCLUSION_SET.disable, [key]: true }
+  });
+  type Case = readonly [
+    name: string,
+    lane: 'delayJs' | 'deferJs' | 'lazyload',
+    blocked: 'simulated' | 'disabled',
+    block: DraftModeBlock,
+    pages: { delay?: LanePageEvidence; defer?: LanePageEvidence; lazyload?: LanePageEvidence }
+  ];
+  const CASES: readonly Case[] = [
+    ['Delay JS, already delayed', 'delayJs', 'simulated', 'already-served', { delay: SERVED }],
+    ['Delay JS, AMP', 'delayJs', 'simulated', 'amp', { delay: AMP }],
+    ['Delay JS Disabled, AMP', 'delayJs', 'disabled', 'amp', { delay: AMP }],
+    ['Defer JS, already deferred', 'deferJs', 'simulated', 'already-served', { defer: SERVED }],
+    ['Defer JS, delayed page', 'deferJs', 'simulated', 'delay-served', { delay: SERVED }],
+    ['Defer JS, AMP', 'deferJs', 'simulated', 'amp', { defer: AMP }],
+    ['Defer JS Disabled, AMP', 'deferJs', 'disabled', 'amp', { defer: AMP }],
+    [
+      'LazyLoad, already lazy loaded',
+      'lazyload',
+      'simulated',
+      'already-served',
+      { lazyload: SERVED }
+    ],
+    ['LazyLoad, AMP', 'lazyload', 'simulated', 'amp', { lazyload: AMP }],
+    [
+      'LazyLoad, preview',
+      'lazyload',
+      'simulated',
+      'preview',
+      { lazyload: { ...NO_PAGE_EVIDENCE, skip: 'preview' } }
+    ],
+    [
+      'LazyLoad, search',
+      'lazyload',
+      'simulated',
+      'search',
+      { lazyload: { ...NO_PAGE_EVIDENCE, skip: 'search' } }
+    ],
+    [
+      'LazyLoad, page builder editor',
+      'lazyload',
+      'simulated',
+      'page-builder-editor',
+      { lazyload: { ...NO_PAGE_EVIDENCE, skip: 'page-builder-editor' } }
+    ]
+  ];
+  const FEATURE = { delayJs: 'delay_js', deferJs: 'defer_all_js', lazyload: 'lazyload' } as const;
+  const COPY = { delayJs: DELAY_MODE_COPY, deferJs: DEFER_MODE_COPY, lazyload: LAZYLOAD_MODE_COPY };
+
+  it.each(CASES)(
+    '%s: shown checked + dimmed + said; As served clears it (restored, and in a session)',
+    async (...args) => {
+      const [, lane, blocked, block, pages] = args;
+      const saved =
+        blocked === 'simulated'
+          ? { set: EMPTY_EXCLUSION_SET, simulate: { features: [FEATURE[lane]] } }
+          : { set: disabling(lane === 'deferJs' ? 'deferJs' : 'delayJs') };
+      // The same choice restored from the site's saved draft, then as the
+      // active session's (no document of this page yet: the live page decides).
+      const statuses: readonly ExclusionSessionStatus[] = [
+        { state: 'inactive' },
+        { state: 'active', origin: 'https://example.com', startedAt: 1, document: null, ...saved }
+      ];
+      for (const status of statuses) {
+        const controller = await ready(pages.delay ?? NO_PAGE_EVIDENCE, {
+          status,
+          saved,
+          defer: pages.defer,
+          lazyload: pages.lazyload
+        });
+        mount(controller, undefined, { locked: false }, lane);
+        const label = blocked === 'simulated' ? 'Simulated' : 'Disabled';
+        expect(radio(label).checked).toBe(true);
+        expect(radio(label).disabled).toBe(true);
+        expect(radio('As served').checked).toBe(false);
+        expect(radio('As served').disabled).toBe(false);
+        expect(controller.blockedLaneMode(lane)).toBe(block);
+        const note = COPY[lane].blockedDraft(block);
+        expect(screen.getByText(note)).toBeTruthy();
+        expect(controller.dirty()).toBe(false);
+        fireEvent.click(screen.getByText('As served'));
+        expect(controller.laneMode(lane)).toBe('served');
+        // An edit: against the session's set when one is on.
+        expect(controller.dirty()).toBe(status.state === 'active');
+        expect(controller.draft().simulate).toBeUndefined();
+        expect(controller.draft().disable).toEqual(EMPTY_EXCLUSION_SET.disable);
+        expect(radio('As served').checked).toBe(true);
+        expect(screen.queryByText(note)).toBeNull();
+        cleanup();
+      }
+    }
+  );
+
+  it('names each block short, inside one sentence', () => {
+    expect(DELAY_MODE_COPY.blockedDraft('amp')).toBe(
+      'Set for this site; doesn’t apply on this page (AMP page). Choose As served to clear it.'
+    );
+    expect(DEFER_MODE_COPY.blockedDraft('delay-served')).toBe(
+      'Set for this site; doesn’t apply on this page (WP Rocket delays scripts here). Choose As served to clear it.'
+    );
+    expect(LAZYLOAD_MODE_COPY.blockedDraft('search')).toBe(
+      'Set for this site; doesn’t apply on this page (search results). Choose As served to clear it.'
+    );
   });
 });

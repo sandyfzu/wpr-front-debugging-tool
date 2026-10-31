@@ -147,39 +147,64 @@ export async function readIndicator(
   );
 }
 
-/** The panel's state banners, top to bottom: tone, glyph, words, notes, action buttons. */
+/**
+ * The panel's state banners, top to bottom: tone, glyph, words, the page's
+ * lines, the session-notes toggle's label, action buttons.
+ */
 export interface BannerReading {
   readonly tone: string | null;
   readonly glyph: string | null;
   readonly title: string;
   readonly body: string;
   readonly notes: readonly string[];
+  /** The collapsed session-notes toggle's words ("2 session notes"; null: none). */
+  readonly sessionNotes: string | null;
   readonly actions: readonly string[];
 }
 
+/** A banner's session-notes toggle (the disclosure under its lines). */
+const SESSION_NOTES_TOGGLE = '.xo-banner-session .xo-note-disclosure';
+
 /** Read every banner in the overlay's body. */
 export async function readBanners(page: Page): Promise<BannerReading[]> {
-  return await page.evaluate((host) => {
-    const root = document.querySelector(host)?.shadowRoot;
-    return Array.from(root?.querySelectorAll('.xo-banner') ?? [], (banner) => {
-      const svg = banner.querySelector('.xo-banner-glyph svg');
-      return {
-        tone: banner.getAttribute('data-tone'),
-        glyph:
-          Array.from(svg?.classList ?? []).find(
-            (name) => name.startsWith('lucide-') && name !== 'lucide-icon'
-          ) ?? null,
-        title: banner.querySelector('.xo-banner-title')?.textContent ?? '',
-        body: banner.querySelector('.xo-banner-body')?.textContent ?? '',
-        notes: Array.from(banner.querySelectorAll('.xo-banner-notes li'), (li) =>
-          li.textContent.trim()
-        ),
-        actions: Array.from(banner.querySelectorAll('button'), (button) =>
-          (button.getAttribute('aria-label') ?? button.textContent).trim()
-        )
-      };
-    });
-  }, OVERLAY_HOST);
+  return await page.evaluate(
+    ([host, toggle]) => {
+      const root = document.querySelector(host)?.shadowRoot;
+      return Array.from(root?.querySelectorAll('.xo-banner') ?? [], (banner) => {
+        const svg = banner.querySelector('.xo-banner-glyph svg');
+        return {
+          tone: banner.getAttribute('data-tone'),
+          glyph:
+            Array.from(svg?.classList ?? []).find(
+              (name) => name.startsWith('lucide-') && name !== 'lucide-icon'
+            ) ?? null,
+          title: banner.querySelector('.xo-banner-title')?.textContent ?? '',
+          body: banner.querySelector('.xo-banner-body')?.textContent ?? '',
+          notes: Array.from(banner.querySelectorAll('.xo-banner-notes li'), (li) =>
+            li.textContent.trim()
+          ),
+          sessionNotes: banner.querySelector(toggle)?.textContent.trim() ?? null,
+          actions: Array.from(banner.querySelectorAll(`button:not(${toggle})`), (button) =>
+            (button.getAttribute('aria-label') ?? button.textContent).trim()
+          )
+        };
+      });
+    },
+    [OVERLAY_HOST, SESSION_NOTES_TOGGLE] as const
+  );
+}
+
+/**
+ * Open the first banner's session notes (when collapsed) and read them.
+ *
+ * @returns Each note's words, in order.
+ */
+export async function openSessionNotes(page: Page): Promise<string[]> {
+  const toggle = page.locator(`${OVERLAY_HOST} .xo-banner ${SESSION_NOTES_TOGGLE}`).first();
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  const listId = await toggle.getAttribute('aria-controls');
+  if (listId === null) throw new Error('The session-notes toggle names no open list');
+  return await page.locator(`${OVERLAY_HOST} [id="${listId}"] li`).allTextContents();
 }
 
 /**

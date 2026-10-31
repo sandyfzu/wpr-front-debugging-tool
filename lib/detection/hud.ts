@@ -44,7 +44,9 @@ import {
   LABEL_PRELOAD_LINKS,
   LABEL_REMOVE_UNUSED_CSS,
   LABEL_ROCKETCDN,
-  LABEL_SELF_HOST_GOOGLE_FONTS
+  LABEL_SELF_HOST_GOOGLE_FONTS,
+  SHORT_LABEL_DEFER_JS,
+  SHORT_LABEL_DELAY_JS
 } from './labels';
 
 /**
@@ -108,7 +110,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'delay_js',
     label: LABEL_DELAY_JAVASCRIPT_EXECUTION,
-    shortLabel: 'Delay JS',
+    shortLabel: SHORT_LABEL_DELAY_JS,
     group: 'file-optimization',
     unit: SCRIPT_NOUN,
     count: (report) => report[LABEL_DELAY_JAVASCRIPT_EXECUTION]['delayed scripts'],
@@ -117,7 +119,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'defer_all_js',
     label: LABEL_LOAD_JAVASCRIPT_DEFERRED,
-    shortLabel: 'Defer JS',
+    shortLabel: SHORT_LABEL_DEFER_JS,
     group: 'file-optimization',
     unit: SCRIPT_NOUN,
     count: (report) => report[LABEL_LOAD_JAVASCRIPT_DEFERRED]['deferred scripts'],

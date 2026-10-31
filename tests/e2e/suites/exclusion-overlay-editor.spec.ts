@@ -106,6 +106,7 @@ test.describe('exclusion builder editor', () => {
           title: 'Fix 1 row before applying',
           body: 'Each marked row says what is wrong with it.',
           notes: [],
+          sessionNotes: null,
           actions: ['Dismiss: Fix 1 row before applying']
         }
       ]);

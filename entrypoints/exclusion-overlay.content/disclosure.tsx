@@ -1,33 +1,39 @@
 /**
- * A simulated lane's limits disclosure: "N limits", collapsed by default,
- * opening in place onto the page's limit lines. Local view state only (each
- * mount starts collapsed, and so does each return of lines after none); every
- * simulated lane shares it.
+ * The overlay's note disclosure: a compact "N <things>" toggle, collapsed by
+ * default, opening in place onto one line per note — a simulated lane's
+ * limits, a banner's session notes. Local view state only: each mount starts
+ * collapsed, and so does each return of lines after none.
  */
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import ChevronDown from 'lucide-solid/icons/chevron-down';
-import { SIMULATION_LANE_COPY, type NoteText } from '../copy';
-import { NoteRuns } from './note-runs';
+import type { NoteText } from './copy';
+import { NoteRuns } from './exclusions/note-runs';
 
-/** Props of {@link LaneLimits}. */
-interface LaneLimitsProps {
+/** Props of {@link NoteDisclosure}. */
+export interface NoteDisclosureProps {
   /** The open list's id (unique in the overlay: the toggle's `aria-controls` target). */
   readonly id: string;
-  /** The lane's limit lines, one per limit (see `simulationLaneLimits`). */
+  /** The notes, one line each. */
   readonly lines: readonly NoteText[];
+  /**
+   * The toggle's words for a count of notes ("2 limits", "1 session note").
+   *
+   * @param count Notes behind it (≥ 1).
+   */
+  readonly label: (count: number) => string;
 }
 
 /**
- * The disclosure (nothing without limits). The toggle and its open state
+ * The disclosure (nothing without lines). The toggle and its open state
  * mount only while there are lines, so lines that come back after none
  * start collapsed.
  *
- * @param props See {@link LaneLimitsProps}.
+ * @param props See {@link NoteDisclosureProps}.
  */
-export function LaneLimits(props: LaneLimitsProps): JSX.Element {
+export function NoteDisclosure(props: NoteDisclosureProps): JSX.Element {
   return (
     <Show when={props.lines.length > 0}>
-      <LimitsToggle id={props.id} lines={props.lines} />
+      <DisclosureToggle {...props} />
     </Show>
   );
 }
@@ -35,9 +41,9 @@ export function LaneLimits(props: LaneLimitsProps): JSX.Element {
 /**
  * The toggle and, while open, the list (`props.lines` non-empty).
  *
- * @param props See {@link LaneLimitsProps}.
+ * @param props See {@link NoteDisclosureProps}.
  */
-function LimitsToggle(props: LaneLimitsProps): JSX.Element {
+function DisclosureToggle(props: NoteDisclosureProps): JSX.Element {
   const [open, setOpen] = createSignal(false);
   return (
     <>
@@ -46,19 +52,19 @@ function LimitsToggle(props: LaneLimitsProps): JSX.Element {
           set only then — it never names a missing id. */}
       <button
         type="button"
-        class="xo-button xo-disclosure xo-lane-limits"
+        class="xo-button xo-disclosure xo-note-disclosure"
         aria-expanded={open()}
         aria-controls={open() ? props.id : undefined}
         onClick={() => setOpen((isOpen) => !isOpen)}
       >
-        {SIMULATION_LANE_COPY.limits(props.lines.length)}
+        {props.label(props.lines.length)}
         <ChevronDown size={12} class="xo-chevron" aria-hidden="true" />
       </button>
       <Show when={open()}>
-        <ul class="xo-lane-limit-list" id={props.id}>
+        <ul class="xo-note-disclosure-list" id={props.id}>
           <For each={props.lines}>
             {(line) => (
-              <li class="xo-lane-limit">
+              <li class="xo-note-disclosure-item">
                 <NoteRuns note={line} />
               </li>
             )}

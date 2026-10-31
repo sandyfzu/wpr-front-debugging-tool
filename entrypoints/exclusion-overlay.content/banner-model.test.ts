@@ -82,7 +82,7 @@ describe('the session’s persistence (it outlives the page)', () => {
       { kind: 'armed' },
       { kind: 'applied', reports: [], unmatched: 0, warnings: [], served: undefined }
     ] as const) {
-      expect(stateBanner(READY, view)?.notes[0], view.kind).toBe(SESSION_PERSISTS_NOTE);
+      expect(stateBanner(READY, view)?.sessionNotes[0], view.kind).toBe(SESSION_PERSISTS_NOTE);
     }
     expect(
       stateBanner(READY, {
@@ -91,14 +91,14 @@ describe('the session’s persistence (it outlives the page)', () => {
         unmatched: 0,
         warnings: [],
         served: { ...SERVED, copy: true }
-      })?.notes
+      })?.sessionNotes
     ).toEqual([SESSION_PERSISTS_NOTE, ...servedNotes({ ...SERVED, copy: true })]);
   });
 
   it('gives the armed banner exactly the full next-page promise', () => {
-    expect(stateBanner(READY, { kind: 'armed' })?.notes).toEqual([SESSION_PERSISTS_NOTE]);
+    expect(stateBanner(READY, { kind: 'armed' })?.sessionNotes).toEqual([SESSION_PERSISTS_NOTE]);
     expect(SESSION_PERSISTS_NOTE).toMatch(
-      /each page of this site you open here loads with these exclusions\.$/
+      /every page of this site you open here loads with these exclusions\.$/
     );
   });
 
@@ -113,7 +113,7 @@ describe('the session’s persistence (it outlives the page)', () => {
       { kind: 'cant-tell' }
     ];
     for (const view of unproven) {
-      const notes = stateBanner(READY, view)?.notes ?? [];
+      const notes = stateBanner(READY, view)?.sessionNotes ?? [];
       expect(notes[0], view.kind).toBe(SESSION_ON_NOTE);
       expect(notes.join(' '), view.kind).not.toMatch(/loads with these exclusions/);
     }
@@ -121,13 +121,16 @@ describe('the session’s persistence (it outlives the page)', () => {
 
   it('is never said when nothing runs (interception unavailable)', () => {
     expect(
-      stateBanner(READY, { kind: 'unavailable', cause: 'attach-denied', retryable: true })?.notes
+      stateBanner(READY, { kind: 'unavailable', cause: 'attach-denied', retryable: true })
+        ?.sessionNotes
     ).toEqual([]);
   });
 
   it('names Stop and tab close as the only ends', () => {
-    expect(SESSION_ON_NOTE).toMatch(/until you stop it or close the tab\.$/);
-    expect(SESSION_PERSISTS_NOTE).toMatch(/until you stop it or close the tab: each page/);
+    expect(SESSION_ON_NOTE).toBe('Stays on in this tab until Stop or the tab closes.');
+    expect(SESSION_PERSISTS_NOTE).toBe(
+      'Stays on in this tab until Stop or the tab closes; every page of this site you open here loads with these exclusions.'
+    );
   });
 });
 
@@ -142,10 +145,73 @@ describe('servedNotes', () => {
         serviceWorkersBypassed: true,
         speculationRules: { removedFromDocument: 1, headerRemoved: false, guarded: false }
       })
-    ).toHaveLength(3);
+    ).toEqual([
+      'The security indicator and timings describe the rewritten copy.',
+      'Service workers are bypassed.',
+      'Link prefetching is off.'
+    ]);
     expect(
       servedNotes({ ...SERVED, speculationRules: { ...SERVED.speculationRules, guarded: true } })
-    ).toEqual(['Link prefetching is off while the session runs.']);
+    ).toEqual(['Link prefetching is off.']);
+    expect(
+      servedNotes({
+        ...SERVED,
+        speculationRules: { ...SERVED.speculationRules, headerRemoved: true }
+      })
+    ).toEqual(['Link prefetching is off.']);
+    expect(servedNotes({ ...SERVED, serviceWorkersBypassed: true })).toEqual([
+      'Service workers are bypassed.'
+    ]);
+  });
+});
+
+describe('page lines vs session notes', () => {
+  /** An applied view of a document served as given. */
+  const appliedView = (served: ExclusionServedDocument | undefined): SessionView => ({
+    kind: 'applied',
+    reports: [],
+    unmatched: 0,
+    warnings: [],
+    served
+  });
+
+  it('keeps every generic note behind the disclosure, none among the page’s lines', () => {
+    const banner = stateBanner(
+      READY,
+      appliedView({
+        ...SERVED,
+        copy: true,
+        serviceWorkersBypassed: true,
+        speculationRules: { removedFromDocument: 0, headerRemoved: true, guarded: false }
+      })
+    );
+    expect(banner?.notes).toEqual([]);
+    expect(banner?.sessionNotes).toEqual([
+      SESSION_PERSISTS_NOTE,
+      'The security indicator and timings describe the rewritten copy.',
+      'Service workers are bypassed.',
+      'Link prefetching is off.'
+    ]);
+  });
+
+  it('holds exactly the notes that apply (the persistence note alone on a plain load)', () => {
+    expect(stateBanner(READY, appliedView(SERVED))?.sessionNotes).toEqual([SESSION_PERSISTS_NOTE]);
+    expect(stateBanner(READY, { kind: 'not-intercepted' })?.sessionNotes).toEqual([
+      SESSION_ON_NOTE
+    ]);
+  });
+
+  it('gives no notice banner session notes', () => {
+    for (const notice of [
+      { kind: 'stopped' },
+      { kind: 'reload-stalled' },
+      { kind: 'too-large' },
+      { kind: 'check-failed' },
+      { kind: 'invalid', rows: 1 },
+      { kind: 'action-failed', action: 'apply', problem: 'timeout' }
+    ] as const) {
+      expect(noticeBanner(notice).sessionNotes, notice.kind).toEqual([]);
+    }
   });
 });
 

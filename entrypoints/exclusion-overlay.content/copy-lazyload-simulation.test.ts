@@ -22,6 +22,7 @@ import {
   simulationLimitLines,
   simulationOutcomeCopy,
   siteExclusionsNote,
+  simulatedRenderWords,
   viewCopy
 } from './copy';
 import type { OverlayState } from './session/machine';
@@ -77,11 +78,10 @@ const REMEDY =
 const AS_SERVED = 'the page was rendered as served, with your exclusions.';
 const STOP_ASKING = 'Choose As served to stop asking for the simulation.';
 /** The site-exclusions note without LazyLoad simulated… */
-const SITE_NOTE =
-  'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.';
+const SITE_NOTE = 'The site’s own WP Rocket exclusions aren’t included; add them as rows.';
 /** …and with it (its rows restore images only). */
 const SITE_NOTE_LAZYLOAD =
-  'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).';
+  'The site’s own WP Rocket exclusions aren’t included; add them as rows (LazyLoad: images only).';
 
 /**
  * How many times a text holds a phrase.
@@ -110,8 +110,11 @@ describe('LazyLoad mode words', () => {
     });
     expect(LAZYLOAD_MODE_COPY).not.toHaveProperty('disabledChangesNothing');
     expect(LAZYLOAD_MODE_COPY.labels).toBe(DELAY_MODE_COPY.labels);
-    expect(LAZYLOAD_MODE_COPY.replaced('simulated')).toBe(
-      'Simulated doesn’t apply here, so this page runs as served (Simulated stays set for other pages).'
+    expect(LAZYLOAD_MODE_COPY.blockedDraft('preview')).toBe(
+      'Set for this site; doesn’t apply on this page (preview). Choose As served to clear it.'
+    );
+    expect(LAZYLOAD_MODE_COPY.blockedDraft('page-builder-editor')).toBe(
+      'Set for this site; doesn’t apply on this page (page builder editor). Choose As served to clear it.'
     );
   });
 });
@@ -299,7 +302,7 @@ describe('LazyLoad outcome banners', () => {
   it('names a simulated LazyLoad alone, and three features in buffer order', () => {
     expect(viewCopy(applied({ lazyloadSimulation: cleanLazyload() }))).toEqual({
       title: 'Applied',
-      body: 'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).'
+      body: 'Rendered with your exclusions and simulated LazyLoad — not the site’s real setup. The site’s own WP Rocket exclusions aren’t included; add them as rows (LazyLoad: images only).'
     });
     const clean = { ...simulatedReport(), cspLimits: undefined, caveats: undefined };
     expect(
@@ -311,7 +314,7 @@ describe('LazyLoad outcome banners', () => {
         })
       ).body
     ).toBe(
-      'This page was rendered with your exclusions and WP Rocket’s LazyLoad for images, Load JavaScript deferred and Delay JavaScript execution simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them (LazyLoad: images only).'
+      'Rendered with your exclusions and simulated LazyLoad, Defer JS and Delay JS — not the site’s real setup. The site’s own WP Rocket exclusions aren’t included; add them as rows (LazyLoad: images only).'
     );
   });
 
@@ -319,7 +322,7 @@ describe('LazyLoad outcome banners', () => {
     [
       lazyload('already-served'),
       'Applied — WP Rocket already lazy loads images here',
-      'Nothing was simulated: your exclusions apply to WP Rocket’s own LazyLoad for images, as served.'
+      'Nothing was simulated: your exclusions apply to WP Rocket’s own LazyLoad, as served.'
     ],
     [
       lazyload('csp-blocked'),
@@ -387,13 +390,13 @@ describe('LazyLoad outcome banners', () => {
       )
     ).toEqual({
       title: 'Not simulated: search page',
-      body: `WP Rocket never lazy loads images on search results, so the page was rendered with Load JavaScript deferred and Delay JavaScript execution simulated and your exclusions. ${STOP_ASKING} ${SITE_NOTE}`
+      body: `WP Rocket never lazy loads images on search results, so the page was rendered with Defer JS and Delay JS simulated and your exclusions. ${STOP_ASKING} ${SITE_NOTE}`
     });
     expect(
       viewCopy(applied({ lazyloadSimulation: lazyload('already-served'), simulation: clean }))
     ).toEqual({
       title: 'Applied — WP Rocket already lazy loads images here',
-      body: `LazyLoad for images wasn’t simulated: your exclusions apply to WP Rocket’s own LazyLoad for images, as served. Delay JavaScript execution was simulated. ${SITE_NOTE}`
+      body: `LazyLoad wasn’t simulated: your exclusions apply to WP Rocket’s own LazyLoad, as served. Delay JS was simulated. ${SITE_NOTE}`
     });
   });
 
@@ -401,6 +404,34 @@ describe('LazyLoad outcome banners', () => {
     expect(
       stateBanner(READY, applied({ lazyloadSimulation: lazyload('not-applicable', 'search') }))
     ).toMatchObject({ tone: 'warn', glyph: 'alert' });
+  });
+});
+
+describe('the simulated Applied body', () => {
+  /** The body's lead for these short names. */
+  const lead = (names: string): string =>
+    `Rendered with your exclusions and simulated ${names} — not the site’s real setup.`;
+  const TAIL = 'The site’s own WP Rocket exclusions aren’t included; add them as rows.';
+  const TAIL_LAZYLOAD =
+    'The site’s own WP Rocket exclusions aren’t included; add them as rows (LazyLoad: images only).';
+
+  it.each([
+    [['delay_js'], `${lead('Delay JS')} ${TAIL}`],
+    [['defer_all_js'], `${lead('Defer JS')} ${TAIL}`],
+    [['lazyload'], `${lead('LazyLoad')} ${TAIL_LAZYLOAD}`],
+    [['delay_js', 'defer_all_js'], `${lead('Defer JS and Delay JS')} ${TAIL}`],
+    [['delay_js', 'lazyload'], `${lead('LazyLoad and Delay JS')} ${TAIL_LAZYLOAD}`],
+    [['defer_all_js', 'lazyload'], `${lead('LazyLoad and Defer JS')} ${TAIL_LAZYLOAD}`],
+    [
+      ['delay_js', 'defer_all_js', 'lazyload'],
+      `${lead('LazyLoad, Defer JS and Delay JS')} ${TAIL_LAZYLOAD}`
+    ]
+  ] as const)('names %j by short name, in registry order', (features, body) => {
+    expect(simulatedRenderWords(features)).toBe(body);
+  });
+
+  it('ignores repeats', () => {
+    expect(simulatedRenderWords(['delay_js', 'delay_js'])).toBe(`${lead('Delay JS')} ${TAIL}`);
   });
 });
 

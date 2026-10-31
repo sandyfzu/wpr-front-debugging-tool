@@ -64,7 +64,7 @@ import { countNoun } from '../../../utils/format-count';
 import type { OverlayController, SettledPasteOutcome } from '../controller';
 import { capText } from '../../../utils/cap-text';
 import { CopyAll } from './copy-all';
-import { LaneLimits } from './lane-limits';
+import { NoteDisclosure } from '../disclosure';
 import { NoteRuns } from './note-runs';
 import { SimulationModeControl, SimulationModeNotes } from './simulation-mode-control';
 import { SIMULATION_LANES, isSimulationLane, type SimulationLane } from './simulation-mode';
@@ -486,8 +486,9 @@ export function Lane(props: LaneProps): JSX.Element {
                 <Show when={regexLimitHit(simulated())}>
                   <span class="xo-lane-caveat">{SIMULATION_LANE_COPY.regexLimit}</span>
                 </Show>
-                <LaneLimits
+                <NoteDisclosure
                   id={`${headingId()}-limits`}
+                  label={SIMULATION_LANE_COPY.limits}
                   lines={simulationLaneLimits(simulated(), props.report?.rewritten ?? 0)}
                 />
               </>

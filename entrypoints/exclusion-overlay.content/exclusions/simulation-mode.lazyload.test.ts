@@ -22,7 +22,7 @@ import {
   laneToggleKey,
   realFeatureState,
   REPORT_PROVES_SERVED,
-  shownLaneMode,
+  draftModeBlock,
   type LaneSessionFacts
 } from './simulation-mode';
 import { readSimulationPage } from './simulation-page';
@@ -192,16 +192,13 @@ describe('the LazyLoad lane’s availability', () => {
     expect(blocks.served).toBeNull();
   });
 
-  it('keeps a saved Simulated in the draft on a skipped page, shown as replaced', () => {
+  it('blocks a saved Simulated on a skipped page, never As served', () => {
     expect(
-      shownLaneMode('lazyload', 'simulated', { kind: 'skipped', reason: 'search' }, null)
-    ).toEqual({ mode: null, replaced: 'simulated' });
+      draftModeBlock('lazyload', 'simulated', { kind: 'skipped', reason: 'search' }, null)
+    ).toBe('search');
     expect(
-      shownLaneMode('lazyload', 'served', { kind: 'skipped', reason: 'search' }, null)
-    ).toEqual({
-      mode: 'served',
-      replaced: null
-    });
+      draftModeBlock('lazyload', 'served', { kind: 'skipped', reason: 'search' }, null)
+    ).toBeNull();
   });
 
   it('never lets Delay JS decide LazyLoad (it runs first in WP Rocket’s buffer)', () => {

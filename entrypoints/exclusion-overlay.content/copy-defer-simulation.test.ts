@@ -89,8 +89,7 @@ const REMEDY =
   'Test on another page of the site, or choose As served to apply your exclusions without the simulation.';
 
 /** The site-exclusions note a banner ends with once any feature simulated. */
-const SITE_NOTE =
-  'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.';
+const SITE_NOTE = 'The site’s own WP Rocket exclusions aren’t included; add them as rows.';
 
 describe('Defer JS mode words', () => {
   it('pins its own words and shares the rest with Delay JS', () => {
@@ -142,17 +141,17 @@ describe('Defer JS outcome words', () => {
   it('names a simulated Defer JS on the applied banner, alone and with Delay JS', () => {
     expect(viewCopy(applied(deferSimulatedReport()))).toEqual({
       title: 'Applied',
-      body: 'This page was rendered with your exclusions and WP Rocket’s Load JavaScript deferred simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.'
+      body: 'Rendered with your exclusions and simulated Defer JS — not the site’s real setup. The site’s own WP Rocket exclusions aren’t included; add them as rows.'
     });
     expect(viewCopy(applied(deferSimulatedReport(), simulatedReport())).body).toBe(
-      'This page was rendered with your exclusions and WP Rocket’s Load JavaScript deferred and Delay JavaScript execution simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.'
+      'Rendered with your exclusions and simulated Defer JS and Delay JS — not the site’s real setup. The site’s own WP Rocket exclusions aren’t included; add them as rows.'
     );
   });
 
   it('words each non-simulated Defer JS state with its own verb', () => {
     expect(simulationOutcomeCopy(defer('already-served'))).toEqual({
       title: 'Applied — WP Rocket already defers scripts here',
-      body: 'Nothing was simulated: your exclusions apply to WP Rocket’s own Load JavaScript deferred, as served.'
+      body: 'Nothing was simulated: your exclusions apply to WP Rocket’s own Defer JS, as served.'
     });
     expect(simulationOutcomeCopy(defer('not-applicable', 'amp'))).toEqual({
       title: 'Not simulated: AMP page',
@@ -171,7 +170,7 @@ describe('Defer JS outcome words', () => {
     };
     expect(viewCopy(applied(beyond, simulatedReport()))).toEqual({
       title: 'Not simulated: this page can’t be reproduced exactly',
-      body: `WP Rocket’s Defer JS script rewriting pattern may stop on this page, which the simulation can’t reproduce, so the page was rendered with Delay JavaScript execution simulated and your exclusions. ${REMEDY} ${SITE_NOTE}`
+      body: `WP Rocket’s Defer JS script rewriting pattern may stop on this page, which the simulation can’t reproduce, so the page was rendered with Delay JS simulated and your exclusions. ${REMEDY} ${SITE_NOTE}`
     });
   });
 
@@ -179,19 +178,17 @@ describe('Defer JS outcome words', () => {
     // Defer JS simulated, Delay JS blocked by the CSP.
     expect(viewCopy(applied(deferSimulatedReport(), delay('csp-blocked')))).toEqual({
       title: 'Not simulated: blocked by this page’s Content Security Policy',
-      body: `The policy forbids WP Rocket’s inline Delay JS script, as it would on the site, so nothing was delayed and the page was rendered with Load JavaScript deferred simulated and your exclusions. ${REMEDY} ${SITE_NOTE}`
+      body: `The policy forbids WP Rocket’s inline Delay JS script, as it would on the site, so nothing was delayed and the page was rendered with Defer JS simulated and your exclusions. ${REMEDY} ${SITE_NOTE}`
     });
     // WP Rocket defers here; Delay JS simulated on its deferred page.
     expect(viewCopy(applied(defer('already-served'), simulatedReport()))).toEqual({
       title: 'Applied — WP Rocket already defers scripts here',
-      body: `Load JavaScript deferred wasn’t simulated: your exclusions apply to WP Rocket’s own Load JavaScript deferred, as served. Delay JavaScript execution was simulated. ${SITE_NOTE}`
+      body: `Defer JS wasn’t simulated: your exclusions apply to WP Rocket’s own Defer JS, as served. Delay JS was simulated. ${SITE_NOTE}`
     });
     // Neither ran: the second titled after the first.
     expect(
       viewCopy(applied(defer('not-applicable', 'unsupported-charset'), delay('csp-blocked'))).body
-    ).toMatch(
-      / Not simulated: blocked by this page’s Content Security Policy \(Delay JavaScript execution\)\.$/
-    );
+    ).toMatch(/ Not simulated: blocked by this page’s Content Security Policy \(Delay JS\)\.$/);
     // A delayed page: Delay JS already served says nothing the Defer JS words don't.
     expect(
       viewCopy(applied(defer('not-applicable', 'delay-js-served'), delay('already-served'))).body

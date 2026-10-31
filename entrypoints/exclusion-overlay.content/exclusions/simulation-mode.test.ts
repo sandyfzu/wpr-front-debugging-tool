@@ -17,7 +17,7 @@ import {
   laneModeFields,
   laneModeOf,
   disabledChangesNothing,
-  shownLaneMode,
+  draftModeBlock,
   realFeatureState,
   runsSimulation,
   sameSimulate,
@@ -280,29 +280,25 @@ describe('availability', () => {
     });
   });
 
-  it('checks nothing for an unavailable mode (naming it), never while checking', () => {
-    expect(shownLaneMode('delayJs', 'simulated', { kind: 'served' }, null)).toEqual({
-      mode: null,
-      replaced: 'simulated'
-    });
-    expect(shownLaneMode('delayJs', 'disabled', { kind: 'amp' }, null)).toEqual({
-      mode: null,
-      replaced: 'disabled'
-    });
-    expect(shownLaneMode('delayJs', 'disabled', { kind: 'served' }, null)).toEqual({
-      mode: 'disabled',
-      replaced: null
-    });
-    expect(shownLaneMode('delayJs', 'simulated', { kind: 'checking' }, null)).toEqual({
-      mode: 'simulated',
-      replaced: null
-    });
+  it('names why the page blocks the draft’s mode, never while checking', () => {
+    expect(draftModeBlock('delayJs', 'simulated', { kind: 'served' }, null)).toBe('already-served');
+    expect(draftModeBlock('delayJs', 'disabled', { kind: 'amp' }, null)).toBe('amp');
+    // As served itself is never blocked, in every state.
+    for (const state of [
+      { kind: 'served' },
+      { kind: 'amp' },
+      { kind: 'checking' },
+      { kind: 'not-served', simulation: 'none' },
+      { kind: 'skipped', reason: 'search' }
+    ] as const) {
+      expect(draftModeBlock('delayJs', 'served', state, null), state.kind).toBeNull();
+    }
+    expect(draftModeBlock('delayJs', 'disabled', { kind: 'served' }, null)).toBeNull();
+    // Still being read: the draft's mode is shown, unblocked, until the reading lands.
+    expect(draftModeBlock('delayJs', 'simulated', { kind: 'checking' }, null)).toBeNull();
     expect(
-      shownLaneMode('delayJs', 'disabled', { kind: 'not-served', simulation: 'none' }, null)
-    ).toEqual({
-      mode: 'disabled',
-      replaced: null
-    });
+      draftModeBlock('delayJs', 'disabled', { kind: 'not-served', simulation: 'none' }, null)
+    ).toBeNull();
   });
 
   it('says a shown Disabled changes nothing only where nothing delays scripts', () => {
@@ -315,7 +311,6 @@ describe('availability', () => {
       false
     );
     expect(disabledChangesNothing('disabled', null)).toBe(false);
-    expect(disabledChangesNothing(null, plain)).toBe(false);
     // Not known yet (a marker being verified): never said early.
     expect(disabledChangesNothing('disabled', { kind: 'checking' })).toBe(false);
     // Only the live page says so, and a session's rewrite touched it (e.g. after Stop).
@@ -408,16 +403,12 @@ describe('the Defer JS lane', () => {
     expect(laneModeBlocks('deferJs', delayed, delayed).simulated).toBe('already-served');
   });
 
-  it('shows a Simulated draft as none checked on a delayed page', () => {
+  it('blocks a Simulated draft on a delayed page', () => {
     const notServed: RealFeatureState = { kind: 'not-served', simulation: 'none' };
-    expect(shownLaneMode('deferJs', 'simulated', notServed, { kind: 'served' })).toEqual({
-      mode: null,
-      replaced: 'simulated'
-    });
-    expect(shownLaneMode('deferJs', 'simulated', notServed, null)).toEqual({
-      mode: 'simulated',
-      replaced: null
-    });
+    expect(draftModeBlock('deferJs', 'simulated', notServed, { kind: 'served' })).toBe(
+      'delay-served'
+    );
+    expect(draftModeBlock('deferJs', 'simulated', notServed, null)).toBeNull();
   });
 
   it('says a page with no evidence of either lane, every lane', () => {

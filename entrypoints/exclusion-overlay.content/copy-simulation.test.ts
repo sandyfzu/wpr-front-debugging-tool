@@ -20,6 +20,7 @@ import { noticeBanner, stateBanner } from './banner-model';
 import {
   DELAY_MODE_COPY,
   SIMULATED_INDICATOR,
+  SESSION_PERSISTS_NOTE,
   SIMULATION_LANE_COPY,
   simulationLaneLimits,
   simulationLimitLines,
@@ -83,8 +84,8 @@ describe('Delay JS mode words', () => {
       amp: 'WP Rocket never delays AMP pages.',
       checking: 'Checking whether WP Rocket delays scripts on this page…'
     });
-    expect(DELAY_MODE_COPY.replaced('simulated')).toBe(
-      'Simulated doesn’t apply here, so this page runs as served (Simulated stays set for other pages).'
+    expect(DELAY_MODE_COPY.blockedDraft('already-served')).toBe(
+      'Set for this site; doesn’t apply on this page (WP Rocket already does it). Choose As served to clear it.'
     );
     expect(DELAY_MODE_COPY.disabledChangesNothing).toBe(
       'WP Rocket doesn’t delay scripts on this page, so Disabled changes nothing here.'
@@ -102,15 +103,13 @@ describe('simulation outcome words', () => {
     expect(simulationOutcomeCopy(simulatedReport())).toBeNull();
     expect(viewCopy(applied(simulatedReport()))).toEqual({
       title: 'Applied',
-      body: 'This page was rendered with your exclusions and WP Rocket’s Delay JavaScript execution simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.'
+      body: 'Rendered with your exclusions and simulated Delay JS — not the site’s real setup. The site’s own WP Rocket exclusions aren’t included; add them as rows.'
     });
   });
 
   it('names the site exclusions the simulation lacks only on a simulated page', () => {
     for (const state of ['csp-blocked', 'already-served', 'not-applicable'] as const) {
-      expect(viewCopy(applied(report(state))).body).not.toContain(
-        'site’s own WP Rocket exclusions'
-      );
+      expect(viewCopy(applied(report(state))).body).not.toContain('own WP Rocket exclusions');
     }
   });
 
@@ -221,7 +220,7 @@ describe('simulation outcome words', () => {
       stage: 'simulate'
     } as const;
     expect(unmodifiedCopy(reason)).toBe(
-      'Simulating Delay JavaScript execution took longer than 2000 ms (the simulation counts toward the time budget), so the page was served unmodified. Reload to try again, or choose As served to apply your exclusions without the simulation.'
+      'Simulating Delay JS took longer than 2000 ms (the simulation counts toward the time budget), so the page was served unmodified. Reload to try again, or choose As served to apply your exclusions without the simulation.'
     );
     expect(viewCopy({ kind: 'unmodified', reason, served: undefined }).title).toBe(
       'Served unmodified: the simulation took too long'
@@ -294,10 +293,11 @@ describe('simulation outcome words', () => {
 });
 
 describe('simulation banners', () => {
-  it('warns on a simulated page the CSP limits, with the limits as notes first', () => {
+  it('warns on a simulated page the CSP limits, visible, the session notes apart', () => {
     const banner = stateBanner(READY, applied(simulatedReport()));
     expect(banner).toMatchObject({ tone: 'warn', glyph: 'alert' });
-    expect(banner?.notes.slice(0, 3)).toEqual(simulationLimitLines(simulatedReport()));
+    expect(banner?.notes).toEqual(simulationLimitLines(simulatedReport()));
+    expect(banner?.sessionNotes).toEqual([SESSION_PERSISTS_NOTE]);
   });
 
   it('is clean for a simulated page without limits', () => {

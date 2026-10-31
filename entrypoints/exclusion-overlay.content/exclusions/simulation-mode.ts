@@ -422,31 +422,28 @@ export function laneModeBlocks(
   }
 }
 
+/** A block the draft's mode can meet once the page is read (never `checking`). */
+export type DraftModeBlock = Exclude<ModeBlock, 'checking'>;
+
 /**
- * The mode the lane shows checked for the draft's mode: its own when the
- * page allows it, else none — the page runs as served, said by the lane, and
- * every allowed option (As served included) stays a real choice. Display
- * only — the draft keeps its mode, so a page that does not allow it never
- * changes what the session applies elsewhere. Never decided while the
- * state is still read.
+ * Why the page does not allow the draft's mode (null: it does, or the page
+ * is still being read). The lane still shows that mode checked — dimmed,
+ * said under it — because the draft keeps it for the site's other pages;
+ * As served is never blocked, so it stays a real click that clears it.
  *
  * @param lane The lane.
  * @param mode The draft's mode.
  * @param state The page's real state of the feature.
  * @param delayState The page's real Delay JS state (see {@link laneModeBlocks}).
- * @returns The mode to show checked (null: none), and the draft's one the
- *   page does not allow (null: none).
  */
-export function shownLaneMode(
+export function draftModeBlock(
   lane: SimulationLane,
   mode: SimulationMode,
   state: RealFeatureState,
   delayState: RealFeatureState | null
-): { readonly mode: SimulationMode | null; readonly replaced: SimulationMode | null } {
-  if (state.kind === 'checking' || laneModeBlocks(lane, state, delayState)[mode] === null) {
-    return { mode, replaced: null };
-  }
-  return { mode: null, replaced: mode };
+): DraftModeBlock | null {
+  const block = laneModeBlocks(lane, state, delayState)[mode];
+  return block === 'checking' ? null : block;
 }
 
 /**
@@ -454,11 +451,11 @@ export function shownLaneMode(
  * evidence (never while checking, never unproven): WP Rocket does not apply
  * the feature on this page and no simulation of it runs (said, never blocked).
  *
- * @param mode The shown mode (null: none).
+ * @param mode The draft's mode (the one the lane shows checked).
  * @param state The page's real state of the feature (null: not read).
  */
 export function disabledChangesNothing(
-  mode: SimulationMode | null,
+  mode: SimulationMode,
   state: RealFeatureState | null
 ): boolean {
   return (

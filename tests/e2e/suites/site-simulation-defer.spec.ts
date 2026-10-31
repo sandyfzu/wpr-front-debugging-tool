@@ -57,9 +57,9 @@ const DEFER_STAMP = /<script\b[^>]*\bdata-rocket-defer\b/g;
 /** The words the surfaces carry. */
 const WORDS = {
   appliedBody:
-    'This page was rendered with your exclusions and WP Rocket’s Load JavaScript deferred simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.',
+    'Rendered with your exclusions and simulated Defer JS — not the site’s real setup. The site’s own WP Rocket exclusions aren’t included; add them as rows.',
   appliedBothBody:
-    'This page was rendered with your exclusions and WP Rocket’s Load JavaScript deferred and Delay JavaScript execution simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.',
+    'Rendered with your exclusions and simulated Defer JS and Delay JS — not the site’s real setup. The site’s own WP Rocket exclusions aren’t included; add them as rows.',
   alreadyDeferred:
     'WP Rocket already defers scripts on this page — exclusions apply to its output.',
   delayServed:

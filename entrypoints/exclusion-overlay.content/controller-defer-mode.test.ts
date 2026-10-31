@@ -222,9 +222,9 @@ describe('Defer JS mode: availability from its own evidence', () => {
       pageWith(true, false)
     );
     expect(controller.laneState('deferJs')).toEqual({ kind: 'not-served', simulation: 'none' });
-    // The draft keeps Simulated: shown as none checked, the page runs as served.
-    expect(controller.laneMode('deferJs')).toBeNull();
-    expect(controller.replacedLaneMode('deferJs')).toBe('simulated');
+    // The draft keeps Simulated: shown checked, blocked by the delayed page.
+    expect(controller.laneMode('deferJs')).toBe('simulated');
+    expect(controller.blockedLaneMode('deferJs')).toBe('delay-served');
     expect(controller.dirty()).toBe(false);
   });
 

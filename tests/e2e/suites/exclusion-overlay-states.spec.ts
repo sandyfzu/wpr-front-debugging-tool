@@ -31,6 +31,7 @@ import {
   laneRow,
   openBuilder,
   pushStatus,
+  openSessionNotes,
   readBanners,
   readIndicator,
   reloadThroughSession,
@@ -49,11 +50,13 @@ const SET: ExclusionSet = {
   disable: { delayJs: false, deferJs: false, lazyRender: false }
 };
 
-/** Every banner of an active session says it outlives the page… */
+/** Every banner of an active session says, behind its session notes, it outlives the page… */
 const PERSISTS =
-  'The session stays on in this tab until you stop it or close the tab: each page of this site you open here loads with these exclusions.';
+  'Stays on in this tab until Stop or the tab closes; every page of this site you open here loads with these exclusions.';
 /** …or, where this page did not get the exclusions, that it is still on. */
-const STILL_ON = 'The session stays on in this tab until you stop it or close the tab.';
+const STILL_ON = 'Stays on in this tab until Stop or the tab closes.';
+/** The collapsed session-notes toggle of a banner holding one note. */
+const ONE_NOTE = '1 session note';
 
 /** Each unavailable cause's words and whether it offers Retry (a new cause fails to compile here). */
 const UNAVAILABLE: Readonly<
@@ -131,7 +134,15 @@ async function expectArm(page: Page, arm: Arm, at: string): Promise<void> {
 
 /** A warn arm's banner (the alert glyph, Reload offered). */
 function warnBanner(title: string, body: string, glyph = 'lucide-triangle-alert'): BannerReading {
-  return { tone: 'warn', glyph, title, body, notes: [STILL_ON], actions: ['Reload page'] };
+  return {
+    tone: 'warn',
+    glyph,
+    title,
+    body,
+    notes: [],
+    sessionNotes: ONE_NOTE,
+    actions: ['Reload page']
+  };
 }
 
 test.describe('exclusion builder session states', () => {
@@ -160,6 +171,7 @@ test.describe('exclusion builder session states', () => {
             title: words.title,
             body: words.body,
             notes: [],
+            sessionNotes: null,
             actions: words.retry ? ['Retry'] : []
           },
           indicator: { label: 'Unavailable', tone: 'error', glyph: 'lucide-ban' },
@@ -179,7 +191,8 @@ test.describe('exclusion builder session states', () => {
           glyph: 'lucide-clock',
           title: 'Applied — waiting for the page',
           body: 'Reload to render this page through the session.',
-          notes: [PERSISTS],
+          notes: [],
+          sessionNotes: ONE_NOTE,
           actions: ['Reload page']
         },
         indicator: { label: 'Applied · waiting', tone: 'info', glyph: 'lucide-clock' },
@@ -187,6 +200,8 @@ test.describe('exclusion builder session states', () => {
       },
       'armed'
     );
+    // Collapsed by default; opened, it holds exactly the next-page promise.
+    expect(await openSessionNotes(page)).toEqual([PERSISTS]);
 
     await pushStatus(
       extension,
@@ -205,6 +220,7 @@ test.describe('exclusion builder session states', () => {
       },
       'not intercepted'
     );
+    expect(await openSessionNotes(page)).toEqual([STILL_ON]);
 
     // No identity in the record: no honest verdict.
     await pushStatus(
@@ -341,6 +357,7 @@ test.describe('exclusion builder session states', () => {
           title: 'Session stopped',
           body: 'Reload to see the page without exclusions.',
           notes: [],
+          sessionNotes: null,
           actions: ['Dismiss: Session stopped', 'Reload page']
         }
       ]);

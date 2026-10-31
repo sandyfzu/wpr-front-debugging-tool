@@ -52,6 +52,8 @@ import {
   applySimulated,
   chooseDelayMode,
   delayModeGroup,
+  deferModeGroup,
+  lazyloadModeGroup,
   openCapturedBuilder,
   type CapturedBuilder,
   delayedScriptCount,
@@ -105,13 +107,14 @@ const WORDS = {
   stripLine: 'Exclusion Builder rewrote this page',
   stripHint: 'Delay JS simulated',
   appliedBody:
-    'This page was rendered with your exclusions and WP Rocket’s Delay JavaScript execution simulated — not the site’s real configuration. The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.',
+    'Rendered with your exclusions and simulated Delay JS — not the site’s real setup. The site’s own WP Rocket exclusions aren’t included; add them as rows.',
   bundledList: `Exclusion list: bundled with WP Rocket ${SIMULATED_VERSION} (latest list unreachable: network error)`,
   version: `Simulated · WP Rocket ${SIMULATED_VERSION} · without the site’s own exclusions`,
   /** The banner's site-exclusions sentence: never a lane line (the version line says it in short). */
-  siteExclusions:
-    'The site’s own WP Rocket exclusions aren’t included (the extension can’t read them). Add them as rows to test them.',
+  siteExclusions: 'The site’s own WP Rocket exclusions aren’t included; add them as rows.',
   alreadyDelayed: 'WP Rocket already delays scripts on this page — exclusions apply to its output.',
+  blockedDraft:
+    'Set for this site; doesn’t apply on this page (WP Rocket already does it). Choose As served to clear it.',
   adminScreen:
     'This is a WordPress admin or login screen. WP Rocket never optimizes these screens, so a simulation here shows something the site never serves.'
 } as const;
@@ -506,9 +509,11 @@ test.describe('Delay JS simulation over real sessions', () => {
       await expect
         .poll(async () => (await readBanners(page)).map((banner) => banner.title), FRESH)
         .toContain('Applied — WP Rocket already delays scripts here');
-      await expect(delayModeNotes(page)).toContainText([
-        'Simulated doesn’t apply here, so this page runs as served (Simulated stays set for other pages).'
-      ]);
+      // The session's Simulated stays shown (dimmed), said as not applying here.
+      await expect(
+        delayModeGroup(page).getByRole('radio', { name: 'Simulated', exact: true })
+      ).toBeChecked();
+      await expect(delayModeNotes(page)).toHaveText([WORDS.alreadyDelayed, WORDS.blockedDraft]);
       await expect(simulatedChip(page, 'header')).toHaveCount(0);
       await page.getByRole('button', { name: 'Stop' }).click();
     } finally {
@@ -530,6 +535,10 @@ test.describe('Delay JS simulation over real sessions', () => {
           { value: 'disabled', checked: false, disabled: false }
         ]);
       await expect(delayModeNotes(page)).toHaveText([WORDS.alreadyDelayed]);
+      // No session, no saved draft: every mode lane shows the page as served.
+      for (const group of [delayModeGroup(page), deferModeGroup(page), lazyloadModeGroup(page)]) {
+        await expect(group.getByRole('radio', { name: 'As served', exact: true })).toBeChecked();
+      }
 
       // Disabled: every delayed script restored, no simulation.
       await chooseDelayMode(page, 'Disabled');
@@ -554,6 +563,56 @@ test.describe('Delay JS simulation over real sessions', () => {
       expect(delayedScriptCount(html)).toBe(SCENARIO_DELAYED - 1);
       await expect(lane(page, DELAY).getByRole('listitem').nth(0)).toContainText('1 match');
       expect(await builderMarkers(page)).toEqual(['v1 delay_js=excluded:1']);
+      await page.getByRole('button', { name: 'Stop' }).click();
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('a saved Simulated restored on the on page stays shown, dimmed, said; As served clears it and Apply simulates nothing', async ({
+    extension
+  }) => {
+    // Save a draft asking for the simulation (no apply: no session).
+    const saving = await openSiteBuilder(extension);
+    try {
+      await chooseDelayMode(saving.opened.page, 'Simulated');
+      await expect(saving.opened.page.getByText('Draft saved')).toBeVisible(FRESH);
+    } finally {
+      await saving.opened.page.close();
+    }
+    const { opened, lastDocument } = await openSiteBuilder(extension, ON);
+    const { page, tabId } = opened;
+    try {
+      await expect
+        .poll(() => delayModes(page), FRESH)
+        .toEqual([
+          { value: 'served', checked: false, disabled: false },
+          { value: 'simulated', checked: true, disabled: true },
+          { value: 'disabled', checked: false, disabled: false }
+        ]);
+      await expect(delayModeNotes(page)).toHaveText([WORDS.alreadyDelayed, WORDS.blockedDraft]);
+      // Display only: nothing re-saved over the draft.
+      await expect(page.getByText('Draft saved')).toHaveCount(0);
+
+      // As served is a real click: it clears the choice (saved for the site).
+      await chooseDelayMode(page, 'As served');
+      await expect
+        .poll(() => delayModes(page), FRESH)
+        .toEqual([
+          { value: 'served', checked: true, disabled: false },
+          { value: 'simulated', checked: false, disabled: true },
+          { value: 'disabled', checked: false, disabled: false }
+        ]);
+      await expect(delayModeNotes(page)).toHaveText([WORDS.alreadyDelayed]);
+      await expect(page.getByText('Draft saved')).toBeVisible(FRESH);
+
+      // Apply: WP Rocket's own delay, no simulation asked or served.
+      expect(await reloadThroughSession(page, () => applyButton(page).click())).toBe('Applied');
+      expect(delayedScriptCount(await lastDocument())).toBe(SCENARIO_DELAYED);
+      expect(await simulationMarkers(page)).toEqual([]);
+      const session = await storedSession(extension, tabId);
+      expect(session?.simulate).toBeUndefined();
+      expect(session?.document?.simulation).toBeUndefined();
       await page.getByRole('button', { name: 'Stop' }).click();
     } finally {
       await page.close();
