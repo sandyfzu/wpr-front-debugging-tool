@@ -12,7 +12,8 @@
  * held) · reloading · reload overdue (notice: Reload, Stop, keep editing) ·
  * applied (counts per lane and row) · applied with no-match rows ·
  * served unmodified · interception unavailable (cause + remedy, Retry when
- * transient) · not intercepted · can't verify · a feature absent from the
+ * transient) · not intercepted · can't verify · loaded without the
+ * session's result (Reload; Stop / Re-apply in the footer) · a feature absent from the
  * page (per lane) · the last action's notice · paused under a page modal
  * dialog.
  *

@@ -1,7 +1,7 @@
 /** One release per paused request: fulfill / continue / header-dropping continue, fallbacks, gone requests. */
 import { describe, expect, it } from 'vitest';
 import type { Logger } from '../../logger';
-import { createPauseRelease } from './pause-release';
+import { createPauseRelease, pageAddress } from './pause-release';
 import { parsePausedRequest, type PausedRequest } from './paused-request';
 
 /** A logger recording levels. */
@@ -98,5 +98,40 @@ describe('createPauseRelease', () => {
     const odd = rig({ 'Fetch.continueRequest': () => Promise.reject(new Error('odd')) });
     await odd.release.pass('x');
     expect(odd.log.levels).toEqual(['warn']);
+  });
+});
+
+describe('session-page pass logs', () => {
+  it('logs a marked page’s pass once, at info, with why', async () => {
+    const { release, log } = rig();
+    release.markSessionPage('https://s.test/a?q=1#f');
+    await release.pass('no-session');
+    await release.pass('again');
+    expect(log.levels).toEqual(['info']);
+  });
+
+  it('logs a marked page served without its rules header (the header-dropping continue)', async () => {
+    const { release, log, sent } = rig();
+    release.markSessionPage('https://s.test/');
+    await release.passWithoutRulesHeader('unmodified', PAUSE);
+    expect(sent).toEqual(['Fetch.continueResponse']);
+    expect(log.levels).toEqual(['info']);
+  });
+
+  it('logs nothing for an unmarked pass or a marked fulfill', async () => {
+    const plain = rig();
+    await plain.release.pass('sub-frame');
+    expect(plain.log.levels).toEqual([]);
+    const served = rig();
+    served.release.markSessionPage('https://s.test/');
+    await served.release.fulfill({ requestId: 'r1' });
+    expect(served.log.levels).toEqual([]);
+  });
+});
+
+describe('pageAddress', () => {
+  it('keeps origin + path only (no query, no fragment)', () => {
+    expect(pageAddress('https://s.test/a/b?token=x#frag')).toBe('https://s.test/a/b');
+    expect(pageAddress('not a url')).toBe('(unparsable URL)');
   });
 });

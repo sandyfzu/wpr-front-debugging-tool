@@ -87,6 +87,15 @@ function viewBanner(view: SessionView): Banner | null {
       };
     case 'armed':
       return { ...base, tone: 'info', glyph: 'waiting', actions: ['reload'] };
+    case 'unrecorded':
+      // Stop and Re-apply are the footer's (always beside an active session).
+      return {
+        ...base,
+        tone: 'warn',
+        glyph: 'alert',
+        sessionNotes: [SESSION_ON_NOTE],
+        actions: ['reload']
+      };
     case 'applied': {
       const reports = simulationReports(view);
       // A simulation that did not run here, or one the page limits, warns.

@@ -33,9 +33,10 @@ import {
   type ExclusionSessionController,
   type ExclusionSessionControllerDeps
 } from './controller';
-import { DOCUMENT_TRANSFORM_BUDGET_MS, type DocumentTransformRunner } from './document-transform';
+import type { DocumentTransformRunner } from './document-transform';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
 import {
+  DOCUMENT_TRANSFORM_BUDGET_MS,
   INTERCEPTION_HOST_BOUNDS_MS,
   rewriteDocumentBoundMs,
   SESSION_STEP_TIMEOUTS_MS
@@ -460,6 +461,19 @@ describe('apply', () => {
     expect(messages).toContain('error:Tab reload could not be scheduled');
     expect(messages).toContain('debug:Session push without a listener (expected)');
     expect(messages).toContain('error:Session push failed');
+  });
+
+  it('logs a push whose tab receiver went away mid-navigation at debug, never as a failure', async () => {
+    const r = rig({
+      pushToTab: () =>
+        Promise.reject(new Error('The message port closed before a response was received.'))
+    });
+    await expect(r.controller.apply(page(), { set: SET })).resolves.toEqual({
+      outcome: 'applying'
+    });
+    const messages = r.log.lines.map((line) => `${line.level}:${line.message}`);
+    expect(messages).toContain('debug:Session push without a listener (expected)');
+    expect(messages).not.toContain('error:Session push failed');
   });
 });
 
@@ -1177,7 +1191,24 @@ describe('time bounds', () => {
 });
 
 describe('host safety nets', () => {
-  it('serves unmodified and records nothing when a rewrite runs past its host bound', async () => {
+  it('records timed-out for a page whose runner never settles (past the host bound, then the runner’s)', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    await seedActive();
+    r.backend.runner = () => never();
+    const rewrite = r.host.rewriteDocument(htmlDoc(), () => false);
+    await flush();
+    timers.fire(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
+    await expect(rewrite).resolves.toBeNull();
+    timers.fire(DOCUMENT_TRANSFORM_BUDGET_MS + SESSION_STEP_TIMEOUTS_MS.runnerOverhead);
+    await flush();
+    // The page was served as received: recorded as such, never left waiting.
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'timed-out' }
+    });
+  });
+
+  it('records nothing past the bound when Stop landed meanwhile (that session is gone)', async () => {
     const timers = manualTimers();
     const r = rig({ schedule: timers.schedule });
     await seedActive();
@@ -1196,13 +1227,90 @@ describe('host safety nets', () => {
     await flush();
     timers.fire(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
     await expect(rewrite).resolves.toBeNull();
+    await r.controller.stop(page());
     release();
     await flush();
-    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
-    expect(logged(r.log, 'warn', /past its bound/)).toBe(true);
+    await expect(getExclusionSessionRecords()).resolves.toEqual({});
   });
 
-  it('records nothing and answers null for a document the backend abandoned mid-rewrite', async () => {
+  it('logs a session read that never answers and serves the page unmodified (left to the overlay)', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    await seedActive();
+    r.deps.sessions.read = () => never();
+    const gate = r.host.shouldIntercept(TAB, `${ORIGIN}/`);
+    await flush();
+    timers.fire(SESSION_STEP_TIMEOUTS_MS.store);
+    await expect(gate).resolves.toBeNull();
+    expect(logged(r.log, 'error', /Session read failed/)).toBe(true);
+  });
+
+  it('records a passed session page with its reason and identity; nothing for another origin or tab', async () => {
+    const r = rig();
+    await seedActive();
+    const identity = {
+      token: 'req-206',
+      receivedAt: NOW,
+      wallAt: NOW - 2,
+      speculationRulesHeader: false,
+      servedAsCopy: true,
+      speculationGuard: true,
+      serviceWorkersBypassed: true
+    };
+    await r.host.documentPassed(TAB, 'https://other.test/x', 'ineligible-response', identity);
+    await r.host.documentPassed(4, `${ORIGIN}/x`, 'network-error', identity);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
+    await expect(getExclusionSessionStatus(4)).resolves.toEqual({ state: 'inactive' });
+    await r.host.documentPassed(TAB, `${ORIGIN}/x`, 'ineligible-response', identity);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: {
+        outcome: 'failed',
+        reason: 'ineligible-response',
+        served: { token: 'req-206', receivedAt: NOW - 2 }
+      }
+    });
+    await r.host.documentPassed(TAB, `${ORIGIN}/y`, 'network-error');
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'network-error' }
+    });
+  });
+
+  // Changed for the stuck-armed fix: a rewrite past its bound used to record
+  // nothing, which left the page's overlay waiting forever — it now records
+  // the page as served unmodified (`timed-out`).
+  it('serves unmodified and records timed-out when a rewrite runs past its host bound', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    await seedActive();
+    let release: () => void = () => undefined;
+    r.backend.runner = (request) =>
+      new Promise((resolve) => {
+        release = () => {
+          resolve({
+            ok: true,
+            html: `${request.html}x`,
+            outcome: { outcome: 'rewritten', reports: [] }
+          });
+        };
+      });
+    const rewrite = r.host.rewriteDocument(htmlDoc());
+    await flush();
+    timers.fire(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
+    await expect(rewrite).resolves.toBeNull();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
+    release();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'timed-out' }
+    });
+    expect(logged(r.log, 'warn', /past its bound/)).toBe(true);
+    expect(logged(r.log, 'warn', /came too late/)).toBe(true);
+  });
+
+  // Changed for the stuck-armed fix: an abandoned document used to record
+  // nothing (the overlay then waited forever); it now records the page as
+  // served unmodified (`not-served`) — never the rewrite it did not get.
+  it('records not-served and answers null for a document the backend abandoned mid-rewrite', async () => {
     const r = rig();
     await seedActive();
     let abandoned = false;
@@ -1225,7 +1333,9 @@ describe('host safety nets', () => {
     release();
     await expect(rewrite).resolves.toBeNull();
     await flush();
-    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'not-served' }
+    });
   });
 
   it('still records when the backend has not abandoned the document', async () => {
@@ -1879,10 +1989,14 @@ describe('host — simulating sessions', () => {
     timers.fire(rewriteDocumentBoundMs(true));
     await expect(rewrite).resolves.toBeNull();
     expect(logged(r.log, 'warn', /past its bound/)).toBe(true);
-    // The late source answer records nothing: the host already answered.
+    // Changed for the stuck-armed fix (it recorded nothing): the late source
+    // answer never records its outcome — the host already answered — but the
+    // page is recorded as served unmodified past the bound.
     answerRuntime();
     await flush();
-    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'timed-out' }
+    });
   });
 
   it('never asks a source for a session that does not simulate', async () => {

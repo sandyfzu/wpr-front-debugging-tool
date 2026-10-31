@@ -29,6 +29,7 @@ const HOST: InterceptionHost = {
   rewriteDocument: () => Promise.resolve(null),
   documentBodyUnavailable: () => Promise.resolve(),
   documentNotServed: () => Promise.resolve(),
+  documentPassed: () => Promise.resolve(),
   interceptionEnded: () => Promise.resolve(),
   simulatedRuntime: (tabId, url, documentUrl) =>
     Promise.resolve(

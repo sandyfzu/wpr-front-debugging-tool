@@ -11,9 +11,11 @@ import {
   EXCLUSION_SESSION_DEADLINES_MS,
   EXCLUSION_SET_LIMITS
 } from '../messaging/exclusion-session';
-import { DOCUMENT_TRANSFORM_BUDGET_MS } from './document-transform';
 import {
+  chromiumReleaseMs,
   DeadlineExceededError,
+  documentRecordWaitMs,
+  DOCUMENT_TRANSFORM_BUDGET_MS,
   INTERCEPTION_HOST_BOUNDS_MS,
   PREVALIDATION_CPU_BOUND_MS,
   PREVALIDATION_FIXED_MS,
@@ -24,7 +26,11 @@ import {
   SIMULATION_PREPARATION_BOUND_MS,
   SIMULATION_PREPARATION_CPU_BOUND_MS,
   SIMULATION_SOURCE_TIMEOUTS_MS,
+  STREAM_FACTS_WAIT_MS,
+  STREAM_RELEASE_MARGIN_MS,
+  STREAM_SETTLE_WAIT_MS,
   rewriteDocumentBoundMs,
+  streamHoldWorstCaseMs,
   withinDeadline,
   withinExtensibleDeadline
 } from './timeouts';
@@ -236,10 +242,35 @@ describe('declared bounds', () => {
         steps.ready + 2 * steps.store + DOCUMENT_TRANSFORM_BUDGET_MS + steps.runnerOverhead,
       documentBodyUnavailable: steps.ready + steps.store + steps.record,
       documentNotServed: steps.ready + steps.store + steps.record,
+      documentPassed: steps.ready + steps.store + steps.record,
       interceptionEnded: steps.ready + steps.record,
       simulatedRuntime:
         steps.ready + steps.queueWait + steps.store + 2 * SIMULATION_SOURCE_TIMEOUTS_MS.runtime
     });
+  });
+
+  it('waits for a page’s record past every backend’s worst hold, plus the record write', () => {
+    for (const simulates of [false, true]) {
+      const bound = rewriteDocumentBoundMs(simulates);
+      const wait = documentRecordWaitMs(simulates);
+      // The stream's hold (settle + facts waits + its release margin) is the longer one.
+      expect(wait).toBe(
+        STREAM_SETTLE_WAIT_MS +
+          STREAM_FACTS_WAIT_MS +
+          bound +
+          STREAM_RELEASE_MARGIN_MS +
+          SESSION_STEP_TIMEOUTS_MS.record
+      );
+      expect(wait).toBeGreaterThanOrEqual(
+        chromiumReleaseMs(bound) + SESSION_STEP_TIMEOUTS_MS.record
+      );
+      expect(wait).toBeGreaterThanOrEqual(
+        streamHoldWorstCaseMs(bound) + SESSION_STEP_TIMEOUTS_MS.record
+      );
+    }
+    // Pinned values: an exclusions-only session, then a simulating one.
+    expect(documentRecordWaitMs(false)).toBe(9_500);
+    expect(documentRecordWaitMs(true)).toBe(12_600);
   });
 
   it('adds the simulation preparation to the rewrite bound only for a simulating session', () => {

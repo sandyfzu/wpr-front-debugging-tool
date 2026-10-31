@@ -8,6 +8,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../logger';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
+import type { PassedDocumentFailure } from '../messaging/exclusion-session';
 import type {
   InterceptedDocument,
   InterceptedResponseIdentity,
@@ -146,6 +147,7 @@ interface Harness {
     gates: string[];
     unavailable: string[];
     unavailableIdentities: (InterceptedResponseIdentity | undefined)[];
+    passed: [string, PassedDocumentFailure, InterceptedResponseIdentity | undefined][];
     notServed: string[];
   };
   timers: ReturnType<typeof manualTimers>;
@@ -165,8 +167,19 @@ function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } 
   const unavailable: string[] = [];
   const unavailableIdentities: (InterceptedResponseIdentity | undefined)[] = [];
   const notServed: string[] = [];
+  const passed: [string, PassedDocumentFailure, InterceptedResponseIdentity | undefined][] = [];
   const host = {
     notServed,
+    passed,
+    documentPassed: (
+      _tabId: number,
+      url: string,
+      reason: PassedDocumentFailure,
+      identity?: InterceptedResponseIdentity
+    ) => {
+      passed.push([url, reason, identity]);
+      return Promise.resolve();
+    },
     documentNotServed: (_tabId: number, url: string) => {
       notServed.push(url);
       return Promise.resolve();
@@ -951,5 +964,101 @@ describe('stream backend — a failing not-served report', () => {
     stopAndSettle(h, filter);
     await settle();
     expect(h.log.lines).toContain('Stream not-served report failed');
+  });
+});
+
+describe('stream backend — session pages passed without a rewrite (one record each)', () => {
+  /** Response facts for r1 with these overrides. */
+  const facts = (overrides: Partial<StreamResponseDetails> = {}): StreamResponseDetails => ({
+    ...HTML_HEADERS,
+    ...overrides
+  });
+
+  it.each([
+    ['a partial 206 HTML response', facts({ statusCode: 206 })],
+    ['a non-HTML page', facts({ responseHeaders: [{ name: 'Content-Type', value: 'text/plain' }] })]
+  ])('reports %s as ineligible-response, once', async (_case, details) => {
+    const h = harness();
+    const filter = await openArmed(h);
+    filter.start();
+    h.backend.responseStarted(details);
+    h.backend.responseStarted(details);
+    h.backend.requestFailed({ requestId: 'r1', tabId: TAB, error: 'NS_ERROR_NET_RESET' });
+    await settle();
+    expect(h.host.passed).toEqual([[URL, 'ineligible-response', expect.anything()]]);
+    expect(h.host.passed[0]?.[2]?.token).toBe('r1');
+  });
+
+  it('reports a request failing before its response as network-error', async () => {
+    const h = harness();
+    await openArmed(h);
+    h.backend.requestFailed({ requestId: 'r1', tabId: TAB, error: 'NS_ERROR_CONNECTION_REFUSED' });
+    await settle();
+    expect(h.host.passed).toEqual([[URL, 'network-error', expect.anything()]]);
+  });
+
+  it.each([
+    ['a redirect hop', () => facts({ statusCode: 302 }), null],
+    ['204 No Content', () => facts({ statusCode: 204 }), null],
+    [
+      'a download',
+      () =>
+        facts({
+          responseHeaders: [
+            { name: 'Content-Type', value: 'application/zip' },
+            { name: 'Content-Disposition', value: 'attachment' }
+          ]
+        }),
+      'NS_ERROR_FAILURE'
+    ],
+    [
+      'a zip served without a disposition, failing with an unlisted error',
+      () => facts({ responseHeaders: [{ name: 'Content-Type', value: 'application/zip' }] }),
+      'NS_ERROR_FAILURE'
+    ],
+    [
+      'an octet stream',
+      () =>
+        facts({
+          statusCode: 200,
+          responseHeaders: [{ name: 'content-type', value: 'APPLICATION/OCTET-STREAM' }]
+        }),
+      null
+    ],
+    ['a response without a content type', () => facts({ responseHeaders: [] }), null],
+    [
+      'a feed handed to the download manager',
+      () =>
+        facts({
+          statusCode: 200,
+          responseHeaders: [{ name: 'Content-Type', value: 'application/rss+xml; charset=UTF-8' }]
+        }),
+      'NS_ERROR_FAILURE'
+    ],
+    ['a cancelled load', null, 'NS_BINDING_ABORTED'],
+    ['a load handed to a download', null, 'NS_BINDING_RETARGETED']
+  ] as const)('reports nothing for %s', async (_case, details, error) => {
+    const h = harness();
+    await openArmed(h);
+    if (details !== null) h.backend.responseStarted(details());
+    if (error !== null) h.backend.requestFailed({ requestId: 'r1', tabId: TAB, error });
+    await settle();
+    expect(h.host.passed).toEqual([]);
+  });
+
+  it('leaves an eligible page’s failure to the host’s own record (never also network-error)', async () => {
+    const h = harness();
+    const filter = await openArmed(h);
+    filter.start();
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.data('<p>');
+    h.backend.requestFailed({
+      requestId: 'r1',
+      tabId: TAB,
+      error: 'NS_ERROR_NET_PARTIAL_TRANSFER'
+    });
+    await settle();
+    expect(h.host.unavailable).toEqual([URL]);
+    expect(h.host.passed).toEqual([]);
   });
 });

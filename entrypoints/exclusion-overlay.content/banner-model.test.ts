@@ -50,6 +50,8 @@ describe('stateBanner — the state matrix', () => {
       [{ kind: 'unavailable', cause: 'attach-denied', retryable: true }, 'error', ['retry-apply']],
       [{ kind: 'unavailable', cause: 'debugging-policy', retryable: false }, 'error', []],
       [{ kind: 'armed' }, 'info', ['reload']],
+      // Stop and Re-apply sit in the footer beside it.
+      [{ kind: 'unrecorded' }, 'warn', ['reload']],
       [{ kind: 'applied', reports: [], unmatched: 0, warnings: [], served: undefined }, 'ok', []],
       [{ kind: 'applied', reports: [], unmatched: 2, warnings: [], served: undefined }, 'warn', []],
       [
@@ -93,6 +95,14 @@ describe('the session’s persistence (it outlives the page)', () => {
         served: { ...SERVED, copy: true }
       })?.sessionNotes
     ).toEqual([SESSION_PERSISTS_NOTE, ...servedNotes({ ...SERVED, copy: true })]);
+  });
+
+  it('never promises the next pages on a page loaded without the session’s result', () => {
+    expect(stateBanner(READY, { kind: 'unrecorded' })).toMatchObject({
+      title: 'No result for this page',
+      body: 'The session didn’t get this page’s result, so your exclusions may not be applied.',
+      sessionNotes: [SESSION_ON_NOTE]
+    });
   });
 
   it('gives the armed banner exactly the full next-page promise', () => {

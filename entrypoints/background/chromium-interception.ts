@@ -18,7 +18,7 @@ const PROTOCOL_VERSION = '1.3';
 /** The debugger API slice this port binds (injectable for tests). */
 export type DebuggerApi = Pick<
   typeof browser.debugger,
-  'attach' | 'detach' | 'sendCommand' | 'getTargets' | 'onEvent' | 'onDetach'
+  'attach' | 'detach' | 'sendCommand' | 'onEvent' | 'onDetach'
 >;
 
 /** The tabs API slice this port binds. */
@@ -48,10 +48,6 @@ export function createBrowserDebuggerPort(
     attach: (tabId) => api.attach({ tabId }, PROTOCOL_VERSION),
     detach: (tabId) => api.detach({ tabId }),
     send: (target, method, params) => api.sendCommand(target, method, params),
-    async pageTargetId(tabId) {
-      const targets = await api.getTargets();
-      return targets.find((target) => target.type === 'page' && target.tabId === tabId)?.id ?? null;
-    },
     async tabPresence(tabId): Promise<TabPresence> {
       try {
         const tab = await tabs.get(tabId);

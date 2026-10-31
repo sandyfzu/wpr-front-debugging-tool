@@ -691,7 +691,11 @@ export const DOCUMENT_FAILURE_COPY: Readonly<Record<ExclusionDocumentFailure, st
   'decode-failed': 'Its character encoding is not supported for rewriting.',
   'encode-failed': 'The rewritten HTML could not be saved back in the page’s character encoding.',
   'engine-failed': 'The exclusion engine failed on this page.',
-  'not-served': 'The rewrite was not delivered: the navigation ended first.'
+  'not-served': 'The rewrite was not delivered: the navigation ended first.',
+  'timed-out': 'Rewriting it took too long, so the original was served. Reload to try again.',
+  'ineligible-response':
+    'Its response isn’t a complete HTML page (for example a partial or XHTML response), so it can’t be rewritten.',
+  'network-error': 'Its response failed on the network. Reload to try again.'
 };
 
 /** Reload or reinstall: the packaged data itself is unreadable, so a fresh copy can fix it. */
@@ -996,6 +1000,11 @@ export function viewCopy(view: SessionView): StateCopy {
         title: 'Applied — waiting for the page',
         body: 'Reload to render this page through the session.'
       };
+    case 'unrecorded':
+      return {
+        title: 'No result for this page',
+        body: 'The session didn’t get this page’s result, so your exclusions may not be applied.'
+      };
     case 'applied':
       return appliedCopy(view);
     case 'unmodified':
@@ -1060,6 +1069,8 @@ export function sessionIndicator(state: OverlayState, view: SessionView | null):
         : { tone: 'warn', label: 'Applied · no-match rows', glyph: 'alert' };
     case 'armed':
       return { tone: 'info', label: 'Applied · waiting', glyph: 'waiting' };
+    case 'unrecorded':
+      return { tone: 'warn', label: 'No result', glyph: 'alert' };
     case 'unavailable':
       return { tone: 'error', label: 'Unavailable', glyph: 'blocked' };
     case 'unmodified':

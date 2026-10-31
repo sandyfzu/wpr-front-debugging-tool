@@ -128,6 +128,7 @@ const VIEWS: readonly SessionView[] = [
   { kind: 'off' },
   { kind: 'unavailable', cause: 'detached', retryable: true },
   { kind: 'armed' },
+  { kind: 'unrecorded' },
   { kind: 'applied', reports: [], unmatched: 0, warnings: [], served: undefined },
   { kind: 'applied', reports: [], unmatched: 1, warnings: [], served: undefined },
   { kind: 'applied', reports: [], unmatched: 3, warnings: [], served: undefined },
@@ -156,9 +157,11 @@ describe('viewCopy', () => {
   it('words every view, singular and plural no-match counts included', () => {
     const copies = VIEWS.map(viewCopy);
     for (const copy of copies) expect(copy.title.length).toBeGreaterThan(0);
-    expect(copies[4]?.body).toMatch(/^1 row matches/);
-    expect(copies[5]?.body).toMatch(/^3 rows match/);
+    expect(copies[5]?.body).toMatch(/^1 row matches/);
+    expect(copies[6]?.body).toMatch(/^3 rows match/);
     expect(copies[1]).toBe(UNAVAILABLE_COPY.detached);
+    // Titled like its indicator ("No result").
+    expect(copies[3]?.title).toBe('No result for this page');
   });
 });
 
@@ -208,6 +211,7 @@ describe('sessionIndicator', () => {
       'Not applied',
       'Unavailable',
       'Applied · waiting',
+      'No result',
       'Applied',
       'Applied · no-match rows',
       'Applied · no-match rows',

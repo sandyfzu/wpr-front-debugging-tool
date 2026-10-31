@@ -8,7 +8,30 @@ import { REGEX_ANALYSIS_LIMITS } from '../exclusion-builder/regex-risk';
 import { EXCLUSION_FEATURES } from '../exclusion-builder/set';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
 import { EXCLUSION_SET_LIMITS } from '../messaging/exclusion-session';
-import { DOCUMENT_TRANSFORM_BUDGET_MS } from './document-transform';
+import {
+  READY_WAIT_MS,
+  RECORD_STEP_MS,
+  REWRITE_DOCUMENT_BOUND_MS,
+  RUNNER_OVERHEAD_MS,
+  SIMULATION_RUNTIME_READ_MS,
+  STORE_STEP_MS
+} from './document-hold';
+
+// Declared in their own lean modules (the engine worker and the overlay
+// import them without the rest of this table's imports).
+export { DOCUMENT_TRANSFORM_BUDGET_MS } from './engine-budget';
+export {
+  CHROMIUM_RELEASE_MARGIN_MS,
+  SIMULATION_PREPARATION_BOUND_MS,
+  SIMULATION_PREPARATION_CPU_BOUND_MS,
+  STREAM_FACTS_WAIT_MS,
+  STREAM_RELEASE_MARGIN_MS,
+  STREAM_SETTLE_WAIT_MS,
+  chromiumReleaseMs,
+  documentRecordWaitMs,
+  rewriteDocumentBoundMs,
+  streamHoldWorstCaseMs
+} from './document-hold';
 
 /**
  * Per-step deadlines (ms). Generous against the real latencies (store and
@@ -25,13 +48,13 @@ export const SESSION_STEP_TIMEOUTS_MS = {
   /** `backend.resume` (wake re-validation). */
   resume: 1_500,
   /** One session-store or saved-set read/write. */
-  store: 500,
+  store: STORE_STEP_MS,
   /** The wake tab probe. */
   tabProbe: 500,
   /** One status push (tab and panels, in parallel). */
   push: 500,
   /** One wait on the wake re-validation before an ask or document proceeds. */
-  ready: 1_000,
+  ready: READY_WAIT_MS,
   /**
    * How long an ask may wait behind earlier events of its tab before it
    * gives up (rejects — the sender sees a retryable failure) instead of
@@ -39,9 +62,9 @@ export const SESSION_STEP_TIMEOUTS_MS = {
    */
   queueWait: 500,
   /** A runner's overhead past the engine budget (messaging, a worker spawn). */
-  runnerOverhead: 1_000,
+  runnerOverhead: RUNNER_OVERHEAD_MS,
   /** How long a recording host call waits for its record (it still lands after). */
-  record: 2_000
+  record: RECORD_STEP_MS
 } as const;
 
 const STEPS = SESSION_STEP_TIMEOUTS_MS;
@@ -58,7 +81,7 @@ export const SIMULATION_SOURCE_TIMEOUTS_MS = {
    * The packaged data's first read in a background lifetime (a ~20 KB
    * extension file: fetch, parse, hash — milliseconds), then a memory read.
    */
-  runtime: 1_000,
+  runtime: SIMULATION_RUNTIME_READ_MS,
   /** The exclusion list choice (the kept copy, read from storage once per background lifetime). */
   list: STEPS.store,
   /** The marker id (one memo write). */
@@ -66,25 +89,6 @@ export const SIMULATION_SOURCE_TIMEOUTS_MS = {
   /** The marker's settling after the run (one memo write narrowing it to the simulated features). */
   settleMarker: STEPS.store
 } as const;
-
-/**
- * The synchronous CPU a document's simulation preparation spends outside
- * its sources (version selection, contract checks — a linear scan; ~58 ms
- * measured on a 4 MiB page), with ≥ 10× headroom for slower machines — a
- * bound, not a timeout.
- */
-export const SIMULATION_PREPARATION_CPU_BOUND_MS = 600;
-
-/**
- * The longest a document's simulation host work takes (ms): every source
- * deadline — the marker's settling after the run included — + its CPU.
- */
-export const SIMULATION_PREPARATION_BOUND_MS =
-  SIMULATION_SOURCE_TIMEOUTS_MS.runtime +
-  SIMULATION_SOURCE_TIMEOUTS_MS.list +
-  SIMULATION_SOURCE_TIMEOUTS_MS.markerId +
-  SIMULATION_SOURCE_TIMEOUTS_MS.settleMarker +
-  SIMULATION_PREPARATION_CPU_BOUND_MS;
 
 /**
  * The most analysis work a whole set's prevalidation can spend (work
@@ -169,12 +173,13 @@ export const INTERCEPTION_HOST_BOUNDS_MS = {
    * post-run session re-check — a session that does not simulate (one that
    * does: {@link rewriteDocumentBoundMs}).
    */
-  rewriteDocument:
-    STEPS.ready + 2 * STEPS.store + DOCUMENT_TRANSFORM_BUDGET_MS + STEPS.runnerOverhead,
+  rewriteDocument: REWRITE_DOCUMENT_BOUND_MS,
   /** Wake wait + session read + the record wait. */
   documentBodyUnavailable: STEPS.ready + STEPS.store + STEPS.record,
   /** Wake wait + session read + the record wait. */
   documentNotServed: STEPS.ready + STEPS.store + STEPS.record,
+  /** Wake wait + session read + the record wait. */
+  documentPassed: STEPS.ready + STEPS.store + STEPS.record,
   /** Wake wait + the record wait. */
   interceptionEnded: STEPS.ready + STEPS.record,
   /**
@@ -185,55 +190,6 @@ export const INTERCEPTION_HOST_BOUNDS_MS = {
   simulatedRuntime:
     STEPS.ready + STEPS.queueWait + STEPS.store + 2 * SIMULATION_SOURCE_TIMEOUTS_MS.runtime
 } as const;
-
-/**
- * The bound (ms) a document's `rewriteDocument` resolves within: the
- * declared host bound, plus the simulation preparation only for a session
- * that simulates — a session that does not keeps the exclusions-only bound.
- *
- * @param simulates Whether the document's session simulates WP Rocket.
- */
-export function rewriteDocumentBoundMs(simulates: boolean): number {
-  const bound = INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument;
-  return simulates ? bound + SIMULATION_PREPARATION_BOUND_MS : bound;
-}
-
-/**
- * Streaming backends: how long a complete body waits for a final status in
- * the response facts (ms) before it is written through — the facts hook
- * normally runs before the body starts (verified in Firefox with a blocking
- * headers listener).
- */
-export const STREAM_FACTS_WAIT_MS = 1_000;
-
-/**
- * Streaming backends: how long a complete body waits for its request's
- * network completion (or failure) before it is trusted anyway (ms). The
- * completion normally lands within milliseconds of the body's end (or
- * before it); late arrivals were observed at a cold start (completion
- * 238 ms after) and under load (a truncation's failure 60 ms after) — the
- * wait costs latency only when the signal is late.
- */
-export const STREAM_SETTLE_WAIT_MS = 1_000;
-
-/**
- * Streaming backends: how far a stream's own release deadline sits past
- * the host's rewrite bound (ms) — past it the original bytes are served
- * whatever the host still does.
- */
-export const STREAM_RELEASE_MARGIN_MS = 500;
-
-/**
- * Streaming backends: the longest a top-level document is held (ms) —
- * settle wait, then the late-facts wait, then the release deadline (armed
- * only once the body is settled, so settling never eats into the host's
- * rewrite bound).
- *
- * @param rewriteBoundMs The document's host rewrite bound ({@link rewriteDocumentBoundMs}).
- */
-export function streamHoldWorstCaseMs(rewriteBoundMs: number): number {
-  return STREAM_SETTLE_WAIT_MS + STREAM_FACTS_WAIT_MS + rewriteBoundMs + STREAM_RELEASE_MARGIN_MS;
-}
 
 /** A step that did not settle within its deadline. */
 export class DeadlineExceededError extends Error {

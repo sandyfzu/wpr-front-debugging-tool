@@ -32,6 +32,12 @@
  *   permission) are rewritten like the page; service-worker-served
  *   navigations fail the filter (`Invalid request ID`) and pass unmodified,
  *   unrecorded.
+ * - **One record per session page** (see the seam): the host records what
+ *   it is asked to rewrite or told was unreadable; a final response the
+ *   engine never rewrites that still becomes the tab's page
+ *   (`rendersAsPage`) is reported as `ineligible-response`, and a request
+ *   failing before either as `network-error` (unless it was cancelled or
+ *   handed to a download, or its facts say it never becomes the page).
  * - **No browser-initiated end.** A table entry lives as long as the
  *   background that holds it; a restarted background has an empty table,
  *   so `resume` reports every stored session stale (served unmodified).
@@ -46,9 +52,16 @@ import type {
   InterceptionBackend,
   InterceptionHost
 } from './backend';
-import type { DocumentTransformRunner, InterceptedResponseFacts } from './document-transform';
+import {
+  isRewritableResponse,
+  rendersAsPage,
+  type DocumentTransformRunner,
+  type InterceptedResponseFacts
+} from './document-transform';
+import type { PassedDocumentFailure } from '../messaging/exclusion-session';
 import { cspHeaderFacts } from '../wp-rocket-simulation/csp-headers';
 import {
+  isFinalStatus,
   OPENING_STREAM,
   streamTransition,
   type StreamEffect,
@@ -195,11 +208,32 @@ interface LiveStream {
   readonly identity: InterceptedResponseIdentity;
   /** Whether the bytes being written are the host's rewrite (its record then claims them). */
   servingRewrite: boolean;
+  /** Whether the host has (or will write) this response's record — at most one report per stream. */
+  recorded: boolean;
+  /** Whether the latest final facts say the response becomes the tab's page (null: none yet). */
+  page: boolean | null;
   state: StreamState;
   /** Cancels the stream's one armed timer, or null. */
   cancelTimer: (() => void) | null;
   /** The host's rewrite bound its gate granted, or null until it answers. */
   rewriteBoundMs: number | null;
+}
+
+/**
+ * One response header's value (several headers joined with `, `), or null.
+ *
+ * @param headers The response headers, when listed.
+ * @param name The header name, lowercase.
+ */
+function responseHeaderValue(
+  headers: readonly StreamResponseHeader[] | undefined,
+  name: string
+): string | null {
+  const values = (headers ?? [])
+    .filter((header) => header.name.toLowerCase() === name)
+    .map((header) => header.value)
+    .filter((value): value is string => value !== undefined);
+  return values.length === 0 ? null : values.join(', ');
 }
 
 /**
@@ -210,12 +244,21 @@ interface LiveStream {
 export function responseContentType(
   headers: readonly StreamResponseHeader[] | undefined
 ): string | null {
-  const values = (headers ?? [])
-    .filter((header) => header.name.toLowerCase() === 'content-type')
-    .map((header) => header.value)
-    .filter((value): value is string => value !== undefined);
-  return values.length === 0 ? null : values.join(', ');
+  return responseHeaderValue(headers, 'content-type');
 }
+
+/**
+ * Request errors after which the tab keeps its page: a cancelled load (a
+ * newer navigation, Stop) and a response handed to the download manager.
+ * These are Firefox-internal `nsresult` names surfaced by `webRequest`
+ * (`onErrorOccurred`'s `error`), not a documented contract — they may vary
+ * between versions; a download is also kept off the record before any error
+ * by its facts (`rendersAsPage`).
+ */
+const KEPT_PAGE_ERRORS: ReadonlySet<string> = new Set([
+  'NS_BINDING_ABORTED',
+  'NS_BINDING_RETARGETED'
+]);
 
 /**
  * The facts a response-headers hook carries.
@@ -370,9 +413,11 @@ export function createStreamInterceptionBackend(
         askGate(stream);
         return;
       case 'ask-rewrite':
+        stream.recorded = true;
         askRewrite(stream, effect.body, effect.facts);
         return;
       case 'report-unavailable':
+        stream.recorded = true;
         void host
           .documentBodyUnavailable(stream.tabId, stream.url, stream.identity)
           .catch((cause: unknown) => {
@@ -413,6 +458,17 @@ export function createStreamInterceptionBackend(
     stream.cancelTimer?.();
     stream.cancelTimer = null;
   }
+
+  /** Report a passed session page to the host (once per stream; the host checks the session). */
+  const reportPassed = (stream: LiveStream, reason: PassedDocumentFailure): void => {
+    if (stream.recorded) return;
+    stream.recorded = true;
+    host
+      .documentPassed(stream.tabId, stream.url, reason, stream.identity)
+      .catch((cause: unknown) => {
+        log.error('Stream passed-page report failed', { requestId: stream.requestId, cause });
+      });
+  };
 
   /** Run a filter callback isolated: one failing handler never breaks the stream's others. */
   const guarded =
@@ -506,6 +562,8 @@ export function createStreamInterceptionBackend(
           serviceWorkersBypassed: false
         },
         servingRewrite: false,
+        recorded: false,
+        page: null,
         state: OPENING_STREAM,
         cancelTimer: null,
         rewriteBoundMs: null
@@ -517,7 +575,16 @@ export function createStreamInterceptionBackend(
     responseStarted(details) {
       const stream = streams.get(details.requestId);
       if (stream === undefined || stream.tabId !== details.tabId) return;
-      dispatch(stream, { type: 'facts', facts: responseFacts(details) });
+      const facts = responseFacts(details);
+      dispatch(stream, { type: 'facts', facts });
+      if (!isFinalStatus(facts)) return;
+      stream.page = rendersAsPage({
+        status: facts.status,
+        method: facts.method,
+        disposition: responseHeaderValue(details.responseHeaders, 'content-disposition'),
+        contentType: facts.contentType
+      });
+      if (stream.page && !isRewritableResponse(facts)) reportPassed(stream, 'ineligible-response');
     },
 
     requestFailed(details) {
@@ -528,6 +595,10 @@ export function createStreamInterceptionBackend(
         error: details.error
       });
       dispatch(stream, { type: 'failed' });
+      // The browser's error page replaces the page — unless the load was
+      // cancelled or became a download (the page stays).
+      if (stream.page !== false && !KEPT_PAGE_ERRORS.has(details.error))
+        reportPassed(stream, 'network-error');
     },
 
     requestCompleted(details) {

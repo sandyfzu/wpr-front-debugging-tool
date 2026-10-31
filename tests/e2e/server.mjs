@@ -117,6 +117,12 @@ const CSP_CASES = {
 };
 
 /**
+ * Requests served so far per `run` key of `/__e2e/partial-on-reload` (each
+ * test passes its own key, so its first request is the whole page again).
+ */
+const partialRuns = new Map();
+
+/**
  * Serve one request: the whole handler of every bound socket.
  *
  * @param {import('node:http').IncomingMessage} request The incoming request.
@@ -268,6 +274,21 @@ async function handle(request, response) {
     for (const policy of cspCase.policies) headers.push('content-security-policy', policy);
     response.writeHead(200, headers);
     response.end(await readFile(join(ROOT, 'simulation', cspCase.page)));
+    return;
+  }
+  if (url.pathname === '/__e2e/partial-on-reload') {
+    // The delayed-scripts page, served whole (200) on its first request, then
+    // — from the session's reload on — as a 206 partial HTML response: a page
+    // the session never rewrites that still becomes the tab's page (it must
+    // be recorded, never leave the overlay waiting).
+    const run = url.searchParams.get('run') ?? '';
+    const served = (partialRuns.get(run) ?? 0) + 1;
+    partialRuns.set(run, served);
+    response.writeHead(served === 1 ? 200 : 206, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store'
+    });
+    response.end(await readFile(join(ROOT, 'exclusion', 'delayed.html')));
     return;
   }
   if (url.pathname === '/__e2e/windows-1252') {

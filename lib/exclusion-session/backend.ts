@@ -30,10 +30,23 @@
  *
  * **Eligibility.** Before reading or decoding any body, a backend passes
  * only `isRewritableResponse` (`./document-transform`) responses to the host; every other
- * response is passed through (continued) unrecorded — never reported via
- * `documentBodyUnavailable`. The host re-checks it.
+ * response is passed through (continued) — never reported via
+ * `documentBodyUnavailable`. The host re-checks it. A passed top-level
+ * response that still becomes the tab's page (`rendersAsPage`), or a
+ * network failure of one, is reported via `documentPassed`.
+ *
+ * **One record per session page.** Every top-level document of a session
+ * tab on the session's origin that reaches a backend while the session is
+ * live ends in exactly one record: the host records the outcome of every
+ * document it is asked to rewrite (served, unmodified, past its bound,
+ * abandoned); the backend reports what it passed without asking. Left
+ * unrecorded, by design: a page whose session read fails (the overlay's
+ * bounded wait names it), and a document arriving while the session stops.
  */
-import type { InterceptionUnavailableCause } from '../messaging/exclusion-session';
+import type {
+  InterceptionUnavailableCause,
+  PassedDocumentFailure
+} from '../messaging/exclusion-session';
 import type {
   DocumentTransformRunner,
   InterceptedDocumentBody,
@@ -141,8 +154,10 @@ export interface InterceptionHost {
    * @param abandoned Optional: whether the backend has stopped waiting for
    *   this answer (it already served the original — its own deadline passed,
    *   the stream failed or was withdrawn). Checked right before the outcome
-   *   is recorded: an abandoned document records nothing and answers null,
-   *   so the record never claims a rewrite that was not served.
+   *   is recorded: an abandoned document answers null and is recorded as
+   *   served unmodified (`not-served`; `timed-out` once the host's own
+   *   bound passed), so the record never claims a rewrite that was not
+   *   served.
    *
    * @returns The bytes to serve, or null to serve the original bytes
    *   (no active session for the tab, another origin, an ineligible
@@ -183,6 +198,19 @@ export interface InterceptionHost {
   documentNotServed(
     tabId: number,
     documentUrl: string,
+    identity?: InterceptedResponseIdentity
+  ): Promise<void>;
+  /**
+   * A top-level document the backend passed without asking for a rewrite,
+   * though it becomes the tab's page: its response is one the session never
+   * rewrites (`ineligible-response`), or it failed on the network
+   * (`network-error`) — recorded as served unmodified (with the response's
+   * identity when given), so the page's overlay never waits for a record.
+   */
+  documentPassed(
+    tabId: number,
+    documentUrl: string,
+    reason: PassedDocumentFailure,
     identity?: InterceptedResponseIdentity
   ): Promise<void>;
   /**

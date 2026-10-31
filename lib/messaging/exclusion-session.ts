@@ -113,23 +113,38 @@ export type InterceptionUnavailableCause = keyof typeof INTERCEPTION_UNAVAILABLE
  * Why one intercepted document was served unmodified (the session itself
  * stays active): its body could not be read, it could not be decoded with
  * its declared charset, the rewritten text could not be encoded back into
- * that charset, the engine failed unexpectedly, or the rewrite could not be
+ * that charset, the engine failed unexpectedly, the rewrite could not be
  * delivered (`not-served`: the browser had already dropped the response —
  * its navigation abandoned or the session ended first — so whatever the
- * page shows was not served by the session). Additive: a newer
- * build's reason fails an older build's guard (its read-back drops that
- * record — never a fabricated one).
+ * page shows was not served by the session), the rewrite missed its time
+ * bound (`timed-out`: the original was served meanwhile), the response is
+ * a page the session never rewrites (`ineligible-response`: e.g. a partial
+ * `206`, XHTML or plain text), or it failed on the network
+ * (`network-error`). Additive: a newer build's reason fails an older
+ * build's guard (its read-back drops that record — never a fabricated one).
  */
 export const EXCLUSION_DOCUMENT_FAILURES = [
   'body-unavailable',
   'decode-failed',
   'encode-failed',
   'engine-failed',
-  'not-served'
+  'not-served',
+  'timed-out',
+  'ineligible-response',
+  'network-error'
 ] as const;
 
 /** One unmodified-document reason (see {@link EXCLUSION_DOCUMENT_FAILURES}). */
 export type ExclusionDocumentFailure = (typeof EXCLUSION_DOCUMENT_FAILURES)[number];
+
+/**
+ * The reasons a backend reports for a session page it passed without asking
+ * for a rewrite (the response itself rules a rewrite out).
+ */
+export type PassedDocumentFailure = Extract<
+  ExclusionDocumentFailure,
+  'ineligible-response' | 'network-error'
+>;
 
 /** Upper bound of a reported engine wall-time budget (a sanity cap, not the budget). */
 const MAX_BUDGET_MS = 600_000;

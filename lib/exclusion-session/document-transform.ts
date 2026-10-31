@@ -34,15 +34,7 @@ import { decodeDocument, encodeDocument, extractMimeType } from './charset';
 import type { MarkerSettler, SimulationPreparer } from './simulation-sources';
 import { simulationStage } from './simulation-stage';
 import { removeSpeculationRules } from './speculation-rules';
-
-/**
- * The engine's wall-time budget per document (ms). Measured 2026-10-20 on
- * the local WP site's home page (84 KiB) repeated to size, five-feature
- * set: 84 KiB ≈ 1 ms, 844 KiB ≈ 14 ms, 4.1 MiB ≈ 270 ms — the budget keeps
- * ~7× headroom over a worst-case-sized document on a slower machine while
- * capping what a pathological row can add to a navigation.
- */
-export const DOCUMENT_TRANSFORM_BUDGET_MS = 2_000;
+import { DOCUMENT_TRANSFORM_BUDGET_MS } from './engine-budget';
 
 /**
  * The largest body a backend buffers for rewriting (bytes). Larger bodies
@@ -299,6 +291,73 @@ export function isRewritableResponse(response: InterceptedResponseFacts): boolea
   if ((status >= 300 && status <= 399) || NON_DOCUMENT_STATUSES.has(status)) return false;
   if (method.toUpperCase() === 'HEAD') return false;
   return extractMimeType(contentType)?.essence === 'text/html';
+}
+
+/** Media types (essences) a browser renders in the tab rather than downloading. */
+const INLINE_MEDIA_TYPES: ReadonlySet<string> = new Set([
+  'application/xhtml+xml',
+  'application/xml',
+  'application/json',
+  'application/pdf'
+]);
+
+/**
+ * `+xml` types a browser may download instead of rendering: Firefox hands
+ * feeds (e.g. WordPress `/feed/`) to the download manager, so following a
+ * feed link must never record against the page still shown.
+ */
+const DOWNLOADED_XML_TYPES: ReadonlySet<string> = new Set([
+  'application/rss+xml',
+  'application/atom+xml'
+]);
+
+/** Top-level types a browser renders in the tab (`text/*`, `image/*`, …). */
+const INLINE_TOP_LEVEL_TYPES: ReadonlySet<string> = new Set(['text', 'image', 'audio', 'video']);
+
+/**
+ * Whether a `Content-Type` value names a type the browser renders in the
+ * tab: `text/*`, `image/*`, `audio/*`, `video/*`, `+xml` (feeds excepted),
+ * XML, JSON or PDF. A missing or unparsable type is not counted: the browser sniffs the
+ * bytes then (an archive becomes a download), and nothing else known before
+ * the release tells which — an unrecorded page reads "no result", a wrong
+ * record would overwrite the visible page's.
+ *
+ * @param contentType The header value, or null when absent.
+ */
+export function rendersInline(contentType: string | null): boolean {
+  const essence = extractMimeType(contentType)?.essence;
+  if (essence === undefined) return false;
+  if (DOWNLOADED_XML_TYPES.has(essence)) return false;
+  if (INLINE_MEDIA_TYPES.has(essence) || essence.endsWith('+xml')) return true;
+  return INLINE_TOP_LEVEL_TYPES.has(essence.slice(0, essence.indexOf('/')));
+}
+
+/**
+ * Whether a top-level response the engine does not rewrite still becomes
+ * the tab's page when served as it is — so a session records it (the
+ * page's overlay would otherwise wait for a record that never comes). Not:
+ * a 1xx or 3xx (a redirect's next hop is the page), 204/205 (the current
+ * page stays), `HEAD`, a download (`Content-Disposition: attachment`), or
+ * a type the browser does not render inline ({@link rendersInline} — e.g. a
+ * zip, which the browser downloads without any disposition).
+ * A 304 never reaches here alone (the cached response is what is paused).
+ *
+ * @param response The final status, the method, the response's
+ *   `Content-Disposition` and `Content-Type` (null when absent).
+ */
+export function rendersAsPage(response: {
+  readonly status: number;
+  readonly method: string;
+  readonly disposition: string | null;
+  readonly contentType: string | null;
+}): boolean {
+  const { status, method, disposition, contentType } = response;
+  if (!Number.isInteger(status) || status < 200 || status > 599) return false;
+  if ((status >= 300 && status <= 399) || status === 204 || status === 205) return false;
+  if (method.toUpperCase() === 'HEAD') return false;
+  // RFC 6266: the disposition type comes first, case-insensitive.
+  if (disposition !== null && /^\s*attachment\s*(?:;|$)/i.test(disposition)) return false;
+  return rendersInline(contentType);
 }
 
 /** The text served for a run, its rules removed, encoded — or null when it equals the original. */

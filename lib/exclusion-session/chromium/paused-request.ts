@@ -19,7 +19,12 @@
  */
 import { isRecord } from '../../../utils/is-record';
 import { base64ToBytes, bytesToBase64 } from '../../../utils/base64';
-import { isRewritableResponse, type InterceptedResponseFacts } from '../document-transform';
+import {
+  isRewritableResponse,
+  rendersAsPage,
+  type InterceptedResponseFacts
+} from '../document-transform';
+import type { PassedDocumentFailure } from '../../messaging/exclusion-session';
 import { cspHeaderFacts } from '../../wp-rocket-simulation/csp-headers';
 
 /** One response header line. */
@@ -225,6 +230,41 @@ export function classifyPause(pause: PausedRequest): PauseDisposition {
 }
 
 /**
+ * The network error reason of a navigation the browser cancelled (another
+ * navigation, a stop): the current page stays, so nothing is recorded.
+ */
+const ABORTED_ERROR_REASON = 'Aborted';
+
+/**
+ * What a passed document response becomes on the tab, as the session
+ * records it (when it is the session tab's top-level page on the session's
+ * origin): `ineligible-response` for a response the engine never rewrites
+ * that still becomes the page ({@link rendersAsPage}), `network-error` for a
+ * failed one (the browser's error page replaces the page) — or null when it
+ * is not a page at all (not a document, a redirect hop, no content, a
+ * download, a cancelled navigation, a request-stage pause).
+ *
+ * @param pause The paused request.
+ * @param reason Why it is passed.
+ */
+export function passedPageFailure(
+  pause: PausedRequest,
+  reason: PassReason
+): PassedDocumentFailure | null {
+  if (pause.resourceType !== 'Document') return null;
+  if (reason === 'network-error')
+    return pause.errorReason === ABORTED_ERROR_REASON ? null : 'network-error';
+  if (reason !== 'ineligible' || pause.status === null) return null;
+  const page = rendersAsPage({
+    status: pause.status,
+    method: pause.method,
+    disposition: headerValue(pause.headers, 'content-disposition'),
+    contentType: headerValue(pause.headers, 'content-type')
+  });
+  return page ? 'ineligible-response' : null;
+}
+
+/**
  * The bytes of a `Fetch.getResponseBody` result. Chromium always answers
  * base64; a textual answer is accepted only when it is pure ASCII (then
  * its bytes are unambiguous in any ASCII-compatible charset) — otherwise
@@ -323,8 +363,24 @@ export function runtimeFulfillParams(requestId: string, body: Uint8Array): Recor
  * @param result The command's result.
  */
 export function frameTreeDocumentUrl(result: unknown): string | null {
+  return frameTreeRoot(result, 'url');
+}
+
+/**
+ * The root frame's id in a `Page.getFrameTree` result — the top frame of
+ * the session that answered it (`Page.Frame.id`) — or null when the result
+ * lacks it (validated: protocol results are untrusted).
+ *
+ * @param result The command's result.
+ */
+export function frameTreeRootId(result: unknown): string | null {
+  return frameTreeRoot(result, 'id');
+}
+
+/** One non-empty string field of a frame-tree result's root frame, or null. */
+function frameTreeRoot(result: unknown, field: 'url' | 'id'): string | null {
   if (!isRecord(result) || !isRecord(result.frameTree) || !isRecord(result.frameTree.frame)) {
     return null;
   }
-  return text(result.frameTree.frame.url);
+  return text(result.frameTree.frame[field]);
 }

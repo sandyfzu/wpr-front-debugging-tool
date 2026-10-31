@@ -11,7 +11,8 @@ import {
   simulatedReport
 } from '../../../lib/messaging/exclusion-simulation.fixtures';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import { appliedWarnings, sessionView, simulationReports } from './session-view';
+import { appliedWarnings, awaitsRecord, sessionView, simulationReports } from './session-view';
+import type { PageFacts } from './page-match';
 
 /** The fixture session with another document outcome. */
 function withDocument(document: ExclusionDocumentOutcome | null): ActiveExclusionSession {
@@ -46,6 +47,16 @@ describe('sessionView', () => {
 
   it('is armed before any document lands', () => {
     expect(sessionView(withDocument(null), vi.fn())).toEqual({ kind: 'armed' });
+  });
+
+  it('is unrecorded once the page’s record wait passed without a document', () => {
+    const match = vi.fn();
+    expect(sessionView(withDocument(null), match, true)).toEqual({ kind: 'unrecorded' });
+    expect(match).not.toHaveBeenCalled();
+    // A record landing afterwards wins over the overdue wait.
+    expect(
+      sessionView(withDocument({ outcome: 'rewritten', reports: [] }), () => 'this-page', true)
+    ).toMatchObject({ kind: 'applied' });
   });
 
   it('reports a rewritten page with its no-match count', () => {
@@ -256,5 +267,39 @@ describe('sessionView: simulation', () => {
       kind: 'unmodified',
       reason: { kind: 'over-budget', stage: 'simulate' }
     });
+  });
+});
+
+describe('awaitsRecord', () => {
+  const STARTED = activeRecord().startedAt;
+  /** A page anchored at document_start, its navigation `offset` ms after the apply. */
+  const pageAt = (offset: number, extra: Partial<PageFacts> = {}): PageFacts => ({
+    href: 'https://example.com/',
+    documentUrl: 'https://example.com/',
+    navigationStart: STARTED + offset,
+    anchoredAtStart: true,
+    responseEnd: null,
+    ...extra
+  });
+
+  it('waits for the record of a page loaded after the apply', () => {
+    expect(awaitsRecord(withDocument(null), pageAt(1))).toBe(true);
+  });
+
+  it('does not wait for a page loaded before the apply (the user reloads it)', () => {
+    expect(awaitsRecord(withDocument(null), pageAt(-1))).toBe(false);
+    expect(awaitsRecord(withDocument(null), pageAt(0))).toBe(false);
+  });
+
+  it('does not wait when its navigation start is not anchored, or the page was restored', () => {
+    expect(awaitsRecord(withDocument(null), pageAt(1, { anchoredAtStart: false }))).toBe(false);
+    expect(awaitsRecord(withDocument(null), pageAt(1, { restored: true }))).toBe(false);
+  });
+
+  it('does not wait once a document is recorded, or without an active session', () => {
+    expect(awaitsRecord(withDocument({ outcome: 'rewritten', reports: [] }), pageAt(1))).toBe(
+      false
+    );
+    expect(awaitsRecord({ state: 'inactive' }, pageAt(1))).toBe(false);
   });
 });

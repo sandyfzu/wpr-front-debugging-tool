@@ -54,6 +54,7 @@ import {
   parseServedDocument,
   type ActiveExclusionSession,
   type ExclusionApplyReply,
+  type ExclusionDocumentFailure,
   type ExclusionDocumentOutcome,
   type ExclusionSaveReply,
   type ExclusionServedDocument,
@@ -86,7 +87,6 @@ import type {
 } from './backend';
 import {
   createInProcessTransformRunner,
-  DOCUMENT_TRANSFORM_BUDGET_MS,
   isRewritableResponse,
   rewriteDocument,
   type DocumentTransformRunner
@@ -112,6 +112,7 @@ import {
 } from './simulation-sources';
 import {
   DeadlineExceededError,
+  DOCUMENT_TRANSFORM_BUDGET_MS,
   INTERCEPTION_HOST_BOUNDS_MS,
   rewriteDocumentBoundMs,
   SESSION_STEP_TIMEOUTS_MS as STEPS,
@@ -371,7 +372,7 @@ export function createExclusionSessionController(
     }
   };
 
-  /** Push a status to the tab and the panels; a missing receiver is expected. */
+  /** Push a status to the tab and the panels; a missing or departed receiver is expected. */
   const notify = async (tabId: number, status: ExclusionSessionStatus): Promise<void> => {
     const pushes: [string, () => Promise<unknown>][] = [
       ['tab', () => deps.pushToTab(tabId, status)],
@@ -698,7 +699,92 @@ export function createExclusionSessionController(
     );
 
   /**
+   * The engine's run on one document of `session`: the bytes to serve (null:
+   * the original) and the outcome to record — never rejects (an unexpected
+   * fault is `engine-failed`, so the page still gets its record).
+   */
+  const runForSession = async (
+    document: InterceptedDocument,
+    session: ActiveExclusionSession
+  ): Promise<{ body: Uint8Array | null; outcome: ExclusionDocumentOutcome }> => {
+    try {
+      const result = await rewriteDocument(
+        document,
+        session.set,
+        boundedRunner,
+        DOCUMENT_TRANSFORM_BUDGET_MS,
+        session.simulate === undefined
+          ? undefined
+          : simulationPreparer(session.simulate, document, simulationSources),
+        simulationMarkerSettler(document, simulationSources)
+      );
+      if (result.cause !== undefined) {
+        log.error(
+          result.cause instanceof SimulationPreparationError
+            ? 'Simulation inputs could not be prepared — document served unmodified'
+            : 'Exclusion engine failed — document served unmodified',
+          { tabId: document.tabId, cause: result.cause }
+        );
+      }
+      // A copy-serving backend serves the original unless the exclusions
+      // changed the document (a copy costs the page its real security state
+      // and timing); its page guard removes the rules instead.
+      const copies = document.identity?.servedAsCopy === true;
+      const body = copies && result.rulesOnly === true ? null : result.body;
+      const outcome = checkedOutcome(
+        session,
+        withServed(
+          result.outcome,
+          await servedIdentity(
+            document,
+            body === null ? 0 : (result.speculationRulesRemoved ?? 0),
+            copies && body !== null
+          )
+        )
+      );
+      if (outcome !== null) return { body, outcome };
+      log.error('Engine outcome failed validation — document served unmodified', {
+        tabId: document.tabId
+      });
+    } catch (cause) {
+      log.error('Document rewrite failed unexpectedly — served unmodified', {
+        tabId: document.tabId,
+        cause
+      });
+    }
+    return { body: null, outcome: await unservedOutcome(document, 'engine-failed') };
+  };
+
+  /** A served-unmodified outcome for `reason`, with the document's identity when it has one. */
+  const unservedOutcome = async (
+    document: Pick<InterceptedDocument, 'documentUrl' | 'identity'>,
+    reason: ExclusionDocumentFailure
+  ): Promise<ExclusionDocumentOutcome> => {
+    let served: ExclusionServedDocument | null = null;
+    try {
+      served = await servedIdentity(document, 0, false);
+    } catch (cause) {
+      // Recorded without it: the page's overlay then cannot verify, but never waits.
+      log.error('Document identity unavailable — recorded without it', { cause });
+    }
+    return withServed({ outcome: 'failed', reason }, served);
+  };
+
+  /** Record a document outcome on the session started at `startedAt` (queued; never rejects). */
+  const recordDocument = (
+    tabId: number,
+    startedAt: number,
+    outcome: ExclusionDocumentOutcome
+  ): Promise<void> =>
+    driveQuietly(tabId, { type: 'document', startedAt, outcome }, 'document record');
+
+  /**
    * Rewrite one eligible document of the tab's live session (see the seam).
+   * Once the session is known, the document gets exactly one record — unless
+   * Stop or a re-apply landed meanwhile (that session's pages are no longer
+   * this one's to describe): its outcome, or — when the host bound passed
+   * (`timed-out`) or the backend stopped waiting (`not-served`) — served
+   * unmodified, since the backend served the original then.
    *
    * @param document The intercepted document.
    * @param expired Whether the host bound already passed.
@@ -713,64 +799,25 @@ export function createExclusionSessionController(
     extendBound: () => void
   ): Promise<Uint8Array | null> => {
     if (!isRewritableResponse(document)) return null;
+    // Null on a failed or slow read too: left unrecorded (the overlay's
+    // bounded wait names a page without a record).
     const session = await activeFor(document.tabId, document.documentUrl);
     if (session === null) return null;
     if (session.simulate !== undefined) extendBound();
-    const result = await rewriteDocument(
-      document,
-      session.set,
-      boundedRunner,
-      DOCUMENT_TRANSFORM_BUDGET_MS,
-      session.simulate === undefined
-        ? undefined
-        : simulationPreparer(session.simulate, document, simulationSources),
-      simulationMarkerSettler(document, simulationSources)
-    );
-    if (result.cause !== undefined) {
-      log.error(
-        result.cause instanceof SimulationPreparationError
-          ? 'Simulation inputs could not be prepared — document served unmodified'
-          : 'Exclusion engine failed — document served unmodified',
-        { tabId: document.tabId, cause: result.cause }
-      );
-    }
-    // A copy-serving backend serves the original unless the exclusions
-    // changed the document (a copy costs the page its real security state
-    // and timing); its page guard removes the rules instead.
-    const copies = document.identity?.servedAsCopy === true;
-    let body = copies && result.rulesOnly === true ? null : result.body;
-    let outcome = checkedOutcome(
-      session,
-      withServed(
-        result.outcome,
-        await servedIdentity(
-          document,
-          body === null ? 0 : (result.speculationRulesRemoved ?? 0),
-          copies && body !== null
-        )
-      )
-    );
-    if (outcome === null) {
-      log.error('Engine outcome failed validation — document served unmodified', {
-        tabId: document.tabId
+    const { body, outcome } = await runForSession(document, session);
+    // Stop or a re-apply may have landed while the engine ran: serve (and
+    // record) only for the session that is still live.
+    if (!(await stillLive(document.tabId, session.startedAt))) return null;
+    const late = expired() ? 'timed-out' : abandoned() ? 'not-served' : null;
+    if (late !== null) {
+      log.warn('Session page served unmodified — its rewrite came too late', {
+        tabId: document.tabId,
+        reason: late
       });
-      body = null;
-      outcome = withServed(
-        { outcome: 'failed', reason: 'engine-failed' },
-        await servedIdentity(document, 0, false)
-      );
-    }
-    // Stop or a re-apply may have landed while the engine ran, or the
-    // backend may have served the original already: serve (and record) only
-    // for the session that is still live and a backend still waiting.
-    if (!(await stillLive(document.tabId, session.startedAt)) || expired() || abandoned()) {
+      void recordDocument(document.tabId, session.startedAt, await unservedOutcome(document, late));
       return null;
     }
-    void driveQuietly(
-      document.tabId,
-      { type: 'document', startedAt: session.startedAt, outcome },
-      'document record'
-    );
+    void recordDocument(document.tabId, session.startedAt, outcome);
     return body;
   };
 
@@ -784,19 +831,14 @@ export function createExclusionSessionController(
     tabId: number,
     documentUrl: string,
     identity: InterceptedResponseIdentity | undefined,
-    reason: 'body-unavailable' | 'not-served'
+    reason: ExclusionDocumentFailure
   ): Promise<void> => {
     const session = await activeFor(tabId, documentUrl);
     if (session === null) return;
-    const served = await servedIdentity({ documentUrl, identity }, 0, false);
-    await driveQuietly(
+    await recordDocument(
       tabId,
-      {
-        type: 'document',
-        startedAt: session.startedAt,
-        outcome: withServed({ outcome: 'failed', reason }, served)
-      },
-      'document record'
+      session.startedAt,
+      await unservedOutcome({ documentUrl, identity }, reason)
     );
   };
 
@@ -838,6 +880,11 @@ export function createExclusionSessionController(
     documentNotServed: (tabId, documentUrl, identity) =>
       hostCall('documentNotServed', undefined, () =>
         recordUnserved(tabId, documentUrl, identity, 'not-served')
+      ),
+
+    documentPassed: (tabId, documentUrl, reason, identity) =>
+      hostCall('documentPassed', undefined, () =>
+        recordUnserved(tabId, documentUrl, identity, reason)
       ),
 
     // Queued behind the tab's events: the document record of the page that

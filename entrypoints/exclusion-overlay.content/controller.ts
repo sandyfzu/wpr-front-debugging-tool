@@ -89,7 +89,13 @@ import { INITIAL_OVERLAY_STATE, canStart, overlayTransition } from './session/ma
 import type { OverlayEvent, OverlayState, SessionAction } from './session/machine';
 import { matchServedDocument, type PageFacts } from './session/page-match';
 import type { ExclusionSessionPort, PortOutcome, SessionProblem } from './session/port';
-import { sessionView, simulationReports, type SessionView } from './session/session-view';
+import {
+  awaitsRecord,
+  sessionView,
+  simulationReports,
+  type SessionView
+} from './session/session-view';
+import { documentRecordWaitMs } from '../../lib/exclusion-session/document-hold';
 
 /** How long a typing pause waits before the draft is saved. */
 export const AUTOSAVE_DELAY_MS = 800;
@@ -502,10 +508,16 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     return current.phase === 'ready' ? current.status : null;
   };
 
+  /** The session start whose page-record wait passed without a record (`unrecorded`). */
+  const [overdueStart, setOverdueStart] = createSignal<number | null>(null);
+  /** The running page-record wait: the session start it is for, and its cancel. */
+  let recordWait: { readonly startedAt: number; readonly cancel: () => void } | null = null;
+
   const view = createMemo<SessionView | null>(() => {
     const current = status();
     if (current === null) return null;
-    return sessionView(current, (served) => matchServedDocument(served, deps.pageFacts()));
+    const overdue = current.state === 'active' && overdueStart() === current.startedAt;
+    return sessionView(current, (served) => matchServedDocument(served, deps.pageFacts()), overdue);
   });
 
   const draftSet = createMemo(() => draftToSet(draft()));
@@ -638,6 +650,39 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     }
     return count;
   });
+
+  // A page loaded through the session waits for its record only so long:
+  // past the wait the status is read again, and a page still without a
+  // record says so (`unrecorded`) instead of waiting forever.
+  createEffect(() => {
+    const current = status();
+    const due = current?.state === 'active' && awaitsRecord(current, deps.pageFacts());
+    if (current?.state !== 'active' || !due) {
+      recordWait?.cancel();
+      recordWait = null;
+      return;
+    }
+    const { startedAt } = current;
+    if (recordWait?.startedAt === startedAt || overdueStart() === startedAt) return;
+    recordWait?.cancel();
+    recordWait = {
+      startedAt,
+      cancel: deps.schedule(
+        () => {
+          void settleRecordWait(startedAt);
+        },
+        documentRecordWaitMs(current.simulate !== undefined)
+      )
+    };
+  });
+
+  /** The record wait for the session started at `startedAt` passed: re-read, then mark it overdue. */
+  const settleRecordWait = async (startedAt: number): Promise<void> => {
+    await refreshStatus();
+    if (disposed || recordWait?.startedAt !== startedAt) return;
+    recordWait = null;
+    setOverdueStart(startedAt);
+  };
 
   // The fix-rows notice is true only while a row has a problem: it leaves
   // with the last one (judged once the set readings caught up with the rows).
@@ -1366,6 +1411,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     dispose: () => {
       disposed = true;
       cancelStall?.();
+      recordWait?.cancel();
       if (finishPaste !== null) {
         // A long paste still committing lands now; its landing saves (no pasted line is lost).
         finishPaste();
