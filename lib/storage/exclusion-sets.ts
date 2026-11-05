@@ -47,7 +47,8 @@ export type SavedExclusionSets = Record<string, SavedExclusionSet>;
 /**
  * The map's byte budget: the UTF-8 size of the stored JSON (key included).
  * The `local:` area caps everything at 10,485,760 bytes of JSON across all
- * items (shared with the Known Conflicts cache); 4 MiB leaves the rest of
+ * items (shared with the Known Conflicts cache and the 1 MiB RUCSS tester
+ * configuration); 4 MiB leaves the rest of
  * the area free while holding ≥ 20 worst-case sets (a set is bounded to
  * ~200 KiB) — and thousands of realistic ones.
  */

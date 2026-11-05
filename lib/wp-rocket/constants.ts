@@ -185,8 +185,11 @@ export const LAZYLOAD_EXCLUSIONS_LIST = [
   FDT_EXCLUDED_RESOURCE
 ] as const;
 
+/** Remove Unused CSS: the reserved id of the inline `style` element holding the used CSS. */
+export const RUCSS_USED_CSS_ID = 'wpr-usedcss';
+
 /** Remove Unused CSS: an inline `style` element with the reserved id. */
-export const RUCSS_STYLE_SELECTOR = 'style#wpr-usedcss';
+export const RUCSS_STYLE_SELECTOR = `style#${RUCSS_USED_CSS_ID}`;
 
 /** The inline Load-CSS-asynchronously fallback script calls this function. */
 export const CPCSS_MARK = 'wprRemoveCPCSS';
