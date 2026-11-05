@@ -3,6 +3,7 @@
  * non-empty `data-rocket-src` before `src`, resolved like the `src` property.
  */
 import { describe, expect, it } from 'vitest';
+import { servedSrcOf } from '../wp-rocket/delayed-script';
 import { servedScriptSrc, servedScriptSrcAttribute } from './served-script-src';
 
 /** The first script of a parsed document (the test runner's base: `http://localhost:3000/`). */
@@ -123,5 +124,20 @@ describe('servedScriptSrc', () => {
       '<head><base href="https://cdn.example/sub/"></head><script type="rocketlazyloadscript" data-rocket-src="a.js"></script>'
     );
     expect(servedScriptSrc(delayed)).toBe('https://cdn.example/sub/a.js');
+  });
+});
+
+describe('servedSrcOf (the shared rule) on live elements', () => {
+  it('agrees with the element reader on the same attributes', () => {
+    const element = script(
+      `<script type="rocketlazyloadscript" data-rocket-src="" src="https://s.example/x.js"></script>`
+    );
+    expect(
+      servedSrcOf({
+        type: element.getAttribute('type'),
+        delayedSrc: element.getAttribute('data-rocket-src'),
+        src: element.getAttribute('src')
+      })
+    ).toBe(servedScriptSrcAttribute(element));
   });
 });

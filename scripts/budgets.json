@@ -118,6 +118,25 @@
     }
   },
   {
+    "surface": "beacon test runner (unlisted script, injected on the first test run)",
+    "globs": ["beacon-runner.js"],
+    "maxKb": {
+      "raw": 30,
+      "gzip": 9.3
+    },
+    "required": true
+  },
+  {
+    "surface": "beacon test runner (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["beacon-runner.js"],
+    "maxKb": {
+      "raw": 30,
+      "gzip": 9.3
+    },
+    "required": true
+  },
+  {
     "surface": "main-world content script",
     "globs": ["content-scripts/main-world*.js"],
     "maxKb": {
@@ -187,7 +206,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1839.2
+      "raw": 1868.9
     }
   }
 ]
