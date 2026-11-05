@@ -193,6 +193,9 @@ importers:
       tailwind-merge:
         specifier: ^3.7.0
         version: 3.7.0
+      wp-rocket-scripts:
+        specifier: 1.2.2
+        version: 1.2.2
     devDependencies:
       '@commitlint/cli':
         specifier: ^21.2.4
@@ -3258,6 +3261,9 @@ packages:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
     engines: {node: '>=0.10.0'}
 
+  wp-rocket-scripts@1.2.2:
+    resolution: {integrity: sha512-HlT51yJdzbddMTzVc8QIMEeuWGW7luIq7yBNk02hl83LzBxApx1jNAp5ssMhA8nYxzHhSdvH23i2wfu9w4ozRw==}
+
   wrap-ansi@7.0.0:
     resolution: {integrity: sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==}
     engines: {node: '>=10'}
@@ -6320,6 +6326,8 @@ snapshots:
   winreg@0.0.12: {}
 
   word-wrap@1.2.5: {}
+
+  wp-rocket-scripts@1.2.2: {}
 
   wrap-ansi@7.0.0:
     dependencies:
