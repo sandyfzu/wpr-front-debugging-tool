@@ -24,6 +24,7 @@ import { setupKnownConflicts } from './known-conflicts';
 import { setupSideBySide } from './side-by-side';
 import { setupInspectorWidget } from './inspector';
 import { setupCommandPalette } from './palette';
+import { setupRucssTest } from './rucss-test';
 import { onUnhandledRejection, onUncaughtError } from '../../lib/uncaught-errors';
 import { GUARDED_HOST_NAMES, installKeyGuard } from '../../components/injected-ui/key-guard';
 import { recordNavigationAnchor } from '../../lib/exclusion-session/navigation-anchor';
@@ -76,6 +77,7 @@ const ISOLATED_WORLD_MODULES: readonly IsolatedWorldModule[] = [
   { name: 'known-conflicts', setup: setupKnownConflicts },
   { name: 'side-by-side', setup: setupSideBySide },
   { name: 'inspector', setup: setupInspectorWidget },
+  { name: 'rucss-test', setup: setupRucssTest },
   // Last: its executors call the compare module's triggers (provided above).
   { name: 'command-palette', setup: setupCommandPalette }
 ];

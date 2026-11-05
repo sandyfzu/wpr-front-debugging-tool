@@ -106,6 +106,11 @@ export default defineConfig({
     // without the `tabs` permission. `tabs` is intentionally NOT requested; the
     // phases that would need it must first verify they cannot work without it.
     // Same list the runtime listeners use — single-sourced in lib/wp-rocket/constants.
+    // It also covers the RUCSS test's one request, sent by the background only
+    // when the user starts a test, to the fixed WP Rocket service
+    // `https://mega.wp-rocket.me/support/wpr-rucss-v2.php` (never another
+    // address): the page's address, the mobile/home flags and the safelist —
+    // never page content. From the background, so no page CSP or CORS applies.
     host_permissions: [...URL_PATTERNS]
   })
 });

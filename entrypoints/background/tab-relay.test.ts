@@ -34,6 +34,8 @@ function deps(
     processPageData: vi.fn(() => Promise.resolve(answer)),
     getFdtData: vi.fn(() => Promise.resolve(answer)),
     getScriptSourceChunk: vi.fn(() => Promise.resolve(answer)),
+    startRucssTest: vi.fn(() => Promise.resolve(answer)),
+    applyRucssTest: vi.fn(() => Promise.resolve(answer)),
     ...asks
   };
   return {

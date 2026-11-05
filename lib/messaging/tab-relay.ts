@@ -9,6 +9,12 @@
  * typed {@link TabRelayReply}, never as a silent drop.
  */
 import { hasOnlyKeys, isRecord, ownValue } from '../../utils/is-record';
+import {
+  parseRucssApplyRequest,
+  parseRucssStartRequest,
+  type RucssApplyRequest,
+  type RucssStartRequest
+} from './rucss-test';
 import { parseScriptSourceRequest, type ScriptSourceRequest } from './script-source';
 import { numericTabId } from './sender';
 import type { TabAsks } from './tab-asks';
@@ -18,6 +24,8 @@ export interface TabRelayPayloads {
   processPageData: undefined;
   getFdtData: undefined;
   getScriptSourceChunk: ScriptSourceRequest;
+  startRucssTest: RucssStartRequest;
+  applyRucssTest: RucssApplyRequest;
 }
 
 /** One relayable ask's name. */
@@ -48,6 +56,15 @@ function parseNoPayload(input: unknown): { readonly value: undefined } | null {
   return input === undefined ? { value: undefined } : null;
 }
 
+/**
+ * Box a guard's result for a row's `parsePayload`.
+ *
+ * @param value The rebuilt payload, or null when the guard refused it.
+ */
+function box<T>(value: T | null): { readonly value: T } | null {
+  return value === null ? null : { value };
+}
+
 /** The relayable asks — adding one is one row here plus its payload type. */
 export const TAB_RELAY_ASKS: { readonly [K in TabRelayAsk]: TabRelayAskRow<K> } = {
   processPageData: {
@@ -67,6 +84,15 @@ export const TAB_RELAY_ASKS: { readonly [K in TabRelayAsk]: TabRelayAskRow<K> } 
       return { value: { snapshotId, scriptIndex, offset } };
     },
     forward: (asks, tabId, request) => asks.getScriptSourceChunk(tabId, request)
+  },
+  // Both guards rebuild their request from known fields only.
+  startRucssTest: {
+    parsePayload: (input) => box(parseRucssStartRequest(input)),
+    forward: (asks, tabId, request) => asks.startRucssTest(tabId, request)
+  },
+  applyRucssTest: {
+    parsePayload: (input) => box(parseRucssApplyRequest(input)),
+    forward: (asks, tabId, request) => asks.applyRucssTest(tabId, request)
   }
 };
 

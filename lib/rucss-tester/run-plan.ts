@@ -30,7 +30,8 @@ export const RUCSS_STRIP_SELECTOR = 'style,link[rel="stylesheet"]';
  * - WP Rocket's lazy-render inline style, which keeps not-yet-rendered sections
  *   hidden (stripping it would show them all at once).
  */
-export const DEFAULT_INLINE_PRESERVES: readonly string[] = Object.freeze([
+// `__PURE__`: a bundle importing only this module's limits drops the list.
+export const DEFAULT_INLINE_PRESERVES: readonly string[] = /*#__PURE__*/ Object.freeze([
   '#wpcb-quick-actions-menu',
   'wpr_rucss_style',
   'admin-bar.min.css',
@@ -51,14 +52,22 @@ export interface CompiledReplacement {
   readonly replacement: string;
 }
 
+/** A compiled exclusion line. */
+export interface CompiledExclusion {
+  /** The line as typed (trimmed): named when its pattern fails on a URL. */
+  readonly line: string;
+  /** The flagless pattern. */
+  readonly pattern: RegExp;
+}
+
 /** Everything a run needs, validated and compiled. */
 export interface RucssRunPlan {
   /** Safelist entries sent to the service. */
   readonly safelist: readonly string[];
   /** Preserve markers: the defaults, then the user's (deduplicated). */
   readonly inlinePreserves: readonly string[];
-  /** Stylesheet URL patterns kept on the page. */
-  readonly excludeFilePatterns: readonly RegExp[];
+  /** Exclusion lines: a stylesheet whose URL matches one stays on the page. */
+  readonly excludeFilePatterns: readonly CompiledExclusion[];
   /** CSS placed before the built CSS (never touched by the pairs). */
   readonly prepend: string;
   /** CSS placed after the built CSS (never touched by the pairs). */
@@ -112,6 +121,16 @@ export type RucssStyleNode =
 
 /** What a run does with one page style. */
 export type RucssStyleDecision = 'remove' | 'preserved' | 'excluded';
+
+/** An exclusion pattern the engine gave up on for a URL (e.g. its backtracking stack overflowed). */
+export interface RucssExclusionFailure {
+  readonly ok: false;
+  readonly problem: 'exclusion-failed';
+  /** The exclusion line whose pattern failed. */
+  readonly line: string;
+  /** The engine's message. */
+  readonly message: string;
+}
 
 /** One pair's effect on the CSS. */
 export interface ReplacementCount {
@@ -190,10 +209,10 @@ export function compilePattern(
  */
 export function prepareRucssRun(config: RucssTesterConfig): RucssPlanResult {
   const problems: RucssPlanProblem[] = [];
-  const excludeFilePatterns: RegExp[] = [];
+  const excludeFilePatterns: CompiledExclusion[] = [];
   for (const line of parseLineList(config.excludeFiles)) {
     const compiled = compilePattern(line, '');
-    if (compiled.ok) excludeFilePatterns.push(compiled.pattern);
+    if (compiled.ok) excludeFilePatterns.push({ line, pattern: compiled.pattern });
     else problems.push({ kind: 'exclude-pattern', line, message: compiled.message });
   }
   const replacements: CompiledReplacement[] = [];
@@ -231,25 +250,65 @@ export function prepareRucssRun(config: RucssTesterConfig): RucssPlanResult {
 }
 
 /**
- * Judge one page style. A link is kept when its URL matches an exclusion
- * pattern (a link without a URL never matches); an inline style is kept
- * when its markup contains a preserve marker, unless it is WP Rocket's
- * used-CSS style.
+ * Judge an inline style: kept when its markup contains a preserve marker,
+ * unless it is WP Rocket's used-CSS style. Substring checks only (linear in
+ * the markup), so it is safe to run on a page's own thread.
+ *
+ * @param id The element's id (empty when none).
+ * @param markup The element's serialized markup (`outerHTML`).
+ * @param preserves The preserve markers.
+ * @returns `preserved` or `remove`.
+ */
+export function decideInlineStyle(
+  id: string,
+  markup: string,
+  preserves: readonly string[]
+): Extract<RucssStyleDecision, 'preserved' | 'remove'> {
+  if (id === RUCSS_USED_CSS_ID) return 'remove';
+  return preserves.some((marker) => markup.includes(marker)) ? 'preserved' : 'remove';
+}
+
+/**
+ * Judge a stylesheet link: kept when its URL matches an exclusion pattern
+ * (a link without a URL never matches). Runs the user's patterns, whose
+ * cost is unbounded (catastrophic backtracking) — keep it off a host
+ * page's thread.
+ *
+ * @param href The resolved stylesheet URL (`link.href`; empty when none).
+ * @param exclusions The exclusion lines.
+ * @returns `excluded` or `remove`; the failure naming the line whose
+ *   pattern the engine gave up on (the patterns after it are not tried).
+ */
+export function decideLinkStyle(
+  href: string,
+  exclusions: readonly CompiledExclusion[]
+): Extract<RucssStyleDecision, 'excluded' | 'remove'> | RucssExclusionFailure {
+  if (href === '') return 'remove';
+  for (const { line, pattern } of exclusions) {
+    try {
+      if (pattern.test(href)) return 'excluded';
+    } catch (error) {
+      return { ok: false, problem: 'exclusion-failed', line, message: errorMessage(error) };
+    }
+  }
+  return 'remove';
+}
+
+/**
+ * Judge one page style (see {@link decideLinkStyle} and {@link decideInlineStyle}).
  *
  * @param node The style as the run sees it.
  * @param plan The run plan.
- * @returns `excluded` (kept link), `preserved` (kept inline style) or `remove`.
+ * @returns `excluded` (kept link), `preserved` (kept inline style), `remove`,
+ *   or a link's exclusion failure.
  */
-export function decideRucssStyle(node: RucssStyleNode, plan: RucssRunPlan): RucssStyleDecision {
-  if (node.kind === 'link') {
-    return node.href !== '' && plan.excludeFilePatterns.some((pattern) => pattern.test(node.href))
-      ? 'excluded'
-      : 'remove';
-  }
-  if (node.id === RUCSS_USED_CSS_ID) return 'remove';
-  return plan.inlinePreserves.some((marker) => node.markup.includes(marker))
-    ? 'preserved'
-    : 'remove';
+export function decideRucssStyle(
+  node: RucssStyleNode,
+  plan: RucssRunPlan
+): RucssStyleDecision | RucssExclusionFailure {
+  return node.kind === 'link'
+    ? decideLinkStyle(node.href, plan.excludeFilePatterns)
+    : decideInlineStyle(node.id, node.markup, plan.inlinePreserves);
 }
 
 /** A replacement template's fixed text and `$` tokens, counted by what each inserts. */

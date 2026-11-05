@@ -3,7 +3,7 @@
     "surface": "background service worker",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 329.9
+      "raw": 334.7
     }
   },
   {
@@ -79,8 +79,8 @@
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
-      "raw": 171.7,
-      "gzip": 58.9
+      "raw": 177.3,
+      "gzip": 60.9
     }
   },
   {
@@ -190,7 +190,7 @@
     "build": "firefox-mv2",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 326.8
+      "raw": 331.6
     }
   },
   {
@@ -206,7 +206,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1858.0
+      "raw": 1868.9
     }
   }
 ]

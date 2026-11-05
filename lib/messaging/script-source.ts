@@ -1,5 +1,6 @@
 /** Bounded, snapshot-scoped reads of complete script sources for clipboard actions. */
 import type { DelayedScriptRecord } from '../wp-rocket/types';
+import { createRandomId, isRandomId } from '../../utils/random-id';
 import { PAYLOAD_LIMITS } from './payload-bounds';
 
 /** Each reply stays far below the transport ceiling, including escaped text. */
@@ -17,14 +18,11 @@ export type ScriptSourceReply =
   { status: 'ok'; text: string; total: number } | { status: 'unavailable' };
 
 /**
- * Create an opaque 128-bit capture identity on HTTPS and ordinary HTTP pages.
- * `getRandomValues` is available in insecure contexts; `randomUUID` is not.
+ * Create an opaque capture identity (see `createRandomId`).
  * @returns A fixed-width hexadecimal identity with no page-derived data.
  */
 export function createScriptSnapshotId(): string {
-  return Array.from(crypto.getRandomValues(new Uint32Array(4)), (part) =>
-    part.toString(16).padStart(8, '0')
-  ).join('');
+  return createRandomId();
 }
 
 /**
@@ -33,7 +31,7 @@ export function createScriptSnapshotId(): string {
  * @returns Whether the value has the capture identifier's fixed shape.
  */
 export function isScriptSnapshotId(value: unknown): value is string {
-  return typeof value === 'string' && /^[\da-f]{32}$/i.test(value);
+  return isRandomId(value);
 }
 
 /**

@@ -33,6 +33,17 @@ describe('the direct transport (the Chromium path)', () => {
     ]);
   });
 
+  it('sends the RUCSS steps to the top frame only', async () => {
+    const start = { safelist: [], inlinePreserves: [], mobile: false, home: false };
+    const apply = { runId: CHUNK.snapshotId, css: 'a{}', keepLinks: [0] };
+    await DIRECT_TAB_ASKS.startRucssTest(12, start);
+    await DIRECT_TAB_ASKS.applyRucssTest(12, apply);
+    expect(sendMessage.mock.calls).toEqual([
+      ['startRucssTest', start, { tabId: 12, frameId: 0 }],
+      ['applyRucssTest', apply, { tabId: 12, frameId: 0 }]
+    ]);
+  });
+
   it('forwards an absent tab as-is (the send fails as the no-receiver case)', async () => {
     await DIRECT_TAB_ASKS.getFdtData(undefined);
     expect(sendMessage.mock.calls).toEqual([['getFdtData', undefined, undefined]]);

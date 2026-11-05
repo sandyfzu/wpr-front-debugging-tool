@@ -9,6 +9,22 @@ import { parseHttpUrl } from '../../utils/urls';
 /** The service address (fixed; never derived from input). */
 export const RUCSS_ENDPOINT = 'https://mega.wp-rocket.me/support/wpr-rucss-v2.php';
 
+/**
+ * Most characters {@link buildRucssEndpointUrl} adds around the page address:
+ * the endpoint and `?url=` before it, then `?`, the seconds (a safe integer:
+ * at most 16 digits) and both flags after it.
+ */
+export const RUCSS_ENDPOINT_URL_OVERHEAD_CHARS =
+  `${RUCSS_ENDPOINT}?url=?&mobile&home`.length + String(Number.MAX_SAFE_INTEGER).length;
+
+/**
+ * What a test sends, for the run trigger's disclosure: only on the user's
+ * start, the page address (minus fragment and credentials), the two flags
+ * and the safelist — never page content.
+ */
+export const RUCSS_REQUEST_DISCLOSURE =
+  "Starting a test sends this page's address, the Mobile and Home choices and your safelist to WP Rocket's RUCSS service (mega.wp-rocket.me). No page content is sent.";
+
 /** What one request asks the service. */
 export interface RucssEndpointQuery {
   /** The tested page (absolute `http:`/`https:` URL). */

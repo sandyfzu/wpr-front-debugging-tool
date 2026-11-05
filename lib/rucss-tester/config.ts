@@ -68,17 +68,20 @@ export const RUCSS_CONFIG_LIMITS = {
  */
 export const RUCSS_CONFIG_BYTE_BUDGET = 1024 * 1024;
 
-/** Measures the stored JSON's UTF-8 size. */
-const encoder = new TextEncoder();
+/**
+ * Measures the stored JSON's UTF-8 size. The `__PURE__` marks (here and on
+ * the frozen defaults) let a bundle that imports only the caps drop these.
+ */
+const encoder = /*#__PURE__*/ new TextEncoder();
 
 /** The configuration a fresh install (or an unreadable store) starts from. */
-export const DEFAULT_RUCSS_TESTER_CONFIG: RucssTesterConfig = Object.freeze({
+export const DEFAULT_RUCSS_TESTER_CONFIG: RucssTesterConfig = /*#__PURE__*/ Object.freeze({
   safelist: '',
   inlinePreserve: '',
   excludeFiles: '',
   prepend: '',
   append: '',
-  replacements: Object.freeze([]),
+  replacements: /*#__PURE__*/ Object.freeze([]),
   mobile: false,
   home: false
 });

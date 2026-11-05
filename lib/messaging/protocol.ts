@@ -66,6 +66,14 @@ import type {
 import type { ExclusionOverlayOpenOutcome } from './exclusion-panel';
 import type { SimulationMarkerQuery, SimulationMarkerVerdict } from './exclusion-simulation';
 import type { TabRelayReply, TabRelayRequest } from './tab-relay';
+import type {
+  RucssApplyReply,
+  RucssApplyRequest,
+  RucssFetchReply,
+  RucssFetchRequest,
+  RucssStartReply,
+  RucssStartRequest
+} from './rucss-test';
 
 export interface ProtocolMap {
   /**
@@ -220,4 +228,22 @@ export interface ProtocolMap {
    * every failure as a typed reply.
    */
   relayTabAsk(data: TabRelayRequest): TabRelayReply;
+  /**
+   * Panel → tab (top frame, `frameId: 0`; relayable): start a RUCSS test —
+   * ask the service through `fetchRucssShakenCss`, then snapshot the
+   * page's styles. Never changes the page; every failure is a typed reply.
+   */
+  startRucssTest(data: RucssStartRequest): RucssStartReply;
+  /**
+   * Panel → tab (top frame; relayable): apply a started RUCSS test — remove
+   * the snapshot's styles that are not kept, inject the built CSS.
+   */
+  applyRucssTest(data: RucssApplyRequest): RucssApplyReply;
+  /**
+   * Content script (top frame) → background (sender-resolved): send one
+   * request to the fixed RUCSS service for the sender's own page. Only a
+   * top-frame http(s) sender asking for a page on its own origin is
+   * answered (`refused` otherwise, nothing sent); never rejects.
+   */
+  fetchRucssShakenCss(data: RucssFetchRequest): RucssFetchReply;
 }

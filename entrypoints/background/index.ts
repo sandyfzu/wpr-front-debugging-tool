@@ -24,7 +24,9 @@
  * - the command palette (`./command-palette`) — the on-page palette's view
  *   injection and its builder open for the asking tab,
  * - the latest exclusion list (`./latest-exclusion-list`) — the simulation's
- *   fetched Delay JS list, refreshed when due.
+ *   fetched Delay JS list, refreshed when due,
+ * - the RUCSS service requests (`./rucss-fetch`) — the RUCSS test's one
+ *   request, sent for the asking page only.
  *
  * Every subsystem registration happens inside `main()` (nothing at import
  * time beyond constants), the global error handlers are attached first, and
@@ -50,6 +52,7 @@ import { registerTabRelay } from './tab-relay';
 import { registerChordPlatform } from './chord-platform';
 import { registerCommandPalette } from './command-palette';
 import { registerLatestExclusionList } from './latest-exclusion-list';
+import { registerRucssFetch } from './rucss-fetch';
 
 const log = createLogger('background');
 
@@ -184,6 +187,13 @@ async function main(): Promise<void> {
   } catch (cause) {
     // The palette module's asks then see no receiver and report the open failure.
     log.error('Command palette init failed — the on-page palette cannot open', cause);
+  }
+
+  try {
+    registerRucssFetch();
+  } catch (cause) {
+    // The page's ask then sees no receiver and the test reports it.
+    log.error('RUCSS request init failed — RUCSS tests cannot run', cause);
   }
 
   try {
