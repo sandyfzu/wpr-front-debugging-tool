@@ -10,7 +10,9 @@ function asksAnswering(answer: Promise<unknown>): TabAsks {
   return {
     processPageData: vi.fn(() => Promise.resolve(true)),
     getFdtData: vi.fn(() => Promise.resolve(null)),
-    getScriptSourceChunk: vi.fn(() => answer)
+    getScriptSourceChunk: vi.fn(() => answer),
+    startRucssTest: vi.fn(() => Promise.resolve(null)),
+    applyRucssTest: vi.fn(() => Promise.resolve(null))
   };
 }
 

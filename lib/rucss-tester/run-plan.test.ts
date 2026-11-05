@@ -1,5 +1,5 @@
 /** Run preparation (compile once, all problems), style decisions, and the CSS build. */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LAZY_RENDER_INLINE_CSS_ID } from '../wp-rocket/constants';
 import { DEFAULT_RUCSS_TESTER_CONFIG, type RucssTesterConfig } from './config';
 import {
@@ -9,6 +9,7 @@ import {
   RUCSS_STRIP_SELECTOR,
   buildRucssCss,
   compilePattern,
+  decideLinkStyle,
   decideRucssStyle,
   prepareRucssRun,
   type RucssRunPlan
@@ -94,9 +95,11 @@ describe('prepareRucssRun', () => {
 
   it('compiles exclusion lines as raw, flagless patterns (a wildcard is plain regex)', () => {
     const prepared = plan({ excludeFiles: 'theme(.*)\\.css\n  style.css  ' });
-    expect(prepared.excludeFilePatterns.map((pattern) => [pattern.source, pattern.flags])).toEqual([
-      ['theme(.*)\\.css', ''],
-      ['style.css', '']
+    expect(
+      prepared.excludeFilePatterns.map(({ line, pattern }) => [line, pattern.source, pattern.flags])
+    ).toEqual([
+      ['theme(.*)\\.css', 'theme(.*)\\.css', ''],
+      ['style.css', 'style.css', '']
     ]);
   });
 
@@ -198,6 +201,31 @@ describe('decideRucssStyle', () => {
     expect(
       decideRucssStyle({ kind: 'link', href: 'https://a.test/admin-bar.min.css' }, plan())
     ).toBe('remove');
+  });
+});
+
+describe('decideLinkStyle', () => {
+  it('names the exclusion line whose pattern the engine gives up on, trying none after it', () => {
+    const boom = /boom/;
+    vi.spyOn(boom, 'test').mockImplementation(() => {
+      throw new RangeError('Maximum call stack size exceeded');
+    });
+    const afterPattern = /after/;
+    const after = vi.spyOn(afterPattern, 'test');
+    const exclusions = [
+      { line: 'never', pattern: /never/ },
+      { line: 'boom', pattern: boom },
+      { line: 'after', pattern: afterPattern }
+    ];
+    expect(decideLinkStyle('https://a.test/x.css', exclusions)).toEqual({
+      ok: false,
+      problem: 'exclusion-failed',
+      line: 'boom',
+      message: 'Maximum call stack size exceeded'
+    });
+    expect(after).not.toHaveBeenCalled();
+    // A link without a URL never runs a pattern.
+    expect(decideLinkStyle('', exclusions)).toBe('remove');
   });
 });
 

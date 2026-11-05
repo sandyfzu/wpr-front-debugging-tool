@@ -795,7 +795,9 @@ describe('JavaScriptView — complete snapshot copy', () => {
       processPageData: () => Promise.resolve(true),
       getFdtData: () => Promise.resolve(null),
       getScriptSourceChunk: (_tabId, request) =>
-        Promise.resolve(readScriptSourceChunk(raw, snapshotId, request))
+        Promise.resolve(readScriptSourceChunk(raw, snapshotId, request)),
+      startRucssTest: () => Promise.resolve(null),
+      applyRucssTest: () => Promise.resolve(null)
     };
     const relayed: TabRelayRequest[] = [];
     const reader = createSourceChunkReader({

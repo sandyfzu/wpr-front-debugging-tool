@@ -27,16 +27,26 @@ function asksDouble(): TabAsks & { calls: unknown[][] } {
     getScriptSourceChunk: vi.fn((tabId: number, request: unknown) => {
       calls.push(['getScriptSourceChunk', tabId, request]);
       return Promise.resolve({ status: 'unavailable' });
+    }),
+    startRucssTest: vi.fn((tabId: number, request: unknown) => {
+      calls.push(['startRucssTest', tabId, request]);
+      return Promise.resolve({ ok: false, failure: { kind: 'refused' } });
+    }),
+    applyRucssTest: vi.fn((tabId: number, request: unknown) => {
+      calls.push(['applyRucssTest', tabId, request]);
+      return Promise.resolve({ ok: false, failure: 'stale-run' });
     })
   };
 }
 
 describe('the relayable asks registry', () => {
-  it('is the closed list of the three panel→tab asks', () => {
+  it('is the closed list of the five panel→tab asks', () => {
     expect(Object.keys(TAB_RELAY_ASKS).sort()).toEqual([
+      'applyRucssTest',
       'getFdtData',
       'getScriptSourceChunk',
-      'processPageData'
+      'processPageData',
+      'startRucssTest'
     ]);
   });
 
@@ -99,6 +109,29 @@ describe('parseTabRelayRequest', () => {
       payload: { ...CHUNK, extra: 'smuggled' }
     })?.forward(asks);
     expect(asks.calls).toEqual([['getScriptSourceChunk', 9, CHUNK]]);
+  });
+
+  it('forwards the RUCSS steps with their payloads rebuilt, and refuses broken ones', async () => {
+    const asks = asksDouble();
+    const start = { safelist: ['a'], inlinePreserves: ['b'], mobile: true, home: false };
+    const apply = { runId: SNAPSHOT, css: 'a{}', keepLinks: [1] };
+    await parseTabRelayRequest({
+      tabId: 3,
+      ask: 'startRucssTest',
+      payload: start
+    })?.forward(asks);
+    await parseTabRelayRequest({ tabId: 3, ask: 'applyRucssTest', payload: apply })?.forward(asks);
+    expect(asks.calls).toEqual([
+      ['startRucssTest', 3, start],
+      ['applyRucssTest', 3, apply]
+    ]);
+    expect(
+      parseTabRelayRequest({ tabId: 3, ask: 'startRucssTest', payload: { ...start, x: 1 } })
+    ).toBeNull();
+    expect(
+      parseTabRelayRequest({ tabId: 3, ask: 'applyRucssTest', payload: { ...apply, runId: 'x' } })
+    ).toBeNull();
+    expect(parseTabRelayRequest({ tabId: 3, ask: 'startRucssTest' })).toBeNull();
   });
 
   it('refuses junk tab ids with the shared guard', () => {

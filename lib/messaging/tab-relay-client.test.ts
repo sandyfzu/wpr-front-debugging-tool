@@ -35,6 +35,19 @@ describe('relayTabAsks — requests', () => {
     ]);
   });
 
+  it('relays the RUCSS steps with their payloads', async () => {
+    const send = sendAnswering({ ok: true, answer: 'x' });
+    const asks = relayTabAsks(send);
+    const start = { safelist: [], inlinePreserves: ['m'], mobile: false, home: true };
+    const apply = { runId: CHUNK.snapshotId, css: '', keepLinks: [] };
+    await asks.startRucssTest(2, start);
+    await asks.applyRucssTest(2, apply);
+    expect(send.requests).toEqual([
+      { tabId: 2, ask: 'startRucssTest', payload: start },
+      { tabId: 2, ask: 'applyRucssTest', payload: apply }
+    ]);
+  });
+
   it('fails a missing inspected tab locally as a no-receiver miss (nothing sent)', async () => {
     const send = sendAnswering({ ok: true, answer: 'x' });
     const asks = relayTabAsks(send);

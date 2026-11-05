@@ -1,6 +1,7 @@
 /**
  * The DevTools surfaces' asks to the inspected tab's content script — the
- * page-data warm-up, the full page data, and one script-source chunk —
+ * page-data warm-up, the full page data, one script-source chunk, and the
+ * RUCSS test's two steps —
  * behind one transport choice.
  *
  * Where the context has the `tabs` API (Chromium), the asks go to the tab
@@ -10,6 +11,7 @@
  * that choice is made.
  */
 import { sendMessage } from './index';
+import type { RucssApplyRequest, RucssStartRequest } from './rucss-test';
 import type { ScriptSourceRequest } from './script-source';
 import { canMessageRuntime, canMessageTabs } from './tab-messaging';
 import { relayTabAsks } from './tab-relay-client';
@@ -29,6 +31,10 @@ export interface TabAsks {
   readonly getFdtData: (tabId: number | undefined) => Promise<unknown>;
   /** One bounded script-source read, from the tab's top frame only. */
   readonly getScriptSourceChunk: (tabId: number, request: ScriptSourceRequest) => Promise<unknown>;
+  /** Start a RUCSS test, in the top frame only. */
+  readonly startRucssTest: (tabId: number, request: RucssStartRequest) => Promise<unknown>;
+  /** Apply a started RUCSS test, in the top frame only. */
+  readonly applyRucssTest: (tabId: number, request: RucssApplyRequest) => Promise<unknown>;
 }
 
 /** The direct transport: the extension's tab send, one typed call per ask. */
@@ -36,7 +42,9 @@ export const DIRECT_TAB_ASKS: TabAsks = {
   processPageData: (tabId) => sendMessage('processPageData', undefined, tabId),
   getFdtData: (tabId) => sendMessage('getFdtData', undefined, tabId),
   getScriptSourceChunk: (tabId, request) =>
-    sendMessage('getScriptSourceChunk', request, { tabId, frameId: 0 })
+    sendMessage('getScriptSourceChunk', request, { tabId, frameId: 0 }),
+  startRucssTest: (tabId, request) => sendMessage('startRucssTest', request, { tabId, frameId: 0 }),
+  applyRucssTest: (tabId, request) => sendMessage('applyRucssTest', request, { tabId, frameId: 0 })
 };
 
 /** The transports {@link selectTabAsks} picks from (tests inject doubles). */

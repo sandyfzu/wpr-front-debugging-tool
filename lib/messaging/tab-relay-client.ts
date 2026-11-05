@@ -128,6 +128,10 @@ export function relayTabAsks(send: RelaySend): TabAsks {
     getFdtData: (tabId) =>
       tabId === undefined ? noTarget('getFdtData') : relay(send, { tabId, ask: 'getFdtData' }),
     getScriptSourceChunk: (tabId, request) =>
-      relay(send, { tabId, ask: 'getScriptSourceChunk', payload: request })
+      relay(send, { tabId, ask: 'getScriptSourceChunk', payload: request }),
+    startRucssTest: (tabId, request) =>
+      relay(send, { tabId, ask: 'startRucssTest', payload: request }),
+    applyRucssTest: (tabId, request) =>
+      relay(send, { tabId, ask: 'applyRucssTest', payload: request })
   };
 }
