@@ -26,6 +26,32 @@ const bannedDependencies = [
   }
 ];
 
+// WP Rocket's beacon package: one adapter owns its internals, and only the
+// lazily injected runner bundle may carry its bytes (relieved for that file
+// in the last block below).
+const beaconPackageMessage =
+  'wp-rocket-scripts is imported only by entrypoints/beacon-runner/beacon-adapter.ts (the one adapter; its bundle loads on a test run only).';
+const beaconPackageRestriction = {
+  group: ['wp-rocket-scripts', 'wp-rocket-scripts/*'],
+  message: beaconPackageMessage
+};
+
+// `no-restricted-imports` never sees `import()`: the same ban for dynamic
+// imports (a string or template source), everywhere — the adapter imports
+// statically, so no file is relieved. No other block sets this rule, so it
+// cannot be overridden away.
+const beaconDynamicImportRestriction = [
+  {
+    selector: 'ImportExpression[source.value=/^wp-rocket-scripts(\\/|$)/]',
+    message: beaconPackageMessage
+  },
+  {
+    selector:
+      "ImportExpression[source.type='TemplateLiteral'][source.quasis.0.value.cooked=/^wp-rocket-scripts(\\/|$)/]",
+    message: beaconPackageMessage
+  }
+];
+
 // Design-system internals: Kobalte is only allowed inside components/ui/ —
 // every other surface consumes its headless primitives through the typed
 // wrappers there (see AGENTS.md dependency direction + the P5B plan row).
@@ -69,7 +95,11 @@ export default tseslint.config(
     rules: {
       // tsconfig enables verbatimModuleSyntax — keep type-only imports explicit.
       '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
-      'no-restricted-imports': ['error', { patterns: [...bannedDependencies, kobalteRestriction] }]
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...bannedDependencies, beaconPackageRestriction, kobalteRestriction] }
+      ],
+      'no-restricted-syntax': ['error', ...beaconDynamicImportRestriction]
     }
   },
 
@@ -86,6 +116,7 @@ export default tseslint.config(
         {
           patterns: [
             ...bannedDependencies,
+            beaconPackageRestriction,
             { group: ['**/entrypoints/**'], message: 'components/ui must not import entrypoints/.' }
           ]
         }
@@ -104,6 +135,7 @@ export default tseslint.config(
         {
           patterns: [
             ...bannedDependencies,
+            beaconPackageRestriction,
             {
               group: ['**/entrypoints/**'],
               message:
@@ -127,6 +159,7 @@ export default tseslint.config(
         {
           patterns: [
             ...bannedDependencies,
+            beaconPackageRestriction,
             { group: ['**/entrypoints/**'], message: 'components/ must not import entrypoints/.' },
             kobalteRestriction
           ]
@@ -142,6 +175,7 @@ export default tseslint.config(
         {
           patterns: [
             ...bannedDependencies,
+            beaconPackageRestriction,
             {
               group: ['**/entrypoints/**', '**/components/**'],
               message: 'Dependency direction: lib/ must not import entrypoints/ or components/.'
@@ -160,6 +194,7 @@ export default tseslint.config(
         {
           patterns: [
             ...bannedDependencies,
+            beaconPackageRestriction,
             {
               group: ['**/entrypoints/**', '**/components/**', '**/lib/**'],
               message:
@@ -188,6 +223,7 @@ export default tseslint.config(
         'error',
         {
           patterns: [
+            beaconPackageRestriction,
             {
               // Any relative import reaching upward (`../` the port's
               // detection modules, `../../` the rest of lib/) except the two
@@ -209,6 +245,32 @@ export default tseslint.config(
       '@typescript-eslint/no-unnecessary-type-assertion': 'off',
       '@typescript-eslint/no-unnecessary-type-conversion': 'off',
       '@typescript-eslint/prefer-nullish-coalescing': 'off'
+    }
+  },
+
+  // The beacon adapter is the one importer of wp-rocket-scripts (see
+  // beaconPackageRestriction) — its test too, to run the real package; every
+  // other entrypoint rule stays on.
+  {
+    files: [
+      'entrypoints/beacon-runner/beacon-adapter.ts',
+      'entrypoints/beacon-runner/beacon-adapter.test.ts'
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...bannedDependencies,
+            {
+              group: ['**/entrypoints/**'],
+              message:
+                'Cross-entrypoint imports are not allowed — promote shared code to components/ or lib/.'
+            },
+            kobalteRestriction
+          ]
+        }
+      ]
     }
   }
 );

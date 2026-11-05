@@ -6,38 +6,22 @@
  * (its runtime copies it back on the first user interaction), so on a
  * Delay-on page the plain `src` reads empty for every delayed script. Checks
  * that recognize WP Rocket's own scripts by URL (minified cache files, the
- * lazyload library, the beacon) read through these two helpers so a delayed
- * script still names the URL the page actually loads. One rule for every
- * reader: on a delayed tag a non-empty `data-rocket-src` wins, otherwise `src`.
+ * lazyload library, the beacon) read through these element helpers so a
+ * delayed script still names the URL the page actually loads — the one
+ * served-URL rule, applied to live elements.
  */
 
-import { DELAY_JS_SRC, DELAY_JS_TYPE_OLD } from '../wp-rocket/constants';
+import { DELAY_JS_SRC } from '../wp-rocket/constants';
+import { delayedSrcOf } from '../wp-rocket/delayed-script';
 
 /**
- * Whether the tag is one Delay JS's runtime will load — the same test as its
- * `script[type$=rocketlazyloadscript]` selector (`type` values match
- * case-insensitively in HTML selectors). A `data-rocket-src` on any other tag
- * is never loaded from there, so it is not the served URL.
+ * The delayed URL of a live element.
  *
  * @param script The script element.
- * @returns `true` when `type` ends with the delay marker, in any case.
- */
-function isDelayedTag(script: Element): boolean {
-  return script.getAttribute('type')?.toLowerCase().endsWith(DELAY_JS_TYPE_OLD) ?? false;
-}
-
-/**
- * The delayed URL, when the tag is delayed and carries one.
- *
- * @param script The script element.
- * @returns A non-empty `data-rocket-src` on a delayed tag, else `null` — an
- *   undelayed tag, or a valueless/empty value, names nothing, so the caller
- *   falls back to `src`.
+ * @returns A non-empty `data-rocket-src` on a delayed tag, else `null`.
  */
 function delayedSrc(script: Element): string | null {
-  if (!isDelayedTag(script)) return null;
-  const value = script.getAttribute(DELAY_JS_SRC);
-  return value === '' ? null : value;
+  return delayedSrcOf(script.getAttribute('type'), script.getAttribute(DELAY_JS_SRC));
 }
 
 /**
