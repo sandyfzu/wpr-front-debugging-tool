@@ -74,6 +74,10 @@ import type {
   RucssStartReply,
   RucssStartRequest
 } from './rucss-test';
+import type { BeaconTestReply, BeaconTestRequest } from './beacon-test';
+import type { LcpAnalysisReply, LcpAnalysisRequest } from './lcp-analysis';
+import type { ScriptRuntimeReply } from './script-runtime';
+import type { CurrentVisitVitalsReply } from './current-visit-vitals';
 
 export interface ProtocolMap {
   /**
@@ -246,4 +250,27 @@ export interface ProtocolMap {
    * answered (`refused` otherwise, nothing sent); never rejects.
    */
   fetchRucssShakenCss(data: RucssFetchRequest): RucssFetchReply;
+  /**
+   * Panel → tab (top frame, `frameId: 0`; relayable): run one beacon test
+   * with the given configuration — the beacon's measurement only, nothing
+   * written to the page or sent to the site; every outcome is a typed reply.
+   */
+  runBeaconTest(data: BeaconTestRequest): BeaconTestReply;
+  /**
+   * Beacon executor (top frame) → background (sender-resolved, no payload):
+   * inject the beacon runner (an unlisted script) into the sender tab's top
+   * frame. Only a top-frame http(s) sender is answered (anything else is
+   * refused); resolves once the script ran, rejects when the injection failed.
+   */
+  loadBeaconRunner(): true;
+  /**
+   * Panel → tab (top frame; relayable): the page's LCP facts (candidates,
+   * navigation and resource timing); optionally frames the LCP element for
+   * a few seconds.
+   */
+  runLcpAnalysis(data: LcpAnalysisRequest): LcpAnalysisReply;
+  /** Panel → tab (top frame; relayable): the live `<script>` elements' raw attributes. */
+  getScriptRuntimeStatuses(): ScriptRuntimeReply;
+  /** Panel → tab (top frame; relayable): this visit's Core Web Vitals entries. */
+  getCurrentVisitVitals(): CurrentVisitVitalsReply;
 }

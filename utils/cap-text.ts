@@ -24,6 +24,17 @@ export function capText(text: string, max: number): string {
 }
 
 /**
+ * The UTF-16 length a string capped by {@link capText} at `points` code
+ * points can reach: two units per astral code point, plus the ellipsis — the
+ * cap a receiver checks a sender-capped string against.
+ *
+ * @param points The code-point cap.
+ */
+export function cappedUnits(points: number): number {
+  return 2 * points + 1;
+}
+
+/**
  * Bound a hover title using the shared code-point limit.
  *
  * @param text The full display text.

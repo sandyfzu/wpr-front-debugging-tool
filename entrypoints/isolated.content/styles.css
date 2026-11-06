@@ -13,3 +13,4 @@
 @import './side-by-side/side-by-side.css';
 @import './inspector/inspector.css';
 @import './palette/notice.css';
+@import './lcp-analysis/highlight.css';

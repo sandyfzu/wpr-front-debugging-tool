@@ -72,10 +72,11 @@ export default defineConfig({
       // Side-by-Side, PSI Side-by-Side, Exclusion Builder, manual KC DB update.
       'contextMenus',
       // The exclusion builder overlay and the on-page command palette's view
-      // are runtime content scripts (never in the manifest, so their code
-      // never loads with a page): opening one injects its script into the
-      // tab's top frame (`scripting.executeScript`). No install warning; it
-      // acts only within the host permissions below.
+      // are runtime content scripts, and the beacon test runner an unlisted
+      // script (none in the manifest, so their code never loads with a page):
+      // opening one, or a test's first run, injects its script into the tab's
+      // top frame (`scripting.executeScript`). No install warning; it acts
+      // only within the host permissions below.
       'scripting',
       // Simulated-device sessions (compare overlay): one tab-scoped session rule
       // rewrites `user-agent` on document requests. The WithHostAccess variant —

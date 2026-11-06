@@ -1,7 +1,7 @@
 /**
- * Primitives shared by the session-contract guards (`./exclusion-session`,
- * `./exclusion-simulation`): the unknown-key policy and the count check —
- * declared once so both contract modules read keys and counts alike.
+ * Primitives shared by the message and storage guards: the unknown-key
+ * policy, the count, timing and bounded-string checks — declared once so
+ * every contract module reads keys, counts, timings and strings alike.
  */
 import { hasOnlyKeys } from '../../utils/is-record';
 
@@ -33,4 +33,23 @@ export function keysAllowed(
 /** A non-negative safe integer (counts, indices, epoch ms, run ids). */
 export function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * A finite, non-negative number (DOM timings, sizes, shift scores).
+ *
+ * @param value The boundary value.
+ */
+export function isTiming(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+/**
+ * A string of at most `max` UTF-16 units.
+ *
+ * @param value The boundary value.
+ * @param max The unit cap.
+ */
+export function boundedString(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length <= max;
 }

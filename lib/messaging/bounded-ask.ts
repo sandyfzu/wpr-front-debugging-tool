@@ -5,6 +5,7 @@
  * renders each as its own state instead of catching one opaque rejection.
  * Transport-agnostic: the send and the answer guard are injected.
  */
+import type { Logger } from '../logger';
 import { isNoReceiverError } from './no-receiver';
 
 /**
@@ -22,6 +23,32 @@ export type AskOutcome<T> =
   | { readonly kind: 'timeout' }
   | { readonly kind: 'invalid-reply' }
   | { readonly kind: 'failed'; readonly cause: unknown };
+
+/** An ask that got no usable answer. */
+export type AskMiss = Exclude<AskOutcome<unknown>['kind'], 'reply'>;
+
+/**
+ * Log an ask miss: a real send failure loudly (with its cause), the expected
+ * misses quietly.
+ *
+ * @param log The asking module's logger.
+ * @param ask What was asked, for the message (e.g. "Beacon test").
+ * @param outcome The miss.
+ */
+export function logAskMiss(
+  log: Logger,
+  ask: string,
+  outcome: Exclude<AskOutcome<unknown>, { kind: 'reply' }>
+): void {
+  if (outcome.kind === 'failed') {
+    log.warn(
+      `${ask} failed`,
+      outcome.cause instanceof Error ? outcome.cause.message : outcome.cause
+    );
+  } else {
+    log.debug(`${ask} got no answer: ${outcome.kind}`);
+  }
+}
 
 /** Arms a one-shot timer; returns its cancel. */
 export type ScheduleTimer = (run: () => void, ms: number) => () => void;

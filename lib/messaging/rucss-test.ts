@@ -28,6 +28,7 @@ import {
   type RucssFetchOutcome
 } from '../rucss-tester/response';
 import { RUCSS_RESULT_CSS_MAX_CHARS } from '../rucss-tester/run-plan';
+import { boundedString } from './guard-policy';
 
 /** A page address's character cap. */
 const PAGE_URL_CHARS = 32_768;
@@ -172,16 +173,6 @@ export type RucssApplyFailure = (typeof RUCSS_APPLY_FAILURES)[number];
 export type RucssApplyReply =
   | { readonly ok: true; readonly summary: RucssApplySummary }
   | { readonly ok: false; readonly failure: RucssApplyFailure };
-
-/**
- * A string of at most `max` characters.
- *
- * @param value The boundary value.
- * @param max The character cap.
- */
-function boundedString(value: unknown, max: number): value is string {
-  return typeof value === 'string' && value.length <= max;
-}
 
 /**
  * A list of non-empty strings whose characters together stay within `maxChars`.

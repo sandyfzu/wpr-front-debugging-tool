@@ -13,10 +13,17 @@
  *   response = max(request, resource.responseEnd || 0)
  *   render   = max(response, lcp.startTime || 0)   // the total
  */
+import { domTiming } from '../../utils/dom-timing';
 
 /** The navigation timing the breakdown reads. */
 export interface NavigationTiming {
   readonly responseStart: number;
+  /**
+   * The prerender activation offset (ms; 0 when not prerendered) — carried
+   * so the panel can align the analysis with the current-visit LCP, which
+   * subtracts it; the breakdown itself does not read it. Absent = unknown.
+   */
+  readonly activationStart?: number;
 }
 
 /** The resource timing the breakdown reads (one entry of the LCP's URL). */
@@ -106,16 +113,6 @@ export function findLcpResource(
 }
 
 /**
- * A timing value as the chain reads it: non-finite or negative is 0.
- *
- * @param value The raw value.
- * @returns A finite, non-negative number.
- */
-function timing(value: number): number {
-  return Number.isFinite(value) && value > 0 ? value : 0;
-}
-
-/**
  * Compute the LCP breakdown.
  *
  * @param navigation The navigation entry, or null where none exists.
@@ -131,13 +128,13 @@ export function computeLcpBreakdown(
   if (navigation === null) return { kind: 'no-navigation' };
   if (lcp === null) return { kind: 'no-lcp' };
   const resource = findLcpResource(lcp.url, resources);
-  const ttfb = timing(navigation.responseStart);
+  const ttfb = domTiming(navigation.responseStart);
   const request =
     resource === null
       ? ttfb
-      : Math.max(ttfb, timing(resource.requestStart) || timing(resource.startTime));
-  const response = resource === null ? request : Math.max(request, timing(resource.responseEnd));
-  const render = Math.max(response, timing(lcp.startTime));
+      : Math.max(ttfb, domTiming(resource.requestStart) || domTiming(resource.startTime));
+  const response = resource === null ? request : Math.max(request, domTiming(resource.responseEnd));
+  const render = Math.max(response, domTiming(lcp.startTime));
   const durations: Record<LcpPartKey, number> = {
     timeToFirstByte: ttfb,
     resourceLoadDelay: request - ttfb,

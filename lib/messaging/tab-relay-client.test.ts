@@ -48,6 +48,29 @@ describe('relayTabAsks — requests', () => {
     ]);
   });
 
+  it('relays the live analysis asks', async () => {
+    const send = sendAnswering({ ok: true, answer: 'x' });
+    const asks = relayTabAsks(send);
+    const config = {
+      features: { aboveTheFold: true, lazyRender: false },
+      mobile: true,
+      widthThreshold: 393,
+      heightThreshold: 830,
+      lazyRenderThreshold: 1800,
+      selectors: ['img']
+    };
+    await asks.runBeaconTest(2, { config });
+    await asks.runLcpAnalysis(2, { highlight: false });
+    await asks.getScriptRuntimeStatuses(2);
+    await asks.getCurrentVisitVitals(2);
+    expect(send.requests).toEqual([
+      { tabId: 2, ask: 'runBeaconTest', payload: { config } },
+      { tabId: 2, ask: 'runLcpAnalysis', payload: { highlight: false } },
+      { tabId: 2, ask: 'getScriptRuntimeStatuses' },
+      { tabId: 2, ask: 'getCurrentVisitVitals' }
+    ]);
+  });
+
   it('fails a missing inspected tab locally as a no-receiver miss (nothing sent)', async () => {
     const send = sendAnswering({ ok: true, answer: 'x' });
     const asks = relayTabAsks(send);

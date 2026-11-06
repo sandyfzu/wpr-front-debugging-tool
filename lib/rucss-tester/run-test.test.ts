@@ -180,7 +180,11 @@ describe('rucssTabSteps', () => {
       getFdtData: vi.fn(),
       getScriptSourceChunk: vi.fn(),
       startRucssTest: vi.fn(() => Promise.resolve(start)),
-      applyRucssTest: vi.fn(() => Promise.resolve(apply))
+      applyRucssTest: vi.fn(() => Promise.resolve(apply)),
+      runBeaconTest: vi.fn(),
+      runLcpAnalysis: vi.fn(),
+      getScriptRuntimeStatuses: vi.fn(),
+      getCurrentVisitVitals: vi.fn()
     };
   }
 

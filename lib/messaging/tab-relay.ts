@@ -16,6 +16,8 @@ import {
   type RucssStartRequest
 } from './rucss-test';
 import { parseScriptSourceRequest, type ScriptSourceRequest } from './script-source';
+import { parseBeaconTestRequest, type BeaconTestRequest } from './beacon-test';
+import { parseLcpAnalysisRequest, type LcpAnalysisRequest } from './lcp-analysis';
 import { numericTabId } from './sender';
 import type { TabAsks } from './tab-asks';
 
@@ -26,6 +28,10 @@ export interface TabRelayPayloads {
   getScriptSourceChunk: ScriptSourceRequest;
   startRucssTest: RucssStartRequest;
   applyRucssTest: RucssApplyRequest;
+  runBeaconTest: BeaconTestRequest;
+  runLcpAnalysis: LcpAnalysisRequest;
+  getScriptRuntimeStatuses: undefined;
+  getCurrentVisitVitals: undefined;
 }
 
 /** One relayable ask's name. */
@@ -93,6 +99,23 @@ export const TAB_RELAY_ASKS: { readonly [K in TabRelayAsk]: TabRelayAskRow<K> } 
   applyRucssTest: {
     parsePayload: (input) => box(parseRucssApplyRequest(input)),
     forward: (asks, tabId, request) => asks.applyRucssTest(tabId, request)
+  },
+  // The live analysis tools; both guards rebuild their request from known fields only.
+  runBeaconTest: {
+    parsePayload: (input) => box(parseBeaconTestRequest(input)),
+    forward: (asks, tabId, request) => asks.runBeaconTest(tabId, request)
+  },
+  runLcpAnalysis: {
+    parsePayload: (input) => box(parseLcpAnalysisRequest(input)),
+    forward: (asks, tabId, request) => asks.runLcpAnalysis(tabId, request)
+  },
+  getScriptRuntimeStatuses: {
+    parsePayload: parseNoPayload,
+    forward: (asks, tabId) => asks.getScriptRuntimeStatuses(tabId)
+  },
+  getCurrentVisitVitals: {
+    parsePayload: parseNoPayload,
+    forward: (asks, tabId) => asks.getCurrentVisitVitals(tabId)
   }
 };
 

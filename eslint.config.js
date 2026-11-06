@@ -249,12 +249,15 @@ export default tseslint.config(
   },
 
   // The beacon adapter is the one importer of wp-rocket-scripts (see
-  // beaconPackageRestriction) — its test too, to run the real package; every
-  // other entrypoint rule stays on.
+  // beaconPackageRestriction) — its test too, to run the real package, and
+  // the beacon test's end-to-end test, to prove the package's prototype is
+  // never patched (tests ship in no bundle); every other entrypoint rule
+  // stays on.
   {
     files: [
       'entrypoints/beacon-runner/beacon-adapter.ts',
-      'entrypoints/beacon-runner/beacon-adapter.test.ts'
+      'entrypoints/beacon-runner/beacon-adapter.test.ts',
+      'entrypoints/isolated.content/beacon-test/integration.test.ts'
     ],
     rules: {
       'no-restricted-imports': [
