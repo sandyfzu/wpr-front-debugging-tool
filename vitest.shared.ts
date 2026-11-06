@@ -42,7 +42,10 @@ export function filterDisabledLoadNoise(log: string, type: string): boolean | un
  * scheduling spikes; `floorMs` keeps sub-millisecond baselines (timer and
  * cache noise) from inflating the ratio; `backstopMs` bounds any single run
  * absolutely, which also stops a quadratic baseline before its slower
- * run takes minutes.
+ * run takes minutes. It is checked after a run returns (never preempts one)
+ * and is not a scaling signal — `maxRatio` is. Sized for CI: a shared 2-vCPU
+ * runner with v8 coverage is ~10× slower than a dev machine, and 4 MiB runs
+ * took ~4 s there against a former 5 s backstop.
  */
 export const LINEAR_SCALING = {
   bytes: 1024 * 1024,
@@ -50,7 +53,7 @@ export const LINEAR_SCALING = {
   runs: 3,
   maxRatio: 10,
   floorMs: 1,
-  backstopMs: 5_000
+  backstopMs: 15_000
 } as const;
 
 /**
