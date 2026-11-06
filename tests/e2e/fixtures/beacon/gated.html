@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Beacon gate</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+      }
+      .hero {
+        display: block;
+        width: 900px;
+        height: 420px;
+      }
+      .far {
+        height: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- A page shaped like a cached WP Rocket page: the beacon's data, its gate
+         script (`data-name="wpr-wpr-beacon"`, the element WP Rocket's beacon marks
+         `beacon-completed` when it finishes) and the "Debug: cached" signature after
+         </html> that makes WP Rocket's own beacon ask the site whether data was
+         generated before. A test run must do none of it: no request, no mark. -->
+    <img
+      id="hero"
+      class="hero"
+      alt="Hero"
+      src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22900%22 height=%22420%22%3E%3Crect width=%22900%22 height=%22420%22 fill=%22%239bc%22/%3E%3C/svg%3E#hero"
+    />
+    <div style="height: 3000px"></div>
+    <section class="far" data-rocket-location-hash="gated-far-section">Far</section>
+    <script>
+      var rocket_beacon_data = {
+        ajax_url: '/wp-admin/admin-ajax.php',
+        nonce: 'e2e-nonce',
+        url: location.href,
+        is_mobile: false,
+        width_threshold: 1600,
+        height_threshold: 700,
+        delay: 500,
+        debug: null,
+        status: { atf: true, lrc: true },
+        elements: 'img, video, picture, p, main, div, li, svg, section, header, span',
+        lrc_threshold: 1800
+      };
+    </script>
+    <script data-name="wpr-wpr-beacon" src="/beacon/gate.js" async></script>
+  </body>
+</html>
+<!-- Debug: cached@1 -->

@@ -216,6 +216,54 @@ describe('createLcpHighlighter', () => {
     await expect(last).resolves.toBe(false);
   });
 
+  it('leaves on the next frame once the extension context died without an event', async () => {
+    const frames = animationFrames();
+    const element = pageElement();
+    const before = attributesOf(element);
+    await shownOn(element);
+    frames.step();
+    expect(hosts()).toBe(1);
+    // An extension reload: the runtime id is gone, and nothing tells the page.
+    const runtime = browser.runtime as { id?: string };
+    const id = runtime.id;
+    Object.defineProperty(runtime, 'id', { value: undefined, configurable: true, writable: true });
+    try {
+      frames.step();
+      expect(hosts()).toBe(0);
+      expect(frames.pending()).toBe(0);
+      expect(attributesOf(element)).toEqual(before);
+    } finally {
+      Object.defineProperty(runtime, 'id', { value: id, configurable: true, writable: true });
+    }
+  });
+
+  it('leaves (logged) when reading a torn-down context throws', async () => {
+    const frames = animationFrames();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const element = pageElement();
+    await shownOn(element);
+    // Engines may throw, instead of answering undefined, on a dead context's runtime read.
+    const runtime = browser.runtime as { id?: string };
+    const id = runtime.id;
+    Object.defineProperty(runtime, 'id', {
+      get: () => {
+        throw new Error('context gone');
+      },
+      configurable: true
+    });
+    try {
+      expect(() => {
+        frames.step();
+      }).not.toThrow();
+      expect(hosts()).toBe(0);
+      expect(frames.pending()).toBe(0);
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(runtime, 'id', { value: id, configurable: true, writable: true });
+      warn.mockRestore();
+    }
+  });
+
   it('frames the element for its time, then leaves — the element never touched', async () => {
     const timers = countdowns();
     const element = pageElement();

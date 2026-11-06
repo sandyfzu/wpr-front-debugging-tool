@@ -7,7 +7,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { type FIXTURES, FIXTURE_DIR } from '../../lib/detection/fixtures/corpus';
 import { boundPageHeaders, PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
 import { redactPageHeaders } from '../../lib/redaction/headers';
@@ -18,6 +18,7 @@ import {
   composeFdtData,
   createCaptureWaitPoint,
   mergeErrorWords,
+  onBackForwardRestore,
   processSerializedPage,
   servedDetections,
   type CaptureWaitPointDeps,
@@ -311,5 +312,25 @@ describe('servedDetections — the getWprDetections reply', () => {
     expect(served.rocket_above_the_fold_optimization.preloadedImages).toHaveLength(cap);
     expect(served.rocket_above_the_fold_optimization.truncated).toBe(true);
     expect(served).toEqual(composeFdtData(data, LIVE).wprDetections);
+  });
+});
+
+describe('onBackForwardRestore', () => {
+  it('calls back on a restore from the back/forward cache only, until its signal aborts', () => {
+    const onRestore = vi.fn();
+    const controller = new AbortController();
+    const target = new EventTarget() as unknown as Window;
+    onBackForwardRestore(target, controller.signal, onRestore);
+    const show = (persisted: boolean): void => {
+      // The engine's event shape: a `pageshow` carrying `persisted`.
+      target.dispatchEvent(Object.assign(new Event('pageshow'), { persisted }));
+    };
+    show(false);
+    expect(onRestore).not.toHaveBeenCalled();
+    show(true);
+    expect(onRestore).toHaveBeenCalledTimes(1);
+    controller.abort();
+    show(true);
+    expect(onRestore).toHaveBeenCalledTimes(1);
   });
 });

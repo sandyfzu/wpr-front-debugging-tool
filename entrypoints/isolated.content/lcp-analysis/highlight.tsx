@@ -136,6 +136,10 @@ export function createLcpHighlighter(ctx: ContentScriptContext, log: Logger): Lc
   const follow = (): void => {
     frame = null;
     try {
+      // An extension reload kills the context without an event: the read notices it,
+      // and the invalidation hides the frame now rather than at its countdown. Inside
+      // the `try`: an engine may throw on a torn-down context's read (→ hide + warn).
+      if (ctx.isInvalid) return;
       const next = target === null ? null : frameOf(target);
       if (next === null) {
         hide();

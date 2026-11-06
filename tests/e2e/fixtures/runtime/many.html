@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Runtime many scripts</title>
+  </head>
+  <body>
+    <h1>Many scripts</h1>
+    <!-- A large-page fixture for the Runtime states list: 1,200 delayed script
+         elements (inert: WP Rocket's delay type never runs) across the four
+         groups, past the list's 1,000-script read cap. -->
+    <script>
+      (() => {
+        const groups = [
+          (n) => `/wp-content/themes/t/s${n}.js`,
+          (n) => `/wp-content/plugins/p${n}/s.js`,
+          null,
+          (n) => `https://cdn.example.invalid/lib${n}.js`
+        ];
+        const fragment = document.createDocumentFragment();
+        for (let n = 0; n < 1200; n += 1) {
+          const script = document.createElement('script');
+          script.type = 'text/rocketlazyloadscript';
+          const url = groups[n % 4];
+          if (url === null) script.text = `window.fdtMany${n} = ${n};`;
+          else script.setAttribute('data-rocket-src', url(n));
+          script.id = `many-${n}`;
+          fragment.append(script);
+        }
+        document.body.append(fragment);
+      })();
+    </script>
+  </body>
+</html>
