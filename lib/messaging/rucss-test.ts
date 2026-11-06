@@ -21,7 +21,10 @@
 import { hasOnlyKeys, isRecord, ownValue } from '../../utils/is-record';
 import { isRandomId } from '../../utils/random-id';
 import { RUCSS_CONFIG_LIMITS } from '../rucss-tester/config';
-import { RUCSS_ENDPOINT_URL_OVERHEAD_CHARS } from '../rucss-tester/endpoint';
+import {
+  RUCSS_ENDPOINT_URL_OVERHEAD_CHARS,
+  RUCSS_PAGE_URL_ENCODED_GROWTH
+} from '../rucss-tester/endpoint';
 import {
   RUCSS_RESPONSE_MAX_BYTES,
   type RucssFetchFailure,
@@ -38,11 +41,13 @@ export const RUCSS_TEST_LIMITS = {
   /** A page address. */
   urlChars: PAGE_URL_CHARS,
   /**
-   * A request address: a page address within `urlChars` plus what the
-   * builder adds around it, so the request built for any accepted page
-   * address also passes every guard downstream.
+   * A request address: a page address within `urlChars`, encoded (at most
+   * three characters each), plus what the builder adds around it, so the
+   * request built for any accepted page address also passes every guard
+   * downstream.
    */
-  requestUrlChars: PAGE_URL_CHARS + RUCSS_ENDPOINT_URL_OVERHEAD_CHARS,
+  requestUrlChars:
+    PAGE_URL_CHARS * RUCSS_PAGE_URL_ENCODED_GROWTH + RUCSS_ENDPOINT_URL_OVERHEAD_CHARS,
   /**
    * A line list's total characters: the configuration's list cap, plus
    * room for the default preserve markers the run adds to the user's.
@@ -109,7 +114,9 @@ export type RucssStartFailure =
   /** A newer start on the same page replaced this one (or the content script's context ended). */
   | { readonly kind: 'superseded' }
   /** The page has more stylesheet links than {@link RUCSS_TEST_LIMITS} allows. */
-  | { readonly kind: 'too-many-styles' };
+  | { readonly kind: 'too-many-styles' }
+  /** Judging the inline styles against the preserve markers passed its time budget. */
+  | { readonly kind: 'inline-check-too-slow' };
 
 /** A start's answer. */
 export type RucssStartReply =
@@ -358,7 +365,8 @@ function parseRucssStartFailure(input: unknown): RucssStartFailure | null {
     kind === 'refused' ||
     kind === 'background-unreachable' ||
     kind === 'superseded' ||
-    kind === 'too-many-styles'
+    kind === 'too-many-styles' ||
+    kind === 'inline-check-too-slow'
   ) {
     return hasOnlyKeys(input, ['kind']) ? { kind } : null;
   }

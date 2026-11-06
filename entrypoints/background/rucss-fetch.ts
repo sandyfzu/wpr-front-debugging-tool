@@ -8,7 +8,8 @@
  *   http(s) page on the asking top frame's own origin.
  * - What leaves: the page address (fragment and credentials dropped), the
  *   mobile/home flags and the safelist entries — never page content.
- * - Bounded: one time budget over the request and the capped body read;
+ * - Bounded: one time budget over the request and the capped body read
+ *   (the background keeps itself alive meanwhile — the service is slow);
  *   the timeout and a cancel stay distinct outcomes (`AbortSignal.any` of
  *   the timeout signal and the cancel signal — the request rejects with the
  *   reason of whichever fired). A newer request from the same tab, or the
@@ -24,7 +25,10 @@ import {
   type RucssFetchRequest
 } from '../../lib/messaging/rucss-test';
 import { resolveTopFrameSender, type LooseMessageSender } from '../../lib/messaging/sender';
-import { RUCSS_FETCH_TIMEOUT_MS } from '../../lib/rucss-tester/deadlines';
+import {
+  RUCSS_FETCH_TIMEOUT_MS,
+  RUCSS_KEEP_ALIVE_INTERVAL_MS
+} from '../../lib/rucss-tester/deadlines';
 import {
   buildRucssEndpointUrl,
   buildRucssRequestInit,
@@ -48,7 +52,36 @@ export interface RucssFetchDeps {
   readonly now: () => number;
   /** Builds the time budget's signal (production: `AbortSignal.timeout`). */
   readonly timeoutSignal: (ms: number) => AbortSignal;
+  /**
+   * Keeps the background alive while a request waits (production:
+   * {@link keepBackgroundAlive}).
+   *
+   * @returns The stop, called once the request settled.
+   */
+  readonly keepAlive: () => () => void;
   readonly log: Logger;
+}
+
+/**
+ * Call a trivial extension API every {@link RUCSS_KEEP_ALIVE_INTERVAL_MS}
+ * until stopped: each call resets Chromium's service-worker timers, so a
+ * request waiting longer than 30 s is not ended with the worker.
+ *
+ * @param ping The trivial API call (production: `runtime.getPlatformInfo`).
+ * @param logger Where a failed call is reported (the request goes on).
+ * @returns The stop.
+ */
+export function keepBackgroundAlive(ping: () => Promise<unknown>, logger: Logger): () => void {
+  const timer = setInterval(() => {
+    ping().catch((cause: unknown) => {
+      logger.warn('RUCSS request keep-alive call failed', {
+        cause: cause instanceof Error ? cause.message : String(cause)
+      });
+    });
+  }, RUCSS_KEEP_ALIVE_INTERVAL_MS);
+  return () => {
+    clearInterval(timer);
+  };
 }
 
 /**
@@ -67,6 +100,7 @@ export async function sendRucssRequest(
   deps: RucssFetchDeps
 ): Promise<RucssFetchOutcome> {
   const signal = AbortSignal.any([cancel, deps.timeoutSignal(RUCSS_FETCH_TIMEOUT_MS)]);
+  const stopKeepAlive = deps.keepAlive();
   try {
     const response = await deps.fetch(requestUrl, {
       ...buildRucssRequestInit(safelist),
@@ -80,8 +114,13 @@ export async function sendRucssRequest(
       await readCappedText(response, RUCSS_RESPONSE_MAX_BYTES)
     );
   } catch (cause) {
-    // The request, or the body read under the same signal, rejected.
-    return rucssTransportFailure(cause);
+    // The request, or the body read under the same signal, rejected. An
+    // aborted signal decides by its reason (the first source's: the timeout's
+    // `TimeoutError` or a cancel's `AbortError`), not the rejection's: Firefox
+    // rejects a body read cut by the timeout with a plain `AbortError`.
+    return rucssTransportFailure(signal.aborted ? signal.reason : cause);
+  } finally {
+    stopKeepAlive();
   }
 }
 
@@ -187,6 +226,7 @@ export function registerRucssFetch(): void {
     fetch: (input, init) => fetch(input, init),
     now: () => Date.now(),
     timeoutSignal: (ms) => AbortSignal.timeout(ms),
+    keepAlive: () => keepBackgroundAlive(() => browser.runtime.getPlatformInfo(), log),
     log
   };
   onMessage('fetchRucssShakenCss', ({ sender, data }) =>

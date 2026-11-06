@@ -10,12 +10,16 @@ import { parseHttpUrl } from '../../utils/urls';
 export const RUCSS_ENDPOINT = 'https://mega.wp-rocket.me/support/wpr-rucss-v2.php';
 
 /**
- * Most characters {@link buildRucssEndpointUrl} adds around the page address:
- * the endpoint and `?url=` before it, then `?`, the seconds (a safe integer:
- * at most 16 digits) and both flags after it.
+ * Most characters {@link buildRucssEndpointUrl} adds around the encoded page
+ * address: the endpoint and `?url=` before it, then the longest seconds
+ * joiner (`%26`), the seconds (a safe integer: at most 16 digits) and both
+ * flags after it.
  */
 export const RUCSS_ENDPOINT_URL_OVERHEAD_CHARS =
-  `${RUCSS_ENDPOINT}?url=?&mobile&home`.length + String(Number.MAX_SAFE_INTEGER).length;
+  `${RUCSS_ENDPOINT}?url=%26&mobile&home`.length + String(Number.MAX_SAFE_INTEGER).length;
+
+/** Most characters encoding writes per page-address character (`%XX`). */
+export const RUCSS_PAGE_URL_ENCODED_GROWTH = 3;
 
 /**
  * What a test sends, for the run trigger's disclosure: only on the user's
@@ -52,18 +56,46 @@ export function toUnixSeconds(epochMs: number): number {
 }
 
 /**
- * Build the request address in the established form: the page address
- * unencoded, then `?<seconds>` even when it already has a query, then the
- * bare `&mobile` / `&home` flags. How the service splits that query is not
- * confirmed: a standard query parser would cut a page address at its second
- * query parameter (`&` reads as a separator), so multi-parameter pages may
- * reach the service truncated.
+ * How the seconds join the encoded page address, inside the `url` value, so
+ * the page address the service fetches is unique per request without
+ * changing any of the page's own parameters:
+ *
+ * - no query: a literal `?` — the page address gains the query `?<seconds>`;
+ * - a query: an encoded `&` (`%26`; a literal one would end the `url`
+ *   value) — the seconds become one more, valueless parameter, never part
+ *   of the page's last value (`lang=fr?<seconds>` would ask for another page);
+ * - a bare trailing `?` (an empty query: no parameter to change): nothing —
+ *   its `?` already opens the query, as in the no-query form.
+ *
+ * Decoded, the `url` value is the page address plus `?<seconds>`,
+ * `&<seconds>` or `<seconds>` respectively.
+ *
+ * Decided from the parsed query, never from the href's last character: a
+ * non-empty query may itself end in a raw `?` (`?q=what?`, `??`).
+ *
+ * @param page The parsed page address, fragment removed (so a trailing `?`
+ *   in its href can only be an empty query's opener).
+ */
+function secondsJoiner(page: URL): '?' | '%26' | '' {
+  if (page.search !== '') return '%26';
+  // `search` is '' both without a query and for an empty one (`/p?`).
+  return page.href.endsWith('?') ? '' : '?';
+}
+
+/**
+ * Build the request address: the page address as one encoded `url` value,
+ * then the seconds joined to it ({@link secondsJoiner}: each request's page
+ * address is unique), then the bare `&mobile` / `&home` flags. Encoded
+ * because the service
+ * splits its query as standard parameters: a raw page address was cut at
+ * its own `&` (a multi-parameter page was tested as its first parameter
+ * only — verified against the live service), and a page parameter named
+ * `mobile` or `home` would have set that flag.
  *
  * Two parts of the page address are dropped first. The fragment: everything
- * after a `#` never leaves the browser (it would swallow the seconds and both
- * flags), and it never changes a page's CSS. The credentials
- * (`user:password@`): this is a third-party service, and a request address
- * travels into its logs — secrets never go there.
+ * after a `#` never leaves the browser, and it never changes a page's CSS.
+ * The credentials (`user:password@`): this is a third-party service, and a
+ * request address travels into its logs — secrets never go there.
  *
  * @param query The page and flags.
  * @returns The full request address.
@@ -81,7 +113,8 @@ export function buildRucssEndpointUrl(query: RucssEndpointQuery): string {
   page.username = '';
   page.password = '';
   const flags = `${query.mobile ? '&mobile' : ''}${query.home ? '&home' : ''}`;
-  return `${RUCSS_ENDPOINT}?url=${page.href}?${String(query.unixSeconds)}${flags}`;
+  const seconds = `${secondsJoiner(page)}${String(query.unixSeconds)}`;
+  return `${RUCSS_ENDPOINT}?url=${encodeURIComponent(page.href)}${seconds}${flags}`;
 }
 
 /**

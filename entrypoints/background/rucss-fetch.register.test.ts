@@ -6,6 +6,7 @@
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RUCSS_KEEP_ALIVE_INTERVAL_MS } from '../../lib/rucss-tester/deadlines';
 import { RUCSS_ENDPOINT } from '../../lib/rucss-tester/endpoint';
 
 const messenger = vi.hoisted(() => ({
@@ -41,6 +42,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('registerRucssFetch', () => {
@@ -55,7 +58,7 @@ describe('registerRucssFetch', () => {
       outcome: { ok: true, shakenCss: 'a{}' }
     });
     const [url, init] = fetch.mock.calls[0] ?? [];
-    expect(url?.startsWith(`${RUCSS_ENDPOINT}?url=https://site.test/p?`)).toBe(true);
+    expect(url?.startsWith(`${RUCSS_ENDPOINT}?url=https%3A%2F%2Fsite.test%2Fp?`)).toBe(true);
     // The real clock: the seconds are now's, not a fixed value.
     const seconds = Number(/\?(\d+)$/.exec(url ?? '')?.[1]);
     expect(Math.abs(seconds - Date.now() / 1000)).toBeLessThan(5);
@@ -89,5 +92,31 @@ describe('registerRucssFetch', () => {
     await expect(other).resolves.toMatchObject({
       outcome: { ok: false, failure: { kind: 'cancelled' } }
     });
+  });
+
+  it('keeps the background alive through `runtime.getPlatformInfo` while a request waits, then stops', async () => {
+    vi.useFakeTimers();
+    const getPlatformInfo = vi
+      .spyOn(browser.runtime, 'getPlatformInfo')
+      // The callback overload confuses the mock's inferred return type.
+      .mockResolvedValue({ os: 'mac', arch: 'arm' } as never);
+    let answer: (response: Response) => void = () => undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          })
+      )
+    );
+    registerRucssFetch();
+    const pending = ask();
+    await vi.advanceTimersByTimeAsync(RUCSS_KEEP_ALIVE_INTERVAL_MS * 2);
+    expect(getPlatformInfo).toHaveBeenCalledTimes(2);
+    answer(new Response('{"code":200,"contents":{"shakedCSS":""}}'));
+    await expect(pending).resolves.toMatchObject({ outcome: { ok: true } });
+    await vi.advanceTimersByTimeAsync(RUCSS_KEEP_ALIVE_INTERVAL_MS * 2);
+    expect(getPlatformInfo).toHaveBeenCalledTimes(2);
   });
 });
