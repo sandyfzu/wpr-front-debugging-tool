@@ -3,14 +3,17 @@
  * (hidden cross-origin request start, response before request, render before
  * response), one-decimal percentages computed before rounding, text and
  * missing resources, first matching resource, zero total, and candidate
- * deduplication by start time.
+ * deduplication by start time; boundaries measured from a prerender
+ * activation, agreeing with the current-visit LCP.
  */
 import { describe, expect, it } from 'vitest';
+import { reduceLcp } from '../web-vitals/current-visit';
 import {
   computeLcpBreakdown,
   dedupeCandidates,
   findLcpResource,
   partPercent,
+  sinceActivation,
   type LcpBreakdown,
   type ResourceTiming
 } from './breakdown';
@@ -113,11 +116,61 @@ describe('computeLcpBreakdown', () => {
     expect(durations(result)).toEqual([0, 0, 0, 0]);
   });
 
+  it('measures every boundary from a prerender activation, as the visit LCP does', () => {
+    const navigation = { responseStart: 200, activationStart: 500 };
+    const result = breakdown(navigation, { startTime: 1700, url: URL_A }, [resource()]);
+    // First byte and request before activation floor at 0; the rest shifts by 500.
+    expect(durations(result)).toEqual([0, 0, 400, 800]);
+    expect(result.total).toBe(1200);
+    expect(result.total).toBe(reduceLcp([{ startTime: 1700 }], 500, null));
+    expect(result.parts.map((part) => part.percent)).toEqual([0, 0, 33.3, 66.7]);
+  });
+
+  it('aligns a withheld request start through the entry start, then the activation', () => {
+    const navigation = { responseStart: 100, activationStart: 50 };
+    const result = breakdown(navigation, { startTime: 1000, url: URL_A }, [
+      resource({ requestStart: 0, startTime: 250, responseEnd: 650 })
+    ]);
+    expect(durations(result)).toEqual([50, 150, 400, 350]);
+    expect(result.total).toBe(950);
+  });
+
+  it('reads an absent, zero or invalid activation as not prerendered', () => {
+    const plain = breakdown({ responseStart: 200 }, { startTime: 1200, url: URL_A }, [resource()]);
+    for (const activationStart of [0, Number.NaN, -10]) {
+      expect(
+        breakdown({ responseStart: 200, activationStart }, { startTime: 1200, url: URL_A }, [
+          resource()
+        ])
+      ).toEqual(plain);
+    }
+  });
+
+  it('floors a whole page painted before activation at 0', () => {
+    const result = breakdown(
+      { responseStart: 100, activationStart: 5000 },
+      { startTime: 900, url: '' },
+      []
+    );
+    expect(result.total).toBe(0);
+    expect(result.parts.every((part) => part.duration === 0 && part.percent === null)).toBe(true);
+  });
+
   it('names what is missing', () => {
     expect(computeLcpBreakdown(null, { startTime: 1, url: '' }, [])).toEqual({
       kind: 'no-navigation'
     });
     expect(computeLcpBreakdown({ responseStart: 1 }, null, [])).toEqual({ kind: 'no-lcp' });
+  });
+});
+
+describe('sinceActivation', () => {
+  it('subtracts the activation, floors at 0 and reads invalid values as 0', () => {
+    expect(sinceActivation(1200, 500)).toBe(700);
+    expect(sinceActivation(300, 500)).toBe(0);
+    expect(sinceActivation(1200, undefined)).toBe(1200);
+    expect(sinceActivation(Number.NaN, 0)).toBe(0);
+    expect(sinceActivation(1200, Infinity)).toBe(1200);
   });
 });
 

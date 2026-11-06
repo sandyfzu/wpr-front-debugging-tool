@@ -224,6 +224,25 @@
     "required": true
   },
   {
+    "surface": "LCP & Vitals page (panel chunk, loaded on first visit)",
+    "globs": ["chunks/lcp-vitals-*.js"],
+    "maxKb": {
+      "raw": 25.7,
+      "gzip": 8.3
+    },
+    "required": true
+  },
+  {
+    "surface": "LCP & Vitals page (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["chunks/lcp-vitals-*.js"],
+    "maxKb": {
+      "raw": 25.7,
+      "gzip": 8.3
+    },
+    "required": true
+  },
+  {
     "surface": "background page (Firefox)",
     "build": "firefox-mv2",
     "globs": ["background.js"],
@@ -244,7 +263,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1986.5
+      "raw": 2013.8
     }
   }
 ]

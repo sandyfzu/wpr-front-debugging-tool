@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>LCP hero</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+      }
+      .hero {
+        display: block;
+        width: 300px;
+        height: 140px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- An LCP fixture: a heading paints first (a text candidate), then a large
+         hero image fetched from this server (the LCP, with its resource timing).
+         Shown at its natural 300 × 140 (an upscaled image counts only its natural
+         area), with two rows of noise: Chromium ignores low-entropy images
+         (< 0.05 bits per displayed pixel), so a flat colour would never count. -->
+    <h1>LCP fixture</h1>
+    <img id="hero" class="hero wide" alt="Hero" src="hero.png" />
+    <button id="act" type="button">Act</button>
+  </body>
+</html>

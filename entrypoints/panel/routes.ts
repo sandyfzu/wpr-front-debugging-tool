@@ -10,6 +10,7 @@
  */
 import type { LucideIcon } from 'lucide-solid';
 import FileCode from 'lucide-solid/icons/file-code';
+import Gauge from 'lucide-solid/icons/gauge';
 import Images from 'lucide-solid/icons/images';
 import Radar from 'lucide-solid/icons/radar';
 import ScrollText from 'lucide-solid/icons/scroll-text';
@@ -42,7 +43,8 @@ export const ROUTE_IDS = [
   'undefined-references',
   'diagnoser',
   'rucss-tester',
-  'beacon-tester'
+  'beacon-tester',
+  'lcp-vitals'
 ] as const;
 
 /** One panel page's route id. */
@@ -219,6 +221,14 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     id: 'beacon-tester',
     label: 'Beacon Tester',
     icon: Radar,
+    group: 'Tools'
+  },
+  {
+    // A tool too: its answers are asked of the live page on demand, not
+    // read from the payload, so the row stays quiet.
+    id: 'lcp-vitals',
+    label: 'LCP & Vitals',
+    icon: Gauge,
     group: 'Tools'
   }
 ];

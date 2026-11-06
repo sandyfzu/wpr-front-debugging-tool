@@ -38,6 +38,10 @@ export const PAGE_BODIES: Partial<Record<RouteId, PageBody>> = {
   'beacon-tester': lazyPage('beacon-tester', async () => {
     const { BeaconTesterPage } = await import('./pages/beacon-tester/beacon-tester');
     return BeaconTesterPage;
+  }),
+  'lcp-vitals': lazyPage('lcp-vitals', async () => {
+    const { LcpVitalsPage } = await import('./pages/lcp-vitals/lcp-vitals');
+    return LcpVitalsPage;
   })
 };
 

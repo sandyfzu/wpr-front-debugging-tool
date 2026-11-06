@@ -19,7 +19,8 @@ const ROUTES = [
   'undefined-references',
   'diagnoser',
   'rucss-tester',
-  'beacon-tester'
+  'beacon-tester',
+  'lcp-vitals'
 ];
 
 /**

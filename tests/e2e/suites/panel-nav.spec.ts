@@ -92,7 +92,8 @@ const REGISTRY_ROWS = [
   '#/undefined-references',
   'reserved',
   '#/rucss-tester',
-  '#/beacon-tester'
+  '#/beacon-tester',
+  '#/lcp-vitals'
 ];
 
 /**
@@ -714,9 +715,10 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
         // The clamp state: at 280 the plate fits without biting (its rows
         // truly fit; no scrollbar exists then); below, it bites and the
         // scroll carries the tail. The fit line follows the registry's row
-        // count — with nine rows it sits at 280 px, where the rail keeps a
-        // fourth row (probed in 5 px steps, 200–360: 245–275 keep three rail
-        // rows and clamp the other five in the plate, so 250 now clamps).
+        // count — with ten rows it still sits at 280 px, where the rail keeps a
+        // fourth row (probed in 5 px steps, 200–400: 245–275 keep three rail
+        // rows and clamp the other seven in the plate; 280–310 keep four and
+        // fit the other six).
         if (height === 280) {
           expect(reach.plateClamped).toBe(false);
         } else {

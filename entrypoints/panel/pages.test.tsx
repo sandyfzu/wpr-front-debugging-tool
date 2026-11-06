@@ -53,4 +53,8 @@ describe('lazily loaded routes', () => {
   it('maps the Beacon Tester route to a lazily loaded body', () => {
     expect(typeof PAGE_BODIES['beacon-tester']).toBe('function');
   });
+
+  it('maps the LCP & Vitals route to a lazily loaded body', () => {
+    expect(typeof PAGE_BODIES['lcp-vitals']).toBe('function');
+  });
 });

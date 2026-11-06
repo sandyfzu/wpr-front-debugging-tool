@@ -12,6 +12,11 @@
  *   request  = max(ttfb, resource.requestStart || resource.startTime || 0)
  *   response = max(request, resource.responseEnd || 0)
  *   render   = max(response, lcp.startTime || 0)   // the total
+ *
+ * On a prerendered page every boundary is first moved to the activation
+ * (`t − activationStart`, floored at 0), as the current-visit LCP is: the
+ * visitor's wait starts when the page is shown, so the total of an analysis
+ * and the visit's LCP agree (a page not prerendered activates at 0).
  */
 import { domTiming } from '../../utils/dom-timing';
 
@@ -19,9 +24,8 @@ import { domTiming } from '../../utils/dom-timing';
 export interface NavigationTiming {
   readonly responseStart: number;
   /**
-   * The prerender activation offset (ms; 0 when not prerendered) — carried
-   * so the panel can align the analysis with the current-visit LCP, which
-   * subtracts it; the breakdown itself does not read it. Absent = unknown.
+   * The prerender activation offset (ms; 0 when not prerendered): every
+   * boundary is measured from it. Absent = unknown, read as 0.
    */
   readonly activationStart?: number;
 }
@@ -113,7 +117,20 @@ export function findLcpResource(
 }
 
 /**
- * Compute the LCP breakdown.
+ * A timeline value measured from the page's activation (the prerender
+ * activation offset; 0 when not prerendered), floored at 0 — a moment before
+ * the page was shown counts as its first.
+ *
+ * @param time The performance-timeline time, ms (non-finite/negative read as 0).
+ * @param activationStart The activation offset, ms (absent/invalid read as 0).
+ * @returns The time since activation, ms.
+ */
+export function sinceActivation(time: number, activationStart: number | undefined): number {
+  return Math.max(0, domTiming(time) - domTiming(activationStart));
+}
+
+/**
+ * Compute the LCP breakdown, every boundary measured from the activation.
  *
  * @param navigation The navigation entry, or null where none exists.
  * @param lcp The last LCP entry, or null when none was reported.
@@ -128,13 +145,16 @@ export function computeLcpBreakdown(
   if (navigation === null) return { kind: 'no-navigation' };
   if (lcp === null) return { kind: 'no-lcp' };
   const resource = findLcpResource(lcp.url, resources);
-  const ttfb = domTiming(navigation.responseStart);
+  /** A boundary measured from the activation. */
+  const since = (time: number): number => sinceActivation(time, navigation.activationStart);
+  const ttfb = since(navigation.responseStart);
+  // A withheld `requestStart` reads 0: fall back to the entry's start before aligning.
   const request =
     resource === null
       ? ttfb
-      : Math.max(ttfb, domTiming(resource.requestStart) || domTiming(resource.startTime));
-  const response = resource === null ? request : Math.max(request, domTiming(resource.responseEnd));
-  const render = Math.max(response, domTiming(lcp.startTime));
+      : Math.max(ttfb, since(domTiming(resource.requestStart) || domTiming(resource.startTime)));
+  const response = resource === null ? request : Math.max(request, since(resource.responseEnd));
+  const render = Math.max(response, since(lcp.startTime));
   const durations: Record<LcpPartKey, number> = {
     timeToFirstByte: ttfb,
     resourceLoadDelay: request - ttfb,

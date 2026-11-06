@@ -20,7 +20,8 @@ const ROUTES = [
   { id: 'undefined-references', label: 'Undefined References' },
   { id: 'diagnoser', label: 'Diagnoser' },
   { id: 'rucss-tester', label: 'RUCSS Tester' },
-  { id: 'beacon-tester', label: 'Beacon Tester' }
+  { id: 'beacon-tester', label: 'Beacon Tester' },
+  { id: 'lcp-vitals', label: 'LCP & Vitals' }
 ];
 
 test('page entrances do not add transient scrollbars or suppress real overflow', async ({
