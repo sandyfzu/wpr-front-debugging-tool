@@ -12,6 +12,7 @@ import type { RucssBuildOutcome } from './build-client';
 import {
   RUCSS_BUILD_TIMEOUT_MS,
   RUCSS_FETCH_TIMEOUT_MS,
+  RUCSS_INLINE_CHECK_BUDGET_MS,
   RUCSS_START_DEADLINE_MS
 } from './deadlines';
 import type { RucssFetchFailure } from './response';
@@ -233,6 +234,13 @@ function startFailureView(failure: RucssStartFailure): RucssOutcomeView {
         'Too many stylesheets to test',
         `The page links more than ${formatCount(RUCSS_TEST_LIMITS.links)} stylesheets (or their addresses pass ${mebi(RUCSS_TEST_LIMITS.linkChars)} characters). ${UNCHANGED}`,
         ['inspect-styles']
+      );
+    case 'inline-check-too-slow':
+      return view(
+        'error',
+        'Too much inline CSS for your markers',
+        `Checking the page's inline styles against the inline preserve markers passed ${seconds(RUCSS_INLINE_CHECK_BUDGET_MS)}, so the test stopped (the page stayed responsive). Use fewer markers, then run again. ${UNCHANGED}`,
+        ['inspect-styles', 'retry']
       );
   }
 }

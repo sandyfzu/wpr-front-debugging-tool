@@ -5,15 +5,19 @@
  * answer is capped and judged; logs never carry an address.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../../lib/logger';
 import { parseRucssFetchReply, RUCSS_TEST_LIMITS } from '../../lib/messaging/rucss-test';
-import { RUCSS_FETCH_TIMEOUT_MS } from '../../lib/rucss-tester/deadlines';
+import {
+  RUCSS_FETCH_TIMEOUT_MS,
+  RUCSS_KEEP_ALIVE_INTERVAL_MS
+} from '../../lib/rucss-tester/deadlines';
 import { buildRucssEndpointUrl, RUCSS_ENDPOINT } from '../../lib/rucss-tester/endpoint';
 import { RUCSS_RESPONSE_MAX_BYTES } from '../../lib/rucss-tester/response';
 import {
   answerRucssFetch,
   createRucssInflight,
+  keepBackgroundAlive,
   rucssRequestUrlFor,
   sendRucssRequest,
   type RucssFetchDeps
@@ -75,6 +79,7 @@ function deps(
     fetch: fetch as unknown as typeof globalThis.fetch,
     now: () => NOW,
     timeoutSignal,
+    keepAlive: () => () => undefined,
     log: logDouble()
   };
 }
@@ -82,7 +87,7 @@ function deps(
 describe('rucssRequestUrlFor', () => {
   it('builds the fixed endpoint address for a page on the sender’s origin', () => {
     expect(rucssRequestUrlFor(REQUEST, 'https://site.test', NOW)).toBe(
-      `${RUCSS_ENDPOINT}?url=https://site.test/shop/?a=1?1700000000&mobile`
+      `${RUCSS_ENDPOINT}?url=https%3A%2F%2Fsite.test%2Fshop%2F%3Fa%3D1%261700000000&mobile`
     );
   });
 
@@ -104,9 +109,16 @@ describe('request address bound', () => {
   const ORIGIN = 'https://site.test';
   /** A normalized page address of exactly `chars` characters. */
   const pageOf = (chars: number): string => `${ORIGIN}/${'a'.repeat(chars - ORIGIN.length - 1)}`;
+  /**
+   * The page address that encodes longest at `chars` characters: past the
+   * origin, only `/` and a `?` (three characters each, encoded) — a query,
+   * so the seconds join it with the longest joiner (`%26`).
+   */
+  const widestPageOf = (chars: number): string =>
+    `${ORIGIN}/?${'/'.repeat(chars - ORIGIN.length - 2)}`;
   const largest = {
     ...REQUEST,
-    pageUrl: pageOf(RUCSS_TEST_LIMITS.urlChars),
+    pageUrl: widestPageOf(RUCSS_TEST_LIMITS.urlChars),
     mobile: true,
     home: true
   };
@@ -130,7 +142,9 @@ describe('request address bound', () => {
       mobile: true,
       home: true
     });
-    expect(built.length).toBe(RUCSS_TEST_LIMITS.requestUrlChars);
+    // Only the origin's 14 letters/dots (`https`, `site.test`) encode to one
+    // character instead of three: the bound is tight up to them.
+    expect(built.length).toBe(RUCSS_TEST_LIMITS.requestUrlChars - 2 * 14);
   });
 
   it('refuses one character past the page bound, sending nothing', async () => {
@@ -170,7 +184,7 @@ describe('answerRucssFetch', () => {
     const d = deps(fetch);
     await expect(answerRucssFetch(SENDER, REQUEST, createRucssInflight(), d)).resolves.toEqual({
       kind: 'answered',
-      requestUrl: `${RUCSS_ENDPOINT}?url=https://site.test/shop/?a=1?1700000000&mobile`,
+      requestUrl: `${RUCSS_ENDPOINT}?url=https%3A%2F%2Fsite.test%2Fshop%2F%3Fa%3D1%261700000000&mobile`,
       outcome: { ok: true, shakenCss: 'a{}' }
     });
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -260,6 +274,26 @@ describe('sendRucssRequest', () => {
     expect(outcome).toEqual({ ok: false, failure: { kind: 'timeout' } });
   });
 
+  it('reads a timeout as `timeout` even when the rejection is a plain AbortError (Firefox body read)', async () => {
+    const timeout = new AbortController();
+    const firefoxLike = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        })
+    );
+    const pending = sendRucssRequest(
+      'u',
+      [],
+      new AbortController().signal,
+      deps(firefoxLike, () => timeout.signal)
+    );
+    timeout.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+    await expect(pending).resolves.toEqual({ ok: false, failure: { kind: 'timeout' } });
+  });
+
   it('arms the budget from the shared deadline', async () => {
     const timeoutSignal = vi.fn(() => new AbortController().signal);
     await sendRucssRequest(
@@ -295,6 +329,19 @@ describe('sendRucssRequest', () => {
     ).resolves.toEqual({ ok: false, failure: { kind: 'http-status', httpStatus: 502 } });
   });
 
+  it('keeps the background alive exactly while the request waits — answered or failed', async () => {
+    for (const fetch of [
+      fetchAnswering(OK_BODY),
+      vi.fn(() => Promise.reject(new TypeError('x')))
+    ]) {
+      const stop = vi.fn();
+      const d = { ...deps(fetch), keepAlive: vi.fn(() => stop) };
+      await sendRucssRequest('u', [], new AbortController().signal, d);
+      expect(d.keepAlive).toHaveBeenCalledOnce();
+      expect(stop).toHaveBeenCalledOnce();
+    }
+  });
+
   it('sends `{}` for an empty safelist', async () => {
     const fetch = fetchAnswering(OK_BODY);
     await sendRucssRequest('u', [], new AbortController().signal, deps(fetch));
@@ -314,5 +361,41 @@ describe('createRucssInflight', () => {
     expect(() => {
       inflight.cancel(99);
     }).not.toThrow();
+  });
+});
+
+describe('keepBackgroundAlive', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('calls the API every interval (under 30 s) until stopped', async () => {
+    vi.useFakeTimers();
+    expect(RUCSS_KEEP_ALIVE_INTERVAL_MS).toBeLessThan(30_000);
+    const ping = vi.fn(() => Promise.resolve({}));
+    const stop = keepBackgroundAlive(ping, logDouble());
+    expect(ping).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(RUCSS_FETCH_TIMEOUT_MS);
+    expect(ping).toHaveBeenCalledTimes(
+      Math.floor(RUCSS_FETCH_TIMEOUT_MS / RUCSS_KEEP_ALIVE_INTERVAL_MS)
+    );
+    stop();
+    ping.mockClear();
+    await vi.advanceTimersByTimeAsync(RUCSS_KEEP_ALIVE_INTERVAL_MS * 3);
+    expect(ping).not.toHaveBeenCalled();
+  });
+
+  it('logs a failed call and keeps going', async () => {
+    vi.useFakeTimers();
+    const log = logDouble();
+    const ping = vi.fn(() => Promise.reject(new Error('Extension context invalidated.')));
+    const stop = keepBackgroundAlive(ping, log);
+    await vi.advanceTimersByTimeAsync(RUCSS_KEEP_ALIVE_INTERVAL_MS * 2);
+    stop();
+    expect(ping).toHaveBeenCalledTimes(2);
+    expect(log.lines).toEqual([
+      ['warn', 'RUCSS request keep-alive call failed', { cause: 'Extension context invalidated.' }],
+      ['warn', 'RUCSS request keep-alive call failed', { cause: 'Extension context invalidated.' }]
+    ]);
   });
 });
