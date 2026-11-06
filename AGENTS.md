@@ -233,6 +233,7 @@ Requirements, not suggestions:
   - Don't destructure `props` (kills reactivity) — use `props.x`.
   - Components run **once**; there is no re-render.
 - **WXT conventions.** Prefer WXT's built-ins (auto-imported `browser`, its storage and messaging utilities) over ad-hoc `chrome.*` calls or hand-rolled wrappers. Keep message and storage contracts typed and defined in one place. Verify exact APIs against the installed WXT version — don't trust remembered import paths.
+- **`browser` and `chrome` are clobber-proof by build.** A page's DOM can answer either name in an isolated world: one created after parse (a tab loaded before install/update/reload), or a `document_start` one whose root element carries `id="chrome"`/`id="browser"`. `wxt.config.ts` aliases `@wxt-dev/browser` (behind the auto-imported `browser`, WXT and its storage) to `utils/extension-api/`, which on Chromium also pins the genuine namespace as the world's own `chrome` (bare `chrome` readers: `@webext-core/messaging`, evaluated after it by a `wxt.config.ts` transform). Use the auto-imported `browser`; never read `browser`/`chrome` off `globalThis`/`window`/`self` (casts included) nor import the resolver or the package (lint-guarded).
 - **Match the surrounding style** and follow best practices of each library in use.
 
 ## Git & releases

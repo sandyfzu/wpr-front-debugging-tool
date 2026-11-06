@@ -1,4 +1,7 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
+import type { Plugin } from 'vite';
 import { defineConfig } from 'wxt';
 import { URL_PATTERNS } from './lib/wp-rocket/constants';
 import {
@@ -21,13 +24,53 @@ export const FIREFOX_ADDON_ID = '{f6991cc9-09e3-43d0-a6dd-4aae5f676452}';
 /** Explicit supported Firefox floor (owner-chosen). */
 export const FIREFOX_MIN_VERSION = '150.0';
 
+/** The clobber-proof extension namespace module `@wxt-dev/browser` resolves to. */
+const EXTENSION_API_MODULE = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  'utils/extension-api/index.ts'
+);
+
+/** The messaging library's extension entry: it reads the bare `chrome` global on every call. */
+const MESSAGING_ENTRY = /[\\/]@webext-core[\\/]messaging[\\/]dist[\\/]index\.mjs(\?.*)?$/;
+
+/**
+ * Make the messaging library evaluate the extension namespace module first.
+ * That module pins the genuine namespace as the world's own `chrome` (see
+ * `utils/extension-api/chromium.ts`) — the library reads that global at each
+ * call and the shared messenger reads it once at load, so the pin must run
+ * before both. Prepending the import is what guarantees the order: module
+ * evaluation runs a module's imports before its body, whatever the importer.
+ *
+ * @returns The Vite plugin.
+ */
+export function extensionApiBeforeMessaging(): Plugin {
+  return {
+    name: 'wpr-fdt:extension-api-before-messaging',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!MESSAGING_ENTRY.test(id)) return null;
+      return { code: `import ${JSON.stringify(EXTENSION_API_MODULE)};\n${code}`, map: null };
+    }
+  };
+}
+
 /** The packaged simulation folder (the data file's), where each LazyLoad runtime ships. */
 const SIMULATION_PACKAGE_DIR = SIMULATION_DATA_PATH.slice(0, SIMULATION_DATA_PATH.lastIndexOf('/'));
 
 export default defineConfig({
   modules: ['@wxt-dev/module-solid'],
   vite: () => ({
-    plugins: [tailwindcss()]
+    plugins: [tailwindcss(), extensionApiBeforeMessaging()],
+    resolve: {
+      // Every runtime `browser` (ours, WXT's, its storage's) comes from
+      // `@wxt-dev/browser`, whose lookup a page's DOM can forge in a content
+      // script world (created after parse, or at document_start under a
+      // root element named so); the project's resolver
+      // replaces it (`utils/extension-api`). Exact match: the package has no
+      // runtime subpaths, and its types stay the package's. Build-only: the
+      // test runner keeps WXT's fake browser.
+      alias: [{ find: /^@wxt-dev\/browser$/, replacement: EXTENSION_API_MODULE }]
+    }
   }),
   // Function form: WXT passes the target browser, so Firefox-only keys stay out
   // of the Chromium manifest.

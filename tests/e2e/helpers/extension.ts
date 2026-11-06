@@ -107,7 +107,7 @@ export const MENU_PARITY_IDS = [
 const MENU_ABSENCE_CONTROL_ID = 'e2e-scratch-existence-probe';
 
 /** The protocol wire shape of `@webext-core/messaging` v4 (verified dist). */
-interface WireEnvelope {
+export interface WireEnvelope {
   id: number;
   type: string;
   data: unknown;
@@ -123,7 +123,7 @@ let wireIdSequence = 0;
  * @param type The protocol channel name.
  * @param data The payload (`undefined` for no-payload protocol rows).
  */
-function wireEnvelope(type: string, data: unknown): WireEnvelope {
+export function wireEnvelope(type: string, data: unknown): WireEnvelope {
   wireIdSequence += 1;
   return { id: wireIdSequence, type, data, timestamp: Date.now() };
 }
@@ -519,6 +519,59 @@ export async function openFixturePage(
 
 /** Monotonic per-run tab-identity suffix (a unique query key per fixture page). */
 let tabIdentitySequence = 0;
+
+/** A browser whose extension install comes after its first pages loaded. */
+export interface LateInstallBrowser {
+  /** The live context (no extension until {@link LateInstallBrowser.install}). */
+  readonly context: BrowserContext;
+  /** Install the unpacked bundle now; resolves its id and service worker. */
+  install(): Promise<{ id: string; worker: Worker }>;
+  /** Close the browser and delete its profile. */
+  close(): Promise<void>;
+}
+
+/**
+ * Launch Chromium WITHOUT the extension, for the install-after-load leg: a
+ * tab loaded before the extension starts (install, update, reload) never got
+ * its `document_start` scripts, so the first script the extension injects
+ * there creates its isolated world after the page parsed. The install rides
+ * CDP `Extensions.loadUnpacked` (needs `--enable-unsafe-extension-debugging`;
+ * Playwright's default `--disable-extensions` is dropped so the loaded
+ * bundle can run — verified live on this Chromium build).
+ *
+ * @returns The browser and its install/close handles.
+ */
+export async function launchForLateInstall(): Promise<LateInstallBrowser> {
+  const profileDir = mkdtempSync(path.join(tmpdir(), 'wpr-fdt-e2e-late-'));
+  const context = await chromium.launchPersistentContext(profileDir, {
+    channel: 'chromium',
+    headless: process.env.E2E_HEADED !== '1',
+    ignoreDefaultArgs: ['--hide-scrollbars', '--disable-extensions'],
+    viewport: { width: 1280, height: 800 },
+    timeout: LAUNCH_TIMEOUT_MS,
+    args: ['--enable-unsafe-extension-debugging', HOST_RESOLVER_RULES]
+  });
+  const install = async (): Promise<{ id: string; worker: Worker }> => {
+    const browser = context.browser();
+    if (browser === null) throw new Error('The persistent context exposes no browser for CDP');
+    const session = await browser.newBrowserCDPSession();
+    const { id } = await session.send('Extensions.loadUnpacked', { path: EXTENSION_PATH });
+    const isOurs = (worker: Worker): boolean => new URL(worker.url()).host === id;
+    const worker =
+      context.serviceWorkers().find(isOurs) ??
+      (await context.waitForEvent('serviceworker', { predicate: isOurs, timeout: 20_000 }));
+    return { id, worker };
+  };
+  const close = async (): Promise<void> => {
+    try {
+      await context.close();
+    } finally {
+      // A failed close must not leak the profile.
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  };
+  return { context, install, close };
+}
 
 /**
  * The panel page's URL under the driven extension install — the extension

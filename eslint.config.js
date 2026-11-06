@@ -52,6 +52,83 @@ const beaconDynamicImportRestriction = [
   }
 ];
 
+// The extension namespace: the build resolves every `browser` import through
+// the project's clobber-proof resolver (wxt.config.ts aliases
+// `@wxt-dev/browser` to utils/extension-api), which also pins the genuine
+// `chrome` global. Code keeps the auto-imported `browser` (the test runner
+// maps it to the fake browser); importing the resolver or the package, or
+// reading either global off the window, would bypass one or the other.
+const extensionApiMessage =
+  'Use the auto-imported `browser` (wxt/browser): the build resolves it through utils/extension-api, which a page cannot clobber.';
+const extensionApiModuleRegex = '(^|/)utils/extension-api(/|$)';
+
+// Its own rule name (`@typescript-eslint/no-restricted-imports`), so the
+// per-layer `no-restricted-imports` blocks below cannot drop it. Covers
+// `import`, `export … from` and `export * from`; type-only imports are erased.
+const extensionApiImportRule = [
+  'error',
+  {
+    paths: [{ name: '@wxt-dev/browser', message: extensionApiMessage, allowTypeImports: true }],
+    patterns: [{ regex: extensionApiModuleRegex, message: extensionApiMessage }]
+  }
+];
+
+const extensionApiDynamicImportRestriction = [
+  {
+    selector: `ImportExpression[source.value=/^@wxt-dev\\/browser$|${extensionApiModuleRegex.replaceAll('/', '\\/')}/]`,
+    message: extensionApiMessage
+  },
+  {
+    selector: `ImportExpression[source.type='TemplateLiteral'][source.quasis.0.value.cooked=/^@wxt-dev\\/browser|${extensionApiModuleRegex.replaceAll('/', '\\/')}/]`,
+    message: extensionApiMessage
+  }
+];
+
+// Reading `browser`/`chrome` off the global, plain (`globalThis.chrome`,
+// `window['browser']`, `self?.chrome`) or through up to two wrappers: a cast
+// (`(globalThis as X).chrome`, `(<X>window).chrome`, `globalThis!.browser`)
+// or a comma sequence yielding its last operand (`(0, globalThis).chrome`).
+// Plain destructuring (`const { chrome } = globalThis`) is
+// no-restricted-properties'; a cast one is the last selector.
+const extensionApiGlobals = ['globalThis', 'window', 'self'];
+const extensionApiNames = ['browser', 'chrome'];
+const globalObject = `/^(${extensionApiGlobals.join('|')})$/`;
+const namedProperty = `:matches([computed=false][property.name=/^(${extensionApiNames.join('|')})$/], [computed=true][property.value=/^(${extensionApiNames.join('|')})$/])`;
+const tsWrapper = '/^TS((As|Satisfies|NonNull)Expression|TypeAssertion)$/';
+const castNode = `[type=${tsWrapper}]`;
+const sequenceNode = 'SequenceExpression';
+
+/**
+ * Selector for a named `browser`/`chrome` read whose object is a global
+ * behind `wrappers` (outermost first). Child combinators walk the operand
+ * chain; under a sequence only the last operand (`:last-child`) is the value.
+ * A wrapper child of the read can only be its object: a named property is an
+ * Identifier or a string literal.
+ * @param {string[]} wrappers - `castNode`/`sequenceNode`, outermost first.
+ * @returns {string} The esquery selector, matching the global Identifier.
+ */
+const wrappedGlobalRead = (wrappers) => {
+  let selector = `MemberExpression${namedProperty}`;
+  let parent = '';
+  for (const node of [...wrappers, `Identifier[name=${globalObject}]`]) {
+    selector += ` > ${node}${parent === sequenceNode ? ':last-child' : ''}`;
+    parent = node;
+  }
+  return selector;
+};
+const wrapperKinds = [castNode, sequenceNode];
+const extensionApiGlobalReadRestriction = [
+  `MemberExpression${namedProperty}[object.type='Identifier'][object.name=${globalObject}]`,
+  ...wrapperKinds.map((outer) => wrappedGlobalRead([outer])),
+  ...wrapperKinds.flatMap((outer) =>
+    wrapperKinds.map((inner) => wrappedGlobalRead([outer, inner]))
+  ),
+  `VariableDeclarator[init.type=${tsWrapper}][init.expression.name=${globalObject}] > ObjectPattern > Property[key.name=/^(${extensionApiNames.join('|')})$/]`
+].map((selector) => ({ selector, message: extensionApiMessage }));
+const extensionApiGlobalRestriction = extensionApiGlobals.flatMap((object) =>
+  extensionApiNames.map((property) => ({ object, property, message: extensionApiMessage }))
+);
+
 // Design-system internals: Kobalte is only allowed inside components/ui/ —
 // every other surface consumes its headless primitives through the typed
 // wrappers there (see AGENTS.md dependency direction + the P5B plan row).
@@ -99,7 +176,34 @@ export default tseslint.config(
         'error',
         { patterns: [...bannedDependencies, beaconPackageRestriction, kobalteRestriction] }
       ],
-      'no-restricted-syntax': ['error', ...beaconDynamicImportRestriction]
+      '@typescript-eslint/no-restricted-imports': extensionApiImportRule,
+      'no-restricted-syntax': [
+        'error',
+        ...beaconDynamicImportRestriction,
+        ...extensionApiDynamicImportRestriction
+      ]
+    }
+  },
+
+  // Shipped code never reads the namespace global (the e2e tier does, in
+  // pages it drives, to stamp both namespaces). MAIN-world scripts are
+  // exempt: they have no extension API, and `window.chrome` there is the
+  // page's own object (the strict block's import bans still apply).
+  {
+    files: ['{entrypoints,components,lib,utils}/**/*.{ts,tsx}'],
+    ignores: [
+      'entrypoints/{main-world,ua-identity}.content.ts',
+      'entrypoints/{main-world,ua-identity}/**'
+    ],
+    rules: {
+      'no-restricted-properties': ['error', ...extensionApiGlobalRestriction],
+      // The strict block's selectors restated: last matching config wins.
+      'no-restricted-syntax': [
+        'error',
+        ...beaconDynamicImportRestriction,
+        ...extensionApiDynamicImportRestriction,
+        ...extensionApiGlobalReadRestriction
+      ]
     }
   },
 
