@@ -36,6 +36,22 @@ function asksDouble(): TabAsks & { calls: unknown[][] } {
       calls.push(['applyRucssTest', tabId, request]);
       return Promise.resolve({ ok: false, failure: 'stale-run' });
     }),
+    runBeaconTest: vi.fn((tabId: number, request: unknown) => {
+      calls.push(['runBeaconTest', tabId, request]);
+      return Promise.resolve({ kind: 'busy' });
+    }),
+    runLcpAnalysis: vi.fn((tabId: number, request: unknown) => {
+      calls.push(['runLcpAnalysis', tabId, request]);
+      return Promise.resolve({ kind: 'unsupported' });
+    }),
+    getScriptRuntimeStatuses: vi.fn((tabId: number) => {
+      calls.push(['getScriptRuntimeStatuses', tabId]);
+      return Promise.resolve({ scripts: [], total: 0 });
+    }),
+    getCurrentVisitVitals: vi.fn((tabId: number) => {
+      calls.push(['getCurrentVisitVitals', tabId]);
+      return Promise.resolve(null);
+    }),
     listPageStyles: vi.fn((tabId: number) => {
       calls.push(['listPageStyles', tabId]);
       return Promise.resolve({ styles: [], total: 0 });
@@ -44,13 +60,17 @@ function asksDouble(): TabAsks & { calls: unknown[][] } {
 }
 
 describe('the relayable asks registry', () => {
-  it('is the closed list of the six panel→tab asks', () => {
+  it('is the closed list of the ten panel→tab asks', () => {
     expect(Object.keys(TAB_RELAY_ASKS).sort()).toEqual([
       'applyRucssTest',
+      'getCurrentVisitVitals',
       'getFdtData',
+      'getScriptRuntimeStatuses',
       'getScriptSourceChunk',
       'listPageStyles',
       'processPageData',
+      'runBeaconTest',
+      'runLcpAnalysis',
       'startRucssTest'
     ]);
   });
@@ -137,6 +157,41 @@ describe('parseTabRelayRequest', () => {
       parseTabRelayRequest({ tabId: 3, ask: 'applyRucssTest', payload: { ...apply, runId: 'x' } })
     ).toBeNull();
     expect(parseTabRelayRequest({ tabId: 3, ask: 'startRucssTest' })).toBeNull();
+  });
+
+  it('forwards the live analysis asks with their payloads rebuilt, and refuses broken ones', async () => {
+    const asks = asksDouble();
+    const config = {
+      features: { aboveTheFold: false, lazyRender: true },
+      mobile: false,
+      widthThreshold: 1600,
+      heightThreshold: 700,
+      lazyRenderThreshold: 1800,
+      selectors: []
+    };
+    for (const request of [
+      { tabId: 3, ask: 'runBeaconTest', payload: { config } },
+      { tabId: 3, ask: 'runLcpAnalysis', payload: { highlight: true } },
+      { tabId: 3, ask: 'getScriptRuntimeStatuses' },
+      { tabId: 3, ask: 'getCurrentVisitVitals' }
+    ]) {
+      await parseTabRelayRequest(request)?.forward(asks);
+    }
+    expect(asks.calls).toEqual([
+      ['runBeaconTest', 3, { config }],
+      ['runLcpAnalysis', 3, { highlight: true }],
+      ['getScriptRuntimeStatuses', 3],
+      ['getCurrentVisitVitals', 3]
+    ]);
+    for (const broken of [
+      { tabId: 3, ask: 'runBeaconTest', payload: { config: { ...config, mobile: 1 } } },
+      { tabId: 3, ask: 'runBeaconTest', payload: { config, x: 1 } },
+      { tabId: 3, ask: 'runLcpAnalysis', payload: { highlight: 'yes' } },
+      { tabId: 3, ask: 'getScriptRuntimeStatuses', payload: {} },
+      { tabId: 3, ask: 'getCurrentVisitVitals', payload: null }
+    ]) {
+      expect(parseTabRelayRequest(broken), JSON.stringify(broken)).toBeNull();
+    }
   });
 
   it('forwards the page-style inventory and refuses one carrying a payload', async () => {

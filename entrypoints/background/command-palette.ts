@@ -4,47 +4,34 @@
  * its code until the first open) and open the exclusion builder overlay on
  * the asking page's own tab. Both answer only a top-frame http(s) sender
  * (the palette lives in the top frame only) and act on that sender's tab:
- * a content script can never aim either at another tab. Where the browser
- * names the sending document, the view goes into that document only — a
- * page that navigated meanwhile gets nothing (the injection rejects).
+ * a content script can never aim either at another tab. The view load is
+ * the shared top-frame injection answer (`./top-frame-injection`).
  */
 import { createLogger } from '../../lib/logger';
 import { onMessage } from '../../lib/messaging';
 import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-panel';
-import {
-  resolveSenderDocumentId,
-  resolveTopFrameSender,
-  type LooseMessageSender
-} from '../../lib/messaging/sender';
+import { resolveTopFrameSender, type LooseMessageSender } from '../../lib/messaging/sender';
 import { openExclusionOverlay } from './exclusion-overlay';
+import {
+  answerTopFrameInjection,
+  injectAtTarget,
+  type InjectScripts,
+  type TopFrameInjectionAsk
+} from './top-frame-injection';
 
 const log = createLogger('command-palette');
 
 /** The view's built script (WXT emits runtime content scripts here). */
 export const COMMAND_PALETTE_VIEW_SCRIPT = '/content-scripts/command-palette.js';
 
-/** Where the view goes: the sender's own document when known, else its tab's top frame. */
-export interface PaletteViewTarget {
-  readonly tabId: number;
-  /** The sending document (null: the browser names none — the top frame then). */
-  readonly documentId: string | null;
-}
-
-/**
- * Inject script files at a view target through `browser.scripting`.
- *
- * @param target The tab, and the document when known.
- * @param files The built scripts.
- */
-async function injectAtTarget(target: PaletteViewTarget, files: readonly string[]): Promise<void> {
-  await browser.scripting.executeScript({
-    target:
-      target.documentId === null
-        ? { tabId: target.tabId, frameIds: [0] }
-        : { tabId: target.tabId, documentIds: [target.documentId] },
-    files: [...files]
-  });
-}
+/** The view load's identity for the shared top-frame injection answer. */
+const VIEW_LOAD: TopFrameInjectionAsk = {
+  row: 'loadCommandPaletteView',
+  refusal: 'only a top-frame page may load the view',
+  what: 'the command palette view',
+  files: [COMMAND_PALETTE_VIEW_SCRIPT],
+  log
+};
 
 /**
  * Answer a view load: inject the view into the sending document (or, where
@@ -54,30 +41,13 @@ async function injectAtTarget(target: PaletteViewTarget, files: readonly string[
  * @param inject Injects script files at a target.
  * @returns `true` once the script ran.
  * @throws {@link Error} for a sender that is not a top-frame http(s) page;
- *   an injection failure rejects as the scripting API does (logged here).
+ *   an injection failure rejects as the scripting API does (logged).
  */
-export async function answerPaletteViewLoad(
+export function answerPaletteViewLoad(
   sender: LooseMessageSender | undefined,
-  inject: (target: PaletteViewTarget, files: readonly string[]) => Promise<void>
+  inject: InjectScripts
 ): Promise<true> {
-  const page = resolveTopFrameSender(sender);
-  if (page === null) {
-    throw new Error('loadCommandPaletteView: only a top-frame page may load the view');
-  }
-  const target: PaletteViewTarget = {
-    tabId: page.tabId,
-    documentId: resolveSenderDocumentId(sender)
-  };
-  try {
-    await inject(target, [COMMAND_PALETTE_VIEW_SCRIPT]);
-  } catch (cause) {
-    log.error('Injecting the command palette view failed', {
-      tabId: page.tabId,
-      cause: cause instanceof Error ? cause.message : cause
-    });
-    throw cause;
-  }
-  return true;
+  return answerTopFrameInjection(sender, VIEW_LOAD, inject);
 }
 
 /**

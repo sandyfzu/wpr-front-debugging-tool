@@ -26,7 +26,9 @@
  * - the latest exclusion list (`./latest-exclusion-list`) — the simulation's
  *   fetched Delay JS list, refreshed when due,
  * - the RUCSS service requests (`./rucss-fetch`) — the RUCSS test's one
- *   request, sent for the asking page only.
+ *   request, sent for the asking page only,
+ * - the beacon runner load (`./beacon-runner-load`) — the beacon test's
+ *   runner, injected into the asking page's top frame on its first run.
  *
  * Every subsystem registration happens inside `main()` (nothing at import
  * time beyond constants), the global error handlers are attached first, and
@@ -53,6 +55,7 @@ import { registerChordPlatform } from './chord-platform';
 import { registerCommandPalette } from './command-palette';
 import { registerLatestExclusionList } from './latest-exclusion-list';
 import { registerRucssFetch } from './rucss-fetch';
+import { registerBeaconRunnerLoad } from './beacon-runner-load';
 
 const log = createLogger('background');
 
@@ -194,6 +197,13 @@ async function main(): Promise<void> {
   } catch (cause) {
     // The page's ask then sees no receiver and the test reports it.
     log.error('RUCSS request init failed — RUCSS tests cannot run', cause);
+  }
+
+  try {
+    registerBeaconRunnerLoad();
+  } catch (cause) {
+    // The page's ask then sees no receiver and the test reports the runner unavailable.
+    log.error('Beacon runner load init failed — beacon tests cannot run', cause);
   }
 
   try {

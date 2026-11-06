@@ -1,0 +1,41 @@
+/*
+ * The LCP highlight: a frame over the page's LCP element, in its own shadow
+ * root and the browser's top layer. The page element is never styled.
+ *
+ * Contract against hostile pages: sizes in px; the layer is an inert
+ * full-viewport frame (`pointer-events: none`) — nothing in it takes input.
+ * No motion: the frame appears and leaves at once, and follows the element
+ * without transitions (a lagging frame would point at the wrong place).
+ */
+
+.lh-layer {
+  /* Override the UA popover box: a transparent, full-viewport, inert frame. */
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+  /* Only matters where the top layer is unavailable (the fixed fallback). */
+  z-index: 2147483647;
+}
+
+.lh-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  /* A zero-size element (a collapsed box) still gets a visible mark. */
+  min-width: 8px;
+  min-height: 8px;
+  border: 3px dashed var(--accent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 0 1px var(--surface-2);
+}

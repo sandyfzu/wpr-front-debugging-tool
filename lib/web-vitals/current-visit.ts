@@ -18,6 +18,12 @@
  *   the highest latency after skipping one per 50 interactions (a p98
  *   approximation, among the 10 longest), so few interactions give the worst
  *   one. Visibility does not gate it.
+ *
+ * A back/forward-cache restore starts a new visit (as web-vitals does): the
+ * page sends only what followed it, plus its time; entries from before are
+ * ignored, CLS is no longer gated on the first paint (the restored page is
+ * already painted), and interactions too fast to be reported still give INP
+ * its 8 ms floor. LCP has no new candidates after a restore: no data.
  */
 
 /** A metric's rating band, by the published thresholds. */
@@ -39,7 +45,8 @@ export interface VitalsInput {
   readonly activationStart: number;
   /**
    * When the page was first hidden (performance-timeline ms): the first
-   * `hidden` `visibility-state` entry at or after activation, else 0 when the
+   * `hidden` `visibility-state` entry at or after activation (and the restore,
+   * after one), else 0 when the
    * page is hidden at read time with no such entry (assumed hidden since
    * navigation), else null (never hidden).
    */
@@ -56,9 +63,37 @@ export interface VitalsInput {
   }[];
   /** `event` and `first-input` entries (only those with an interaction id count). */
   readonly events: readonly { readonly interactionId: number; readonly duration: number }[];
-  /** `performance.interactionCount` where the browser has it, else null. */
+  /**
+   * `performance.interactionCount` where the browser has it (counted from the
+   * restore after a back/forward-cache restore), else null.
+   */
   readonly interactionCount: number | null;
+  /**
+   * The CLS session state of shifts the page already folded (oldest first,
+   * before {@link VitalsInput.layoutShifts}) to keep its list bounded;
+   * absent when none were.
+   */
+  readonly clsCarry?: ClsSessions;
+  /** Interactions the page no longer lists (the least slow, past its bound); absent = 0. */
+  readonly interactionsDropped?: number;
+  /** When a back/forward-cache restore started this visit (`pageshow` time stamp); absent = a load. */
+  readonly restoredAt?: number;
 }
+
+/** CLS session-window state, folded shift by shift. */
+export interface ClsSessions {
+  /** The largest window's sum so far. */
+  readonly largest: number;
+  /** The open window's sum (0 = no window open). */
+  readonly windowSum: number;
+  /** The open window's first shift time. */
+  readonly windowFirst: number;
+  /** The previous counted shift's time. */
+  readonly previous: number;
+}
+
+/** No shift folded yet. */
+export const CLS_START: ClsSessions = { largest: 0, windowSum: 0, windowFirst: 0, previous: 0 };
 
 /** The current visit's three metrics. */
 export interface CurrentVisitVitals {
@@ -66,6 +101,8 @@ export interface CurrentVisitVitals {
   readonly cls: VitalOutcome;
   /** INP, plus how many interactions it was chosen from. */
   readonly inp: VitalOutcome & { readonly interactions?: number };
+  /** Present when a back/forward-cache restore started this visit. */
+  readonly restored?: true;
 }
 
 /** Rating thresholds `[good ≤, needs-improvement ≤]` (above the second is poor). */
@@ -86,6 +123,9 @@ export const INP_SKIP_EVERY = 50;
 
 /** Longest interactions the INP estimate picks from (so it never skips past the 10th worst). */
 export const INP_CANDIDATES_MAX = 10;
+
+/** INP after a restore with interactions but none reported (all under the entry threshold), ms. */
+export const INP_RESTORED_FLOOR_MS = 8;
 
 /**
  * Rate a value.
@@ -123,6 +163,28 @@ export function beforeHidden(time: number, firstHiddenTime: number | null): bool
 }
 
 /**
+ * When the page was first hidden, from every source a browser offers: the
+ * first `hidden` `visibility-state` entry (Chromium), and a
+ * `visibilitychange` tracker installed at document start (engines without
+ * those entries). The earliest known one wins; without either, a page
+ * hidden right now (and not prerendering) counts as hidden from the start.
+ *
+ * @param entryTime The first `hidden` entry's `startTime` at or after
+ *   activation, or null.
+ * @param trackedTime The tracker's first-hidden time, or null (none, or not installed).
+ * @param hiddenNow Whether the page is hidden at the read and not prerendering.
+ * @returns The first-hidden time, or null when the page was never hidden.
+ */
+export function resolveFirstHiddenTime(
+  entryTime: number | null,
+  trackedTime: number | null,
+  hiddenNow: boolean
+): number | null {
+  if (entryTime !== null && trackedTime !== null) return Math.min(entryTime, trackedTime);
+  return entryTime ?? trackedTime ?? (hiddenNow ? 0 : null);
+}
+
+/**
  * The current visit's LCP.
  *
  * @param entries LCP entries, in report order.
@@ -142,32 +204,44 @@ export function reduceLcp(
 }
 
 /**
+ * Fold one layout shift into the CLS session windows: a shift right after
+ * input never counts; a shift joins the open window when it is < 1 s after
+ * the previous shift and < 5 s after the window's first, else opens a new one.
+ *
+ * @param state The windows so far.
+ * @param shift The next shift, in report order.
+ * @returns The windows with the shift folded in.
+ */
+export function foldClsShift(
+  state: ClsSessions,
+  shift: VitalsInput['layoutShifts'][number]
+): ClsSessions {
+  if (shift.hadRecentInput) return state;
+  const joins =
+    state.windowSum > 0 &&
+    shift.startTime - state.previous < CLS_GAP_MS &&
+    shift.startTime - state.windowFirst < CLS_WINDOW_MS;
+  const windowSum = joins ? state.windowSum + shift.value : shift.value;
+  return {
+    largest: Math.max(state.largest, windowSum),
+    windowSum,
+    windowFirst: joins ? state.windowFirst : shift.startTime,
+    previous: shift.startTime
+  };
+}
+
+/**
  * The current visit's CLS (session windows, largest wins).
  *
  * @param shifts Layout-shift entries, in report order.
+ * @param from The windows of shifts already folded before these (none by default).
  * @returns The largest session window's sum (0 without unexpected shifts).
  */
-export function reduceCls(shifts: VitalsInput['layoutShifts']): number {
-  let largest = 0;
-  let windowSum = 0;
-  let windowFirst = 0;
-  let previous = 0;
-  for (const shift of shifts) {
-    if (shift.hadRecentInput) continue;
-    const joins =
-      windowSum > 0 &&
-      shift.startTime - previous < CLS_GAP_MS &&
-      shift.startTime - windowFirst < CLS_WINDOW_MS;
-    if (joins) {
-      windowSum += shift.value;
-    } else {
-      windowSum = shift.value;
-      windowFirst = shift.startTime;
-    }
-    previous = shift.startTime;
-    largest = Math.max(largest, windowSum);
-  }
-  return largest;
+export function reduceCls(
+  shifts: VitalsInput['layoutShifts'],
+  from: ClsSessions = CLS_START
+): number {
+  return shifts.reduce(foldClsShift, from).largest;
 }
 
 /**
@@ -176,11 +250,14 @@ export function reduceCls(shifts: VitalsInput['layoutShifts']): number {
  * @param events Event entries (those without an interaction id are ignored).
  * @param interactionCount The browser's interaction count, when known
  *   (it also counts interactions too fast to be reported as entries).
+ * @param dropped Interactions the page no longer lists (never among the
+ *   slowest), still counted.
  * @returns The value and the interaction count, or null without interactions.
  */
 export function reduceInp(
   events: VitalsInput['events'],
-  interactionCount: number | null
+  interactionCount: number | null,
+  dropped = 0
 ): { readonly value: number; readonly interactions: number } | null {
   const latencies = new Map<number, number>();
   for (const event of events) {
@@ -191,25 +268,56 @@ export function reduceInp(
     );
   }
   if (latencies.size === 0) return null;
-  const interactions = Math.max(latencies.size, interactionCount ?? 0);
+  const interactions = Math.max(latencies.size + dropped, interactionCount ?? 0);
   const sorted = [...latencies.values()].sort((a, b) => b - a).slice(0, INP_CANDIDATES_MAX);
   const index = Math.min(sorted.length - 1, Math.floor(interactions / INP_SKIP_EVERY));
   return { value: sorted[index] ?? 0, interactions };
 }
 
 /**
- * Reduce the current visit's entries to its three metrics.
+ * The restored visit's view of the input: entries from before the restore
+ * dropped (the page already sends only later ones; this keeps the reducer
+ * self-contained).
  *
  * @param input The copied entry values.
- * @returns Each metric's outcome.
+ * @param restoredAt The restore time.
  */
-export function reduceCurrentVisit(input: VitalsInput): CurrentVisitVitals {
-  const lcp = reduceLcp(input.lcpEntries, input.activationStart, input.firstHiddenTime);
-  const inp = reduceInp(input.events, input.interactionCount);
-  // CLS waits for a first contentful paint the visitor saw.
-  const clsReportable =
-    input.fcpTime !== null && beforeHidden(input.fcpTime, input.firstHiddenTime);
+function sinceRestore(input: VitalsInput, restoredAt: number): VitalsInput {
   return {
+    ...input,
+    lcpEntries: input.lcpEntries.filter((entry) => entry.startTime >= restoredAt),
+    layoutShifts: input.layoutShifts.filter((shift) => shift.startTime >= restoredAt)
+  };
+}
+
+/**
+ * INP of the visit: the estimate, or — after a restore whose interactions
+ * were all too fast to be reported — the 8 ms floor.
+ *
+ * @param input The copied entry values.
+ */
+function inpOf(input: VitalsInput): ReturnType<typeof reduceInp> {
+  const inp = reduceInp(input.events, input.interactionCount, input.interactionsDropped);
+  if (inp !== null || input.restoredAt === undefined) return inp;
+  const count = input.interactionCount ?? 0;
+  return count > 0 ? { value: INP_RESTORED_FLOOR_MS, interactions: count } : null;
+}
+
+/**
+ * Reduce the current visit's entries to its three metrics.
+ *
+ * @param raw The copied entry values.
+ * @returns Each metric's outcome (`restored` after a back/forward-cache restore).
+ */
+export function reduceCurrentVisit(raw: VitalsInput): CurrentVisitVitals {
+  const restored = raw.restoredAt !== undefined;
+  const input = raw.restoredAt === undefined ? raw : sinceRestore(raw, raw.restoredAt);
+  const lcp = reduceLcp(input.lcpEntries, input.activationStart, input.firstHiddenTime);
+  const inp = inpOf(input);
+  // CLS waits for a first contentful paint the visitor saw (a restored page is painted).
+  const clsReportable =
+    restored || (input.fcpTime !== null && beforeHidden(input.fcpTime, input.firstHiddenTime));
+  const vitals: CurrentVisitVitals = {
     lcp: !input.supported.lcp
       ? { state: 'unsupported' }
       : lcp === null
@@ -219,11 +327,12 @@ export function reduceCurrentVisit(input: VitalsInput): CurrentVisitVitals {
       ? { state: 'unsupported' }
       : !clsReportable
         ? { state: 'no-data' }
-        : measured(reduceCls(input.layoutShifts), VITAL_THRESHOLDS.cls),
+        : measured(reduceCls(input.layoutShifts, input.clsCarry), VITAL_THRESHOLDS.cls),
     inp: !input.supported.inp
       ? { state: 'unsupported' }
       : inp === null
         ? { state: 'no-data' }
         : { ...measured(inp.value, VITAL_THRESHOLDS.inp), interactions: inp.interactions }
   };
+  return restored ? { ...vitals, restored: true } : vitals;
 }

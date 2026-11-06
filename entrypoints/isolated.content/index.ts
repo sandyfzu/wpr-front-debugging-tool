@@ -25,6 +25,10 @@ import { setupSideBySide } from './side-by-side';
 import { setupInspectorWidget } from './inspector';
 import { setupCommandPalette } from './palette';
 import { setupRucssTest } from './rucss-test';
+import { setupBeaconTest } from './beacon-test';
+import { setupLcpAnalysis } from './lcp-analysis';
+import { setupScriptRuntime } from './script-runtime';
+import { setupCurrentVisitVitals } from './current-visit-vitals';
 import { onUnhandledRejection, onUncaughtError } from '../../lib/uncaught-errors';
 import { GUARDED_HOST_NAMES, installKeyGuard } from '../../components/injected-ui/key-guard';
 import { recordNavigationAnchor } from '../../lib/exclusion-session/navigation-anchor';
@@ -72,12 +76,18 @@ const ISOLATED_WORLD_MODULES: readonly IsolatedWorldModule[] = [
       installKeyGuard(window, GUARDED_HOST_NAMES, ctx.signal);
     }
   },
+  // Then at document_start: the visit's vitals observer (buffered, but the
+  // short interactions and a hide-and-return on Firefox count only from here).
+  { name: 'current-visit-vitals', setup: setupCurrentVisitVitals },
   { name: 'data-hub', setup: setupDataHub },
   { name: 'improvements', setup: setupImprovements },
   { name: 'known-conflicts', setup: setupKnownConflicts },
   { name: 'side-by-side', setup: setupSideBySide },
   { name: 'inspector', setup: setupInspectorWidget },
   { name: 'rucss-test', setup: setupRucssTest },
+  { name: 'beacon-test', setup: setupBeaconTest },
+  { name: 'lcp-analysis', setup: setupLcpAnalysis },
+  { name: 'script-runtime', setup: setupScriptRuntime },
   // Last: its executors call the compare module's triggers (provided above).
   { name: 'command-palette', setup: setupCommandPalette }
 ];
