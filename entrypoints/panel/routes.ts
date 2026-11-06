@@ -104,8 +104,8 @@ function shownTotal(count: number, partial: boolean): string {
 
 /**
  * The nav registry, in render order — today's pages. Future rows land
- * additively here with their named owners: LCP (P14, Tools), Compare (P17 — decision-gated optional SBS
- * panel home, Tools).
+ * additively here with their named owners: Compare (P17 — decision-gated optional SBS panel home,
+ * Tools).
  *
  * The Overview row carries no live state on purpose: WPR presence, version
  * and cache age are the status bar's first-paint answers, owned there — the

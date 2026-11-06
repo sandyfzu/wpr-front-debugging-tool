@@ -25,7 +25,7 @@ export const LIVE_STATE_HINT =
 
 /** The line once the page reloaded or navigated after the shown read. */
 export const RUNTIME_STALE_COPY =
-  'The page reloaded since this read — these states describe the earlier page. Read again for the current one.';
+  'The page reloaded or changed since this read — these states describe the earlier page. Read again for the current one.';
 
 /** A tone of the status vocabulary (icon + tint; the panel maps it). */
 export type RuntimeTone = 'ok' | 'warn' | 'error' | 'info' | 'neutral';

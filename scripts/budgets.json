@@ -79,7 +79,7 @@
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
-      "raw": 192.9,
+      "raw": 193.0,
       "gzip": 66.0
     }
   },
@@ -208,8 +208,8 @@
     "surface": "Beacon Tester page (panel chunk, loaded on first visit)",
     "globs": ["chunks/beacon-tester-*.js"],
     "maxKb": {
-      "raw": 32.4,
-      "gzip": 10.6
+      "raw": 34.5,
+      "gzip": 11.3
     },
     "required": true
   },
@@ -218,8 +218,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/beacon-tester-*.js"],
     "maxKb": {
-      "raw": 32.4,
-      "gzip": 10.6
+      "raw": 34.5,
+      "gzip": 11.3
     },
     "required": true
   },
@@ -227,8 +227,8 @@
     "surface": "LCP & Vitals page (panel chunk, loaded on first visit)",
     "globs": ["chunks/lcp-vitals-*.js"],
     "maxKb": {
-      "raw": 24.5,
-      "gzip": 8
+      "raw": 25.3,
+      "gzip": 8.1
     },
     "required": true
   },
@@ -237,8 +237,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/lcp-vitals-*.js"],
     "maxKb": {
-      "raw": 24.5,
-      "gzip": 8
+      "raw": 25.3,
+      "gzip": 8.1
     },
     "required": true
   },
@@ -246,7 +246,7 @@
     "surface": "JavaScript Runtime states section (panel chunk, loaded on first show)",
     "globs": ["chunks/runtime-states-*.js"],
     "maxKb": {
-      "raw": 15.6,
+      "raw": 15.7,
       "gzip": 5.9
     },
     "required": true
@@ -256,7 +256,7 @@
     "build": "firefox-mv2",
     "globs": ["chunks/runtime-states-*.js"],
     "maxKb": {
-      "raw": 15.6,
+      "raw": 15.7,
       "gzip": 5.9
     },
     "required": true
@@ -282,7 +282,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 2033.3
+      "raw": 2037.4
     }
   }
 ]

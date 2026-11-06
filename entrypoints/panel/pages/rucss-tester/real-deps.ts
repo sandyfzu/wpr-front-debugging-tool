@@ -30,9 +30,6 @@ import type { DataState } from '../../state/fdt-state-machine';
 import { pageIdOf } from '../../state/page-identity';
 import type { RucssTesterSessionDeps } from './session';
 
-/** Re-exported: the page identity rule is the shell state's (`state/page-identity`). */
-export { pageIdOf };
-
 const log = createLogger('rucss-tester');
 
 /** How long (ms) the panel waits for the page's style inventory (synchronous DOM reads). */

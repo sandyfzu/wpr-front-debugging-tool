@@ -10,7 +10,7 @@ import {
   readCurrentVisitVitals
 } from '../../../../lib/web-vitals/read-current-visit';
 import type { DataState } from '../../state/fdt-state-machine';
-import { pageIdOf } from '../../state/page-identity';
+import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { askInspectedTab } from '../inspected-tab';
 import type { LcpVitalsSessionDeps } from './session';
 
@@ -35,6 +35,7 @@ export function realLcpVitalsDeps(shell: {
         readCurrentVisitVitals({ read: currentVisitTabStep(asks, tabId), log })
       ),
     pageId: () => pageIdOf(shell.state()),
+    pageSettled: () => pageSettledOf(shell.state()),
     log
   };
 }

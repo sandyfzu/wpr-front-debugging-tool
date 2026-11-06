@@ -17,6 +17,7 @@ import type { DataState } from '../../state/fdt-state-machine';
 import { makeDelayScript, makeFdtData } from '../../state/fixtures';
 import { createSearchStore, SEARCH_DEBOUNCE_MS, type SearchStore } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
+import { createCurrentMatch } from '../current-match';
 import { JAVASCRIPT_TAB_LABELS, JavaScriptPage, JavaScriptView, listCutNote } from './page';
 import { PREVIEW_LINE_CHARS } from './script-view';
 import { HIGHLIGHT_MAX_CHARS } from '../../../../components/ui/code-block';
@@ -758,6 +759,69 @@ describe('JavaScriptView — views', () => {
     fireEvent.click(served);
     expect(rows()).toHaveLength(6);
     expect(document.querySelector('[data-fdt-runtime-double]')).toBeNull();
+  });
+});
+
+describe('JavaScriptView — find across the views', () => {
+  /** The other view's double: it binds the find as a shown list does, reporting `count` matches. */
+  function findingRuntime(search: SearchStore, count: number) {
+    return () => {
+      createCurrentMatch(search, () => count);
+      return <p data-fdt-runtime-double>Runtime states double</p>;
+    };
+  }
+
+  /** Render the view with a find-binding Runtime states double. */
+  function renderTabs(list: DelayedScriptRecord[] = scripts()) {
+    vi.useFakeTimers();
+    const search = createSearchStore();
+    const [data, setData] = createSignal(dataWith(list));
+    render(() => (
+      <JavaScriptView
+        data={data}
+        search={search}
+        createVirtualizer={windowedVirtualizer().factory}
+        codeBlock={CODE_SEAMS}
+        runtimeStates={findingRuntime(search, 5)}
+      />
+    ));
+    const tab = (name: 'served' | 'runtime'): void => {
+      fireEvent.click(screen.getByRole('tab', { name: JAVASCRIPT_TAB_LABELS[name] }));
+    };
+    return { search, setData, tab };
+  }
+
+  /** The row the find's cursor sits on. */
+  function cursorRow(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('[role="listitem"][aria-current="true"]');
+  }
+
+  it('counts the served matches again after a round trip through Runtime states, and steps them', () => {
+    const { search, tab } = renderTabs();
+    search.perform('example.test');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(search.matchCount()).toBe(2);
+    tab('runtime');
+    expect(search.matchCount()).toBe(5); // only the shown list reports
+    tab('served');
+    expect(search.matchCount()).toBe(2);
+    expect(cursorRow()).toBe(rows()[0]);
+    search.advance(1);
+    expect(cursorRow()).toBe(rows()[1]);
+    search.advance(-1);
+    expect(cursorRow()).toBe(rows()[0]);
+  });
+
+  it('lets a data refresh while Runtime states is shown leave its count alone', () => {
+    const { search, setData, tab } = renderTabs();
+    search.perform('example.test');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    tab('runtime');
+    setData(dataWith([makeDelayScript({ src: 'https://example.test/only.js', delayed: true })]));
+    expect(search.matchCount()).toBe(5);
+    tab('served');
+    expect(search.matchCount()).toBe(1);
+    expect(rows()).toHaveLength(1);
   });
 });
 

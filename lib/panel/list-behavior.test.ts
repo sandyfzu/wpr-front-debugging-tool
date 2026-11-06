@@ -8,8 +8,10 @@ import {
   fallbackRowKey,
   listCapped,
   normalizeQuery,
+  pruneKeyedFlags,
   reconcileList,
   resultsAnnouncement,
+  toggleRowFlag,
   type CountNoun
 } from './list-behavior';
 import {
@@ -239,5 +241,25 @@ describe('reconcileList', () => {
       expect(actual).toHaveLength(fresh.length);
       previous = actual;
     }
+  });
+});
+
+describe('pruneKeyedFlags / toggleRowFlag', () => {
+  it('prunes any keyed rows by their key function (numeric keys too)', () => {
+    const one = { id: 1 };
+    const two = { id: 2 };
+    const flags = new Set([1, 2]);
+    const keyOf = (row: { id: number }): number => row.id;
+    expect(pruneKeyedFlags(flags, [one, two], [two, one], keyOf)).toBe(flags);
+    expect([...pruneKeyedFlags(flags, [one, two], [one, { id: 2 }], keyOf)]).toEqual([1]);
+    expect([...pruneKeyedFlags(flags, [one, two], [two], keyOf)]).toEqual([2]);
+  });
+
+  it('toggles membership into a fresh set', () => {
+    const empty = new Set<string>();
+    const one = toggleRowFlag(empty, 'k');
+    expect(one).not.toBe(empty);
+    expect([...one]).toEqual(['k']);
+    expect([...toggleRowFlag(one, 'k')]).toEqual([]);
   });
 });

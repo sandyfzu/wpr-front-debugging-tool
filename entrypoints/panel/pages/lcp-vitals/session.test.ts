@@ -1,9 +1,10 @@
 /**
  * The LCP & Vitals session: the highlight choice reaching the analysis
- * request, the vitals read once on demand, a thrown ask shown as a failed
- * page ask (the ask machine itself: `../ask-run.test.ts`).
+ * request, the vitals read once on demand and again on show once stale, a
+ * thrown ask shown as a failed page ask (the ask machine itself:
+ * `../ask-run.test.ts`).
  */
-import { createRoot } from 'solid-js';
+import { createRoot, createSignal } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import type { LcpAnalysisOutcome } from '../../../../lib/lcp-analysis/run-analysis';
 import type { Logger } from '../../../../lib/logger';
@@ -33,6 +34,7 @@ describe('createLcpVitalsSession', () => {
       analyse: vi.fn<LcpVitalsSessionDeps['analyse']>(() => Promise.resolve(UNSUPPORTED)),
       readVitals: vi.fn<LcpVitalsSessionDeps['readVitals']>(() => Promise.resolve(READ)),
       pageId: () => 'p1',
+      pageSettled: () => true,
       log: logDouble()
     };
   }
@@ -64,6 +66,26 @@ describe('createLcpVitalsSession', () => {
       expect(d.readVitals).toHaveBeenCalledTimes(1);
       await session.vitals.start();
       expect(d.readVitals).toHaveBeenCalledTimes(2);
+      dispose();
+    });
+  });
+
+  it('re-reads the vitals on show once the shown read is stale (the page reloaded)', async () => {
+    await createRoot(async (dispose) => {
+      const [page, setPage] = createSignal<string | null>('p1');
+      const d = { ...deps(), pageId: page };
+      const session = createLcpVitalsSession(d);
+      session.ensureVitals();
+      await Promise.resolve();
+      expect(d.readVitals).toHaveBeenCalledTimes(1);
+      session.ensureVitals(); // current: not read again
+      expect(d.readVitals).toHaveBeenCalledTimes(1);
+      setPage('p2');
+      expect(session.vitals.stale()).toBe(true);
+      session.ensureVitals();
+      await Promise.resolve();
+      expect(d.readVitals).toHaveBeenCalledTimes(2);
+      expect(session.vitals.stale()).toBe(false);
       dispose();
     });
   });

@@ -75,7 +75,9 @@ test('analyses the LCP and reads this visit’s vitals on a real page', async ({
     // The frame: asked, shown on the page, gone after its 5 s.
     await toggle(panel, 'Frame the LCP element on the page (5 s)');
     await panel.locator('[data-fdt-lcp-analyse]').click();
-    await expect(outcome).toContainText('The LCP element is framed on the page for 5 s.');
+    await expect(outcome).toContainText(
+      'The LCP element was framed on the page for 5 s when this analysis ran.'
+    );
     await expect(fixture.page.locator(HIGHLIGHT_HOST)).toHaveCount(1);
     await expect(fixture.page.locator(HIGHLIGHT_HOST)).toHaveCount(0, { timeout: 8_000 });
 

@@ -16,7 +16,7 @@
  * Results belong to the page load they measured: once the page reloads or
  * navigates (a new payload identity), they read as stale.
  */
-import { createMemo, createSignal, type Accessor } from 'solid-js';
+import { createComputed, createMemo, createSignal, type Accessor } from 'solid-js';
 import type { Logger } from '../../../../lib/logger';
 import type { ScheduleTimer } from '../../../../lib/messaging/bounded-ask';
 import {
@@ -37,6 +37,8 @@ import {
   type BeaconSettingsTextField,
   type BeaconTestSettings
 } from '../../../../lib/beacon-test/settings';
+import { isOtherLoad, settleStamp, stampAsk, type LoadStamp } from '../../state/page-identity';
+import { ASK_THREW } from '../ask-run';
 import type { ConfigSaveState } from '../settings/config-writer';
 import { createStoredSettings, type SettingsLoadState } from '../settings/stored-settings';
 
@@ -49,8 +51,10 @@ export interface FinishedBeaconRun {
   readonly outcome: BeaconTestOutcome;
   /** The settings the run tested. */
   readonly draft: BeaconTestDraft;
-  /** The page load the run measured (payload identity; null when unknown). */
+  /** The page load the run measured (payload identity; null when unknown or not yet settled). */
   readonly page: string | null;
+  /** Started mid-refetch: `page` becomes the load the shell settles on. */
+  readonly provisional: boolean;
   /** Names this run (a newer run gets a higher one). */
   readonly sequence: number;
 }
@@ -58,12 +62,6 @@ export interface FinishedBeaconRun {
 /** The run. */
 export type BeaconRunState =
   { readonly status: 'idle' } | { readonly status: 'running' } | FinishedBeaconRun;
-
-/** The outcome a run that threw is reported as. */
-export const BEACON_RUN_THREW_OUTCOME: BeaconTestOutcome = {
-  kind: 'page-unreachable',
-  miss: 'failed'
-};
 
 /** What the session runs against (production binds the inspected tab; tests inject doubles). */
 export interface BeaconTesterSessionDeps {
@@ -80,6 +78,8 @@ export interface BeaconTesterSessionDeps {
    * reload or navigation; `null` without a payload.
    */
   readonly pageId: Accessor<string | null>;
+  /** Whether `pageId` is current (no shell refetch in flight). */
+  readonly pageSettled: Accessor<boolean>;
   readonly schedule: ScheduleTimer;
   /** Quiet time (ms) after an edit before it is written. */
   readonly saveDelayMs: number;
@@ -93,6 +93,8 @@ export interface BeaconTesterSession {
   readonly load: Accessor<SettingsLoadState>;
   readonly save: Accessor<ConfigSaveState>;
   readonly run: Accessor<BeaconRunState>;
+  /** A run can start now: the settings loaded and no run is on its way. */
+  readonly canRun: Accessor<boolean>;
   /** Every reason the form's settings cannot run now (live). */
   readonly issues: Accessor<readonly BeaconConfigIssue[]>;
   /** The shown run's results (a timed-out run's partial ones included), else null. */
@@ -163,10 +165,22 @@ export function createBeaconTesterSession(deps: BeaconTesterSessionDeps): Beacon
 
   const stale = createMemo((): boolean => {
     const current = run();
-    if (current.status !== 'finished') return false;
-    const page = deps.pageId();
-    // An unknown page on either side cannot prove a reload.
-    return page !== null && current.page !== null && page !== current.page;
+    return current.status === 'finished' && isOtherLoad(current.page, deps.pageId());
+  });
+
+  const canRun = createMemo(
+    (): boolean => run().status !== 'running' && settings.load().status === 'ready'
+  );
+
+  // A run started mid-refetch takes the load the shell settles on.
+  createComputed(() => {
+    const id = deps.pageId();
+    const settled = deps.pageSettled();
+    setRun((current) => {
+      if (current.status !== 'finished' || !current.provisional) return current;
+      const stamp = settleStamp(current, id, settled);
+      return stamp === current ? current : { ...current, ...stamp };
+    });
   });
 
   /**
@@ -183,22 +197,23 @@ export function createBeaconTesterSession(deps: BeaconTesterSessionDeps): Beacon
         'Beacon tester: the run threw',
         cause instanceof Error ? cause.message : cause
       );
-      return BEACON_RUN_THREW_OUTCOME;
+      return ASK_THREW;
     }
   };
 
   /** Run a test with the form's settings as shown now. */
   const start = async (): Promise<void> => {
-    if (run().status === 'running' || settings.load().status !== 'ready') return;
+    if (!canRun()) return;
     const draft = toBeaconDraft(settings.value());
-    const page = deps.pageId();
+    const started: LoadStamp = stampAsk(deps.pageId(), deps.pageSettled());
     setRun({ status: 'running' });
     // Persisting is independent of the run (its draft travels with the request).
     void settings.flush();
     const outcome = await execute(draft);
     if (disposed) return;
     sequence += 1;
-    setRun({ status: 'finished', outcome, draft, page, sequence });
+    const stamp = settleStamp(started, deps.pageId(), deps.pageSettled());
+    setRun({ status: 'finished', outcome, draft, ...stamp, sequence });
   };
 
   return {
@@ -206,6 +221,7 @@ export function createBeaconTesterSession(deps: BeaconTesterSessionDeps): Beacon
     load: settings.load,
     save: settings.save,
     run,
+    canRun,
     issues,
     results,
     stale,

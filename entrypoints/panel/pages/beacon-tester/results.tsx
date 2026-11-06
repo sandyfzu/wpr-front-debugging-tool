@@ -1,7 +1,8 @@
 /**
  * A beacon test's result lists, one per feature tab: the critical image
  * candidates as a table (image URL · element kind · the beacon's label, LCP
- * chip and search over every URL the record carries) and the lazy-render
+ * chip, search over every value the record carries, and per-row Details
+ * listing those values) and the lazy-render
  * element hashes as a searchable list — both through the panel's shared
  * filter/search/virtualized list.
  *
@@ -12,13 +13,16 @@
  * `NoMatches`).
  */
 import type { JSX } from 'solid-js';
-import { createMemo, Match, Show, Switch } from 'solid-js';
+import { createComputed, createMemo, createSignal, Match, on, Show, Switch } from 'solid-js';
+import ChevronRight from 'lucide-solid/icons/chevron-right';
 import ImageIcon from 'lucide-solid/icons/image';
 import Layers from 'lucide-solid/icons/layers';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
+import { MOTION_TURN } from '../../../../components/ui/classes';
 import { EmptyState } from '../../../../components/ui/empty-state';
 import { ErrorState } from '../../../../components/ui/error-state';
+import { KeyValueList } from '../../../../components/ui/key-value';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { BEACON_FEATURE_LABELS } from '../../../../lib/beacon-test/outcome-view';
@@ -38,11 +42,15 @@ import {
   type AboveTheFoldRow,
   type LazyRenderRow
 } from '../../../../lib/beacon-test/results-view';
+import { pruneKeyedFlags, toggleRowFlag } from '../../../../lib/panel/list-behavior';
+import { capTitle } from '../../../../utils/cap-text';
 import type { BeaconFeatureKey } from '../../../../lib/beacon-test/runner-bridge';
 import { cn } from '../../../../utils/cn';
 import { countLabel, formatCount } from '../../../../utils/format-count';
 import { FilteredList } from '../resource-list/filtered-list';
+import { reconcileRows } from '../resource-list/resource-list-view';
 import { PAGE_FILL_SCROLLER } from '../page-frame';
+import type { SettingsLoadState } from '../settings/stored-settings';
 
 /** The table's columns: URL (takes the rest), kind, label. */
 const TABLE_COLUMNS = '@regular:grid @regular:grid-cols-[minmax(0,1fr)_7rem_7rem] @regular:gap-3';
@@ -58,8 +66,7 @@ export const EMPTY_COPY: Readonly<
   },
   lazyRender: {
     title: 'No lazy-render elements',
-    description:
-      'No element WP Rocket marked (data-rocket-location-hash) starts far enough below the fold. WP Rocket marks elements only on pages Automatic Lazy Rendering processed.'
+    description: `No element WP Rocket marked (data-rocket-location-hash) starts far enough below the fold. WP Rocket marks elements only on pages ${BEACON_FEATURE_LABELS.lazyRender} processed.`
   }
 };
 
@@ -90,8 +97,23 @@ export const NO_RESULTS_COPY = {
   title: 'No results yet',
   description: 'Run the test to see what the beacon finds on this page.',
   /** After a run that ended without results. */
-  ended: 'The last test ended without results — its outcome above says why.'
+  ended: 'The last test ended without results — its outcome above says why.',
+  /** The settings could not be read, so nothing can run. */
+  settingsFailed:
+    "The test settings didn't load, so the test can't run yet. Open the settings to retry."
 } as const;
+
+/**
+ * The no-results line.
+ *
+ * @param settings The settings' load status.
+ * @param ended Whether a test ended (without results).
+ * @returns Why there is nothing yet and what to do.
+ */
+export function noResultsCopy(settings: SettingsLoadState['status'], ended: boolean): string {
+  if (settings === 'failed') return NO_RESULTS_COPY.settingsFailed;
+  return ended ? NO_RESULTS_COPY.ended : NO_RESULTS_COPY.description;
+}
 
 /** What every results tab shares. */
 interface ResultsTabProps {
@@ -99,6 +121,8 @@ interface ResultsTabProps {
   running: boolean;
   /** A test ended (without results, when the list is undefined). */
   ended: boolean;
+  /** The settings' load: a test runs only once they are ready. */
+  settings: SettingsLoadState['status'];
   /** Run the test. */
   onRun: () => void;
   /** Go to the settings (a feature that did not run). */
@@ -136,11 +160,23 @@ function FeatureResults<T>(props: FeatureResultsProps<T>): JSX.Element {
         <div class={cn(PAGE_FILL_SCROLLER, 'grid')}>
           <EmptyState
             title={NO_RESULTS_COPY.title}
-            description={props.ended ? NO_RESULTS_COPY.ended : NO_RESULTS_COPY.description}
+            description={noResultsCopy(props.settings, props.ended)}
             action={
-              <Button size="sm" variant="primary" onClick={props.onRun}>
-                Run test
-              </Button>
+              // A failed settings load leads to its Retry; a loading one holds Run.
+              props.settings === 'failed' ? (
+                <Button size="sm" variant="primary" onClick={props.onShowSettings}>
+                  Open settings
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={props.settings !== 'ready'}
+                  onClick={props.onRun}
+                >
+                  Run test
+                </Button>
+              )
             }
           />
         </div>
@@ -184,26 +220,89 @@ function FeatureResults<T>(props: FeatureResultsProps<T>): JSX.Element {
   );
 }
 
+/** A candidate row's height in px, collapsed (the list measures the real one). */
+const CANDIDATE_ROW_PX = 36;
+
+/** One detail line's height in px (the seed for an open row). */
+const DETAIL_LINE_PX = 18;
+
 /**
- * One candidate's row: URL, element kind, label (the LCP stands out).
+ * A candidate row's seed height.
  *
- * @param props.row The row.
+ * @param row The row.
+ * @param expanded Whether its details are open.
+ * @returns px.
  */
-function CandidateRow(props: { row: AboveTheFoldRow }): JSX.Element {
+export function estimateCandidateRow(row: AboveTheFoldRow, expanded: boolean): number {
+  if (!expanded) return CANDIDATE_ROW_PX;
+  const lines = row.facts.reduce((sum, fact) => sum + fact.value.split('\n').length, 0);
+  return CANDIDATE_ROW_PX + 8 + Math.max(lines, 1) * DETAIL_LINE_PX;
+}
+
+/** Props of {@link CandidateRow}. */
+interface CandidateRowProps {
+  row: AboveTheFoldRow;
+  /** Whether the details are open. */
+  expanded: boolean;
+  onToggle: () => void;
+}
+
+/**
+ * One candidate's row: URL (with Details), element kind, label (the LCP
+ * stands out); Details opens every value the record carries.
+ *
+ * @param props See {@link CandidateRowProps}.
+ */
+function CandidateRow(props: CandidateRowProps): JSX.Element {
+  const detailId = () => `beacon-candidate-detail-${String(props.row.id)}`;
   return (
-    <div class={cn('flex min-w-0 flex-col gap-0.5', TABLE_COLUMNS, '@regular:items-center')}>
-      <span
-        class="min-w-0 truncate font-mono text-2xs text-fg-primary"
-        title={props.row.detail === '' ? undefined : props.row.detail}
-      >
-        {props.row.url === '' ? 'No image URL' : props.row.url}
-      </span>
-      <span class="min-w-0 truncate font-mono text-2xs text-fg-secondary">{props.row.kind}</span>
-      <span class="min-w-0">
-        <Badge kind={props.row.label === LCP_LABEL ? 'info' : 'neutral'}>
-          {props.row.label === '' ? 'No label' : props.row.label}
-        </Badge>
-      </span>
+    <div class="flex min-w-0 flex-col gap-1">
+      <div class={cn('flex min-w-0 flex-col gap-0.5', TABLE_COLUMNS, '@regular:items-center')}>
+        <span class="flex min-w-0 items-center gap-1">
+          <span
+            class="min-w-0 flex-1 truncate font-mono text-2xs text-fg-primary"
+            title={props.row.url === '' ? undefined : capTitle(props.row.url)}
+          >
+            {props.row.url === '' ? 'No image URL' : props.row.url}
+          </span>
+          <Show when={props.row.facts.length > 0}>
+            <Button
+              size="sm"
+              variant="ghost"
+              class="shrink-0"
+              aria-expanded={props.expanded}
+              aria-controls={detailId()}
+              data-fdt-beacon-candidate-toggle
+              onClick={() => {
+                props.onToggle();
+              }}
+            >
+              <ChevronRight
+                size={12}
+                aria-hidden="true"
+                class={cn(MOTION_TURN, props.expanded && 'rotate-90')}
+              />
+              Details
+            </Button>
+          </Show>
+        </span>
+        <span class="min-w-0 truncate font-mono text-2xs text-fg-secondary">{props.row.kind}</span>
+        <span class="min-w-0">
+          <Badge kind={props.row.label === LCP_LABEL ? 'info' : 'neutral'}>
+            {props.row.label === '' ? 'No label' : props.row.label}
+          </Badge>
+        </span>
+      </div>
+      <Show when={props.expanded && props.row.facts.length > 0}>
+        <div id={detailId()} data-fdt-beacon-candidate-detail class="min-w-0 pb-1">
+          <KeyValueList
+            items={props.row.facts.map((fact) => ({
+              term: fact.term,
+              value: <span class="font-mono break-all whitespace-pre-line">{fact.value}</span>
+            }))}
+          />
+        </div>
+      </Show>
     </div>
   );
 }
@@ -237,13 +336,29 @@ export interface BeaconResultsProps extends ResultsTabProps {
  * @param props See {@link BeaconResultsProps}.
  */
 export function AboveTheFoldResults(props: BeaconResultsProps): JSX.Element {
-  const rows = createMemo(() => aboveTheFoldRows(props.list ?? null));
+  // Reconciled here (not only in the list), so open details follow identity.
+  const rows = createMemo(
+    (previous: readonly AboveTheFoldRow[]) =>
+      reconcileRows(previous, aboveTheFoldRows(props.list ?? null), sameAboveTheFoldRow),
+    []
+  );
+  // Open details live here, keyed by row id; pruned to the rows still shown,
+  // so every new run closes them all (running empties the rows) and another
+  // candidate never opens expanded.
+  const [expanded, setExpanded] = createSignal<ReadonlySet<number>>(new Set());
+  createComputed(
+    on(rows, (current, previous) => {
+      if (previous === undefined) return;
+      setExpanded((ids) => pruneKeyedFlags(ids, previous, current, (row) => row.id));
+    })
+  );
   return (
     <FeatureResults
       feature="aboveTheFold"
       list={props.list}
       running={props.running}
       ended={props.ended}
+      settings={props.settings}
       onRun={props.onRun}
       onShowSettings={props.onShowSettings}
     >
@@ -263,8 +378,14 @@ export function AboveTheFoldResults(props: BeaconResultsProps): JSX.Element {
           listLabel="Critical image candidates"
           searchLabel="Search candidates"
           searchPlaceholder="Search URLs, elements, labels…"
-          estimateSize={() => 36}
-          renderRow={(row) => <CandidateRow row={row} />}
+          estimateSize={(row) => estimateCandidateRow(row, expanded().has(row.id))}
+          renderRow={(row) => (
+            <CandidateRow
+              row={row}
+              expanded={expanded().has(row.id)}
+              onToggle={() => setExpanded((ids) => toggleRowFlag(ids, row.id))}
+            />
+          )}
           rowHook="beacon-candidate-row"
           head={<TableHead />}
           createVirtualizer={props.createVirtualizer}
@@ -293,6 +414,7 @@ export function LazyRenderResults(props: LazyRenderResultsProps): JSX.Element {
       list={props.list}
       running={props.running}
       ended={props.ended}
+      settings={props.settings}
       onRun={props.onRun}
       onShowSettings={props.onShowSettings}
     >

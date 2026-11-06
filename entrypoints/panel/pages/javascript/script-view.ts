@@ -5,6 +5,7 @@
  * chip states and the expanded-row bookkeeping. No DOM, no Solid: the page
  * wraps these in one memo chain and the rows only read the results.
  */
+import { pruneKeyedFlags } from '../../../../lib/panel/list-behavior';
 import type { FilterChip } from '../../../../components/ui/filter-bar';
 import type { StatusKind } from '../../../../components/ui/status-badge';
 import type {
@@ -345,35 +346,6 @@ export function estimateRowSize(view: ScriptRowView): number {
 }
 
 /**
- * Keep only the row keys whose row is still there **unchanged** in a
- * page's per-row keyed state (expanded, wrapped): a refresh that removed a
- * row — or changed it under the same key — forgets its flags (a different
- * row must not open expanded or wrapped). "Unchanged" is object identity:
- * the rows were reconciled, so an unchanged row keeps its object.
- *
- * @param states The flags to prune.
- * @param previous The rows the flags were set on.
- * @param next The refreshed rows.
- * @param keyOf A row's key.
- * @returns `states` itself when nothing was dropped, else the kept keys.
- */
-export function pruneKeyedFlags<K, R>(
-  states: ReadonlySet<K>,
-  previous: readonly R[],
-  next: readonly R[],
-  keyOf: (row: R) => K
-): ReadonlySet<K> {
-  if (states.size === 0) return states;
-  const before = new Map(previous.map((row) => [keyOf(row), row]));
-  const after = new Map(next.map((row) => [keyOf(row), row]));
-  const kept = [...states].filter((key) => {
-    const row = after.get(key);
-    return row !== undefined && row === before.get(key);
-  });
-  return kept.length === states.size ? states : new Set(kept);
-}
-
-/**
  * {@link pruneKeyedFlags} over this page's script rows (keyed by script identity).
  *
  * @param states The flags to prune.
@@ -387,20 +359,6 @@ export function pruneRowFlags(
   next: readonly ScriptRowView[]
 ): ReadonlySet<string> {
   return pruneKeyedFlags(states, previous, next, (view) => view.key);
-}
-
-/**
- * Flip one key's membership in a page's per-row keyed state (the expanded
- * and wrapped sets).
- *
- * @param states The flags.
- * @param key The row to flip.
- * @returns A new set (sets in signals must change identity to notify).
- */
-export function toggleRowFlag<K>(states: ReadonlySet<K>, key: K): ReadonlySet<K> {
-  const next = new Set(states);
-  if (!next.delete(key)) next.add(key);
-  return next;
 }
 
 /** Code lines, in their two count forms. */

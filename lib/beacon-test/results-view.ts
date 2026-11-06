@@ -1,12 +1,13 @@
 /**
  * A beacon test's results as list rows: the above-the-fold candidates (one
- * row per record: its image URL, the beacon's element kind and label) and
+ * row per record: its image URL, the beacon's element kind and label, and
+ * every value of the record as named facts for the row's details) and
  * the lazy-render hashes, each with its list definition (filter chips +
  * searched text) for the panel's shared filter/search list. Pure; rows keep
  * the beacon's report order, ids are positions in it.
  */
 import type { ResourcePageDefinition } from '../panel/resources-view-model';
-import type { AboveTheFoldCandidate, FeatureList } from './results';
+import type { AboveTheFoldCandidate, FeatureList, PictureSource } from './results';
 
 /** The beacon's label for the largest candidate (its LCP). */
 export const LCP_LABEL = 'lcp';
@@ -24,8 +25,16 @@ export interface AboveTheFoldRow {
   readonly kind: string;
   /** The beacon's label (`lcp`, `above-the-fold`, or what a newer beacon sends). */
   readonly label: string;
-  /** Every URL-like value of the record, searched and shown on demand. */
+  /** Every value of the record, named, in the order the details list them. */
+  readonly facts: readonly CandidateFact[];
+  /** Every fact's value, one per line, deduplicated in order: the searched text. */
   readonly detail: string;
+}
+
+/** One named value of a candidate record (the row's details). */
+export interface CandidateFact {
+  readonly term: string;
+  readonly value: string;
 }
 
 /** One lazy-render row. */
@@ -64,7 +73,56 @@ export function candidateUrl(candidate: AboveTheFoldCandidate): string {
 }
 
 /**
- * Every URL-like value of a record, one per line, deduplicated in order.
+ * A `<source>` element's attributes on one line each (empty ones left out).
+ *
+ * @param source The source.
+ * @returns E.g. `srcset: a.avif 1x\nmedia: (min-width: 600px)`.
+ */
+function sourceLines(source: PictureSource): string {
+  return (
+    [
+      ['srcset', source.srcset],
+      ['sizes', source.sizes],
+      ['media', source.media],
+      ['type', source.type]
+    ] as const
+  )
+    .filter(([, value]) => value !== '')
+    .map(([name, value]) => `${name}: ${value}`)
+    .join('\n');
+}
+
+/**
+ * Every value of a record as named facts, empty ones left out: the image
+ * attributes, the background URLs, each `<source>`, then the fields this
+ * version does not interpret (by their own name).
+ *
+ * @param candidate The record.
+ * @returns The facts, in display order.
+ */
+export function candidateFacts(candidate: AboveTheFoldCandidate): CandidateFact[] {
+  const facts: CandidateFact[] = [
+    { term: 'src', value: candidate.src },
+    { term: 'URL the browser picked', value: candidate.currentSrc },
+    { term: 'srcset', value: candidate.srcset },
+    { term: 'sizes', value: candidate.sizes },
+    ...candidate.backgroundUrls.map((url, index) => ({
+      term:
+        candidate.backgroundUrls.length === 1 ? 'Background' : `Background ${String(index + 1)}`,
+      value: url
+    })),
+    ...candidate.sources.map((source, index) => ({
+      term: `<source> ${String(index + 1)}`,
+      value: sourceLines(source)
+    })),
+    ...Object.entries(candidate.extra).map(([term, value]) => ({ term, value: String(value) }))
+  ];
+  return facts.filter((fact) => fact.value !== '');
+}
+
+/**
+ * The searched text: every value of a record, one per line, deduplicated
+ * in order — the same values the details show, so a match is explainable.
  *
  * @param candidate The record.
  */
@@ -75,7 +133,13 @@ function candidateDetail(candidate: AboveTheFoldCandidate): string {
     candidate.srcset,
     candidate.sizes,
     ...candidate.backgroundUrls,
-    ...candidate.sources.flatMap((source) => [source.srcset, source.media, source.type])
+    ...candidate.sources.flatMap((source) => [
+      source.srcset,
+      source.sizes,
+      source.media,
+      source.type
+    ]),
+    ...Object.values(candidate.extra).map(String)
   ].filter((value) => value !== '');
   return [...new Set(values)].join('\n');
 }
@@ -95,6 +159,7 @@ export function aboveTheFoldRows(
     url: candidateUrl(candidate),
     kind: candidate.kind,
     label: candidate.label,
+    facts: candidateFacts(candidate),
     detail: candidateDetail(candidate)
   }));
 }

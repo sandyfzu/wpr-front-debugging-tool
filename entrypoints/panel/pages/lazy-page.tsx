@@ -11,21 +11,19 @@
  * the extension's files), loaded (the page body).
  */
 import type { Component, JSX } from 'solid-js';
-import { createSignal, Match, Switch } from 'solid-js';
+import { Match, Switch } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { ErrorState } from '../../../components/ui/error-state';
 import { Skeleton } from '../../../components/ui/skeleton';
-import { createLogger } from '../../../lib/logger';
 import { navRoute, type RouteId } from '../routes';
 import {
   createChunkLoader,
+  mountChunk,
   prefetchWhenIdle,
   reloadPanelDocument,
   type LazyChunkOptions
 } from './chunk-loader';
 import { PageFrame } from './page-frame';
-
-const log = createLogger('panel');
 
 /** The failed load's words. */
 export const PAGE_LOAD_FAILED_COPY =
@@ -51,26 +49,16 @@ export function lazyPage(
   );
 
   return (): JSX.Element => {
-    const [body, setBody] = createSignal<Component | null>(chunk.loaded());
-    const [failed, setFailed] = createSignal(false);
     let loadingFrame: HTMLDivElement | undefined;
-    if (chunk.loaded() === null) {
-      chunk.fetch().then(
-        (component) => {
-          // The route-switch focus sat on the loading frame's heading: hand it on.
-          const hadFocus = loadingFrame?.contains(document.activeElement) === true;
-          setBody(() => component);
-          if (hadFocus) document.querySelector<HTMLElement>(`[data-fdt-page="${id}"] h1`)?.focus();
-        },
-        (cause: unknown) => {
-          log.error(
-            `Loading the ${id} page failed`,
-            cause instanceof Error ? cause.message : cause
-          );
-          setFailed(true);
-        }
-      );
-    }
+    const { body, failed } = mountChunk(chunk, {
+      failureMessage: `Loading the ${id} page failed`,
+      onLoad: (_component, show) => {
+        // The route-switch focus sat on the loading frame's heading: hand it on.
+        const hadFocus = loadingFrame?.contains(document.activeElement) === true;
+        show();
+        if (hadFocus) document.querySelector<HTMLElement>(`[data-fdt-page="${id}"] h1`)?.focus();
+      }
+    });
     const title = navRoute(id)?.label ?? '';
     return (
       <Switch

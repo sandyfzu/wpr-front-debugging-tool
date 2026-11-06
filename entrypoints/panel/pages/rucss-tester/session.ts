@@ -34,6 +34,7 @@ import {
 } from '../../../../lib/rucss-tester/config';
 import { clampRucssTesterConfig, findStoreProblem } from '../../../../lib/rucss-tester/form-check';
 import type { RucssTestOutcome } from '../../../../lib/rucss-tester/run-test';
+import { isOtherLoad } from '../../state/page-identity';
 import type { ConfigSaveState } from '../settings/config-writer';
 import { createStoredSettings, type SettingsLoadState } from '../settings/stored-settings';
 
@@ -238,13 +239,15 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
 
   /**
    * Whether something recorded on `page` is about an earlier page load
-   * (an unknown current page keeps it: asking once too often is the safe side).
+   * (an unknown current page keeps it; a record of an unknown page counts
+   * as another load once the page is known: asking once too often is the
+   * safe side).
    *
    * @param page The page identity the record was made on.
    */
   const isOtherPage = (page: string | null): boolean => {
     const current = deps.pageId();
-    return current !== null && current !== page;
+    return current !== null && (page === null || isOtherLoad(page, current));
   };
 
   // Each applied run's result, seen on the page at least once (a fresh payload landed).

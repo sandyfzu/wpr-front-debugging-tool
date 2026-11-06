@@ -25,7 +25,7 @@ import type {
 import { FULL_TEXT_MAX } from '../../../../lib/script-runtime/classify';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
-import { pageIdOf } from '../../state/page-identity';
+import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { createSearchStore } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { DELAYED, liveScript } from './runtime-fixtures';
@@ -109,6 +109,7 @@ function renderSection(
     createRuntimeStatesSession({
       read,
       pageId: () => pageIdOf(state()),
+      pageSettled: () => pageSettledOf(state()),
       log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
     })
   );
@@ -283,6 +284,34 @@ describe('RuntimeStatesSection', () => {
     expect(chip('state', 'executed').textContent).toContain('2');
   });
 
+  it('keeps the list mounted under a failed re-read’s notice, then clears it on a good one', async () => {
+    const reads: LiveScriptsOutcome[] = [
+      readOf([THEME, PENDING]),
+      { kind: 'page-unreachable', miss: 'timeout' },
+      readOf([THEME, PENDING])
+    ];
+    renderSection({ read: () => Promise.resolve(reads.shift() ?? readOf([])) });
+    await settle();
+    fireEvent.click(chip('source', 'theme'));
+    fireEvent.click(toggleOf('main.js'));
+    const before = document.querySelector('[data-fdt="runtime-row"]');
+    fireEvent.click(document.querySelector('[data-fdt-runtime-read]') as HTMLButtonElement);
+    await settle();
+    // The failure is named above the kept list; chip, details and row survive.
+    expect(
+      document.querySelector('[data-fdt="runtime-outcome"]')?.getAttribute('data-fdt-runtime-miss')
+    ).toBe('timeout');
+    expect(document.querySelector('[data-fdt="runtime-row"]')).toBe(before);
+    // Still narrowed to the theme source (the inline script stays out).
+    expect(rowNames()).toEqual(['main.js']);
+    expect(toggleOf('main.js').getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(document.querySelector('[data-fdt-recovery="runtime:retry"]') as HTMLElement);
+    await settle();
+    expect(document.querySelector('[data-fdt="runtime-outcome"]')).toBeNull();
+    expect(document.querySelector('[data-fdt="runtime-row"]')).toBe(before);
+    expect(rowNames()).toEqual(['main.js']);
+  });
+
   it('offers the way back when the chosen source emptied on a re-read', async () => {
     const reads = [readOf([THEME, OTHER]), readOf([OTHER])];
     renderSection({ read: () => Promise.resolve(reads.shift() ?? readOf([])) });
@@ -351,5 +380,7 @@ describe('RuntimeStatesSection', () => {
     );
     // The list stays while stale.
     expect(rowNames()).toHaveLength(5);
+    // A navigation changes the load too: the line names both.
+    expect(RUNTIME_STALE_COPY).toMatch(/^The page reloaded or changed since this read/);
   });
 });

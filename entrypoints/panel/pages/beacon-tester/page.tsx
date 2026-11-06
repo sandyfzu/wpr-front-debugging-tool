@@ -169,9 +169,16 @@ export function BeaconTesterPage(props: BeaconTesterPageProps = {}): JSX.Element
       )?.focus();
     });
   };
-  /** Run, then open the results of the first feature that ran. */
+  /** Run, then open the results of the first feature that ran — only when this call ran one. */
   const start = async (): Promise<void> => {
+    const before = session.run();
     await session.start();
+    const after = session.run();
+    // An ignored start (loading settings, a run in the air) leaves the run as it was.
+    const ranNow =
+      after.status === 'finished' &&
+      (before.status !== 'finished' || after.sequence > before.sequence);
+    if (!ranNow) return;
     const shown = results();
     const tab = shown === null ? null : firstResultsTab(shown);
     if (tab !== null) handle.setTab(tab);
@@ -244,6 +251,7 @@ export function BeaconTesterPage(props: BeaconTesterPageProps = {}): JSX.Element
               list={results()?.aboveTheFold}
               running={running()}
               ended={session.run().status === 'finished'}
+              settings={session.load().status}
               onRun={() => {
                 void start();
               }}
@@ -256,6 +264,7 @@ export function BeaconTesterPage(props: BeaconTesterPageProps = {}): JSX.Element
               list={results()?.lazyRender}
               running={running()}
               ended={session.run().status === 'finished'}
+              settings={session.load().status}
               onRun={() => {
                 void start();
               }}

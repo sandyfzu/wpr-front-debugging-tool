@@ -18,7 +18,7 @@ import {
 } from '../../../../lib/beacon-test/settings';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
-import { pageIdOf } from '../../state/page-identity';
+import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { createSearchStore, SEARCH_DEBOUNCE_MS } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { NO_FEATURE_NOTE } from './form';
@@ -122,6 +122,7 @@ function renderPage(
     runTest,
     isValidSelector: (selector) => /^[a-z]+(,[a-z]+)*$/.test(selector),
     pageId: () => pageIdOf(state()),
+    pageSettled: () => pageSettledOf(state()),
     schedule: () => () => undefined,
     saveDelayMs: 400,
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
@@ -298,6 +299,18 @@ describe('BeaconTesterPage — run', () => {
     expect(screen.getByRole('button', { name: 'Run again' })).toBeTruthy();
   });
 
+  it('promotes Run again to primary when the reload is left out', async () => {
+    renderPage({
+      runTest: () => Promise.resolve({ kind: 'page-unreachable', miss: 'no-receiver' }),
+      reload: null
+    });
+    await settle();
+    await run();
+    const buttons = [...(outcome()?.querySelectorAll('button') ?? [])];
+    expect(buttons.map((button) => button.textContent)).toEqual(['Run again']);
+    expect(buttons[0]?.className).toContain('bg-accent-strong');
+  });
+
   it('says when results describe an earlier page load', async () => {
     const { setState } = renderPage();
     await settle();
@@ -305,6 +318,8 @@ describe('BeaconTesterPage — run', () => {
     expect(screen.queryByText(STALE_COPY)).toBeNull();
     setState({ status: 'ready', data: makeFdtData({ scriptSnapshotId: 'page-2' }), fetchedAt: 1 });
     expect(screen.getByText(STALE_COPY)).toBeTruthy();
+    // A navigation changes the load too: the line names both.
+    expect(STALE_COPY).toMatch(/^The page reloaded or changed since this test/);
   });
 });
 
@@ -320,6 +335,37 @@ describe('BeaconTesterPage — results', () => {
     await settle();
     expect(runTest).toHaveBeenCalledTimes(1);
     expect(screen.getByText(NO_RESULTS_COPY.ended)).toBeTruthy();
+  });
+
+  it('holds a results tab’s Run test while the settings load', async () => {
+    let loaded: (settings: BeaconTestSettings) => void = () => undefined;
+    const { handle, runTest } = renderPage({
+      readSettings: () => new Promise<BeaconTestSettings>((done) => (loaded = done))
+    });
+    handle.setTab('above-the-fold');
+    const runTestButton = within(shownPanel()).getByRole<HTMLButtonElement>('button', {
+      name: 'Run test'
+    });
+    expect(runTestButton.disabled).toBe(true);
+    loaded(STORED);
+    await settle();
+    expect(runTestButton.disabled).toBe(false);
+    expect(runTest).not.toHaveBeenCalled();
+  });
+
+  it('leads a results tab to the settings’ Retry when they failed to load (never a silent Run)', async () => {
+    const { handle, runTest } = renderPage({
+      readSettings: () => Promise.reject(new Error('dead'))
+    });
+    await settle();
+    handle.setTab('lazy-render');
+    const panel = shownPanel();
+    expect(within(panel).queryByRole('button', { name: 'Run test' })).toBeNull();
+    expect(within(panel).getByText(NO_RESULTS_COPY.settingsFailed)).toBeTruthy();
+    fireEvent.click(within(panel).getByRole('button', { name: 'Open settings' }));
+    expect(handle.tab()).toBe('settings');
+    expect(screen.getByText(LOAD_FAILED_COPY)).toBeTruthy();
+    expect(runTest).not.toHaveBeenCalled();
   });
 
   it('leads a feature that was not part of the run back to the settings', async () => {
@@ -349,18 +395,67 @@ describe('BeaconTesterPage — results', () => {
         row.textContent.replace(/\s+/g, ' ')
       );
     expect(rows()).toEqual([
-      'https://a.test/hero.jpgimglcp',
-      'https://a.test/bg.webpbg-imgabove-the-fold'
+      'https://a.test/hero.jpgDetailsimglcp',
+      'https://a.test/bg.webpDetailsbg-imgabove-the-fold'
     ]);
     fireEvent.click(document.querySelector('[data-fdt-filter-chip="lcp"]') as HTMLElement);
     expect(rows()).toHaveLength(1);
     fireEvent.click(document.querySelector('[data-fdt-filter-chip="all"]') as HTMLElement);
     fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'webp' } });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
-    expect(rows()).toEqual(['https://a.test/bg.webpbg-imgabove-the-fold']);
+    expect(rows()).toEqual(['https://a.test/bg.webpDetailsbg-imgabove-the-fold']);
     fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'nothing-here' } });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
     expect(screen.getByText('No matches')).toBeTruthy();
+  });
+
+  it('opens a candidate’s Details with every value, explaining a search match, kept across filters', async () => {
+    vi.useFakeTimers();
+    const picture = candidate({
+      kind: 'picture',
+      src: 'https://a.test/fallback.jpg',
+      sources: [
+        {
+          srcset: 'https://a.test/wide.avif 1x',
+          sizes: '(max-width: 600px) 100vw',
+          media: '(min-width: 600px)',
+          type: 'image/avif'
+        }
+      ],
+      extra: { fetchpriority: 'high' }
+    });
+    renderPage({
+      runTest: () =>
+        Promise.resolve({
+          ...COMPLETED,
+          results: { ...RESULTS, aboveTheFold: { ...RESULTS.aboveTheFold, items: [picture] } }
+        } as BeaconTestOutcome)
+    });
+    await settle();
+    await run();
+    // The match is in a <source>: the shown URL does not contain it…
+    fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'wide.avif' } });
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    const row = document.querySelector<HTMLElement>('[data-fdt="beacon-candidate-row"]');
+    expect(row?.textContent).not.toContain('wide.avif');
+    // …and Details shows it, with the <source> sizes and the uninterpreted field.
+    expect(document.querySelector('[data-fdt-beacon-candidate-detail]')).toBeNull();
+    const toggle = row?.querySelector<HTMLButtonElement>('[data-fdt-beacon-candidate-toggle]');
+    fireEvent.click(toggle as HTMLButtonElement);
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    const detail = () =>
+      document.querySelector('[data-fdt-beacon-candidate-detail]')?.textContent ?? '';
+    expect(detail()).toContain('https://a.test/wide.avif 1x');
+    expect(detail()).toContain('sizes: (max-width: 600px) 100vw');
+    expect(detail()).toContain('fetchpriority');
+    expect(detail()).toContain('high');
+    // Open state lives with the list owner: a filtered-out row comes back open.
+    fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'nothing-here' } });
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(document.querySelector('[data-fdt-beacon-candidate-detail]')).toBeNull();
+    fireEvent.input(screen.getByRole('searchbox'), { target: { value: '' } });
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(detail()).toContain('fetchpriority');
   });
 
   it('lists the lazy-render hashes without chips', async () => {

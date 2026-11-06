@@ -22,6 +22,7 @@ import {
 } from '../../../../lib/beacon-test/outcome-view';
 import { formatCount } from '../../../../utils/format-count';
 import { OutcomeNotice } from '../outcome-notice';
+import { RecoveryButtons } from '../recovery-buttons';
 import type { BeaconTesterSession, FinishedBeaconRun } from './session';
 
 /** What a run does, next to Run (no request leaves the browser). */
@@ -33,7 +34,7 @@ export const RUNNING_COPY = `Loading the beacon into the page, then scanning it 
 
 /** The line once the page reloaded or navigated after the shown run. */
 export const STALE_COPY =
-  'The page reloaded since this test — these results describe the earlier load. Run again to test it as it is now.';
+  'The page reloaded or changed since this test — these results describe the earlier page load. Run again to test it as it is now.';
 
 /** The recoveries' button labels. */
 export const RECOVERY_LABELS: Readonly<Record<BeaconRecovery, string>> = {
@@ -61,46 +62,6 @@ export interface BeaconRunActions {
 export interface BeaconRunPanelProps {
   session: BeaconTesterSession;
   actions: BeaconRunActions;
-}
-
-/**
- * One recovery button (a reload where the context cannot reload is left out).
- *
- * @param props The recovery, its view, the session and the actions.
- */
-function RecoveryButton(props: {
-  recovery: BeaconRecovery;
-  view: BeaconOutcomeView;
-  session: BeaconTesterSession;
-  actions: BeaconRunActions;
-  primary: boolean;
-}): JSX.Element {
-  /** Carry out this button's recovery. */
-  const onClick = (): void => {
-    switch (props.recovery) {
-      case 'retry':
-        void props.session.start();
-        return;
-      case 'reload-page':
-        props.actions.reloadPage?.();
-        return;
-      case 'review-settings':
-        props.actions.reviewSettings(props.view);
-        return;
-    }
-  };
-  return (
-    <Show when={props.recovery !== 'reload-page' || props.actions.reloadPage !== undefined}>
-      <Button
-        size="sm"
-        variant={props.primary ? 'primary' : 'secondary'}
-        data-fdt-beacon-recovery={props.recovery}
-        onClick={onClick}
-      >
-        {RECOVERY_LABELS[props.recovery]}
-      </Button>
-    </Show>
-  );
 }
 
 /**
@@ -137,21 +98,18 @@ function OutcomeBlock(props: {
           {STALE_COPY}
         </p>
       </Show>
-      <Show when={view().recoveries.length > 0}>
-        <div class="flex flex-wrap gap-1.5">
-          <For each={view().recoveries}>
-            {(recovery, index) => (
-              <RecoveryButton
-                recovery={recovery}
-                view={view()}
-                session={props.session}
-                actions={props.actions}
-                primary={index() === 0}
-              />
-            )}
-          </For>
-        </div>
-      </Show>
+      <RecoveryButtons
+        recoveries={view().recoveries}
+        labels={RECOVERY_LABELS}
+        onRetry={() => {
+          void props.session.start();
+        }}
+        reloadPage={props.actions.reloadPage}
+        onReviewSettings={() => {
+          props.actions.reviewSettings(view());
+        }}
+        hook="beacon"
+      />
     </OutcomeNotice>
   );
 }

@@ -6,7 +6,8 @@
  * States: first read pending → a skeleton shaped like the three rows ·
  * page-unreachable (per miss, with recoveries) · read (per metric: measured /
  * unsupported / no data; restored and capped notes) · refreshing (the shown
- * read stays, Refresh busy) · stale once the page reloaded.
+ * read stays, Refresh busy) · a failed refresh (its notice above the kept
+ * read) · stale once the page reloaded or changed.
  */
 import type { JSX } from 'solid-js';
 import { createMemo, For, Match, Show, Switch } from 'solid-js';
@@ -33,7 +34,7 @@ import type { LcpVitalsSession } from './session';
 
 /** The line once the page reloaded or navigated after the shown read. */
 export const VITALS_STALE_COPY =
-  'The page reloaded since this read — these values describe the earlier visit. Refresh for the current one.';
+  'The page reloaded or changed since this read — these values describe the earlier page load. Refresh for the current one.';
 
 /** The recoveries' button labels. */
 export const VITALS_RECOVERY_LABELS: Readonly<Record<VitalsRecovery, string>> = {
@@ -138,9 +139,9 @@ export function VitalsCard(props: VitalsCardProps): JSX.Element {
     const current = outcome();
     return current?.kind === 'read' ? current : undefined;
   };
-  /** How the read missed the page, when it did. */
+  /** How the latest read missed the page, when it did (a failed refresh keeps the read below). */
   const missKind = () => {
-    const current = outcome();
+    const current = run().failure?.outcome ?? outcome();
     return current?.kind === 'page-unreachable' ? current.miss : undefined;
   };
   const miss = () => {
@@ -176,37 +177,35 @@ export function VitalsCard(props: VitalsCardProps): JSX.Element {
           </Button>
         </div>
         <p class="text-2xs text-fg-secondary">{VISIT_SCOPE_NOTE}</p>
-        <Switch>
-          <Match when={run().shown === null}>
-            <div data-fdt-vitals-loading class="flex flex-col gap-2">
-              <Skeleton class="h-6 w-full" />
-              <Skeleton class="h-6 w-full" />
-              <Skeleton class="h-6 w-full" />
-            </div>
-          </Match>
-          <Match when={miss()} keyed>
-            {(view) => (
-              <OutcomeNotice
-                data-fdt="vitals-outcome"
-                data-fdt-vitals-miss={missKind()}
-                kind="error"
-                title={view.title}
-                message={view.message}
-              >
-                <RecoveryButtons
-                  recoveries={view.recoveries}
-                  labels={VITALS_RECOVERY_LABELS}
-                  onRetry={refresh}
-                  reloadPage={props.reloadPage}
-                  hook="vitals"
-                />
-              </OutcomeNotice>
-            )}
-          </Match>
-          <Match when={read()} keyed>
-            {(current) => <VitalsRead outcome={current} />}
-          </Match>
-        </Switch>
+        <Show when={run().shown === null}>
+          <div data-fdt-vitals-loading class="flex flex-col gap-2">
+            <Skeleton class="h-6 w-full" />
+            <Skeleton class="h-6 w-full" />
+            <Skeleton class="h-6 w-full" />
+          </div>
+        </Show>
+        <Show when={miss()} keyed>
+          {(view) => (
+            <OutcomeNotice
+              data-fdt="vitals-outcome"
+              data-fdt-vitals-miss={missKind()}
+              kind="error"
+              title={view.title}
+              message={view.message}
+            >
+              <RecoveryButtons
+                recoveries={view.recoveries}
+                labels={VITALS_RECOVERY_LABELS}
+                onRetry={refresh}
+                reloadPage={props.reloadPage}
+                hook="vitals"
+              />
+            </OutcomeNotice>
+          )}
+        </Show>
+        <Show when={read()} keyed>
+          {(current) => <VitalsRead outcome={current} />}
+        </Show>
         <Show when={props.session.vitals.stale()}>
           <p data-fdt-vitals-stale class="text-2xs text-fg-secondary">
             {VITALS_STALE_COPY}

@@ -25,7 +25,7 @@ import {
 } from '../../../../lib/web-vitals/vitals-view';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
-import { pageIdOf } from '../../state/page-identity';
+import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { HIGHLIGHT_LABEL, LCP_DISCLOSURE, LCP_STALE_COPY } from './lcp-card';
 import { createLcpVitalsHandle, LCP_VITALS_SUBTITLE, LcpVitalsPage } from './page';
@@ -106,6 +106,7 @@ function renderPage(
       analyse,
       readVitals,
       pageId: () => pageIdOf(state()),
+      pageSettled: () => pageSettledOf(state()),
       log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
     })
   );
@@ -213,6 +214,21 @@ describe('LcpVitalsPage — LCP analysis', () => {
     await settle();
     expect(find('[data-fdt="lcp-outcome"]').textContent).toContain('LCP not supported');
     expect(document.querySelector('[data-fdt="lcp-breakdown"]')).toBeNull();
+  });
+
+  it('keeps the shown analysis under a failed re-analysis’s notice', async () => {
+    const answers: LcpAnalysisOutcome[] = [ANALYSED, { kind: 'page-unreachable', miss: 'timeout' }];
+    renderPage({ analyse: () => Promise.resolve(answers.shift() ?? ANALYSED) });
+    await analyseNow();
+    const breakdown = find('[data-fdt="lcp-breakdown"]');
+    await analyseNow();
+    const failure = find('[data-fdt="lcp-failure"]');
+    expect(failure.getAttribute('data-fdt-lcp-outcome')).toBe('page-unreachable');
+    expect(failure.querySelector('[data-fdt-recovery="lcp-failure:retry"]')).not.toBeNull();
+    expect(find('[data-fdt="lcp-outcome"]').textContent).toContain('LCP at 1,200 ms');
+    expect(find('[data-fdt="lcp-breakdown"]')).toBe(breakdown);
+    await analyseNow();
+    expect(document.querySelector('[data-fdt="lcp-failure"]')).toBeNull();
   });
 
   it('offers typed recoveries for a miss, without Reload where the page cannot reload', async () => {
@@ -330,6 +346,28 @@ describe('LcpVitalsPage — current-visit vitals', () => {
     expect(find('[data-fdt-vital="lcp"]').textContent).toContain('Poor');
   });
 
+  it('keeps the shown values under a failed refresh’s notice, until a good read', async () => {
+    const reads: CurrentVisitOutcome[] = [
+      READ,
+      { kind: 'page-unreachable', miss: 'timeout' },
+      READ
+    ];
+    renderPage({ readVitals: () => Promise.resolve(reads.shift() ?? READ) });
+    await settle();
+    const rows = find('[data-fdt="vitals-rows"]');
+    fireEvent.click(find('[data-fdt-vitals-refresh]'));
+    await settle();
+    expect(find('[data-fdt="vitals-outcome"]').getAttribute('data-fdt-vitals-miss')).toBe(
+      'timeout'
+    );
+    expect(find('[data-fdt="vitals-rows"]')).toBe(rows);
+    expect(find('[data-fdt-vital="lcp"]').textContent).toContain('1,200 ms');
+    fireEvent.click(find('[data-fdt-recovery="vitals:retry"]'));
+    await settle();
+    expect(document.querySelector('[data-fdt="vitals-outcome"]')).toBeNull();
+    expect(find('[data-fdt-vital="lcp"]').textContent).toContain('1,200 ms');
+  });
+
   it('names a missed read with its recoveries', async () => {
     const reload = vi.fn();
     const { readVitals } = renderPage({
@@ -366,5 +404,8 @@ describe('LcpVitalsPage — page loads and refreshes', () => {
     } as DataState);
     expect(screen.getByText(LCP_STALE_COPY)).toBeTruthy();
     expect(screen.getByText(VITALS_STALE_COPY)).toBeTruthy();
+    // A navigation changes the load too: the lines name both.
+    expect(LCP_STALE_COPY).toMatch(/^The page reloaded or changed since this analysis/);
+    expect(VITALS_STALE_COPY).toMatch(/^The page reloaded or changed since this read/);
   });
 });

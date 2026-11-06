@@ -12,13 +12,15 @@
 import type { Accessor } from 'solid-js';
 import type { Logger } from '../../../../lib/logger';
 import type { LiveScriptsOutcome } from '../../../../lib/script-runtime/read-live';
-import { ASK_THREW, createAskRun, type AskRun } from '../ask-run';
+import { ASK_THREW, createAskRun, isPageUnreachable, type AskRun } from '../ask-run';
 
 /** What the session reads with (production binds the inspected tab; tests inject doubles). */
 export interface RuntimeStatesDeps {
   readonly read: () => Promise<LiveScriptsOutcome>;
   /** The inspected page's load identity: new on every reload or navigation; null without a payload. */
   readonly pageId: Accessor<string | null>;
+  /** Whether `pageId` is current (no shell refetch in flight). */
+  readonly pageSettled: Accessor<boolean>;
   readonly log: Logger;
 }
 
@@ -39,7 +41,9 @@ export function createRuntimeStatesSession(deps: RuntimeStatesDeps): RuntimeStat
   const read = createAskRun<LiveScriptsOutcome>({
     ask: deps.read,
     threw: ASK_THREW,
+    isFailure: isPageUnreachable,
     pageId: deps.pageId,
+    pageSettled: deps.pageSettled,
     log: deps.log,
     label: 'Live script read'
   });

@@ -124,6 +124,10 @@ describe('labels and notes', () => {
     expect(LCP_RESOURCE_NOTES.missing).toContain('render delay');
     expect(LCP_HIGHLIGHT_NOTES.off).toBeNull();
     expect(LCP_HIGHLIGHT_NOTES.shown).toContain('for 5 s');
+    // Bound to the analysis: the note stays under the answer after the frame is gone.
+    expect(LCP_HIGHLIGHT_NOTES.shown).toBe(
+      'The LCP element was framed on the page for 5 s when this analysis ran.'
+    );
     expect(LCP_HIGHLIGHT_NOTES.unavailable).toContain('no longer on the page');
   });
 

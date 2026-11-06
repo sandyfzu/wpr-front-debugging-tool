@@ -24,11 +24,9 @@ import {
   expandedText,
   inlineCode,
   lineCount,
-  pruneKeyedFlags,
   pruneRowFlags,
   sameScript,
-  scriptStateBadges,
-  toggleRowFlag
+  scriptStateBadges
 } from './script-view';
 
 /** A classified script with overrides. */
@@ -265,24 +263,6 @@ describe('row-flag bookkeeping', () => {
     const changed = buildRowView(script({ content: 'b2' }), 'b');
     expect([...pruneRowFlags(new Set(['a', 'b']), [a, b], [a])]).toEqual(['a']);
     expect([...pruneRowFlags(new Set(['a', 'b']), [a, b], [a, changed])]).toEqual(['a']);
-  });
-
-  it('prunes any keyed rows by their key function (numeric keys too)', () => {
-    const one = { id: 1 };
-    const two = { id: 2 };
-    const flags = new Set([1, 2]);
-    const keyOf = (row: { id: number }): number => row.id;
-    expect(pruneKeyedFlags(flags, [one, two], [two, one], keyOf)).toBe(flags);
-    expect([...pruneKeyedFlags(flags, [one, two], [one, { id: 2 }], keyOf)]).toEqual([1]);
-    expect([...pruneKeyedFlags(flags, [one, two], [two], keyOf)]).toEqual([2]);
-  });
-
-  it('toggles membership into a fresh set', () => {
-    const empty = new Set<string>();
-    const one = toggleRowFlag(empty, 'k');
-    expect(one).not.toBe(empty);
-    expect([...one]).toEqual(['k']);
-    expect([...toggleRowFlag(one, 'k')]).toEqual([]);
   });
 });
 

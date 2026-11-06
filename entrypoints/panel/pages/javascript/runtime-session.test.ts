@@ -27,7 +27,12 @@ describe('createRuntimeStatesSession', () => {
   it('reads on the first show only, once while pending', async () => {
     await createRoot(async (dispose) => {
       const read = vi.fn(() => Promise.resolve(READ));
-      const session = createRuntimeStatesSession({ read, pageId: () => 'p1', log: logDouble() });
+      const session = createRuntimeStatesSession({
+        read,
+        pageId: () => 'p1',
+        pageSettled: () => true,
+        log: logDouble()
+      });
       session.ensure();
       session.ensure(); // pending: not read twice
       await settle();
@@ -44,7 +49,12 @@ describe('createRuntimeStatesSession', () => {
     await createRoot(async (dispose) => {
       const [page, setPage] = createSignal<string | null>('p1');
       const read = vi.fn(() => Promise.resolve(READ));
-      const session = createRuntimeStatesSession({ read, pageId: page, log: logDouble() });
+      const session = createRuntimeStatesSession({
+        read,
+        pageId: page,
+        pageSettled: () => true,
+        log: logDouble()
+      });
       session.ensure();
       await settle();
       setPage('p2');
@@ -62,7 +72,12 @@ describe('createRuntimeStatesSession', () => {
       const read = vi.fn<() => Promise<LiveScriptsOutcome>>(() =>
         Promise.reject(new Error('gone'))
       );
-      const session = createRuntimeStatesSession({ read, pageId: () => null, log: logDouble() });
+      const session = createRuntimeStatesSession({
+        read,
+        pageId: () => null,
+        pageSettled: () => true,
+        log: logDouble()
+      });
       await session.read.start();
       expect(session.read.state().shown?.outcome).toEqual(ASK_THREW);
       session.dispose();

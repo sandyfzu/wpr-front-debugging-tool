@@ -14,7 +14,7 @@ import {
 } from '../../../../lib/storage/beacon-test-settings';
 import { isValidSelector } from '../../../../utils/css-selector';
 import type { DataState } from '../../state/fdt-state-machine';
-import { pageIdOf } from '../../state/page-identity';
+import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { askInspectedTab } from '../inspected-tab';
 import type { BeaconTesterSessionDeps } from './session';
 
@@ -48,6 +48,7 @@ export function realBeaconTesterDeps(shell: {
       ),
     isValidSelector: checkSelector,
     pageId: () => pageIdOf(shell.state()),
+    pageSettled: () => pageSettledOf(shell.state()),
     schedule: scheduleWithTimeout,
     saveDelayMs: BEACON_SETTINGS_SAVE_DELAY_MS,
     log

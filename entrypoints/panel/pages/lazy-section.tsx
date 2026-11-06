@@ -9,19 +9,17 @@
  * props the page passes).
  */
 import type { Component, JSX } from 'solid-js';
-import { createSignal, Match, Switch } from 'solid-js';
+import { Match, Switch } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { ErrorState } from '../../../components/ui/error-state';
 import { Skeleton } from '../../../components/ui/skeleton';
-import { createLogger } from '../../../lib/logger';
 import {
   createChunkLoader,
+  mountChunk,
   prefetchWhenIdle,
   reloadPanelDocument,
   type LazyChunkOptions
 } from './chunk-loader';
-
-const log = createLogger('panel');
 
 /** The failed load's words. */
 export const SECTION_LOAD_FAILED_COPY =
@@ -46,20 +44,9 @@ export function lazySection<P extends object>(
   );
 
   return (props: P): JSX.Element => {
-    const [body, setBody] = createSignal<Component<P> | null>(chunk.loaded());
-    const [failed, setFailed] = createSignal(false);
-    if (chunk.loaded() === null) {
-      chunk.fetch().then(
-        (component) => setBody(() => component),
-        (cause: unknown) => {
-          log.error(
-            `Loading the ${name} section failed`,
-            cause instanceof Error ? cause.message : cause
-          );
-          setFailed(true);
-        }
-      );
-    }
+    const { body, failed } = mountChunk(chunk, {
+      failureMessage: `Loading the ${name} section failed`
+    });
     return (
       <Switch
         fallback={

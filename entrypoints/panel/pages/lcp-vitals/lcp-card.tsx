@@ -7,7 +7,8 @@
  *
  * States: never analysed (the disclosure only) · pending · page-unreachable
  * (per miss) · unsupported · no LCP · no navigation timing (candidates only)
- * · breakdown (+ text/missing-resource, prerender, highlight and stale notes).
+ * · breakdown (+ text/missing-resource, prerender, highlight and stale notes)
+ * · a failed re-analysis (its notice above the kept answer).
  */
 import type { JSX } from 'solid-js';
 import { createMemo, For, Show } from 'solid-js';
@@ -46,7 +47,7 @@ export const HIGHLIGHT_LABEL = `Frame the LCP element on the page (${formatCount
 
 /** The line once the page reloaded or navigated after the shown analysis. */
 export const LCP_STALE_COPY =
-  'The page reloaded since this analysis — it describes the earlier load. Analyse again for the page as it is now.';
+  'The page reloaded or changed since this analysis — it describes the earlier page load. Analyse again for the page as it is now.';
 
 /** The recoveries' button labels. */
 export const LCP_RECOVERY_LABELS: Readonly<Record<LcpRecovery, string>> = {
@@ -172,6 +173,15 @@ export function LcpCard(props: LcpCardProps): JSX.Element {
     const answer = shown();
     return answer === null ? null : describeLcpOutcome(answer.outcome);
   });
+  /** A failed re-analysis's words (the kept answer stays below), else null. */
+  const failureView = createMemo(() => {
+    const failure = run().failure;
+    return failure === null ? null : describeLcpOutcome(failure.outcome);
+  });
+  /** Analyse again. */
+  const analyse = (): void => {
+    void props.session.analysis.start();
+  };
   /** The analysed outcome, else undefined. */
   const analysed = () => {
     const outcome = shown()?.outcome;
@@ -201,14 +211,7 @@ export function LcpCard(props: LcpCardProps): JSX.Element {
           Largest Contentful Paint
         </h2>
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Button
-            variant="primary"
-            busy={run().pending}
-            data-fdt-lcp-analyse
-            onClick={() => {
-              void props.session.analysis.start();
-            }}
-          >
+          <Button variant="primary" busy={run().pending} data-fdt-lcp-analyse onClick={analyse}>
             <Show when={!run().pending}>
               <ScanSearch size={12} aria-hidden="true" />
             </Show>
@@ -227,6 +230,25 @@ export function LcpCard(props: LcpCardProps): JSX.Element {
           <Info size={12} class="mt-px shrink-0 text-fg-muted" aria-hidden="true" />
           <span>{LCP_DISCLOSURE}</span>
         </p>
+        <Show when={failureView()} keyed>
+          {(failure) => (
+            <OutcomeNotice
+              data-fdt="lcp-failure"
+              data-fdt-lcp-outcome={run().failure?.outcome.kind}
+              kind={failure.tone}
+              title={failure.title}
+              message={failure.message}
+            >
+              <RecoveryButtons
+                recoveries={failure.recoveries}
+                labels={LCP_RECOVERY_LABELS}
+                onRetry={analyse}
+                reloadPage={props.reloadPage}
+                hook="lcp-failure"
+              />
+            </OutcomeNotice>
+          )}
+        </Show>
         <Show when={view()} keyed>
           {(outcomeView) => (
             <OutcomeNotice
@@ -247,9 +269,7 @@ export function LcpCard(props: LcpCardProps): JSX.Element {
               <RecoveryButtons
                 recoveries={outcomeView.recoveries}
                 labels={LCP_RECOVERY_LABELS}
-                onRetry={() => {
-                  void props.session.analysis.start();
-                }}
+                onRetry={analyse}
                 reloadPage={props.reloadPage}
                 hook="lcp"
               />

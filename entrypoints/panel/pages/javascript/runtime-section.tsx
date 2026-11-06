@@ -10,23 +10,15 @@
  * chosen group has none now, with the way back) / filtered-empty (the
  * shared `NoMatches`) / populated (notes for a cut list and for scripts no
  * state chip covers) · re-reading (the shown read stays, Read again busy) ·
- * stale once the page reloaded (a show re-reads; while shown, a note).
+ * a failed re-read (its notice above the kept list) · stale once the page
+ * reloaded or changed (a show re-reads; while shown, a note).
  *
- * A re-read keeps the view mounted (S-2): source and state chips, query,
- * scroll and the open details of rows that did not change.
+ * A re-read — answered or failed — keeps the view mounted (S-2): source and
+ * state chips, query, scroll and the open details of rows that did not
+ * change.
  */
 import type { JSX } from 'solid-js';
-import {
-  createComputed,
-  createMemo,
-  createRoot,
-  createSignal,
-  For,
-  Match,
-  on,
-  Show,
-  Switch
-} from 'solid-js';
+import { createComputed, createMemo, createRoot, createSignal, For, on, Show } from 'solid-js';
 import FileCode from 'lucide-solid/icons/file-code';
 import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import { Button } from '../../../../components/ui/button';
@@ -71,7 +63,7 @@ import {
 } from './runtime-rows';
 import { createRuntimeStatesSession, type RuntimeStatesSession } from './runtime-session';
 import type { CodeBlockSeams } from './script-row';
-import { pruneKeyedFlags, toggleRowFlag } from './script-view';
+import { pruneKeyedFlags, toggleRowFlag } from '../../../../lib/panel/list-behavior';
 
 /** The recoveries' button labels. */
 export const RUNTIME_RECOVERY_LABELS: Readonly<Record<RuntimeRecovery, string>> = {
@@ -142,9 +134,9 @@ export function RuntimeStatesSection(props: RuntimeStatesSectionProps): JSX.Elem
     const current = outcome();
     return current?.kind === 'read' ? current : undefined;
   };
-  /** How the read missed the page, when it did. */
+  /** How the latest read missed the page, when it did (a failed re-read keeps the list below). */
   const missKind = () => {
-    const current = outcome();
+    const current = run().failure?.outcome ?? outcome();
     return current?.kind === 'page-unreachable' ? current.miss : undefined;
   };
   const readAgain = (): void => {
@@ -182,47 +174,45 @@ export function RuntimeStatesSection(props: RuntimeStatesSectionProps): JSX.Elem
           {RUNTIME_STALE_COPY}
         </p>
       </Show>
-      <Switch>
-        <Match when={run().shown === null}>
-          <div data-fdt-runtime-loading class="grid grid-cols-1 gap-2">
-            <Skeleton class="h-6 w-full" />
-            <Skeleton class="h-12 w-full" />
-            <Skeleton class="h-12 w-full" />
-          </div>
-        </Match>
-        <Match when={missKind()} keyed>
-          {(miss) => {
-            const view = describeRuntimeMiss(miss);
-            return (
-              <OutcomeNotice
-                data-fdt="runtime-outcome"
-                data-fdt-runtime-miss={miss}
-                kind="error"
-                title={view.title}
-                message={view.message}
-              >
-                <RecoveryButtons
-                  recoveries={view.recoveries}
-                  labels={RUNTIME_RECOVERY_LABELS}
-                  onRetry={readAgain}
-                  reloadPage={reloadPage}
-                  hook="runtime"
-                />
-              </OutcomeNotice>
-            );
-          }}
-        </Match>
-        {/* Not keyed: a re-read swaps the read under a mounted list (S-2). */}
-        <Match when={read()}>
-          {(current) => (
-            <RuntimeList
-              read={current()}
-              createVirtualizer={props.createVirtualizer}
-              codeBlock={props.codeBlock}
-            />
-          )}
-        </Match>
-      </Switch>
+      <Show when={run().shown === null}>
+        <div data-fdt-runtime-loading class="grid grid-cols-1 gap-2">
+          <Skeleton class="h-6 w-full" />
+          <Skeleton class="h-12 w-full" />
+          <Skeleton class="h-12 w-full" />
+        </div>
+      </Show>
+      <Show when={missKind()} keyed>
+        {(miss) => {
+          const view = describeRuntimeMiss(miss);
+          return (
+            <OutcomeNotice
+              data-fdt="runtime-outcome"
+              data-fdt-runtime-miss={miss}
+              kind="error"
+              title={view.title}
+              message={view.message}
+            >
+              <RecoveryButtons
+                recoveries={view.recoveries}
+                labels={RUNTIME_RECOVERY_LABELS}
+                onRetry={readAgain}
+                reloadPage={reloadPage}
+                hook="runtime"
+              />
+            </OutcomeNotice>
+          );
+        }}
+      </Show>
+      {/* Not keyed: a re-read swaps the read under a mounted list (S-2). */}
+      <Show when={read()}>
+        {(current) => (
+          <RuntimeList
+            read={current()}
+            createVirtualizer={props.createVirtualizer}
+            codeBlock={props.codeBlock}
+          />
+        )}
+      </Show>
     </section>
   );
 }

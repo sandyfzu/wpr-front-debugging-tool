@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AskMiss } from '../messaging/bounded-ask';
 import type { BeaconConfigIssue, BeaconTestDraft } from './config';
+import { selectorIssues } from './config';
 import {
   BEACON_FEATURE_LABELS,
   describeBeaconOutcome,
@@ -177,5 +178,13 @@ describe('describeConfigIssue / issueField', () => {
   ])('words %j and names its field', (issue, words, field) => {
     expect(describeConfigIssue(issue)).toMatch(words);
     expect(issueField(issue)).toBe(field);
+  });
+
+  it('echoes an over-long selector with exactly one ellipsis (the validator already shortened it)', () => {
+    const [issue] = selectorIssues(['a'.repeat(1001)], () => true);
+    if (issue === undefined) throw new Error('expected one issue');
+    const words = describeConfigIssue(issue);
+    expect(words).toMatch(/^“a+…” is longer than 1,000 characters\.$/);
+    expect(words).not.toContain('……');
   });
 });

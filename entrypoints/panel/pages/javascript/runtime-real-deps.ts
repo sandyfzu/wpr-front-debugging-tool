@@ -6,7 +6,7 @@
 import { createLogger } from '../../../../lib/logger';
 import { liveScriptsTabStep, readLiveScripts } from '../../../../lib/script-runtime/read-live';
 import type { DataState } from '../../state/fdt-state-machine';
-import { pageIdOf } from '../../state/page-identity';
+import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { askInspectedTab } from '../inspected-tab';
 import type { RuntimeStatesDeps } from './runtime-session';
 
@@ -27,6 +27,7 @@ export function realRuntimeStatesDeps(shell: {
         readLiveScripts({ read: liveScriptsTabStep(asks, tabId), log })
       ),
     pageId: () => pageIdOf(shell.state()),
+    pageSettled: () => pageSettledOf(shell.state()),
     log
   };
 }

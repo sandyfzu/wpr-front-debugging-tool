@@ -50,7 +50,7 @@ export const LCP_RESOURCE_NOTES: Readonly<Record<LcpResourceState, string | null
 /** The highlight's note per state (`off`: nothing to say). */
 export const LCP_HIGHLIGHT_NOTES: Readonly<Record<LcpHighlight, string | null>> = {
   off: null,
-  shown: `The LCP element is framed on the page for ${formatCount(LCP_HIGHLIGHT_MS / 1000)} s.`,
+  shown: `The LCP element was framed on the page for ${formatCount(LCP_HIGHLIGHT_MS / 1000)} s when this analysis ran.`,
   unavailable:
     "Couldn't frame the LCP element: it is no longer on the page. Analyse again to frame the current one."
 };

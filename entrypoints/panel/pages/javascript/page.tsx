@@ -70,10 +70,10 @@ import {
   delaySummaryBadge,
   estimateRowSize,
   pruneRowFlags,
-  toggleRowFlag,
   type ScriptBadge,
   type ScriptRowView
 } from './script-view';
+import { toggleRowFlag } from '../../../../lib/panel/list-behavior';
 import { contentCaptures, scriptListCut } from './capture-bounds';
 import { reconcileRowViews } from './script-identity';
 
@@ -184,10 +184,6 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
   const filtered = createMemo(() =>
     filterAndSearch(views(), JS_VIEW_RESOURCES, selected(), query())
   );
-  // The find's page side: the rendered list is the match set — it reports the
-  // count and names the row the find's cursor sits on (highlight + scroll).
-  // eslint-disable-next-line solid/reactivity -- bootstrap: the shell's search store is one instance per panel run
-  const match = createCurrentMatch(props.search, () => filtered().length);
   const chips = createMemo(() => buildChips(JS_VIEW_RESOURCES.filters, counts(), selected()));
   // The count line and its announce switch come from the shared filter-page
   // lifecycle: truthful text always; a data refresh updates it silently
@@ -219,10 +215,6 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
     })
   );
 
-  // eslint-disable-next-line solid/reactivity -- bootstrap: the shell's search store is one instance per panel run
-  const field = bindSearchField(props.search);
-  let filterArea: HTMLDivElement | undefined;
-
   /**
    * Flip a row's code; a collapse that pulls the toggle out of view brings it
    * back (nearest edge, no smooth scroll), so focus never sits off screen.
@@ -231,6 +223,114 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
     const collapsing = expanded().has(key);
     setExpanded(toggleRowFlag(expanded(), key));
     if (collapsing) toggle.scrollIntoView({ block: 'nearest' });
+  };
+
+  /**
+   * The served list with its find bindings: the search field, the find's
+   * match report and cursor. A component of its own so the bindings live
+   * exactly as long as this tab's list is shown — a hidden list must not
+   * keep reporting matches over the shown one (the store counts what the
+   * visible list matches), and coming back reports afresh.
+   */
+  const ServedList = (): JSX.Element => {
+    // The find's page side: the rendered list is the match set — it reports the
+    // count and names the row the find's cursor sits on (highlight + scroll).
+    const match = createCurrentMatch(props.search, () => filtered().length);
+    const field = bindSearchField(props.search);
+    let filterArea: HTMLDivElement | undefined;
+    return (
+      <>
+        {/* The field binding owns the Esc rule; the ref targets the way-back focus. */}
+        <div ref={filterArea} onKeyDown={field.onKeyDown}>
+          <FilterBar
+            chips={chips()}
+            selected={selected()}
+            onSelect={(value) => setSelected(value as JsFilterId)}
+            filterLabel="Filter scripts"
+            searchQuery={field.value()}
+            onSearchChange={(raw) => {
+              field.input(raw);
+            }}
+            searchPlaceholder="Search URLs and code…"
+            searchLabel="Search scripts"
+          />
+        </div>
+        <div role="status" aria-live={live()} class="sr-only" data-fdt="script-results-status">
+          {announcement()}
+        </div>
+        <Show
+          when={filtered().length > 0}
+          fallback={
+            <NoMatches
+              chipLabel={selectedLabel()}
+              query={query()}
+              onClearSearch={() => {
+                field.clear();
+              }}
+              onShowAll={() => setSelected(allChip)}
+              focusAfter={(action) =>
+                action === 'clear-search'
+                  ? filterArea?.querySelector<HTMLElement>('input[type="search"]')
+                  : filterArea?.querySelector<HTMLElement>(`[data-fdt-filter-chip="${allChip}"]`)
+              }
+            />
+          }
+        >
+          <VirtualList
+            scrollerRole="list"
+            aria-label="Scripts"
+            count={filtered().length}
+            estimateSize={(index) => {
+              const view = filtered()[index];
+              return view === undefined ? 0 : estimateRowSize(view);
+            }}
+            getItemKey={(index) => filtered()[index]?.key ?? fallbackRowKey(index)}
+            overscan={LIST_OVERSCAN}
+            createVirtualizer={props.createVirtualizer}
+            scrollTo={match.request}
+            class={cn(PAGE_FILL_SCROLLER, 'rounded-md border border-line-1 bg-surface-1')}
+          >
+            {(item) => (
+              <Show when={filtered()[item.index]} keyed>
+                {(view) => (
+                  <ScriptRow
+                    view={view}
+                    index={item.index}
+                    setSize={filtered().length}
+                    current={match.current() === item.index}
+                    inlineOrdinal={inlineOrdinals().get(view.key) ?? 0}
+                    expanded={expanded().has(view.key)}
+                    onToggle={(toggle) => {
+                      toggleRow(view.key, toggle);
+                    }}
+                    wrap={wrapped().has(view.key)}
+                    onWrap={() => {
+                      setWrapped(toggleRowFlag(wrapped(), view.key));
+                    }}
+                    codeBlock={props.codeBlock}
+                    loadSource={
+                      props.data().scriptSnapshotId === undefined
+                        ? undefined
+                        : (signal) => {
+                            const snapshotId = props.data().scriptSnapshotId;
+                            if (snapshotId === undefined)
+                              return Promise.reject(new Error('Script snapshot unavailable.'));
+                            const scriptIndex = views().indexOf(view);
+                            return loadScriptSource(
+                              { snapshotId, scriptIndex },
+                              props.readSourceChunk ?? requestSourceChunk,
+                              signal
+                            );
+                          }
+                    }
+                  />
+                )}
+              </Show>
+            )}
+          </VirtualList>
+        </Show>
+      </>
+    );
   };
 
   return (
@@ -253,7 +353,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
         rootClass="flex min-h-0 w-full flex-1 flex-col gap-3"
       >
         <TabPanel value="served" class="flex min-h-0 flex-1 flex-col gap-3">
-          {/* Mounted only while selected: one list (and one find binding) at a time. */}
+          {/* Mounted only while selected; the find binds in `ServedList`, so only the shown list reports. */}
           <Show when={tab() === 'served'}>
             <div class="flex w-full min-h-0 flex-1 flex-col gap-3">
               <ScriptSummary
@@ -278,105 +378,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
                   />
                 }
               >
-                {/* The field binding owns the Esc rule; the ref targets the way-back
-              focus (the shared seam, not a page-local keydown anymore). */}
-                <div ref={filterArea} onKeyDown={field.onKeyDown}>
-                  <FilterBar
-                    chips={chips()}
-                    selected={selected()}
-                    onSelect={(value) => setSelected(value as JsFilterId)}
-                    filterLabel="Filter scripts"
-                    searchQuery={field.value()}
-                    onSearchChange={(raw) => {
-                      field.input(raw);
-                    }}
-                    searchPlaceholder="Search URLs and code…"
-                    searchLabel="Search scripts"
-                  />
-                </div>
-                <div
-                  role="status"
-                  aria-live={live()}
-                  class="sr-only"
-                  data-fdt="script-results-status"
-                >
-                  {announcement()}
-                </div>
-                <Show
-                  when={filtered().length > 0}
-                  fallback={
-                    <NoMatches
-                      chipLabel={selectedLabel()}
-                      query={query()}
-                      onClearSearch={() => {
-                        field.clear();
-                      }}
-                      onShowAll={() => setSelected(allChip)}
-                      focusAfter={(action) =>
-                        action === 'clear-search'
-                          ? filterArea?.querySelector<HTMLElement>('input[type="search"]')
-                          : filterArea?.querySelector<HTMLElement>(
-                              `[data-fdt-filter-chip="${allChip}"]`
-                            )
-                      }
-                    />
-                  }
-                >
-                  <VirtualList
-                    scrollerRole="list"
-                    aria-label="Scripts"
-                    count={filtered().length}
-                    estimateSize={(index) => {
-                      const view = filtered()[index];
-                      return view === undefined ? 0 : estimateRowSize(view);
-                    }}
-                    getItemKey={(index) => filtered()[index]?.key ?? fallbackRowKey(index)}
-                    overscan={LIST_OVERSCAN}
-                    createVirtualizer={props.createVirtualizer}
-                    scrollTo={match.request}
-                    class={cn(PAGE_FILL_SCROLLER, 'rounded-md border border-line-1 bg-surface-1')}
-                  >
-                    {(item) => (
-                      <Show when={filtered()[item.index]} keyed>
-                        {(view) => (
-                          <ScriptRow
-                            view={view}
-                            index={item.index}
-                            setSize={filtered().length}
-                            current={match.current() === item.index}
-                            inlineOrdinal={inlineOrdinals().get(view.key) ?? 0}
-                            expanded={expanded().has(view.key)}
-                            onToggle={(toggle) => {
-                              toggleRow(view.key, toggle);
-                            }}
-                            wrap={wrapped().has(view.key)}
-                            onWrap={() => {
-                              setWrapped(toggleRowFlag(wrapped(), view.key));
-                            }}
-                            codeBlock={props.codeBlock}
-                            loadSource={
-                              props.data().scriptSnapshotId === undefined
-                                ? undefined
-                                : (signal) => {
-                                    const snapshotId = props.data().scriptSnapshotId;
-                                    if (snapshotId === undefined)
-                                      return Promise.reject(
-                                        new Error('Script snapshot unavailable.')
-                                      );
-                                    const scriptIndex = views().indexOf(view);
-                                    return loadScriptSource(
-                                      { snapshotId, scriptIndex },
-                                      props.readSourceChunk ?? requestSourceChunk,
-                                      signal
-                                    );
-                                  }
-                            }
-                          />
-                        )}
-                      </Show>
-                    )}
-                  </VirtualList>
-                </Show>
+                <ServedList />
               </Show>
             </div>
           </Show>

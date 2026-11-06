@@ -103,7 +103,8 @@ export function describeConfigIssue(issue: BeaconConfigIssue): string {
     case 'too-many-selectors':
       return `${formatCount(issue.count)} selectors — at most ${formatCount(SELECTOR_COUNT_MAX)}.`;
     case 'selector-too-long':
-      return `“${issue.selector}…” is longer than ${formatCount(SELECTOR_LENGTH_MAX)} characters.`;
+      // The selector arrives already shortened (with its own ellipsis) by the validator.
+      return `“${issue.selector}” is longer than ${formatCount(SELECTOR_LENGTH_MAX)} characters.`;
     case 'selector-invalid':
       return `“${issue.selector}” isn't a valid CSS selector.`;
     case 'selector-unclosed':

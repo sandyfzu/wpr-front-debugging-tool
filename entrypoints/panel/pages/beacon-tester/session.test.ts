@@ -14,12 +14,8 @@ import {
   DEFAULT_BEACON_TEST_SETTINGS,
   type BeaconTestSettings
 } from '../../../../lib/beacon-test/settings';
-import {
-  BEACON_RUN_THREW_OUTCOME,
-  createBeaconTesterSession,
-  resultsOf,
-  type BeaconTesterSessionDeps
-} from './session';
+import { createBeaconTesterSession, resultsOf, type BeaconTesterSessionDeps } from './session';
+import { ASK_THREW } from '../ask-run';
 
 const RESULTS: BeaconTestResults = {
   aboveTheFold: { kind: 'ok', items: [], dropped: 0, truncated: false },
@@ -43,6 +39,7 @@ afterEach(() => {
 /** Build a session in a root with doubles; returns the doubles too. */
 function setup(overrides: Partial<BeaconTesterSessionDeps> = {}) {
   const [pageId, setPageId] = createSignal<string | null>('page-1');
+  const [pageSettled, setPageSettled] = createSignal(true);
   const error = vi.fn();
   const deps = {
     readSettings: vi.fn(() => Promise.resolve(STORED)),
@@ -54,6 +51,7 @@ function setup(overrides: Partial<BeaconTesterSessionDeps> = {}) {
     // A parser double: bare tag names and their lists only (the defaults are tag names).
     isValidSelector: (selector: string) => /^[a-z]+(,[a-z]+)*$/.test(selector),
     pageId,
+    pageSettled,
     schedule: () => () => undefined,
     saveDelayMs: 400,
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error },
@@ -64,7 +62,7 @@ function setup(overrides: Partial<BeaconTesterSessionDeps> = {}) {
     return createBeaconTesterSession(deps);
   });
   disposers.push(session.dispose);
-  return { session, deps, setPageId, error };
+  return { session, deps, setPageId, setPageSettled, error };
 }
 
 describe('createBeaconTesterSession — settings', () => {
@@ -172,7 +170,7 @@ describe('createBeaconTesterSession — run', () => {
     const { session, error } = setup({ runTest: () => Promise.reject(new Error('boom')) });
     await settle();
     await session.start();
-    expect(session.run()).toMatchObject({ status: 'finished', outcome: BEACON_RUN_THREW_OUTCOME });
+    expect(session.run()).toMatchObject({ status: 'finished', outcome: ASK_THREW });
     expect(error).toHaveBeenCalledWith('Beacon tester: the run threw', 'boom');
   });
 
@@ -185,6 +183,43 @@ describe('createBeaconTesterSession — run', () => {
     expect(session.stale()).toBe(false);
     setPageId('page-2');
     expect(session.stale()).toBe(true);
+  });
+
+  it('stamps a run started mid-refetch with the load the shell settles on', async () => {
+    const { session, setPageId, setPageSettled } = setup();
+    await settle();
+    // The page reloaded; the shell still shows the old load while it refetches.
+    setPageSettled(false);
+    await session.start();
+    expect(session.run()).toMatchObject({ status: 'finished', page: null, provisional: true });
+    expect(session.stale()).toBe(false);
+    setPageId('page-2');
+    setPageSettled(true);
+    expect(session.run()).toMatchObject({ page: 'page-2', provisional: false });
+    expect(session.stale()).toBe(false);
+    setPageId('page-3');
+    expect(session.stale()).toBe(true);
+  });
+
+  it('can run only once the settings loaded and while no run is in the air', async () => {
+    let finish: (outcome: BeaconTestOutcome) => void = () => undefined;
+    const runTest = vi.fn(() => new Promise<BeaconTestOutcome>((done) => (finish = done)));
+    const { session } = setup({ runTest });
+    expect(session.canRun()).toBe(false);
+    await settle();
+    expect(session.canRun()).toBe(true);
+    const run = session.start();
+    expect(session.canRun()).toBe(false);
+    finish({ kind: 'busy' });
+    await run;
+    expect(session.canRun()).toBe(true);
+  });
+
+  it('cannot run after the settings failed to load', async () => {
+    const { session } = setup({ readSettings: () => Promise.reject(new Error('gone')) });
+    await settle();
+    expect(session.load().status).toBe('failed');
+    expect(session.canRun()).toBe(false);
   });
 
   it('drops an answer that lands after dispose', async () => {

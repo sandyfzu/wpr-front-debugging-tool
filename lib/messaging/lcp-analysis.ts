@@ -76,7 +76,7 @@ export type LcpAnalysisReply =
       readonly navigation: NavigationTiming | null;
       /** Deduplicated by start time, in order; empty when nothing was painted yet. */
       readonly candidates: readonly LcpCandidateFacts[];
-      /** The LCP URL's first resource entry; null for text or when none was found. */
+      /** The resource entry that painted the LCP (the last for its URL requested by the LCP time); null for text or when none qualifies. */
       readonly resource: ResourceTiming | null;
       readonly highlight: LcpHighlight;
     };

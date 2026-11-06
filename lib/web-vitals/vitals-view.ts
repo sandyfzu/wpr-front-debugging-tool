@@ -7,7 +7,13 @@
  */
 import { formatCount } from '../../utils/format-count';
 import type { AskMiss } from '../messaging/bounded-ask';
-import type { CurrentVisitVitals, VitalOutcome, VitalRating } from './current-visit';
+import {
+  rate,
+  VITAL_THRESHOLDS,
+  type CurrentVisitVitals,
+  type VitalOutcome,
+  type VitalRating
+} from './current-visit';
 import { CURRENT_VISIT_ASK_DEADLINE_MS, type CurrentVisitOutcome } from './read-current-visit';
 
 /** The three metrics, in the order they are shown. */
@@ -86,17 +92,40 @@ export type VitalRow = {
   | { readonly state: 'unsupported' | 'no-data'; readonly note: string }
 );
 
+/** Display units per metric unit: whole milliseconds, CLS thousandths. */
+const DISPLAY_UNITS: Readonly<Record<VitalKey, number>> = { lcp: 1, cls: 1000, inp: 1 };
+
+/**
+ * A value in display units, rounded — except that a value rated worse than
+ * its rounded figure (just above a threshold: CLS 0.1004 → 0.100) steps one
+ * unit up instead, so the figure shown is never on the good side of the
+ * rating shown. Ratings stay the raw value's (the official `>` thresholds);
+ * thresholds are whole display units, so rounding up never crosses one.
+ *
+ * @param key The metric.
+ * @param value Its raw value.
+ * @returns The shown figure, in display units.
+ */
+export function shownUnits(key: VitalKey, value: number): number {
+  const units = DISPLAY_UNITS[key];
+  const rounded = Math.round(value * units);
+  const thresholds = VITAL_THRESHOLDS[key];
+  return rate(rounded / units, thresholds) === rate(value, thresholds) ? rounded : rounded + 1;
+}
+
 /**
  * A metric's value as shown: LCP and INP in whole milliseconds, CLS (a
- * unitless score) to two decimals, a tiny non-zero shift as `< 0.01`.
+ * unitless score) to three decimals, a tiny non-zero shift as `< 0.001`;
+ * rounded without ever crossing the rating's threshold ({@link shownUnits}).
  *
  * @param key The metric.
  * @param value Its value.
  */
 export function formatVital(key: VitalKey, value: number): string {
-  if (key !== 'cls') return `${formatCount(Math.round(value))} ms`;
-  if (value > 0 && value < 0.005) return '< 0.01';
-  return value.toFixed(2);
+  const units = shownUnits(key, value);
+  if (key !== 'cls') return `${formatCount(units)} ms`;
+  if (value > 0 && units === 0) return '< 0.001';
+  return (units / DISPLAY_UNITS.cls).toFixed(3);
 }
 
 /**
