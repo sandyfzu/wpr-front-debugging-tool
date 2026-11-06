@@ -1,9 +1,9 @@
 /**
  * The DevTools surfaces' asks to the inspected tab's content script — the
  * page-data warm-up, the full page data, one script-source chunk, the
- * RUCSS test's two steps, and the live analysis tools (beacon test, LCP
- * analysis, live script states, current-visit vitals) — behind one
- * transport choice.
+ * RUCSS test's two steps, the page-style inventory, and the live analysis
+ * tools (beacon test, LCP analysis, live script states, current-visit
+ * vitals) — behind one transport choice.
  *
  * Where the context has the `tabs` API (Chromium), the asks go to the tab
  * directly. Where it does not (Firefox DevTools pages), the same asks go
@@ -46,6 +46,8 @@ export interface TabAsks {
   readonly getScriptRuntimeStatuses: (tabId: number) => Promise<unknown>;
   /** Read this visit's vitals entries, in the top frame only. */
   readonly getCurrentVisitVitals: (tabId: number) => Promise<unknown>;
+  /** List the page's styles, from the top frame only. */
+  readonly listPageStyles: (tabId: number) => Promise<unknown>;
 }
 
 /** The direct transport: the extension's tab send, one typed call per ask. */
@@ -61,7 +63,8 @@ export const DIRECT_TAB_ASKS: TabAsks = {
   getScriptRuntimeStatuses: (tabId) =>
     sendMessage('getScriptRuntimeStatuses', undefined, { tabId, frameId: 0 }),
   getCurrentVisitVitals: (tabId) =>
-    sendMessage('getCurrentVisitVitals', undefined, { tabId, frameId: 0 })
+    sendMessage('getCurrentVisitVitals', undefined, { tabId, frameId: 0 }),
+  listPageStyles: (tabId) => sendMessage('listPageStyles', undefined, { tabId, frameId: 0 })
 };
 
 /** The transports {@link selectTabAsks} picks from (tests inject doubles). */

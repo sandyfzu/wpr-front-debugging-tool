@@ -49,7 +49,6 @@ import { EmptyState } from '../../../../components/ui/empty-state';
 import { FilterBar } from '../../../../components/ui/filter-bar';
 import { KeyValue } from '../../../../components/ui/key-value';
 import { STATUS_ICONS, STATUS_TEXT_CLASSES } from '../../../../components/ui/status-badge';
-import { toast } from '../../../../components/ui/toast-store';
 import { Tooltip } from '../../../../components/ui/tooltip';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { absoluteStampFromMs } from '../../../../lib/detection/describe';
@@ -71,11 +70,7 @@ import { CURRENT_MATCH_ROW, createCurrentMatch } from '../current-match';
 import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
 import { createResultsAnnouncement } from '../results-announcement';
 import { WithheldLegend, WithheldValue } from '../withheld-value';
-import {
-  canReloadInspected,
-  reloadInspected,
-  type InspectedWindowReloadApi
-} from './reload-inspected';
+import { inspectedReloadAction } from '../reload-inspected';
 import {
   allHeadersCopyText,
   buildInventory,
@@ -142,26 +137,6 @@ export interface HeadersCookiesViewProps {
    * context cannot (a standalone extension page), which hides the action.
    */
   reloadInspectedPage?: () => void;
-}
-
-/**
- * The empty state's reload action in production: DevTools' own inspected-page
- * reload, confirmed or failed through a toast. Null outside a DevTools window.
- *
- * @param api The extension namespace (the real `browser`, or a test double).
- * @returns The action, or undefined when the context cannot reload.
- */
-export function inspectedReloadAction(api: InspectedWindowReloadApi): (() => void) | undefined {
-  if (!canReloadInspected(api)) return undefined;
-  return () => {
-    if (reloadInspected(api) === 'reloaded') {
-      toast.success('Reloading the page — the panel refreshes when it reports back');
-    } else {
-      toast.error('Reload failed', {
-        description: 'Reload the inspected page from its own tab.'
-      });
-    }
-  };
 }
 
 /** Props of {@link HeadersCookiesPage}. */

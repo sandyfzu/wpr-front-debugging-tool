@@ -173,7 +173,8 @@ const LIVE: LivePageFacts = {
   headerCapture: null,
   undefinedReferences: [],
   cookies: null,
-  bypassAttested: false
+  bypassAttested: false,
+  rucssTestRuns: 0
 };
 
 describe('composeFdtData — oversize pages still yield a payload the panel accepts', () => {
@@ -244,7 +245,8 @@ describe('composeFdtData — oversize pages still yield a payload the panel acce
       headerCapture: { headers: [{ name: 'x-cache', value: 'HIT' }] },
       undefinedReferences: ['jQuery'],
       cookies,
-      bypassAttested: false
+      bypassAttested: false,
+      rucssTestRuns: 0
     });
     expect(payload).toMatchObject({
       allScriptsLoaded: true,
@@ -265,6 +267,14 @@ describe('composeFdtData — oversize pages still yield a payload the panel acce
     const parsed = parseFdtData(payload);
     expect(parsed?.pageHeaders).toEqual(served.headers);
     expect(JSON.stringify(redactPageDataForExport(payload))).not.toContain(PLANTED);
+  });
+
+  it('carries the RUCSS test fact only once a test applied, and the panel guard accepts it', async () => {
+    const data = await processSerializedPage(pageWithPreloadedImages(1));
+    expect('rucssTestMode' in composeFdtData(data, LIVE)).toBe(false);
+    const payload = composeFdtData(data, { ...LIVE, rucssTestRuns: 2 });
+    expect(payload.rucssTestMode).toEqual({ runs: 2 });
+    expect(parseFdtData(payload)?.rucssTestMode).toEqual({ runs: 2 });
   });
 
   it('carries the header capture list-level mark to the payload', async () => {

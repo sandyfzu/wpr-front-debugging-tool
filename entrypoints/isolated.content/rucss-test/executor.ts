@@ -67,6 +67,8 @@ export interface RucssTestExecutorDeps {
   readonly isInvalid: () => boolean;
   /** Timer seam for the snapshot's expiry (default `setTimeout`). */
   readonly schedule?: ScheduleTimer;
+  /** Told the page's new test state after each applied test (the page surfaces follow it). */
+  readonly onModeChange?: (mode: RucssTestMode) => void;
 }
 
 /** The executor. */
@@ -250,8 +252,12 @@ export function createRucssTestExecutor(deps: RucssTestExecutorDeps): RucssTestE
     if (!injectCss(doc, target, request.css)) return { ok: false, failure: 'css-blocked' };
     const counts = removeStyles(snapshot, new Set(request.keepLinks));
     runs++;
+    deps.onModeChange?.(mode());
     return { ok: true, summary: { ...counts, cssChars: request.css.length } };
   };
 
-  return { start, apply, mode: () => ({ applied: runs > 0, runs }) };
+  /** The page's test state now. */
+  const mode = (): RucssTestMode => ({ applied: runs > 0, runs });
+
+  return { start, apply, mode };
 }

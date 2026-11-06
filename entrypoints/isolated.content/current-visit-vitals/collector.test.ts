@@ -17,6 +17,7 @@ import {
 import { reduceCls, reduceCurrentVisit } from '../../../lib/web-vitals/current-visit';
 import {
   EVENT_DURATION_THRESHOLD_MS,
+  RECENT_DROPS,
   createVitalsCollector,
   type VitalsCollectorDeps,
   type VitalsObserverClass
@@ -256,6 +257,61 @@ describe('createVitalsCollector', () => {
       value: 20,
       interactions: CURRENT_VISIT_LIMITS.interactions + 2
     });
+  });
+
+  it('counts a dropped interaction once, however many events it has', () => {
+    const { Observer, state } = observerClass();
+    const collector = createVitalsCollector(deps({ Observer }));
+    const full = CURRENT_VISIT_LIMITS.interactions;
+    state.deliver(
+      Array.from({ length: full }, (_, index) => ({
+        entryType: 'event',
+        duration: 20,
+        interactionId: index + 1
+      }))
+    );
+    /** One fast event of an interaction (below every kept latency). */
+    const fast = (interactionId: number) => ({ entryType: 'event', duration: 16, interactionId });
+    // 100 taps (pointerdown, pointerup, click), each delivered together.
+    for (let tap = 0; tap < 100; tap += 1) {
+      const id = 1_000_000 + tap;
+      state.deliver([fast(id), fast(id), fast(id)]);
+    }
+    // Overlapping key presses interleave: keydown A, keydown B, keyup A, keyup B.
+    state.deliver([fast(2_000_001), fast(2_000_002), fast(2_000_001), fast(2_000_002)]);
+    expect(collector.read().input.interactionsDropped).toBe(102);
+    // A dropped interaction whose later event is slow gets in: it evicts one
+    // kept interaction, so the distinct dropped count stays.
+    state.deliver([
+      fast(3_000_000),
+      { entryType: 'event', duration: 900, interactionId: 3_000_000 }
+    ]);
+    const { input } = collector.read();
+    expect(input.interactionsDropped).toBe(103);
+    expect(input.events).toContainEqual({ interactionId: 3_000_000, duration: 900 });
+    expect(input.events).toHaveLength(full);
+    expect(reduceCurrentVisit(input).inp).toMatchObject({ interactions: full + 103 });
+  });
+
+  it('remembers only the latest dropped interactions', () => {
+    const { Observer, state } = observerClass();
+    const collector = createVitalsCollector(deps({ Observer }));
+    state.deliver(
+      Array.from({ length: CURRENT_VISIT_LIMITS.interactions }, (_, index) => ({
+        entryType: 'event',
+        duration: 20,
+        interactionId: index + 1
+      }))
+    );
+    const ids = Array.from({ length: RECENT_DROPS + 1 }, (_, index) => 1_000_000 + index);
+    state.deliver(
+      ids.map((interactionId) => ({ entryType: 'event', duration: 16, interactionId }))
+    );
+    // The newest are still known; the oldest was forgotten, so it counts again.
+    state.deliver([{ entryType: 'event', duration: 16, interactionId: ids[RECENT_DROPS] }]);
+    expect(collector.read().input.interactionsDropped).toBe(RECENT_DROPS + 1);
+    state.deliver([{ entryType: 'event', duration: 16, interactionId: ids[0] }]);
+    expect(collector.read().input.interactionsDropped).toBe(RECENT_DROPS + 2);
   });
 
   it('starts a new visit on a restore: entries, bounds and counts from then on', () => {

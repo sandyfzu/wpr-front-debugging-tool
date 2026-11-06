@@ -7,7 +7,8 @@
  * Retry) and render crashes; this body renders only on `ready` and
  * `refreshing`. Within it: plugin absent → the strip says "WP Rocket not
  * detected" and the cards still render; headers not captured → the Server /
- * Known Platform cards are omitted. The full header inventory lives on the
+ * Known Platform cards are omitted; a RUCSS test applied on the page → the
+ * TEST MODE notice above the strip, once. The full header inventory lives on the
  * Headers & Cookies page. A refresh swaps data only: cards are keyed by their
  * id, so their DOM and focus survive.
  *
@@ -22,6 +23,8 @@ import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { useFdtData } from '../../state/use-fdt-data';
 import { createAgingClock, realAgingClockDeps } from '../../status-bar/aging-clock';
 import { PageFrame } from '../page-frame';
+import { inspectedReloadAction } from '../reload-inspected';
+import { TestModeNotice } from '../test-mode-notice';
 import { CARD_PAGE_LINKS } from './card-presentation';
 import { CopyReportButton } from './copy-report-button';
 import { StatusCard } from './status-card';
@@ -45,6 +48,8 @@ export interface DetectionsViewProps {
   data: FdtData;
   /** The page clock reading (epoch ms) relative ages read. */
   now: number;
+  /** Reloads the inspected page (the TEST MODE notice's remedy); absent where it cannot. */
+  reloadInspectedPage?: () => void;
 }
 
 /**
@@ -71,6 +76,10 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
       subtitle={DETECTIONS_SUBTITLE}
       actions={<CopyReportButton data={props.data} />}
     >
+      <TestModeNotice
+        fact={props.data.rucssTestMode}
+        reloadInspectedPage={props.reloadInspectedPage}
+      />
       <SummaryStrip summary={summary()} />
       <ul data-fdt="detections-grid" aria-label="Detection results" class={DETECTIONS_GRID}>
         <For each={ids()}>
@@ -109,6 +118,14 @@ export function DetectionsPage(): JSX.Element {
     return state.status === 'ready' || state.status === 'refreshing' ? state.data : null;
   });
   return (
-    <Show when={data()}>{(loaded) => <DetectionsView data={loaded()} now={clock.now()} />}</Show>
+    <Show when={data()}>
+      {(loaded) => (
+        <DetectionsView
+          data={loaded()}
+          now={clock.now()}
+          reloadInspectedPage={inspectedReloadAction(browser)}
+        />
+      )}
+    </Show>
   );
 }

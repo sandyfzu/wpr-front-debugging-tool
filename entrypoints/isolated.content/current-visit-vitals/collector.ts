@@ -11,7 +11,7 @@
  * candidates (the LCP is the last one); every unexpected layout shift, the
  * oldest folded into the CLS session state the reducer continues from (CLS
  * stays exact; shifts right after input never count, so they are not kept);
- * the slowest interactions, the others only counted. A back/forward-cache
+ * the slowest interactions, the others only counted (once each). A back/forward-cache
  * restore starts a new visit ({@link VitalsCollector.restart}).
  *
  * Pure over its seams (the observer class, the timeline, the document, the
@@ -40,6 +40,15 @@ const ENTRY_TYPES = {
 
 /** The interaction latency floor observed (ms): the lowest the platform accepts. */
 export const EVENT_DURATION_THRESHOLD_MS = 16;
+
+/**
+ * How many recently dropped interaction ids are remembered so their later
+ * events do not count them again. One interaction's events (pointerdown,
+ * pointerup, click; keydown, keyup) arrive together, but overlapping key
+ * presses interleave theirs — 16 covers keyboard rollover with room, at a
+ * fixed cost.
+ */
+export const RECENT_DROPS = 16;
 
 /** The observer the collector creates (the platform's `PerformanceObserver`, or a fake). */
 export interface VitalsObserverLike {
@@ -129,6 +138,8 @@ export function createVitalsCollector(deps: VitalsCollectorDeps): VitalsCollecto
   // Each interaction's longest event; past the bound, the slowest only.
   const interactions = new Map<number, number>();
   let interactionsDropped = 0;
+  // Ids already counted in interactionsDropped, newest last (at most RECENT_DROPS).
+  const recentDrops = new Set<number>();
   let capped = false;
   // The visit's start after a back/forward-cache restore (null: the load).
   let restoredAt: number | null = null;
@@ -158,9 +169,23 @@ export function createVitalsCollector(deps: VitalsCollectorDeps): VitalsCollecto
   };
 
   /**
+   * Remember a dropped interaction's id as counted, forgetting the oldest
+   * past {@link RECENT_DROPS}.
+   *
+   * @param id The dropped interaction's id.
+   */
+  const noteDrop = (id: number): void => {
+    recentDrops.add(id);
+    if (recentDrops.size <= RECENT_DROPS) return;
+    const [oldest] = recentDrops;
+    if (oldest !== undefined) recentDrops.delete(oldest);
+  };
+
+  /**
    * Keep an interaction's longest event; past the bound, keep the slowest
-   * ones (INP reads only the 10 slowest) and count the others. A later entry
-   * of an interaction already dropped counts it again — only past the bound.
+   * ones (INP reads only the 10 slowest) and count the others once each: a
+   * later event of a recently dropped interaction is not counted again, and
+   * one that now makes it in swaps places with the interaction it evicts.
    */
   const keepInteraction = (entry: RawEntry): void => {
     const id = entry.interactionId;
@@ -169,10 +194,16 @@ export function createVitalsCollector(deps: VitalsCollectorDeps): VitalsCollecto
     const known = interactions.get(id);
     if (known === undefined && interactions.size >= CURRENT_VISIT_LIMITS.interactions) {
       capped = true;
-      interactionsDropped += 1;
+      // Each event either drops this interaction or evicts another: one drop,
+      // unless this one was already counted (then the count stays).
+      if (!recentDrops.delete(id)) interactionsDropped += 1;
       const [leastId, leastLatency] = leastSlow(interactions);
-      if (duration <= leastLatency) return;
+      if (duration <= leastLatency) {
+        noteDrop(id);
+        return;
+      }
       interactions.delete(leastId);
+      noteDrop(leastId);
     }
     interactions.set(id, Math.max(known ?? 0, duration));
   };
@@ -289,6 +320,7 @@ export function createVitalsCollector(deps: VitalsCollectorDeps): VitalsCollecto
       clsCarry = null;
       interactions.clear();
       interactionsDropped = 0;
+      recentDrops.clear();
       capped = false;
       restoredAt = domTiming(at);
       interactionBase = browserInteractions() ?? 0;

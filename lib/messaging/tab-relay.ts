@@ -32,6 +32,7 @@ export interface TabRelayPayloads {
   runLcpAnalysis: LcpAnalysisRequest;
   getScriptRuntimeStatuses: undefined;
   getCurrentVisitVitals: undefined;
+  listPageStyles: undefined;
 }
 
 /** One relayable ask's name. */
@@ -116,6 +117,10 @@ export const TAB_RELAY_ASKS: { readonly [K in TabRelayAsk]: TabRelayAskRow<K> } 
   getCurrentVisitVitals: {
     parsePayload: parseNoPayload,
     forward: (asks, tabId) => asks.getCurrentVisitVitals(tabId)
+  },
+  listPageStyles: {
+    parsePayload: parseNoPayload,
+    forward: (asks, tabId) => asks.listPageStyles(tabId)
   }
 };
 

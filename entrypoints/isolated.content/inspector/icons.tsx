@@ -121,6 +121,15 @@ export const UNVERIFIED_ICON: StripIconGlyph = {
   ]
 };
 
+/** A RUCSS test replaced the page's styles (lucide `test-tube-diagonal`). */
+export const RUCSS_TEST_ICON: StripIconGlyph = {
+  paths: [
+    'M21 7 6.82 21.18a2.83 2.83 0 0 1-3.99-.01a2.83 2.83 0 0 1 0-4L17 3',
+    'm16 2 6 6',
+    'M12 16H4'
+  ]
+};
+
 /** A row modifier's kind: the builder's effect, or the simulation fact. */
 export type StripModifierKind = BuilderBadgeKind | SimulationFact;
 

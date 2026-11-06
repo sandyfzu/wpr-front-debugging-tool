@@ -55,6 +55,8 @@ function groupOf(route: RailRowBox['route']): string {
     case 'undefined-references':
     case 'diagnoser':
       return 'Diagnose';
+    case 'rucss-tester':
+      return 'Tools';
     default:
       throw new Error(`Unknown test route: ${String(route)}`);
   }

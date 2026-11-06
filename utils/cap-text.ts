@@ -43,3 +43,31 @@ export function cappedUnits(points: number): number {
 export function capTitle(text: string): string {
   return capText(text, TITLE_MAX);
 }
+
+/**
+ * Cut a string to `max` UTF-16 units without leaving half a surrogate pair
+ * (for caps counted in units, as storage and message bounds are).
+ *
+ * @param text The text.
+ * @param max The cap in UTF-16 units (a non-negative integer).
+ * @returns The text, or its longest whole-character prefix within the cap.
+ */
+export function cutToUnits(text: string, max: number): string {
+  if (text.length <= max) return text;
+  if (max <= 0) return '';
+  const last = text.charCodeAt(max - 1);
+  // A high surrogate at the cut would be half a character.
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max);
+}
+
+/**
+ * Clip a string to `max` UTF-16 units, marking a cut with `…` (counted in
+ * the cap), never splitting a surrogate pair.
+ *
+ * @param text The text.
+ * @param max The cap in UTF-16 units (at least 1).
+ * @returns The text, or its clipped prefix plus `…`.
+ */
+export function clipToUnits(text: string, max: number): string {
+  return text.length <= max ? text : `${cutToUnits(text, max - 1)}…`;
+}

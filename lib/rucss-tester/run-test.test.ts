@@ -184,7 +184,8 @@ describe('rucssTabSteps', () => {
       runBeaconTest: vi.fn(),
       runLcpAnalysis: vi.fn(),
       getScriptRuntimeStatuses: vi.fn(),
-      getCurrentVisitVitals: vi.fn()
+      getCurrentVisitVitals: vi.fn(),
+      listPageStyles: vi.fn()
     };
   }
 

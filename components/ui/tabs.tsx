@@ -38,6 +38,8 @@ export interface TabsProps {
   label?: string;
   /** Extra classes on the tab list (layout/width), merged last. */
   class?: string;
+  /** Extra classes on the root (the bar + panels wrapper), e.g. to let a panel fill a column. */
+  rootClass?: string;
   /** The tab panels, rendered inside the root so `TabPanel` connects. */
   children: JSX.Element;
 }
@@ -73,6 +75,7 @@ const TAB_TRIGGER_DISABLED = 'text-fg-muted opacity-60';
  * @param props.onChange Called with the newly selected value.
  * @param props.label Accessible name for the `tablist` element.
  * @param props.class Extra classes on the list container.
+ * @param props.rootClass Extra classes on the root wrapper.
  * @param props.children The `<TabPanel value=…>` elements inside the root.
  */
 export function Tabs(props: TabsProps): JSX.Element {
@@ -88,6 +91,7 @@ export function Tabs(props: TabsProps): JSX.Element {
       }
       onChange={props.onChange}
       activationMode="automatic"
+      class={props.rootClass}
     >
       <KobalteTabs.List
         aria-label={props.label}

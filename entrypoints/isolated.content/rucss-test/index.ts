@@ -1,6 +1,7 @@
 /**
  * The RUCSS test's page module (top frame): answers the panel's
- * `startRucssTest` / `applyRucssTest` with the executor, asks the
+ * `startRucssTest` / `applyRucssTest` with the executor and
+ * `listPageStyles` with the style inventory, asks the
  * background for the service's CSS, and keeps the page's test state for
  * the page's own surfaces ({@link rucssTestModeFor}). No request leaves
  * unless the panel starts a test; nothing is logged about the page.
@@ -19,11 +20,15 @@ import {
 import { RUCSS_FETCH_ASK_DEADLINE_MS } from '../../../lib/rucss-tester/deadlines';
 import { createRandomId } from '../../../utils/random-id';
 import { createRucssTestExecutor, type RucssTestMode } from './executor';
+import { collectPageStyles } from './style-inventory';
 
 const log = createLogger('rucss-test');
 
 /** Each live context's test-state reader. */
 const modeReaders = new WeakMap<ContentScriptContext, () => RucssTestMode>();
+
+/** Each context's test-state followers (registrable before the module's setup). */
+const modeWatchers = new WeakMap<ContentScriptContext, Set<(mode: RucssTestMode) => void>>();
 
 /**
  * The page's RUCSS test state, for a same-context surface.
@@ -33,6 +38,50 @@ const modeReaders = new WeakMap<ContentScriptContext, () => RucssTestMode>();
  */
 export function rucssTestModeFor(ctx: ContentScriptContext): (() => RucssTestMode) | null {
   return modeReaders.get(ctx) ?? null;
+}
+
+/**
+ * Follow the page's RUCSS test state: the listener hears each applied test.
+ * Works in any setup order (a surface wired before this module still hears
+ * every change); read the current state with {@link rucssTestModeFor}.
+ *
+ * @param ctx The content script's context.
+ * @param listener Receives the new state.
+ * @returns The unsubscribe handle.
+ */
+export function watchRucssTestMode(
+  ctx: ContentScriptContext,
+  listener: (mode: RucssTestMode) => void
+): () => void {
+  let watchers = modeWatchers.get(ctx);
+  if (watchers === undefined) {
+    watchers = new Set();
+    modeWatchers.set(ctx, watchers);
+  }
+  const own = watchers;
+  own.add(listener);
+  return () => {
+    own.delete(listener);
+  };
+}
+
+/**
+ * Tell every follower the new state; one failing follower never silences the others.
+ *
+ * @param ctx The content script's context.
+ * @param mode The new state.
+ */
+function announceMode(ctx: ContentScriptContext, mode: RucssTestMode): void {
+  for (const listener of modeWatchers.get(ctx) ?? []) {
+    try {
+      listener(mode);
+    } catch (error) {
+      log.error(
+        'A RUCSS test-state follower failed',
+        error instanceof Error ? error.message : error
+      );
+    }
+  }
 }
 
 /**
@@ -68,7 +117,10 @@ export function setupRucssTest(ctx: ContentScriptContext): void {
     pageUrl: () => location.href,
     fetchShakenCss: askShakenCss,
     newRunId: createRandomId,
-    isInvalid: () => ctx.isInvalid
+    isInvalid: () => ctx.isInvalid,
+    onModeChange: (mode) => {
+      announceMode(ctx, mode);
+    }
   });
   modeReaders.set(ctx, executor.mode);
   ctx.onInvalidated(
@@ -85,4 +137,6 @@ export function setupRucssTest(ctx: ContentScriptContext): void {
       return request === null ? { ok: false, failure: 'invalid-request' } : executor.apply(request);
     })
   );
+  // Read-only: the styles as they are now, for the panel's inventory.
+  ctx.onInvalidated(onMessage('listPageStyles', () => collectPageStyles(document)));
 }

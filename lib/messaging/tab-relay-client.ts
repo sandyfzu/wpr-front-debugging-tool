@@ -138,6 +138,7 @@ export function relayTabAsks(send: RelaySend): TabAsks {
     runLcpAnalysis: (tabId, request) =>
       relay(send, { tabId, ask: 'runLcpAnalysis', payload: request }),
     getScriptRuntimeStatuses: (tabId) => relay(send, { tabId, ask: 'getScriptRuntimeStatuses' }),
-    getCurrentVisitVitals: (tabId) => relay(send, { tabId, ask: 'getCurrentVisitVitals' })
+    getCurrentVisitVitals: (tabId) => relay(send, { tabId, ask: 'getCurrentVisitVitals' }),
+    listPageStyles: (tabId) => relay(send, { tabId, ask: 'listPageStyles' })
   };
 }

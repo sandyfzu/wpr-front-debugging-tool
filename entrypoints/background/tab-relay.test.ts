@@ -40,6 +40,7 @@ function deps(
     runLcpAnalysis: vi.fn(() => Promise.resolve(answer)),
     getScriptRuntimeStatuses: vi.fn(() => Promise.resolve(answer)),
     getCurrentVisitVitals: vi.fn(() => Promise.resolve(answer)),
+    listPageStyles: vi.fn(() => Promise.resolve(answer)),
     ...asks
   };
   return {

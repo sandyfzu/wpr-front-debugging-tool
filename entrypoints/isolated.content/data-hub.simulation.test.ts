@@ -45,7 +45,8 @@ const LIVE: LivePageFacts = {
   headerCapture: null,
   undefinedReferences: [],
   cookies: null,
-  bypassAttested: false
+  bypassAttested: false,
+  rucssTestRuns: 0
 };
 
 const NO_WP_ROCKET_BADGE = badgeFor({ wprPresent: false, cached: false });

@@ -41,3 +41,11 @@ export const RUCSS_BUILD_TIMEOUT_MS = 10_000;
  */
 export const RUCSS_SNAPSHOT_TTL_MS =
   RUCSS_BUILD_TIMEOUT_MS + RUCSS_APPLY_DEADLINE_MS + RUCSS_HOP_GRACE_MS;
+
+/**
+ * The panel's longest wait on one run (ms): its sequential bounds — the
+ * start (service request + style snapshot), the build, then the apply. The
+ * settings read before them is a local storage read, not a bounded wait.
+ */
+export const RUCSS_RUN_WORST_CASE_MS =
+  RUCSS_START_DEADLINE_MS + RUCSS_BUILD_TIMEOUT_MS + RUCSS_APPLY_DEADLINE_MS;

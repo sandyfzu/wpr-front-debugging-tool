@@ -18,7 +18,8 @@ const ROUTES = [
   { id: 'preloaded-resources', label: 'Preloaded Resources' },
   { id: 'headers-cookies', label: 'Headers & Cookies' },
   { id: 'undefined-references', label: 'Undefined References' },
-  { id: 'diagnoser', label: 'Diagnoser' }
+  { id: 'diagnoser', label: 'Diagnoser' },
+  { id: 'rucss-tester', label: 'RUCSS Tester' }
 ];
 
 test('page entrances do not add transient scrollbars or suppress real overflow', async ({

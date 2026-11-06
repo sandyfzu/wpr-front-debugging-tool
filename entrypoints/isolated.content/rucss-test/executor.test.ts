@@ -226,6 +226,18 @@ describe('apply', () => {
     expect(executor.mode()).toEqual({ applied: true, runs: 2 });
   });
 
+  it('tells the page surfaces the new state after each applied test only', async () => {
+    const onModeChange = vi.fn();
+    const executor = createRucssTestExecutor(deps(ANSWERED, { onModeChange }));
+    await executor.start(REQUEST);
+    expect(onModeChange).not.toHaveBeenCalled();
+    executor.apply({ runId: RUN, css: 'one', keepLinks: [] });
+    expect(onModeChange).toHaveBeenLastCalledWith({ applied: true, runs: 1 });
+    // A refused apply changes nothing, so nothing is told.
+    executor.apply({ runId: RUN, css: 'two', keepLinks: [] });
+    expect(onModeChange).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses a foreign run, an out-of-range link and a dead context — page untouched', async () => {
     let invalid = false;
     const executor = createRucssTestExecutor(deps(ANSWERED, { isInvalid: () => invalid }));

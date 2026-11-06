@@ -51,18 +51,23 @@ function asksDouble(): TabAsks & { calls: unknown[][] } {
     getCurrentVisitVitals: vi.fn((tabId: number) => {
       calls.push(['getCurrentVisitVitals', tabId]);
       return Promise.resolve(null);
+    }),
+    listPageStyles: vi.fn((tabId: number) => {
+      calls.push(['listPageStyles', tabId]);
+      return Promise.resolve({ styles: [], total: 0 });
     })
   };
 }
 
 describe('the relayable asks registry', () => {
-  it('is the closed list of the nine panel→tab asks', () => {
+  it('is the closed list of the ten panel→tab asks', () => {
     expect(Object.keys(TAB_RELAY_ASKS).sort()).toEqual([
       'applyRucssTest',
       'getCurrentVisitVitals',
       'getFdtData',
       'getScriptRuntimeStatuses',
       'getScriptSourceChunk',
+      'listPageStyles',
       'processPageData',
       'runBeaconTest',
       'runLcpAnalysis',
@@ -187,6 +192,13 @@ describe('parseTabRelayRequest', () => {
     ]) {
       expect(parseTabRelayRequest(broken), JSON.stringify(broken)).toBeNull();
     }
+  });
+
+  it('forwards the page-style inventory and refuses one carrying a payload', async () => {
+    const asks = asksDouble();
+    await parseTabRelayRequest({ tabId: 8, ask: 'listPageStyles' })?.forward(asks);
+    expect(asks.calls).toEqual([['listPageStyles', 8]]);
+    expect(parseTabRelayRequest({ tabId: 8, ask: 'listPageStyles', payload: {} })).toBeNull();
   });
 
   it('refuses junk tab ids with the shared guard', () => {

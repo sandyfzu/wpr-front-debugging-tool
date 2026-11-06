@@ -65,6 +65,13 @@ describe('the direct transport (the Chromium path)', () => {
     ]);
   });
 
+  it('asks the page-style inventory of the top frame only, without a payload', async () => {
+    await DIRECT_TAB_ASKS.listPageStyles(12);
+    expect(sendMessage.mock.calls).toEqual([
+      ['listPageStyles', undefined, { tabId: 12, frameId: 0 }]
+    ]);
+  });
+
   it('forwards an absent tab as-is (the send fails as the no-receiver case)', async () => {
     await DIRECT_TAB_ASKS.getFdtData(undefined);
     expect(sendMessage.mock.calls).toEqual([['getFdtData', undefined, undefined]]);
