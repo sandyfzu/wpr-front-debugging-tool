@@ -79,7 +79,10 @@ async function readRowsInside(page: Page): Promise<boolean> {
   }, RAIL_ROW_SELECTOR);
 }
 
-/** The registry routes a rail+menu pair must cover, with the rail's expected prefix. */
+/**
+ * The registry routes a rail+menu pair must cover, with the rail's expected
+ * prefix — `NAV_ROUTES` order (the reserved row reads `reserved`).
+ */
 const REGISTRY_ROWS = [
   '#/detections',
   '#/javascript',
@@ -87,7 +90,8 @@ const REGISTRY_ROWS = [
   '#/preloaded-resources',
   '#/headers-cookies',
   '#/undefined-references',
-  'reserved'
+  'reserved',
+  '#/rucss-tester'
 ];
 
 /**
@@ -480,14 +484,9 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       // The registry prefix that still fits at 200 px decides which hrefs
       // the menu must carry (rail ⊕ menu = the registry).
       const railRows = await readRailRows(page);
-      const pageHrefs = [
-        '#/javascript',
-        '#/lazyload',
-        '#/preloaded-resources',
-        '#/headers-cookies',
-        '#/undefined-references'
-      ];
-      const menuHrefs = pageHrefs.filter((href) => !railRows.includes(href));
+      const menuHrefs = REGISTRY_ROWS.filter(
+        (href) => href !== 'reserved' && !railRows.includes(href)
+      );
 
       const menu = page.locator('[data-fdt="panel-nav-overflow-menu"]');
       await page.getByRole('button', { name: 'More pages' }).click();
@@ -702,7 +701,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       // internally (the designed token-thin hairline), every hidden route
       // stays pointer-reachable through that scroll, and the rail's own
       // scroll-free invariant is untouched by the plate's.
-      for (const height of [90, 120, 170, 220, 240]) {
+      for (const height of [90, 120, 170, 220, 240, 250]) {
         await shrinkTo(page, height);
         await page.getByRole('button', { name: 'More pages' }).click();
         const menu = page.locator('[data-fdt="panel-nav-overflow-menu"]');
@@ -711,12 +710,13 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
         expect(reach.plateOverflowY, `plate overflow at ${String(height)}px`).toBe('auto');
         expect(reach.plateScrollbarGutter, `plate gutter at ${String(height)}px`).toBe('auto');
         expect(reach.plateNoHorizontalOverflow).toBe(true);
-        // The clamp state: at 240 the plate fits without biting (its rows
+        // The clamp state: at 250 the plate fits without biting (its rows
         // truly fit; no scrollbar exists then); below, it bites and the
         // scroll carries the tail. The fit line follows the registry's row
-        // count — with seven rows it sits at 235 px (probed in 5 px steps;
-        // 220 now clamps, since one more row is hidden there).
-        if (height === 240) {
+        // count — with eight rows it sits at 245 px, where the rail keeps a
+        // third row (probed in 5 px steps; 240 now clamps: two rail rows
+        // leave six in the plate).
+        if (height === 250) {
           expect(reach.plateClamped).toBe(false);
         } else {
           expect(reach.plateClamped, `plate clamped at ${String(height)}px`).toBe(true);
