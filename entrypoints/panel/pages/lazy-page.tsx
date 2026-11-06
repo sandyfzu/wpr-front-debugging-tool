@@ -1,10 +1,9 @@
 /**
  * Page bodies kept out of the panel's start: pages that only some sessions
  * open (tools) live in their own chunk, fetched once the panel is idle after
- * boot or on the first visit, whichever comes first — so the start pays
- * nothing and a visit rarely waits. A plain signal holds the loaded body (no
- * Suspense runtime in the panel's eager bundle); the module is fetched once
- * per panel document and reused on every visit.
+ * boot or on the first visit, whichever comes first (`./chunk-loader`) — so
+ * the start pays nothing and a visit rarely waits. A plain signal holds the
+ * loaded body (no Suspense runtime in the panel's eager bundle).
  *
  * States: loading (the route's titled frame with skeleton sections — a real
  * wait; focus on its heading moves to the page's own once it lands), failed
@@ -18,6 +17,12 @@ import { ErrorState } from '../../../components/ui/error-state';
 import { Skeleton } from '../../../components/ui/skeleton';
 import { createLogger } from '../../../lib/logger';
 import { navRoute, type RouteId } from '../routes';
+import {
+  createChunkLoader,
+  prefetchWhenIdle,
+  reloadPanelDocument,
+  type LazyChunkOptions
+} from './chunk-loader';
 import { PageFrame } from './page-frame';
 
 const log = createLogger('panel');
@@ -26,76 +31,31 @@ const log = createLogger('panel');
 export const PAGE_LOAD_FAILED_COPY =
   "This page's code did not load — usually the extension was updated or reloaded. Reload the panel to restore it.";
 
-/** Longest wait (ms) for an idle moment before the early fetch runs anyway. */
-const PREFETCH_IDLE_TIMEOUT_MS = 2_000;
-
-/** What a lazy page needs besides its loader (tests inject doubles). */
-export interface LazyPageOptions {
-  /** The failed state's recovery (production: reload the panel document). */
-  readonly reloadPanel?: () => void;
-  /**
-   * Schedules the early fetch (production: the panel's first idle moment;
-   * `null`: fetch on the first visit only).
-   */
-  readonly prefetch?: ((fetch: () => void) => void) | null;
-}
-
-/** The production recovery: reload the panel document (it re-attaches fresh). */
-function reloadPanelDocument(): void {
-  window.location.reload();
-}
-
-/**
- * The production early fetch: the first idle moment after boot (bounded),
- * where the browser has idle callbacks; elsewhere the first visit fetches.
- *
- * @param fetch Starts the fetch.
- */
-function prefetchWhenIdle(fetch: () => void): void {
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(fetch, { timeout: PREFETCH_IDLE_TIMEOUT_MS });
-  }
-}
-
 /**
  * Wrap a page module's loader as a route body.
  *
  * @param id The route (its label titles the loading and failed frames).
  * @param load Imports the page module and picks its body.
- * @param options See {@link LazyPageOptions}.
+ * @param options See {@link LazyChunkOptions}.
  * @returns The route body.
  */
 export function lazyPage(
   id: RouteId,
   load: () => Promise<Component>,
-  options: LazyPageOptions = {}
+  options: LazyChunkOptions = {}
 ): Component {
   // One fetch per panel document: a later visit renders the loaded body at once.
-  let loading: Promise<Component> | null = null;
-  let loaded: Component | null = null;
-
-  /** Start the fetch unless one is in the air or done (a failed one may start again). */
-  const fetchOnce = (): Promise<Component> =>
-    (loading ??= load().then(
-      (component) => (loaded = component),
-      (cause: unknown) => {
-        loading = null;
-        throw cause;
-      }
-    ));
-
-  const prefetch = options.prefetch === undefined ? prefetchWhenIdle : options.prefetch;
-  prefetch?.(() => {
-    // A failed early fetch is not reported here: the visit fetches again and names the failure.
-    fetchOnce().catch(() => undefined);
-  });
+  const chunk = createChunkLoader(
+    load,
+    options.prefetch === undefined ? prefetchWhenIdle : options.prefetch
+  );
 
   return (): JSX.Element => {
-    const [body, setBody] = createSignal<Component | null>(loaded);
+    const [body, setBody] = createSignal<Component | null>(chunk.loaded());
     const [failed, setFailed] = createSignal(false);
     let loadingFrame: HTMLDivElement | undefined;
-    if (loaded === null) {
-      fetchOnce().then(
+    if (chunk.loaded() === null) {
+      chunk.fetch().then(
         (component) => {
           // The route-switch focus sat on the loading frame's heading: hand it on.
           const hadFocus = loadingFrame?.contains(document.activeElement) === true;

@@ -17,7 +17,7 @@ import type { DataState } from '../../state/fdt-state-machine';
 import { makeDelayScript, makeFdtData } from '../../state/fixtures';
 import { createSearchStore, SEARCH_DEBOUNCE_MS, type SearchStore } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
-import { JavaScriptPage, JavaScriptView, listCutNote } from './page';
+import { JAVASCRIPT_TAB_LABELS, JavaScriptPage, JavaScriptView, listCutNote } from './page';
 import { PREVIEW_LINE_CHARS } from './script-view';
 import { HIGHLIGHT_MAX_CHARS } from '../../../../components/ui/code-block';
 import type { CodeBlockSeams } from './script-row';
@@ -731,6 +731,33 @@ describe('JavaScriptView — empty page', () => {
     expect(document.querySelector('[data-fdt="filter-bar"]')).toBeNull();
     expect(screen.queryByRole('list')).toBeNull();
     expect(document.querySelector('[data-fdt="script-total"]')?.textContent).toBe('0 scripts');
+  });
+});
+
+describe('JavaScriptView — views', () => {
+  it('opens on the served scripts and swaps in the Runtime states section on its tab', () => {
+    const [data] = createSignal(dataWith(scripts()));
+    render(() => (
+      <JavaScriptView
+        data={data}
+        search={createSearchStore()}
+        createVirtualizer={windowedVirtualizer().factory}
+        codeBlock={CODE_SEAMS}
+        runtimeStates={() => <p data-fdt-runtime-double>Runtime states double</p>}
+      />
+    ));
+    const served = screen.getByRole('tab', { name: JAVASCRIPT_TAB_LABELS.served });
+    expect(served.getAttribute('aria-selected')).toBe('true');
+    expect(rows()).toHaveLength(6);
+    expect(document.querySelector('[data-fdt-runtime-double]')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: JAVASCRIPT_TAB_LABELS.runtime }));
+    // One list (and one find binding) at a time: the served list leaves.
+    expect(document.querySelector('[data-fdt-runtime-double]')).not.toBeNull();
+    expect(rows()).toHaveLength(0);
+    expect(document.querySelector('[data-fdt="script-summary"]')).toBeNull();
+    fireEvent.click(served);
+    expect(rows()).toHaveLength(6);
+    expect(document.querySelector('[data-fdt-runtime-double]')).toBeNull();
   });
 });
 

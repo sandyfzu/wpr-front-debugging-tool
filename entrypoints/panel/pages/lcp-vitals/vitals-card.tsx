@@ -28,7 +28,7 @@ import {
   type VitalsRecovery
 } from '../../../../lib/web-vitals/vitals-view';
 import { OutcomeNotice } from '../outcome-notice';
-import { RecoveryButtons } from './recovery-buttons';
+import { RecoveryButtons } from '../recovery-buttons';
 import type { LcpVitalsSession } from './session';
 
 /** The line once the page reloaded or navigated after the shown read. */

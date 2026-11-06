@@ -29,12 +29,14 @@ import {
 import { selectTabAsks } from '../../../../lib/messaging/tab-asks';
 import { devtoolsInspectedTabId } from '../../state/edges';
 import { createSourceChunkReader } from './source-chunk-reader';
-import type { Accessor, JSX } from 'solid-js';
+import type { Accessor, Component, JSX } from 'solid-js';
 import { createComputed, createMemo, createSignal, on, Show } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import FileCode from 'lucide-solid/icons/file-code';
 import { EmptyState } from '../../../../components/ui/empty-state';
 import { FilterBar } from '../../../../components/ui/filter-bar';
 import { StatusBadge } from '../../../../components/ui/status-badge';
+import { TabPanel, Tabs } from '../../../../components/ui/tabs';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
@@ -58,7 +60,9 @@ import { bindSearchField } from '../../state/search-field';
 import { useFdtData, useSearch } from '../../state/use-fdt-data';
 import { createCurrentMatch } from '../current-match';
 import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
+import { lazySection } from '../lazy-section';
 import { createResultsAnnouncement } from '../results-announcement';
+import type { RuntimeStatesSectionProps } from './runtime-section';
 import { ScriptRow, type CodeBlockSeams } from './script-row';
 import {
   JS_VIEW_RESOURCES,
@@ -101,7 +105,24 @@ export interface JavaScriptViewProps {
   codeBlock?: CodeBlockSeams;
   /** Complete-source seam; production uses the inspected main frame. */
   readSourceChunk?: (request: ScriptSourceRequest) => Promise<unknown>;
+  /** The Runtime states section (tests inject a double); absent, the lazily loaded one. */
+  runtimeStates?: Component;
 }
+
+/** The page's two views: the scripts as served (detection's snapshot) and their live state. */
+export type JavaScriptTab = 'served' | 'runtime';
+
+/** The views' tab labels. */
+export const JAVASCRIPT_TAB_LABELS: Readonly<Record<JavaScriptTab, string>> = {
+  served: 'Delay & defer',
+  runtime: 'Runtime states'
+};
+
+/** The Runtime states section, in its own chunk (most sessions never open it). */
+const RuntimeStates = lazySection<RuntimeStatesSectionProps>(
+  'Runtime states',
+  async () => (await import('./runtime-states')).RuntimeStatesSection
+);
 
 /**
  * The JavaScript route body: reads the shell's stores and renders the view
@@ -144,6 +165,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
     );
   }, []);
   const listCut = createMemo(() => scriptListCut(delayJs()));
+  const [tab, setTab] = createSignal<JavaScriptTab>('served');
   // Inline scripts are named by their ordinal among inline scripts; kept out
   // of the (reused) views, so a script added above renumbers without a
   // re-mount.
@@ -218,121 +240,153 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
       subtitle="How WP Rocket delays and defers each script on the page."
       fill
     >
-      <div class="flex w-full flex-1 flex-col gap-3">
-        <ScriptSummary
-          present={delayJs().present}
-          simulated={delayJs().simulation === 'simulated'}
-          version={delayJs().version}
-          total={views().length}
-          partial={listCut()}
-        />
-        <Show when={listCut()}>
-          <p data-fdt="script-list-cut" class="-mt-1.5 text-2xs text-fg-muted">
-            {listCutNote(views().length)}
-          </p>
-        </Show>
-        <Show
-          when={views().length > 0}
-          fallback={
-            <EmptyState
-              icon={<FileCode size={20} aria-hidden="true" />}
-              title="No scripts on this page"
-              description="The inspected page has no script elements, so there is nothing to classify."
-            />
-          }
-        >
-          {/* The field binding owns the Esc rule; the ref targets the way-back
-              focus (the shared seam, not a page-local keydown anymore). */}
-          <div ref={filterArea} onKeyDown={field.onKeyDown}>
-            <FilterBar
-              chips={chips()}
-              selected={selected()}
-              onSelect={(value) => setSelected(value as JsFilterId)}
-              filterLabel="Filter scripts"
-              searchQuery={field.value()}
-              onSearchChange={(raw) => {
-                field.input(raw);
-              }}
-              searchPlaceholder="Search URLs and code…"
-              searchLabel="Search scripts"
-            />
-          </div>
-          <div role="status" aria-live={live()} class="sr-only" data-fdt="script-results-status">
-            {announcement()}
-          </div>
-          <Show
-            when={filtered().length > 0}
-            fallback={
-              <NoMatches
-                chipLabel={selectedLabel()}
-                query={query()}
-                onClearSearch={() => {
-                  field.clear();
-                }}
-                onShowAll={() => setSelected(allChip)}
-                focusAfter={(action) =>
-                  action === 'clear-search'
-                    ? filterArea?.querySelector<HTMLElement>('input[type="search"]')
-                    : filterArea?.querySelector<HTMLElement>(`[data-fdt-filter-chip="${allChip}"]`)
-                }
+      <Tabs
+        items={[
+          { value: 'served', label: JAVASCRIPT_TAB_LABELS.served },
+          { value: 'runtime', label: JAVASCRIPT_TAB_LABELS.runtime }
+        ]}
+        value={tab()}
+        onChange={(value) => {
+          setTab(value === 'runtime' ? 'runtime' : 'served');
+        }}
+        label="JavaScript views"
+        rootClass="flex min-h-0 w-full flex-1 flex-col gap-3"
+      >
+        <TabPanel value="served" class="flex min-h-0 flex-1 flex-col gap-3">
+          {/* Mounted only while selected: one list (and one find binding) at a time. */}
+          <Show when={tab() === 'served'}>
+            <div class="flex w-full min-h-0 flex-1 flex-col gap-3">
+              <ScriptSummary
+                present={delayJs().present}
+                simulated={delayJs().simulation === 'simulated'}
+                version={delayJs().version}
+                total={views().length}
+                partial={listCut()}
               />
-            }
-          >
-            <VirtualList
-              scrollerRole="list"
-              aria-label="Scripts"
-              count={filtered().length}
-              estimateSize={(index) => {
-                const view = filtered()[index];
-                return view === undefined ? 0 : estimateRowSize(view);
-              }}
-              getItemKey={(index) => filtered()[index]?.key ?? fallbackRowKey(index)}
-              overscan={LIST_OVERSCAN}
-              createVirtualizer={props.createVirtualizer}
-              scrollTo={match.request}
-              class={cn(PAGE_FILL_SCROLLER, 'rounded-md border border-line-1 bg-surface-1')}
-            >
-              {(item) => (
-                <Show when={filtered()[item.index]} keyed>
-                  {(view) => (
-                    <ScriptRow
-                      view={view}
-                      index={item.index}
-                      setSize={filtered().length}
-                      current={match.current() === item.index}
-                      inlineOrdinal={inlineOrdinals().get(view.key) ?? 0}
-                      expanded={expanded().has(view.key)}
-                      onToggle={(toggle) => {
-                        toggleRow(view.key, toggle);
+              <Show when={listCut()}>
+                <p data-fdt="script-list-cut" class="-mt-1.5 text-2xs text-fg-muted">
+                  {listCutNote(views().length)}
+                </p>
+              </Show>
+              <Show
+                when={views().length > 0}
+                fallback={
+                  <EmptyState
+                    icon={<FileCode size={20} aria-hidden="true" />}
+                    title="No scripts on this page"
+                    description="The inspected page has no script elements, so there is nothing to classify."
+                  />
+                }
+              >
+                {/* The field binding owns the Esc rule; the ref targets the way-back
+              focus (the shared seam, not a page-local keydown anymore). */}
+                <div ref={filterArea} onKeyDown={field.onKeyDown}>
+                  <FilterBar
+                    chips={chips()}
+                    selected={selected()}
+                    onSelect={(value) => setSelected(value as JsFilterId)}
+                    filterLabel="Filter scripts"
+                    searchQuery={field.value()}
+                    onSearchChange={(raw) => {
+                      field.input(raw);
+                    }}
+                    searchPlaceholder="Search URLs and code…"
+                    searchLabel="Search scripts"
+                  />
+                </div>
+                <div
+                  role="status"
+                  aria-live={live()}
+                  class="sr-only"
+                  data-fdt="script-results-status"
+                >
+                  {announcement()}
+                </div>
+                <Show
+                  when={filtered().length > 0}
+                  fallback={
+                    <NoMatches
+                      chipLabel={selectedLabel()}
+                      query={query()}
+                      onClearSearch={() => {
+                        field.clear();
                       }}
-                      wrap={wrapped().has(view.key)}
-                      onWrap={() => {
-                        setWrapped(toggleRowFlag(wrapped(), view.key));
-                      }}
-                      codeBlock={props.codeBlock}
-                      loadSource={
-                        props.data().scriptSnapshotId === undefined
-                          ? undefined
-                          : (signal) => {
-                              const snapshotId = props.data().scriptSnapshotId;
-                              if (snapshotId === undefined)
-                                return Promise.reject(new Error('Script snapshot unavailable.'));
-                              const scriptIndex = views().indexOf(view);
-                              return loadScriptSource(
-                                { snapshotId, scriptIndex },
-                                props.readSourceChunk ?? requestSourceChunk,
-                                signal
-                              );
-                            }
+                      onShowAll={() => setSelected(allChip)}
+                      focusAfter={(action) =>
+                        action === 'clear-search'
+                          ? filterArea?.querySelector<HTMLElement>('input[type="search"]')
+                          : filterArea?.querySelector<HTMLElement>(
+                              `[data-fdt-filter-chip="${allChip}"]`
+                            )
                       }
                     />
-                  )}
+                  }
+                >
+                  <VirtualList
+                    scrollerRole="list"
+                    aria-label="Scripts"
+                    count={filtered().length}
+                    estimateSize={(index) => {
+                      const view = filtered()[index];
+                      return view === undefined ? 0 : estimateRowSize(view);
+                    }}
+                    getItemKey={(index) => filtered()[index]?.key ?? fallbackRowKey(index)}
+                    overscan={LIST_OVERSCAN}
+                    createVirtualizer={props.createVirtualizer}
+                    scrollTo={match.request}
+                    class={cn(PAGE_FILL_SCROLLER, 'rounded-md border border-line-1 bg-surface-1')}
+                  >
+                    {(item) => (
+                      <Show when={filtered()[item.index]} keyed>
+                        {(view) => (
+                          <ScriptRow
+                            view={view}
+                            index={item.index}
+                            setSize={filtered().length}
+                            current={match.current() === item.index}
+                            inlineOrdinal={inlineOrdinals().get(view.key) ?? 0}
+                            expanded={expanded().has(view.key)}
+                            onToggle={(toggle) => {
+                              toggleRow(view.key, toggle);
+                            }}
+                            wrap={wrapped().has(view.key)}
+                            onWrap={() => {
+                              setWrapped(toggleRowFlag(wrapped(), view.key));
+                            }}
+                            codeBlock={props.codeBlock}
+                            loadSource={
+                              props.data().scriptSnapshotId === undefined
+                                ? undefined
+                                : (signal) => {
+                                    const snapshotId = props.data().scriptSnapshotId;
+                                    if (snapshotId === undefined)
+                                      return Promise.reject(
+                                        new Error('Script snapshot unavailable.')
+                                      );
+                                    const scriptIndex = views().indexOf(view);
+                                    return loadScriptSource(
+                                      { snapshotId, scriptIndex },
+                                      props.readSourceChunk ?? requestSourceChunk,
+                                      signal
+                                    );
+                                  }
+                            }
+                          />
+                        )}
+                      </Show>
+                    )}
+                  </VirtualList>
                 </Show>
-              )}
-            </VirtualList>
+              </Show>
+            </div>
           </Show>
-        </Show>
-      </div>
+        </TabPanel>
+        <TabPanel value="runtime" class="flex min-h-0 flex-1 flex-col gap-3">
+          <Show when={tab() === 'runtime'}>
+            <Dynamic component={props.runtimeStates ?? RuntimeStates} />
+          </Show>
+        </TabPanel>
+      </Tabs>
     </PageFrame>
   );
 }

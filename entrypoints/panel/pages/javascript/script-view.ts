@@ -345,10 +345,36 @@ export function estimateRowSize(view: ScriptRowView): number {
 }
 
 /**
- * Keep only the row keys whose row is still there **unchanged** in the
- * page's per-row keyed state (the expanded and wrapped sets): a refresh that
- * removed a script — or changed it under the same key — forgets its flags
- * (a different script must not open expanded or wrapped).
+ * Keep only the row keys whose row is still there **unchanged** in a
+ * page's per-row keyed state (expanded, wrapped): a refresh that removed a
+ * row — or changed it under the same key — forgets its flags (a different
+ * row must not open expanded or wrapped). "Unchanged" is object identity:
+ * the rows were reconciled, so an unchanged row keeps its object.
+ *
+ * @param states The flags to prune.
+ * @param previous The rows the flags were set on.
+ * @param next The refreshed rows.
+ * @param keyOf A row's key.
+ * @returns `states` itself when nothing was dropped, else the kept keys.
+ */
+export function pruneKeyedFlags<K, R>(
+  states: ReadonlySet<K>,
+  previous: readonly R[],
+  next: readonly R[],
+  keyOf: (row: R) => K
+): ReadonlySet<K> {
+  if (states.size === 0) return states;
+  const before = new Map(previous.map((row) => [keyOf(row), row]));
+  const after = new Map(next.map((row) => [keyOf(row), row]));
+  const kept = [...states].filter((key) => {
+    const row = after.get(key);
+    return row !== undefined && row === before.get(key);
+  });
+  return kept.length === states.size ? states : new Set(kept);
+}
+
+/**
+ * {@link pruneKeyedFlags} over this page's script rows (keyed by script identity).
  *
  * @param states The flags to prune.
  * @param previous The row views the flags were set on.
@@ -360,14 +386,7 @@ export function pruneRowFlags(
   previous: readonly ScriptRowView[],
   next: readonly ScriptRowView[]
 ): ReadonlySet<string> {
-  if (states.size === 0) return states;
-  const before = new Map(previous.map((view) => [view.key, view]));
-  const after = new Map(next.map((view) => [view.key, view]));
-  const kept = [...states].filter((key) => {
-    const view = after.get(key);
-    return view !== undefined && view === before.get(key);
-  });
-  return kept.length === states.size ? states : new Set(kept);
+  return pruneKeyedFlags(states, previous, next, (view) => view.key);
 }
 
 /**
@@ -378,7 +397,7 @@ export function pruneRowFlags(
  * @param key The row to flip.
  * @returns A new set (sets in signals must change identity to notify).
  */
-export function toggleRowFlag(states: ReadonlySet<string>, key: string): ReadonlySet<string> {
+export function toggleRowFlag<K>(states: ReadonlySet<K>, key: K): ReadonlySet<K> {
   const next = new Set(states);
   if (!next.delete(key)) next.add(key);
   return next;

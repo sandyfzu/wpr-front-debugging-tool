@@ -34,7 +34,7 @@ import {
 import type { LcpAnalysisOutcome } from '../../../../lib/lcp-analysis/run-analysis';
 import { formatCount } from '../../../../utils/format-count';
 import { OutcomeNotice } from '../outcome-notice';
-import { RecoveryButtons } from './recovery-buttons';
+import { RecoveryButtons } from '../recovery-buttons';
 import type { LcpVitalsSession } from './session';
 
 /** What an analysis does, next to Analyse. */

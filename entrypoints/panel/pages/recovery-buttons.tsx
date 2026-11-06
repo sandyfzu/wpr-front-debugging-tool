@@ -1,13 +1,13 @@
 /**
- * The recovery row under an outcome of this page: ask again or reload the
+ * The recovery row under a tool page's ask outcome: ask again or reload the
  * inspected page, the first one primary. A reload where the context cannot
  * reload is left out (and with it, a row that would be empty).
  */
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
-import { Button } from '../../../../components/ui/button';
+import { Button } from '../../../components/ui/button';
 
-/** A recovery this page offers. */
+/** A recovery a tool page offers. */
 export type PageRecovery = 'retry' | 'reload-page';
 
 /** Props of {@link RecoveryButtons}. */

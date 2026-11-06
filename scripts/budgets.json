@@ -227,8 +227,8 @@
     "surface": "LCP & Vitals page (panel chunk, loaded on first visit)",
     "globs": ["chunks/lcp-vitals-*.js"],
     "maxKb": {
-      "raw": 25.7,
-      "gzip": 8.3
+      "raw": 24.5,
+      "gzip": 8
     },
     "required": true
   },
@@ -237,8 +237,27 @@
     "build": "firefox-mv2",
     "globs": ["chunks/lcp-vitals-*.js"],
     "maxKb": {
-      "raw": 25.7,
-      "gzip": 8.3
+      "raw": 24.5,
+      "gzip": 8
+    },
+    "required": true
+  },
+  {
+    "surface": "JavaScript Runtime states section (panel chunk, loaded on first show)",
+    "globs": ["chunks/runtime-states-*.js"],
+    "maxKb": {
+      "raw": 15.6,
+      "gzip": 5.9
+    },
+    "required": true
+  },
+  {
+    "surface": "JavaScript Runtime states section (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["chunks/runtime-states-*.js"],
+    "maxKb": {
+      "raw": 15.6,
+      "gzip": 5.9
     },
     "required": true
   },
@@ -263,7 +282,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 2015.4
+      "raw": 2033.3
     }
   }
 ]
