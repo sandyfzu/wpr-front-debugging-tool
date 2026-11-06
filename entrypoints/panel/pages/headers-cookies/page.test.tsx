@@ -32,7 +32,6 @@ import { CURRENT_MATCH_ROW } from '../current-match';
 import {
   HeadersCookiesPage,
   HeadersCookiesView,
-  inspectedReloadAction,
   SEARCH_LABEL,
   SEARCH_PLACEHOLDER,
   SPA_NOTE
@@ -824,35 +823,5 @@ describe('HeadersCookiesPage — store wiring', () => {
   it('renders nothing outside the loaded states', () => {
     renderPage({ status: 'fetching' });
     expect(document.querySelector('[data-fdt-page]')).toBeNull();
-  });
-});
-
-describe('inspectedReloadAction', () => {
-  it('is absent outside a DevTools window', () => {
-    expect(inspectedReloadAction({})).toBeUndefined();
-    expect(inspectedReloadAction({ devtools: { inspectedWindow: {} } })).toBeUndefined();
-  });
-
-  it('reloads and confirms, or tells the user the remedy on a failure', async () => {
-    const { toastItems: toasts } = await import('../../../../components/ui/toast-store');
-    const reload = vi.fn();
-    inspectedReloadAction({ devtools: { inspectedWindow: { reload } } })?.();
-    expect(reload).toHaveBeenCalledTimes(1);
-    expect(toasts().at(-1)?.title).toBe(
-      'Reloading the page — the panel refreshes when it reports back'
-    );
-    inspectedReloadAction({
-      devtools: {
-        inspectedWindow: {
-          reload: () => {
-            throw new Error('Extension context invalidated.');
-          }
-        }
-      }
-    })?.();
-    expect(toasts().at(-1)).toMatchObject({
-      title: 'Reload failed',
-      description: 'Reload the inspected page from its own tab.'
-    });
   });
 });

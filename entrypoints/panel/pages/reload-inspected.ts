@@ -1,11 +1,14 @@
 /**
- * Reloading the inspected page from the panel — the remedy for a missing
- * header capture. Headers are read from the page's main-frame response, so
- * only a new navigation can produce them; refetching the panel's data
- * cannot. The reload makes the page's content script notify the panel,
- * which then soft-refreshes on its own.
+ * Reloading the inspected page from the panel — the remedy whenever only a
+ * new navigation helps: a missing header capture (headers are read from the
+ * page's main-frame response; refetching the panel's data cannot produce
+ * them), or restoring the styles a RUCSS test replaced. The reload makes
+ * the page's content script notify the panel, which then soft-refreshes on
+ * its own. `devtools.inspectedWindow.reload` is a DevTools-page API (Chromium
+ * and Firefox): no permission, and no `tabs` access (a Firefox panel has none).
  */
-import { createLogger } from '../../../../lib/logger';
+import { toast } from '../../../components/ui/toast-store';
+import { createLogger } from '../../../lib/logger';
 
 const log = createLogger('panel');
 
@@ -51,4 +54,24 @@ export function reloadInspected(api: InspectedWindowReloadApi): ReloadOutcome {
     });
     return 'failed';
   }
+}
+
+/**
+ * The empty state's reload action in production: DevTools' own inspected-page
+ * reload, confirmed or failed through a toast. Null outside a DevTools window.
+ *
+ * @param api The extension namespace (the real `browser`, or a test double).
+ * @returns The action, or undefined when the context cannot reload.
+ */
+export function inspectedReloadAction(api: InspectedWindowReloadApi): (() => void) | undefined {
+  if (!canReloadInspected(api)) return undefined;
+  return () => {
+    if (reloadInspected(api) === 'reloaded') {
+      toast.success('Reloading the page — the panel refreshes when it reports back');
+    } else {
+      toast.error('Reload failed', {
+        description: 'Reload the inspected page from its own tab.'
+      });
+    }
+  };
 }

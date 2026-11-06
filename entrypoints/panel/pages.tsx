@@ -15,6 +15,7 @@ import { JavaScriptPage } from './pages/javascript/page';
 import { LazyloadPage } from './pages/lazyload/page';
 import { placeholderPage } from './pages/placeholder';
 import { PreloadedResourcesPage } from './pages/preloaded-resources/page';
+import { RucssTesterPage } from './pages/rucss-tester/page';
 import { UndefinedReferencesPage } from './pages/undefined-references/page';
 import { NAV_ROUTES, type RouteId } from './routes';
 
@@ -28,7 +29,8 @@ export const PAGE_BODIES: Partial<Record<RouteId, PageBody>> = {
   lazyload: LazyloadPage,
   'preloaded-resources': PreloadedResourcesPage,
   'headers-cookies': HeadersCookiesPage,
-  'undefined-references': UndefinedReferencesPage
+  'undefined-references': UndefinedReferencesPage,
+  'rucss-tester': RucssTesterPage
 };
 
 /** The route-body table, generated from the registry — the two cannot drift apart. */

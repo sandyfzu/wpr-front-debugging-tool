@@ -3,7 +3,7 @@
     "surface": "background service worker",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 334.7
+      "raw": 334.8
     }
   },
   {
@@ -79,8 +79,8 @@
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
-      "raw": 177.3,
-      "gzip": 60.9
+      "raw": 179.8,
+      "gzip": 61.7
     }
   },
   {
@@ -186,11 +186,30 @@
     }
   },
   {
+    "surface": "RUCSS test build worker (panel)",
+    "globs": ["assets/build.worker-*.js"],
+    "maxKb": {
+      "raw": 4.5,
+      "gzip": 2
+    },
+    "required": true
+  },
+  {
+    "surface": "RUCSS test build worker (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["assets/build.worker-*.js"],
+    "maxKb": {
+      "raw": 4.5,
+      "gzip": 2
+    },
+    "required": true
+  },
+  {
     "surface": "background page (Firefox)",
     "build": "firefox-mv2",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 331.6
+      "raw": 331.7
     }
   },
   {
@@ -206,7 +225,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1868.9
+      "raw": 1934.0
     }
   }
 ]

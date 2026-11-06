@@ -51,6 +51,7 @@ import { detectPreloadedResources } from '../../lib/detection/detect-optimizatio
 import { detectWordPressVersion } from '../../lib/detection/wordpress-version';
 import { extractDiagnoserData } from '../../lib/diagnostics/extract';
 import { createLogger } from '../../lib/logger';
+import { rucssTestModeFor } from './rucss-test';
 import {
   createSimulationMarkerVerifier,
   UNVERIFIED_MARKERS,
@@ -226,6 +227,8 @@ export interface LivePageFacts {
   cookies: PageCookies | null;
   /** The captured URL carried WP Rocket's bypass parameter. */
   bypassAttested: boolean;
+  /** RUCSS tests applied on this page since it loaded (0 when none). */
+  rucssTestRuns: number;
 }
 
 /**
@@ -252,7 +255,8 @@ export function composeFdtData(data: PageData, live: LivePageFacts): FdtData {
     diagnoserData: data.diagnoserData,
     ...(live.headerCapture?.truncated === true ? { pageHeadersTruncated: true as const } : {}),
     ...(live.bypassAttested ? { bypassAttested: true as const } : {}),
-    ...(wordpressVersion === null ? {} : { wordpressVersion })
+    ...(wordpressVersion === null ? {} : { wordpressVersion }),
+    ...(live.rucssTestRuns > 0 ? { rucssTestMode: { runs: live.rucssTestRuns } } : {})
   };
   // The capture (which redacts the values at the read) always runs before
   // processing can produce data, so the list is expected here; should that
@@ -495,7 +499,9 @@ export function setupDataHub(ctx: ContentScriptContext): void {
         headerCapture,
         undefinedReferences,
         cookies: pageCookies,
-        bypassAttested
+        bypassAttested,
+        // Read per serve: the test module sets up after the hub, and a test changes it live.
+        rucssTestRuns: rucssTestModeFor(ctx)?.().runs ?? 0
       })
     };
   };

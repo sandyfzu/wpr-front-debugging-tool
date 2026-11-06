@@ -36,6 +36,7 @@ function deps(
     getScriptSourceChunk: vi.fn(() => Promise.resolve(answer)),
     startRucssTest: vi.fn(() => Promise.resolve(answer)),
     applyRucssTest: vi.fn(() => Promise.resolve(answer)),
+    listPageStyles: vi.fn(() => Promise.resolve(answer)),
     ...asks
   };
   return {

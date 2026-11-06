@@ -21,6 +21,9 @@
  *   "off in this tab" rule — gone once a reload serves an unmarked page.
  *   A simulation fact rides the same way (its own row modifier; a verified
  *   one also joins the tab-level line and leads the pill's glyph).
+ * - A RUCSS test applied on the page rides beside them: its own tab-level
+ *   line and pill glyph (next to the builder's when both apply), gone with
+ *   the reload that restores the page's styles.
  * - The card model (identity, cache chip, grouped rows, footer) is one pure
  *   builder the view renders verbatim; every unsure state explains itself in
  *   its tooltip copy and no chip claims more certainty than the scan has.
@@ -49,6 +52,7 @@ import {
   type PageChangeKind
 } from '../../../lib/detection/hud';
 import type { BuilderFact, SimulationFact } from '../../../lib/wp-rocket/types';
+import { RUCSS_TEST_MODE_LINE } from '../../../lib/rucss-tester/test-mode';
 import { countNoun } from '../../../utils/format-count';
 import type { FeatureMetaRow, WprDetections } from '../../../lib/wp-rocket/types';
 import { GROUP_ICONS, type StripIconGlyph, type StripModifierKind } from './icons';
@@ -144,6 +148,12 @@ export interface StripCardModel {
    * exactly when {@link StripCardModel.builderLine} is, null otherwise.
    */
   builderPill: PageChangeKind | null;
+  /**
+   * The tab-level "RUCSS test applied" line while a test's CSS is on the
+   * page (any phase: the test is the page's live state, not the pass's),
+   * null otherwise. Its pill glyph shows exactly when this line does.
+   */
+  rucssTestLine: string | null;
   /** The body's state copy while the pass is pending or failed. */
   stateCopy: { title: string; hint: string } | null;
   /** The footer stamp (`WPR x · WP y · FDT z`). */
@@ -347,6 +357,8 @@ export function buildStripCardModel(input: {
   snapshot: StripDataSnapshot;
   wordpressVersion: string | null;
   fdtVersion: string;
+  /** RUCSS tests applied on this page (absent: none). */
+  rucssTestRuns?: number;
 }): StripCardModel {
   const { snapshot, wordpressVersion, fdtVersion } = input;
 
@@ -391,6 +403,7 @@ export function buildStripCardModel(input: {
     groups,
     builderLine: rewritten ? builderTabLine(detections) : null,
     builderPill: rewritten ? builderPageKind(detections) : null,
+    rucssTestLine: (input.rucssTestRuns ?? 0) > 0 ? RUCSS_TEST_MODE_LINE : null,
     stateCopy,
     footer,
     cacheTooltip: cacheTooltip(snapshot)
@@ -411,6 +424,9 @@ export const INSPECTOR_CARD_ID = `${INSPECTOR_UI_NAME}-card`;
  * description, so opening the card (pointer or keyboard) announces it.
  */
 export const INSPECTOR_BUILDER_LINE_ID = `${INSPECTOR_UI_NAME}-builder`;
+
+/** The tab-level RUCSS test line's element id (also part of the card dialog's description). */
+export const INSPECTOR_RUCSS_LINE_ID = `${INSPECTOR_UI_NAME}-rucss`;
 
 /** The card's accessible name. */
 export const CARD_ARIA_LABEL = 'WP Rocket page analysis';

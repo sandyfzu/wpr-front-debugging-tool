@@ -57,6 +57,19 @@ describe('Tabs', () => {
     expect(screen.getByText('12')).toBeTruthy();
   });
 
+  it('puts the root classes on the wrapper around the bar and the panels', () => {
+    render(() => (
+      <Tabs items={ITEMS} label="Views" rootClass="flex flex-1 flex-col" class="bar">
+        <BILL />
+      </Tabs>
+    ));
+    const list = screen.getByRole('tablist');
+    const root = list.parentElement;
+    expect(list.classList.contains('bar')).toBe(true);
+    expect(root?.className).toBe('flex flex-1 flex-col');
+    expect(root?.contains(screen.getByText('general panel'))).toBe(true);
+  });
+
   it('switches on click and reports the change', () => {
     const onChange = vi.fn();
     render(() => (

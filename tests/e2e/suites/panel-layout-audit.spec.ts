@@ -10,7 +10,8 @@ const ROUTES = [
   'preloaded-resources',
   'headers-cookies',
   'undefined-references',
-  'diagnoser'
+  'diagnoser',
+  'rucss-tester'
 ];
 
 test('contains long captured URLs and retains virtualization on 5000 scripts', async ({

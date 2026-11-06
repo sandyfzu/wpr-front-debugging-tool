@@ -60,6 +60,7 @@ import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { createLogger } from '../../../lib/logger';
 import type { PageDataSnapshot } from '../data-hub';
 import { pageDataFor } from '../data-hub';
+import { rucssTestModeFor, watchRucssTestMode } from '../rucss-test';
 import {
   effectiveDetectionWidgetEnabled,
   getDetectionWidgetSites,
@@ -100,6 +101,8 @@ interface InspectorUiState {
   snapshot: StripDataSnapshot;
   /** The WordPress version the pass read (the footer stamp's WP slot). */
   wordpressVersion: string | null;
+  /** RUCSS tests applied on this page (live: a test changes it without a new pass). */
+  rucssTestRuns: number;
 }
 
 /**
@@ -118,15 +121,25 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   const [state, setState] = createStore<InspectorUiState>({
     cardOpen: false,
     snapshot: { phase: 'running', detections: null, cacheState: null },
-    wordpressVersion: null
+    wordpressVersion: null,
+    rucssTestRuns: rucssTestModeFor(ctx)?.().runs ?? 0
   });
+  // The test module may set up after this one: the watch hears every applied test either way.
+  ctx.onInvalidated(
+    watchRucssTestMode(ctx, (mode) => {
+      setState('rucssTestRuns', mode.runs);
+      // The card grows by its line: re-settle the chrome like any body change.
+      startContainmentCycle();
+    })
+  );
 
-  /** The card model, rebuilt only when the snapshot or WP version changes. */
+  /** The card model, rebuilt only when its inputs change. */
   const model = createMemo(() =>
     buildStripCardModel({
       snapshot: state.snapshot,
       wordpressVersion: state.wordpressVersion,
-      fdtVersion
+      fdtVersion,
+      rucssTestRuns: state.rucssTestRuns
     })
   );
   const mood = createMemo(() => insMood(state.snapshot));

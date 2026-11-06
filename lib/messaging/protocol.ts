@@ -66,6 +66,7 @@ import type {
 import type { ExclusionOverlayOpenOutcome } from './exclusion-panel';
 import type { SimulationMarkerQuery, SimulationMarkerVerdict } from './exclusion-simulation';
 import type { TabRelayReply, TabRelayRequest } from './tab-relay';
+import type { PageStylesReply } from './page-styles';
 import type {
   RucssApplyReply,
   RucssApplyRequest,
@@ -246,4 +247,9 @@ export interface ProtocolMap {
    * answered (`refused` otherwise, nothing sent); never rejects.
    */
   fetchRucssShakenCss(data: RucssFetchRequest): RucssFetchReply;
+  /**
+   * Panel → tab (top frame, `frameId: 0`; relayable): list the page's
+   * styles as they are now (the RUCSS tester's inventory). Read-only.
+   */
+  listPageStyles(): PageStylesReply;
 }

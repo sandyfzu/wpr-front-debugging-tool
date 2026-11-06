@@ -494,6 +494,18 @@ export interface FdtData {
    * undeclared or over-cap, never a version.
    */
   wordpressVersion?: string;
+  /**
+   * A RUCSS test replaced this page's styles (until the page reloads).
+   * Additive and present only once a test applied on the page: absence
+   * means no test changed it.
+   */
+  rucssTestMode?: RucssTestModeFact;
+}
+
+/** The page-local RUCSS test state the panel payload carries. */
+export interface RucssTestModeFact {
+  /** Tests applied on this page since it loaded (at least 1). */
+  readonly runs: number;
 }
 
 /**

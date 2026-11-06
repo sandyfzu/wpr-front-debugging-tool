@@ -48,6 +48,12 @@ describe('relayTabAsks — requests', () => {
     ]);
   });
 
+  it('relays the page-style inventory without a payload', async () => {
+    const send = sendAnswering({ ok: true, answer: 'x' });
+    await relayTabAsks(send).listPageStyles(4);
+    expect(send.requests).toEqual([{ tabId: 4, ask: 'listPageStyles' }]);
+  });
+
   it('fails a missing inspected tab locally as a no-receiver miss (nothing sent)', async () => {
     const send = sendAnswering({ ok: true, answer: 'x' });
     const asks = relayTabAsks(send);

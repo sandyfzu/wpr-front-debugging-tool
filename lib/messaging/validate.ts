@@ -18,6 +18,7 @@
  */
 
 import { isScriptSnapshotId } from './script-source';
+import { isCount } from './guard-policy';
 import type {
   BeaconFeatureStatus,
   BuilderFact,
@@ -30,6 +31,7 @@ import type {
   PageHeaders,
   PanelSearchAction,
   PreloadedResources,
+  RucssTestModeFact,
   WprDetections
 } from '../wp-rocket/types';
 import type { KnownConflict } from '../storage/known-conflicts';
@@ -42,7 +44,7 @@ import {
 } from '../wp-rocket/constants';
 import { COOKIE_NAME_LIMITS } from '../wp-rocket/cookies';
 import { PANEL_SEARCH_ACTIONS } from '../wp-rocket/types';
-import { isRecord } from '../../utils/is-record';
+import { hasOnlyKeys, isRecord } from '../../utils/is-record';
 import { ERROR_WORD_LIMITS, isPrintable } from './error-words';
 import { numericTabId } from './sender';
 // The representable-stamp ceiling the boundary carries (capture stamps) is
@@ -1135,6 +1137,19 @@ function parseCappedStringList(
   return list;
 }
 
+/**
+ * The page's RUCSS test fact: exactly `{ runs }`, a positive safe integer
+ * (the field is present only once a test applied).
+ *
+ * @param input The boundary value.
+ * @returns The rebuilt fact, or null on any violation.
+ */
+export function parseRucssTestModeFact(input: unknown): RucssTestModeFact | null {
+  if (!isRecord(input) || !hasOnlyKeys(input, ['runs'])) return reject();
+  const runs = input['runs'];
+  return isCount(runs) && runs >= 1 ? { runs } : reject('runs');
+}
+
 /** Full panel payload. Every part is validated; any miss rejects the payload. */
 export function parseFdtData(input: unknown): FdtData | null {
   if (!isRecord(input)) return reject();
@@ -1196,9 +1211,13 @@ export function parseFdtData(input: unknown): FdtData | null {
       wordpressRaw.length > LIMITS.versions)
   )
     return reject('wordpressVersion');
+  const testModeRaw = input['rucssTestMode'];
+  const rucssTestMode = testModeRaw === undefined ? undefined : parseRucssTestModeFact(testModeRaw);
+  if (rucssTestMode === null) return reject('rucssTestMode');
   const extras = {
     ...bypass,
-    ...(wordpressRaw === undefined ? {} : { wordpressVersion: wordpressRaw })
+    ...(wordpressRaw === undefined ? {} : { wordpressVersion: wordpressRaw }),
+    ...(rucssTestMode === undefined ? {} : { rucssTestMode })
   };
   if (cookiesRaw !== undefined) {
     const cookies = parsePageCookies(cookiesRaw);

@@ -17,7 +17,8 @@ const ROUTES = [
   'preloaded-resources',
   'headers-cookies',
   'undefined-references',
-  'diagnoser'
+  'diagnoser',
+  'rucss-tester'
 ];
 
 /**
@@ -207,6 +208,18 @@ for (const theme of ['system', 'light', 'dark']) {
           }
         }
       }
+      // Pin the reading-width route by name, not by its place in the registry.
+      await panel.evaluate(() => {
+        location.hash = '#/diagnoser';
+      });
+      await expect(loading).toBeVisible();
+      await expect
+        .poll(() =>
+          panel
+            .locator('[data-fdt="page-body"]')
+            .evaluate((el) => el.classList.contains('max-w-4xl'))
+        )
+        .toBe(true);
       const before = await canvasGeometry(panel, 'diagnoser');
       await panel.evaluate(() => {
         (window as unknown as { releaseLayoutReply: () => void }).releaseLayoutReply();
@@ -453,6 +466,11 @@ for (const theme of ['light', 'dark']) {
             contentType: 'image/png'
           });
         }
+        // Retry recovers the route in view: pin it by name, not by registry order.
+        await panel.evaluate(() => {
+          location.hash = '#/diagnoser';
+        });
+        await expect(panel).toHaveURL(/#\/diagnoser$/);
         await panel.setViewportSize({ width: recoveryWidth, height: 220 });
         for (let stop = 0; stop < 30; stop += 1) {
           await panel.keyboard.press('Tab');

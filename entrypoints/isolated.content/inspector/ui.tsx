@@ -20,16 +20,18 @@ import {
   LIST_JOINER_CONTENT,
   type BuilderTabLine
 } from '../../../lib/detection/hud';
+import { RUCSS_TEST_MODE_PILL_SPOKEN } from '../../../lib/rucss-tester/test-mode';
 import type { StripCardModel, StripRowModifier } from './strip-state';
 import {
   CARD_ARIA_LABEL,
   INSPECTOR_BUILDER_LINE_ID,
   INSPECTOR_CARD_ID,
+  INSPECTOR_RUCSS_LINE_ID,
   PILL_LABEL_STEM
 } from './strip-state';
 import type { InspectorMood } from './strip-state';
 import type { StripIconGlyph } from './icons';
-import { MODIFIER_ICONS, PRESENT_ICON_PATHS } from './icons';
+import { MODIFIER_ICONS, PRESENT_ICON_PATHS, RUCSS_TEST_ICON } from './icons';
 import { StrokeIcon, CLOSE_ICON_PATHS } from '../ui/icons';
 import { TOOL_EYEBROW } from '../ui/copies';
 
@@ -113,6 +115,53 @@ const BuilderLine = (props: { line: BuilderTabLine }): JSXElement => (
 );
 
 /**
+ * The tab-level RUCSS test line: the page's styles are a test's result
+ * until it reloads. The builder line's quiet note shape, its glyph leading
+ * (the pill's), also part of the card dialog's description.
+ *
+ * @param props.line The line's words.
+ * @returns The line block.
+ */
+const RucssTestLine = (props: { line: string }): JSXElement => (
+  <div class="ins-builder ins-rucss" data-fdt-strip-rucss>
+    <p id={INSPECTOR_RUCSS_LINE_ID} class="ins-builder-title ins-rucss-title">
+      <span class="ins-rucss-glyph" aria-hidden="true">
+        <GroupGlyph glyph={RUCSS_TEST_ICON} />
+      </span>
+      {props.line}
+    </p>
+  </div>
+);
+
+/**
+ * The card dialog's description ids: each tab-level line present.
+ *
+ * @param model The card model.
+ * @returns The space-joined ids, or undefined when no line shows.
+ */
+export function cardDescriptionIds(model: StripCardModel): string | undefined {
+  const ids = [
+    model.builderLine === null ? null : INSPECTOR_BUILDER_LINE_ID,
+    model.rucssTestLine === null ? null : INSPECTOR_RUCSS_LINE_ID
+  ].filter((id) => id !== null);
+  return ids.length === 0 ? undefined : ids.join(' ');
+}
+
+/**
+ * The pill's spoken identity while an in-tab change shows its glyph: the
+ * identity plus each change's hint, heard as one run.
+ *
+ * @param model The card model.
+ * @returns The spoken text, or null when no glyph shows (the identity speaks alone).
+ */
+export function pillSpokenIdentity(model: StripCardModel): string | null {
+  if (model.builderPill === null && model.rucssTestLine === null) return null;
+  const builder = model.builderPill === null ? '' : BUILDER_PILL_HINT_SPOKEN;
+  const rucss = model.rucssTestLine === null ? '' : RUCSS_TEST_MODE_PILL_SPOKEN;
+  return `${model.identity}${builder}${rucss}`;
+}
+
+/**
  * A row's in-tab modifier (Exclusion Builder or simulation): the badge (icon + short words, the
  * at-a-glance cue; hidden from assistive tech) and the full sentence as
  * visible text on its own line (never hover-only), spoken once.
@@ -173,9 +222,7 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
         class="ins-card"
         role="dialog"
         aria-label={CARD_ARIA_LABEL}
-        aria-describedby={
-          props.model().builderLine === null ? undefined : INSPECTOR_BUILDER_LINE_ID
-        }
+        aria-describedby={cardDescriptionIds(props.model())}
         tabIndex={-1}
       >
         {/* Plain blocks, not header/footer: inside the dialog they would
@@ -228,6 +275,9 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
             </div>
           </Show>
           <Show when={props.model().builderLine}>{(line) => <BuilderLine line={line()} />}</Show>
+          <Show when={props.model().rucssTestLine}>
+            {(line) => <RucssTestLine line={line()} />}
+          </Show>
           <For each={props.model().groups}>
             {(group) => (
               <div class="ins-group">
@@ -304,11 +354,15 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
            * (an sr-only piece of its own would gain a stray space before the
            * comma in Chromium's name), so the shown identity is hidden from
            * assistive tech and heard once. */}
-          <Show when={props.model().builderPill !== null} fallback={props.model().identity}>
-            <span aria-hidden="true">{props.model().identity}</span>
-            <span class="ins-sr" data-fdt-strip-pill-builder-spoken>
-              {`${props.model().identity}${BUILDER_PILL_HINT_SPOKEN}`}
-            </span>
+          <Show when={pillSpokenIdentity(props.model())} fallback={props.model().identity}>
+            {(spoken) => (
+              <>
+                <span aria-hidden="true">{props.model().identity}</span>
+                <span class="ins-sr" data-fdt-strip-pill-builder-spoken>
+                  {spoken()}
+                </span>
+              </>
+            )}
           </Show>
         </span>
         {/* The in-tab change's glyph after the version: a shape, not colour alone. */}
@@ -318,6 +372,16 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
               <GroupGlyph glyph={MODIFIER_ICONS[kind()]} />
             </span>
           )}
+        </Show>
+        {/* A RUCSS test's glyph beside it (both show when both apply). */}
+        <Show when={props.model().rucssTestLine !== null}>
+          <span
+            class="ins-pill-builder ins-pill-rucss"
+            data-fdt-strip-pill-rucss
+            aria-hidden="true"
+          >
+            <GroupGlyph glyph={RUCSS_TEST_ICON} />
+          </span>
         </Show>
         <Show when={props.model().cacheChip}>
           {(chip) => (

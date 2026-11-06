@@ -8,7 +8,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { onMessage, sendMessage } from '../../../lib/messaging/index';
 import { RUCSS_RESULT_STYLE_ID } from '../../../lib/rucss-tester/run-plan';
-import { rucssTestModeFor, setupRucssTest } from '.';
+import { rucssTestModeFor, setupRucssTest, watchRucssTestMode } from '.';
 
 const START = { safelist: [], inlinePreserves: [], mobile: false, home: false };
 
@@ -93,5 +93,46 @@ describe('setupRucssTest', () => {
 
   it('has no reader for a context it never set up', () => {
     expect(rucssTestModeFor(contextDouble())).toBeNull();
+  });
+
+  it('tells followers registered before the setup about each applied test; a failing one never silences the rest', async () => {
+    stopBackground = onMessage('fetchRucssShakenCss', () => ({
+      kind: 'answered',
+      requestUrl: 'u',
+      outcome: { ok: true, shakenCss: 'a{}' }
+    }));
+    const failing = vi.fn(() => {
+      throw new Error('boom');
+    });
+    const heard = vi.fn();
+    watchRucssTestMode(ctx, failing);
+    const stop = watchRucssTestMode(ctx, heard);
+    // Another page's follower never hears this one.
+    const foreign = vi.fn();
+    watchRucssTestMode(contextDouble(), foreign);
+    setupRucssTest(ctx);
+    const run = async (): Promise<void> => {
+      const started = await sendMessage('startRucssTest', START);
+      if (!started.ok) throw new Error('not started');
+      await sendMessage('applyRucssTest', { runId: started.runId, css: 'b{}', keepLinks: [] });
+    };
+    await run();
+    expect(failing).toHaveBeenCalledTimes(1);
+    expect(heard).toHaveBeenCalledWith({ applied: true, runs: 1 });
+    stop();
+    await run();
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(failing).toHaveBeenLastCalledWith({ applied: true, runs: 2 });
+    expect(foreign).not.toHaveBeenCalled();
+  });
+
+  it('answers the page-style inventory, read-only', async () => {
+    setupRucssTest(ctx);
+    const before = document.head.innerHTML;
+    await expect(sendMessage('listPageStyles', undefined)).resolves.toMatchObject({
+      total: 1,
+      styles: [{ kind: 'inline', id: 'theme', preview: '.a{}' }]
+    });
+    expect(document.head.innerHTML).toBe(before);
   });
 });

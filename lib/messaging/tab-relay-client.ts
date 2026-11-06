@@ -132,6 +132,7 @@ export function relayTabAsks(send: RelaySend): TabAsks {
     startRucssTest: (tabId, request) =>
       relay(send, { tabId, ask: 'startRucssTest', payload: request }),
     applyRucssTest: (tabId, request) =>
-      relay(send, { tabId, ask: 'applyRucssTest', payload: request })
+      relay(send, { tabId, ask: 'applyRucssTest', payload: request }),
+    listPageStyles: (tabId) => relay(send, { tabId, ask: 'listPageStyles' })
   };
 }
