@@ -238,7 +238,7 @@ describe('RucssTesterPage — run', () => {
     expect(runButton().getAttribute('aria-busy')).toBe('true');
     expect(document.querySelector('[data-fdt-rucss-running]')?.textContent).toBe(RUNNING_COPY);
     // The honest worst case: start, build and apply in turn.
-    expect(RUNNING_COPY).toContain('up to 55 s');
+    expect(RUNNING_COPY).toContain('up to 125 s');
     finish(APPLIED);
     await settle();
     const outcome = document.querySelector('[data-fdt="rucss-outcome"]');

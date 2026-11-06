@@ -170,7 +170,13 @@ describe('parseRucssStartRequest', () => {
 describe('parseRucssStartReply', () => {
   it('accepts a started run and every failure', () => {
     expect(parseRucssStartReply(STARTED)).toEqual(STARTED);
-    for (const kind of ['refused', 'background-unreachable', 'superseded', 'too-many-styles']) {
+    for (const kind of [
+      'refused',
+      'background-unreachable',
+      'superseded',
+      'too-many-styles',
+      'inline-check-too-slow'
+    ]) {
       expect(parseRucssStartReply({ ok: false, failure: { kind } })).toEqual({
         ok: false,
         failure: { kind }

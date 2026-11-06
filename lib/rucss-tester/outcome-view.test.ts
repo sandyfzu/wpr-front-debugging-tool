@@ -36,9 +36,15 @@ const UNTOUCHED: readonly RucssTestOutcome[] = [
     kind: 'start-failed',
     failure: { kind: 'fetch', requestUrl: URL, failure }
   })),
-  ...(['refused', 'background-unreachable', 'superseded', 'too-many-styles'] as const).map(
-    (kind): RucssTestOutcome => ({ kind: 'start-failed', failure: { kind } })
-  ),
+  ...(
+    [
+      'refused',
+      'background-unreachable',
+      'superseded',
+      'too-many-styles',
+      'inline-check-too-slow'
+    ] as const
+  ).map((kind): RucssTestOutcome => ({ kind: 'start-failed', failure: { kind } })),
   ...(
     [
       { ok: false, problem: 'timeout' },
@@ -146,6 +152,13 @@ describe('describeRucssOutcome', () => {
       describeRucssOutcome({ kind: 'start-failed', failure: { kind: 'too-many-styles' } })
         .recoveries
     ).toEqual(['inspect-styles']);
+    expect(
+      describeRucssOutcome({ kind: 'start-failed', failure: { kind: 'inline-check-too-slow' } })
+    ).toMatchObject({
+      title: 'Too much inline CSS for your markers',
+      message: expect.stringContaining('passed 5 s') as unknown,
+      recoveries: ['inspect-styles', 'retry']
+    });
     // A policy block cannot be retried away: the form's Run stays the way forward.
     expect(describeRucssOutcome({ kind: 'apply-failed', failure: 'css-blocked' })).toMatchObject({
       title: "This page's security policy blocked the test's CSS",

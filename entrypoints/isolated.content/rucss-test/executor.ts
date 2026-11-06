@@ -3,10 +3,11 @@
  * once everything is known:
  *
  * - `start` asks the background for the service's CSS, then snapshots the
- *   page's styles: inline ones are judged here (substring checks only —
- *   linear, safe on the page's thread), stylesheet URLs go back to the
- *   caller to judge (user patterns: unbounded cost, never run here). The
- *   page is not touched; any failure answers typed.
+ *   page's styles: inline ones are judged here (substring checks only, but
+ *   markers × inline CSS — so in slices that hand the page its thread back,
+ *   within a time budget), stylesheet URLs go back to the caller to judge
+ *   (user patterns: unbounded cost, never run here). The page is not
+ *   touched; any failure answers typed.
  * - `apply` injects the built CSS, confirms the page took it, then removes
  *   the snapshot's styles that are not kept — only for the current run, at
  *   most once, and only within {@link RUCSS_SNAPSHOT_TTL_MS} of the start.
@@ -26,7 +27,12 @@ import type {
 } from '../../../lib/messaging/rucss-test';
 import { scheduleWithTimeout, type ScheduleTimer } from '../../../lib/messaging/bounded-ask';
 import { RUCSS_TEST_LIMITS } from '../../../lib/messaging/rucss-test';
-import { RUCSS_SNAPSHOT_TTL_MS } from '../../../lib/rucss-tester/deadlines';
+import {
+  RUCSS_INLINE_CHECK_BUDGET_MS,
+  RUCSS_INLINE_CHECK_SLICE_MS,
+  RUCSS_INLINE_CHECK_YIELD_FALLBACK_MS,
+  RUCSS_SNAPSHOT_TTL_MS
+} from '../../../lib/rucss-tester/deadlines';
 import {
   decideInlineStyle,
   RUCSS_RESULT_STYLE_ID,
@@ -67,6 +73,10 @@ export interface RucssTestExecutorDeps {
   readonly isInvalid: () => boolean;
   /** Timer seam for the snapshot's expiry (default `setTimeout`). */
   readonly schedule?: ScheduleTimer;
+  /** Clock seam (ms) pacing the inline-style judging (default `performance.now`). */
+  readonly now?: () => number;
+  /** Hands the page its thread back for a moment (default: a message-channel turn). */
+  readonly yieldToPage?: () => Promise<void>;
   /** Told the page's new test state after each applied test (the page surfaces follow it). */
   readonly onModeChange?: (mode: RucssTestMode) => void;
 }
@@ -91,37 +101,151 @@ function linkHref(element: Element): string | null {
 }
 
 /**
+ * Paces the inline-style judging: between slices the page gets its thread
+ * back, and past the budget the judging stops.
+ */
+export interface InlineCheckPacer {
+  /**
+   * Call between checks: `true` to go on now, else a promise that resolves
+   * `true` after a turn of the page's event loop, or `false` once the budget
+   * is spent or, after that turn, the judging is to stop.
+   */
+  readonly checkpoint: () => true | Promise<boolean>;
+}
+
+/**
+ * Create the pacer of one snapshot ({@link RUCSS_INLINE_CHECK_SLICE_MS}
+ * slices within {@link RUCSS_INLINE_CHECK_BUDGET_MS}).
+ *
+ * @param now The clock (ms).
+ * @param yieldToPage Hands the page its thread back for a moment.
+ * @param stopped Read after each hand-back (the only time a newer start or a
+ *   dead context can arise): `true` ends the judging at once.
+ */
+export function createInlineCheckPacer(
+  now: () => number,
+  yieldToPage: () => Promise<void>,
+  stopped: () => boolean = () => false
+): InlineCheckPacer {
+  const start = now();
+  let sliceStart = start;
+  return {
+    checkpoint: () => {
+      const time = now();
+      if (time - start > RUCSS_INLINE_CHECK_BUDGET_MS) return Promise.resolve(false);
+      if (time - sliceStart < RUCSS_INLINE_CHECK_SLICE_MS) return true;
+      return yieldToPage().then(() => {
+        if (stopped()) return false;
+        sliceStart = now();
+        return true;
+      });
+    }
+  };
+}
+
+/**
+ * Whether the pacer lets the judging go on (awaiting only when it yields).
+ *
+ * @param pacer The snapshot's pacer.
+ */
+async function goOn(pacer: InlineCheckPacer): Promise<boolean> {
+  const next = pacer.checkpoint();
+  return next === true || (await next);
+}
+
+/**
+ * Judge one inline style against the markers, one marker per check.
+ *
+ * @param element The style element.
+ * @param preserves The preserve markers.
+ * @param pacer The snapshot's pacer.
+ * @returns Whether a marker keeps it, or `too-slow` past the budget.
+ */
+async function judgeInline(
+  element: Element,
+  preserves: readonly string[],
+  pacer: InlineCheckPacer
+): Promise<boolean | 'too-slow'> {
+  const markup = element.outerHTML;
+  for (const marker of preserves) {
+    if (decideInlineStyle(element.id, markup, [marker]) === 'preserved') return true;
+    if (!(await goOn(pacer))) return 'too-slow';
+  }
+  return false;
+}
+
+/**
  * Snapshot the page's styles, judging inline ones against the markers.
  *
  * @param doc The page's document.
  * @param runId The run's id.
  * @param preserves The preserve markers.
- * @returns The snapshot, or null when its links pass {@link RUCSS_TEST_LIMITS}.
+ * @param pacer Paces the inline judging (slices within a budget).
+ * @returns The snapshot; `too-many-links` when its links pass
+ *   {@link RUCSS_TEST_LIMITS}; `too-slow` when the pacer ended the inline
+ *   judging (its budget spent, or told to stop).
  */
-export function snapshotStyles(
+export async function snapshotStyles(
   doc: Document,
   runId: string,
-  preserves: readonly string[]
-): StyleSnapshot | null {
+  preserves: readonly string[],
+  pacer: InlineCheckPacer
+): Promise<StyleSnapshot | 'too-many-links' | 'too-slow'> {
   const entries: SnapshotEntry[] = [];
   const links: string[] = [];
   let linkChars = 0;
   for (const element of doc.querySelectorAll(RUCSS_STRIP_SELECTOR)) {
     const href = linkHref(element);
     if (href === null) {
-      const preserved = decideInlineStyle(element.id, element.outerHTML, preserves) === 'preserved';
+      const preserved = await judgeInline(element, preserves, pacer);
+      if (preserved === 'too-slow') return 'too-slow';
       entries.push({ element, kind: 'inline', preserved });
+      if (!(await goOn(pacer))) return 'too-slow';
       continue;
     }
     linkChars += href.length;
     if (links.length === RUCSS_TEST_LIMITS.links || linkChars > RUCSS_TEST_LIMITS.linkChars) {
-      return null;
+      return 'too-many-links';
     }
     entries.push({ element, kind: 'link', linkIndex: links.length });
     links.push(href);
   }
   return { runId, entries, links };
 }
+
+/**
+ * One turn of the page's event loop (its input and rendering run
+ * meanwhile), through a message channel: unlike a timer, never throttled in
+ * a background tab. Where a channel cannot be made, a `setTimeout(0)` turn;
+ * a channel that never delivers is cut by a
+ * {@link RUCSS_INLINE_CHECK_YIELD_FALLBACK_MS} timer. Resolves once, on the
+ * first of them, closing the channel and clearing the timer.
+ */
+export const yieldThroughMessage = (): Promise<void> =>
+  new Promise((resolve) => {
+    let channel: MessageChannel | null = null;
+    let settled = false;
+    const settle = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(fallback);
+      if (channel !== null) {
+        channel.port1.onmessage = null;
+        channel.port1.close();
+      }
+      resolve();
+    };
+    const fallback = setTimeout(settle, RUCSS_INLINE_CHECK_YIELD_FALLBACK_MS);
+    try {
+      channel = new MessageChannel();
+    } catch {
+      // A sandbox without channels still has timers (throttled only in hidden tabs).
+      setTimeout(settle, 0);
+      return;
+    }
+    channel.port1.onmessage = settle;
+    channel.port2.postMessage(null);
+  });
 
 /**
  * Remove the snapshot's styles that are not kept.
@@ -187,6 +311,8 @@ function injectCss(doc: Document, target: Element, css: string): boolean {
  */
 export function createRucssTestExecutor(deps: RucssTestExecutorDeps): RucssTestExecutor {
   const schedule = deps.schedule ?? scheduleWithTimeout;
+  const now = deps.now ?? (() => performance.now());
+  const yieldToPage = deps.yieldToPage ?? yieldThroughMessage;
   let latestStart = 0;
   let current: StyleSnapshot | null = null;
   // Cancels the current snapshot's expiry timer.
@@ -220,8 +346,19 @@ export function createRucssTestExecutor(deps: RucssTestExecutorDeps): RucssTestE
       return { ok: false, failure: { kind: 'fetch', requestUrl, failure: outcome.failure } };
     }
     // Snapshot after the answer: styles loaded during the wait are included.
-    const snapshot = snapshotStyles(deps.document, deps.newRunId(), request.inlinePreserves);
-    if (snapshot === null) return { ok: false, failure: { kind: 'too-many-styles' } };
+    const snapshot = await snapshotStyles(
+      deps.document,
+      deps.newRunId(),
+      request.inlinePreserves,
+      // A newer start (or a dead context) ends the judging at its next hand-back.
+      createInlineCheckPacer(now, yieldToPage, () => ticket !== latestStart || deps.isInvalid())
+    );
+    // The judging may have yielded: a newer start (or a dead context) wins.
+    if (ticket !== latestStart || deps.isInvalid()) {
+      return { ok: false, failure: { kind: 'superseded' } };
+    }
+    if (snapshot === 'too-many-links') return { ok: false, failure: { kind: 'too-many-styles' } };
+    if (snapshot === 'too-slow') return { ok: false, failure: { kind: 'inline-check-too-slow' } };
     current = snapshot;
     // An abandoned run (the panel closed, its build failed) must not pin page elements.
     cancelExpiry = schedule(dropSnapshot, RUCSS_SNAPSHOT_TTL_MS);

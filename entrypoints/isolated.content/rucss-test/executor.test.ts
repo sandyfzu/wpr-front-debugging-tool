@@ -11,12 +11,23 @@ import type {
   RucssStartRequest
 } from '../../../lib/messaging/rucss-test';
 import { RUCSS_TEST_LIMITS } from '../../../lib/messaging/rucss-test';
-import { RUCSS_SNAPSHOT_TTL_MS } from '../../../lib/rucss-tester/deadlines';
+import {
+  RUCSS_INLINE_CHECK_BUDGET_MS,
+  RUCSS_INLINE_CHECK_SLICE_MS,
+  RUCSS_INLINE_CHECK_YIELD_FALLBACK_MS,
+  RUCSS_SNAPSHOT_TTL_MS
+} from '../../../lib/rucss-tester/deadlines';
 import {
   DEFAULT_INLINE_PRESERVES,
   RUCSS_RESULT_STYLE_ID
 } from '../../../lib/rucss-tester/run-plan';
-import { createRucssTestExecutor, snapshotStyles, type RucssTestExecutorDeps } from './executor';
+import {
+  createInlineCheckPacer,
+  createRucssTestExecutor,
+  snapshotStyles,
+  yieldThroughMessage,
+  type RucssTestExecutorDeps
+} from './executor';
 
 const RUN = '0123456789abcdef0123456789abcdef';
 const PAGE = 'https://site.test/p';
@@ -152,6 +163,107 @@ describe('start', () => {
     expect(styleMarkup()).toBe(before);
   });
 
+  it('judges inline styles in slices, handing the page its thread back, with the same result', async () => {
+    const clock = steppingClock(RUCSS_INLINE_CHECK_SLICE_MS / 2);
+    const executor = createRucssTestExecutor(deps(ANSWERED, clock));
+    const reply = await executor.start(REQUEST);
+    expect(reply.ok).toBe(true);
+    expect(clock.yieldToPage).toHaveBeenCalled();
+    expect(executor.apply({ runId: RUN, css: '/*built*/', keepLinks: [0] })).toEqual({
+      ok: true,
+      summary: { removed: 4, preserved: 2, excluded: 1, gone: 0, cssChars: 9 }
+    });
+  });
+
+  it('yields through the platform by default (a message-channel turn)', async () => {
+    const clock = steppingClock(RUCSS_INLINE_CHECK_SLICE_MS);
+    const executor = createRucssTestExecutor(deps(ANSWERED, { now: clock.now }));
+    await expect(executor.start(REQUEST)).resolves.toMatchObject({ ok: true });
+  });
+
+  it('stops the inline judging past its budget: typed failure, page untouched, nothing to apply', async () => {
+    const before = styleMarkup();
+    const clock = steppingClock(RUCSS_INLINE_CHECK_BUDGET_MS / 4);
+    const executor = createRucssTestExecutor(deps(ANSWERED, clock));
+    await expect(executor.start(REQUEST)).resolves.toEqual({
+      ok: false,
+      failure: { kind: 'inline-check-too-slow' }
+    });
+    expect(executor.apply({ runId: RUN, css: 'x', keepLinks: [] })).toEqual({
+      ok: false,
+      failure: 'stale-run'
+    });
+    expect(styleMarkup()).toBe(before);
+  });
+
+  it('answers `superseded` when a newer start began while the judging yielded', async () => {
+    let ids = 0;
+    let first = true;
+    let executor: ReturnType<typeof createRucssTestExecutor> | null = null;
+    let newer: Promise<unknown> = Promise.resolve();
+    const clock = steppingClock(RUCSS_INLINE_CHECK_SLICE_MS);
+    executor = createRucssTestExecutor(
+      deps(ANSWERED, {
+        now: clock.now,
+        // The first yield starts a newer test (as a second panel click would).
+        yieldToPage: () => {
+          if (first && executor !== null) {
+            first = false;
+            newer = executor.start(REQUEST);
+          }
+          return Promise.resolve();
+        },
+        newRunId: () => String(++ids).repeat(32)
+      })
+    );
+    await expect(executor.start(REQUEST)).resolves.toEqual({
+      ok: false,
+      failure: { kind: 'superseded' }
+    });
+    await expect(newer).resolves.toMatchObject({ ok: true, runId: '2'.repeat(32) });
+  });
+
+  it('stops the superseded judging at its next hand-back, sparing the page the rest', async () => {
+    let pending = false;
+    const fetchShakenCss = vi.fn(() => {
+      // The newer start's request stays in flight: only the older judging yields.
+      if (pending) return new Promise<never>(() => undefined);
+      pending = true;
+      return Promise.resolve(ANSWERED);
+    });
+    let executor: ReturnType<typeof createRucssTestExecutor> | null = null;
+    const clock = steppingClock(RUCSS_INLINE_CHECK_SLICE_MS);
+    const yieldToPage = vi.fn(() => {
+      if (yieldToPage.mock.calls.length === 1) void executor?.start(REQUEST);
+      return Promise.resolve();
+    });
+    executor = createRucssTestExecutor(
+      deps(ANSWERED, { now: clock.now, yieldToPage, fetchShakenCss })
+    );
+    await expect(executor.start(REQUEST)).resolves.toEqual({
+      ok: false,
+      failure: { kind: 'superseded' }
+    });
+    expect(yieldToPage).toHaveBeenCalledOnce();
+  });
+
+  it('stops the judging at its next hand-back once the context died', async () => {
+    let dead = false;
+    const clock = steppingClock(RUCSS_INLINE_CHECK_SLICE_MS);
+    const yieldToPage = vi.fn(() => {
+      dead = true;
+      return Promise.resolve();
+    });
+    const executor = createRucssTestExecutor(
+      deps(ANSWERED, { now: clock.now, yieldToPage, isInvalid: () => dead })
+    );
+    await expect(executor.start(REQUEST)).resolves.toEqual({
+      ok: false,
+      failure: { kind: 'superseded' }
+    });
+    expect(yieldToPage).toHaveBeenCalledOnce();
+  });
+
   it('refuses a page with too many stylesheet links', async () => {
     document.head.innerHTML = '<link rel="stylesheet" href="https://site.test/a.css">'.repeat(
       RUCSS_TEST_LIMITS.links + 1
@@ -163,17 +275,159 @@ describe('start', () => {
   });
 });
 
+/** A pacer that never yields nor runs out. */
+const UNPACED = { checkpoint: (): true => true };
+
+/** A clock advancing `step` ms per read, and a yield counter. */
+function steppingClock(step: number): {
+  now: () => number;
+  yieldToPage: ReturnType<typeof vi.fn<() => Promise<void>>>;
+} {
+  let time = 0;
+  return {
+    now: () => (time += step),
+    yieldToPage: vi.fn<() => Promise<void>>(() => Promise.resolve())
+  };
+}
+
 describe('snapshotStyles', () => {
-  it('refuses links whose URLs together pass the character bound', () => {
+  it('refuses links whose URLs together pass the character bound', async () => {
     const long = `https://site.test/${'a'.repeat(RUCSS_TEST_LIMITS.linkChars)}.css`;
     document.head.innerHTML = `<link rel="stylesheet" href="${long}">`;
-    expect(snapshotStyles(document, RUN, [])).toBeNull();
+    await expect(snapshotStyles(document, RUN, [], UNPACED)).resolves.toBe('too-many-links');
   });
 
-  it('reads a link without an address as an empty URL', () => {
+  it('reads a link without an address as an empty URL', async () => {
     document.head.innerHTML = '<link rel="stylesheet">';
     document.body.innerHTML = '';
-    expect(snapshotStyles(document, RUN, [])?.links).toEqual(['']);
+    const snapshot = await snapshotStyles(document, RUN, [], UNPACED);
+    expect(typeof snapshot === 'object' && snapshot.links).toEqual(['']);
+  });
+
+  it('checks every marker until one keeps the style (the used-CSS style never kept)', async () => {
+    document.head.innerHTML =
+      '<style id="a">/* m2 */</style><style id="b">x</style><style id="wpr-usedcss">/* m1 */</style>';
+    document.body.innerHTML = '';
+    const snapshot = await snapshotStyles(document, RUN, ['m1', 'm2'], UNPACED);
+    expect(
+      typeof snapshot === 'object' &&
+        snapshot.entries.map((entry) => entry.kind === 'inline' && entry.preserved)
+    ).toEqual([true, false, false]);
+  });
+});
+
+describe('yieldThroughMessage', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('resolves after a message-channel turn', async () => {
+    await expect(yieldThroughMessage()).resolves.toBeUndefined();
+  });
+
+  it('falls back to a timer turn where a channel cannot be made', async () => {
+    vi.stubGlobal('MessageChannel', () => {
+      throw new Error('not here');
+    });
+    await expect(yieldThroughMessage()).resolves.toBeUndefined();
+  });
+  it('resolves once on the fallback timer when the channel never delivers, closing it', async () => {
+    vi.useFakeTimers();
+    try {
+      const ports: { port1: SilentPort; port2: SilentPort }[] = [];
+      vi.stubGlobal(
+        'MessageChannel',
+        class {
+          readonly port1 = new SilentPort();
+          readonly port2 = new SilentPort();
+          constructor() {
+            ports.push(this);
+          }
+        }
+      );
+      let resolved = 0;
+      void yieldThroughMessage().then(() => resolved++);
+      await vi.advanceTimersByTimeAsync(RUCSS_INLINE_CHECK_YIELD_FALLBACK_MS - 1);
+      expect(resolved).toBe(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(resolved).toBe(1);
+      const [channel] = ports;
+      expect(channel?.port1.close).toHaveBeenCalledOnce();
+      // A late delivery changes nothing.
+      channel?.port1.onmessage?.();
+      await vi.advanceTimersByTimeAsync(RUCSS_INLINE_CHECK_YIELD_FALLBACK_MS);
+      expect(channel?.port1.close).toHaveBeenCalledOnce();
+      expect(resolved).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the fallback timer when the channel delivers first', async () => {
+    vi.useFakeTimers();
+    try {
+      let deliver: (() => void) | undefined;
+      vi.stubGlobal(
+        'MessageChannel',
+        class {
+          readonly port1 = new SilentPort();
+          readonly port2 = {
+            postMessage: () => {
+              deliver = () => this.port1.onmessage?.();
+            }
+          };
+        }
+      );
+      const turn = yieldThroughMessage();
+      expect(vi.getTimerCount()).toBe(1);
+      deliver?.();
+      await expect(turn).resolves.toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/** A message port double that never delivers on its own. */
+class SilentPort {
+  onmessage: (() => void) | null = null;
+  readonly close = vi.fn();
+  readonly postMessage = vi.fn();
+}
+
+describe('createInlineCheckPacer', () => {
+  it('ends the judging right after a hand-back once told to stop', async () => {
+    let time = 0;
+    let stop = false;
+    const yieldToPage = vi.fn(() => {
+      stop = true;
+      return Promise.resolve();
+    });
+    const pacer = createInlineCheckPacer(
+      () => time,
+      yieldToPage,
+      () => stop
+    );
+    time = RUCSS_INLINE_CHECK_SLICE_MS;
+    await expect(pacer.checkpoint()).resolves.toBe(false);
+    expect(yieldToPage).toHaveBeenCalledOnce();
+  });
+
+  it('goes on within a slice, yields once a slice is used up, stops past the budget', async () => {
+    let time = 0;
+    const yieldToPage = vi.fn(() => Promise.resolve());
+    const pacer = createInlineCheckPacer(() => time, yieldToPage);
+    time = RUCSS_INLINE_CHECK_SLICE_MS - 1;
+    expect(pacer.checkpoint()).toBe(true);
+    time = RUCSS_INLINE_CHECK_SLICE_MS;
+    await expect(pacer.checkpoint()).resolves.toBe(true);
+    expect(yieldToPage).toHaveBeenCalledOnce();
+    // A new slice starts after the yield.
+    expect(pacer.checkpoint()).toBe(true);
+    time = RUCSS_INLINE_CHECK_BUDGET_MS + 1;
+    await expect(pacer.checkpoint()).resolves.toBe(false);
+    expect(yieldToPage).toHaveBeenCalledOnce();
   });
 });
 

@@ -43,6 +43,7 @@ import {
   type Worker
 } from '@playwright/test';
 
+import { RUCSS_ENDPOINT } from '../../../lib/rucss-tester/endpoint';
 import { LATEST_LIST_ENDPOINT } from '../../../lib/wp-rocket-simulation/latest-list';
 
 /**
@@ -66,12 +67,18 @@ export const EXTENSION_PATH = path.resolve(
 
 /**
  * Remote hosts the browser resolves to nothing (`~NOTFOUND`, Chromium's
- * host-resolver rule): the background fetches the latest exclusion list at
- * every start, and a test run must never reach the real endpoint. Its
- * refresh therefore misses with a network error, and the simulation runs
- * the bundled list unless a suite keeps a copy (`helpers/simulation.ts`).
+ * host-resolver rule), so a test run never reaches their real services:
+ * - the latest exclusion list, fetched at every background start — its
+ *   refresh misses with a network error, and the simulation runs the bundled
+ *   list unless a suite keeps a copy (`helpers/simulation.ts`);
+ * - the RUCSS service — a suite answers it with a context route (routes
+ *   intercept before name resolution; an unrouted request fails as a
+ *   network error, never a real one).
  */
-const BLOCKED_REMOTE_HOSTS: readonly string[] = [new URL(LATEST_LIST_ENDPOINT).hostname];
+const BLOCKED_REMOTE_HOSTS: readonly string[] = [
+  new URL(LATEST_LIST_ENDPOINT).hostname,
+  new URL(RUCSS_ENDPOINT).hostname
+];
 
 /** Chromium's resolver rule for {@link BLOCKED_REMOTE_HOSTS}. */
 const HOST_RESOLVER_RULES = `--host-resolver-rules=${BLOCKED_REMOTE_HOSTS.map((host) => `MAP ${host} ~NOTFOUND`).join(', ')}`;

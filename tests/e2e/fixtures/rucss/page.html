@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="generator" content="WP Rocket 3.20.1" />
+    <title>RUCSS tester fixture</title>
+    <!-- Every kind of style a test judges: two stylesheets (one a pattern
+         can keep), WP Rocket's used CSS (always removed), a theme inline
+         style (a marker can keep it), a default-marker inline style, and an
+         alternate stylesheet (never touched: not `rel="stylesheet"`). -->
+    <link rel="stylesheet" id="site-css" href="/rucss/site.css" />
+    <link rel="stylesheet" id="keep-css" href="/rucss/keep.css" />
+    <link rel="alternate stylesheet" id="alt-css" href="/rucss/site.css" title="Alternate" />
+    <style id="wpr-usedcss">
+      h1 {
+        color: rgb(1, 1, 1);
+      }
+    </style>
+    <style id="theme-inline-css">
+      p {
+        color: rgb(200, 0, 0);
+      }
+    </style>
+    <style id="rocket-lazyrender-inline-css">
+      .lazyrender {
+        content-visibility: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>RUCSS tester</h1>
+    <p id="para">A paragraph the theme colours.</p>
+    <div class="kept">Styled by the stylesheet a pattern can keep.</div>
+  </body>
+</html>
