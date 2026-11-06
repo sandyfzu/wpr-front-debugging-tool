@@ -45,7 +45,9 @@ export interface BeaconTestConfig {
  * `rocket_atf_elements` defaults): the elements the site's own beacon scans
  * unless a filter changed them, so a test run finds what the real one would.
  */
-export const DEFAULT_CANDIDATE_SELECTORS: readonly string[] = Object.freeze([
+// `__PURE__` (here and on every top-level call below): a bundle importing only
+// this module's field validators (the page's request guard) drops the defaults.
+export const DEFAULT_CANDIDATE_SELECTORS: readonly string[] = /*#__PURE__*/ Object.freeze([
   'img',
   'video',
   'picture',
@@ -66,13 +68,13 @@ export interface DeviceThresholds {
 }
 
 /** WP Rocket's default desktop thresholds: the viewport must be at least this large. */
-export const DESKTOP_THRESHOLDS: DeviceThresholds = Object.freeze({
+export const DESKTOP_THRESHOLDS: DeviceThresholds = /*#__PURE__*/ Object.freeze({
   widthThreshold: 1600,
   heightThreshold: 700
 });
 
 /** WP Rocket's default mobile thresholds: the viewport must fit inside them. */
-export const MOBILE_THRESHOLDS: DeviceThresholds = Object.freeze({
+export const MOBILE_THRESHOLDS: DeviceThresholds = /*#__PURE__*/ Object.freeze({
   widthThreshold: 393,
   heightThreshold: 830
 });
@@ -92,8 +94,8 @@ export function deviceThresholds(mobile: boolean): DeviceThresholds {
 }
 
 /** Form defaults: desktop beacon, WP Rocket's defaults, no feature preselected (the user picks). */
-export const BEACON_TEST_DEFAULTS: BeaconTestConfig = Object.freeze({
-  features: Object.freeze({ aboveTheFold: false, lazyRender: false }),
+export const BEACON_TEST_DEFAULTS: BeaconTestConfig = /*#__PURE__*/ Object.freeze({
+  features: /*#__PURE__*/ Object.freeze({ aboveTheFold: false, lazyRender: false }),
   mobile: false,
   ...DESKTOP_THRESHOLDS,
   lazyRenderThreshold: LAZY_RENDER_THRESHOLD_DEFAULT,
@@ -266,9 +268,9 @@ export type BeaconConfigCheck =
   | { readonly ok: false; readonly issues: readonly BeaconConfigIssue[] };
 
 /** The outcome for a value that is not a configuration at all. */
-const MALFORMED: BeaconConfigCheck = Object.freeze({
+const MALFORMED: BeaconConfigCheck = /*#__PURE__*/ Object.freeze({
   ok: false,
-  issues: Object.freeze([Object.freeze({ kind: 'malformed' } as const)])
+  issues: /*#__PURE__*/ Object.freeze([/*#__PURE__*/ Object.freeze({ kind: 'malformed' } as const)])
 });
 
 /**
@@ -334,7 +336,7 @@ export interface BeaconTestDraft extends Omit<BeaconTestConfig, 'selectors'> {
 }
 
 /** The default selectors as the form's field text (one per line). */
-export const DEFAULT_SELECTOR_TEXT = DEFAULT_CANDIDATE_SELECTORS.join('\n');
+export const DEFAULT_SELECTOR_TEXT = /*#__PURE__*/ DEFAULT_CANDIDATE_SELECTORS.join('\n');
 
 /**
  * Check a form draft: its selector text becomes line-list entries (one per

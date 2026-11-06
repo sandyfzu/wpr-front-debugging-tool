@@ -28,6 +28,10 @@ function asksAnswering(answer: Promise<unknown>): TabAsks {
     getScriptSourceChunk: vi.fn(() => Promise.resolve(null)),
     startRucssTest: vi.fn(() => Promise.resolve(null)),
     applyRucssTest: vi.fn(() => Promise.resolve(null)),
+    runBeaconTest: vi.fn(() => Promise.resolve(null)),
+    runLcpAnalysis: vi.fn(() => Promise.resolve(null)),
+    getScriptRuntimeStatuses: vi.fn(() => Promise.resolve(null)),
+    getCurrentVisitVitals: vi.fn(() => Promise.resolve(null)),
     listPageStyles: vi.fn(() => Promise.resolve(null))
   };
 }

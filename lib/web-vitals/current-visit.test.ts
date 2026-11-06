@@ -2,19 +2,26 @@
  * Current-visit vitals: LCP (last candidate before the page was first
  * hidden, activation offset, floor), CLS (gated on a first paint seen while
  * visible) session windows (1 s gap, 5 s span, recent input excluded, largest
- * window), INP (longest entry per interaction, one skipped per 50, top-10
- * cap, browser count), rating bands at their exact thresholds, and the
- * unsupported / no-data outcomes per metric.
+ * window; folding shift by shift and continuing from a carry equals one
+ * pass), INP (longest entry per interaction, one skipped per 50, top-10
+ * cap, browser count, dropped interactions counted), a restored visit
+ * (entries since the restore, CLS ungated, INP 8 ms floor, flagged), rating
+ * bands at their exact thresholds, and the unsupported / no-data outcomes
+ * per metric.
  */
 import { describe, expect, it } from 'vitest';
 import {
+  CLS_START,
+  INP_RESTORED_FLOOR_MS,
   VITAL_THRESHOLDS,
   beforeHidden,
+  foldClsShift,
   rate,
   reduceCls,
   reduceCurrentVisit,
   reduceInp,
   reduceLcp,
+  resolveFirstHiddenTime,
   type VitalsInput
 } from './current-visit';
 
@@ -63,6 +70,24 @@ describe('reduceLcp', () => {
   });
 });
 
+describe('resolveFirstHiddenTime', () => {
+  it('takes the earlier of the entry and the tracker', () => {
+    expect(resolveFirstHiddenTime(900, 400, false)).toBe(400);
+    expect(resolveFirstHiddenTime(300, 400, true)).toBe(300);
+  });
+
+  it('takes whichever source has a time', () => {
+    expect(resolveFirstHiddenTime(900, null, true)).toBe(900);
+    expect(resolveFirstHiddenTime(null, 400, true)).toBe(400);
+    expect(resolveFirstHiddenTime(null, 0, false)).toBe(0);
+  });
+
+  it('counts a page hidden right now as hidden from the start, else never hidden', () => {
+    expect(resolveFirstHiddenTime(null, null, true)).toBe(0);
+    expect(resolveFirstHiddenTime(null, null, false)).toBeNull();
+  });
+});
+
 describe('beforeHidden', () => {
   it('is true for a never-hidden page and for times strictly before the first hide', () => {
     expect(beforeHidden(5000, null)).toBe(true);
@@ -98,6 +123,30 @@ describe('reduceCls', () => {
   });
 });
 
+describe('foldClsShift', () => {
+  it('opens, joins and closes windows like one pass, ignoring input shifts', () => {
+    let state = foldClsShift(CLS_START, shift(0, 0.1));
+    expect(state).toEqual({ largest: 0.1, windowSum: 0.1, windowFirst: 0, previous: 0 });
+    expect(foldClsShift(state, shift(100, 9, true))).toBe(state);
+    state = foldClsShift(state, shift(900, 0.2));
+    expect(state).toMatchObject({ windowFirst: 0, previous: 900 });
+    expect(state.largest).toBeCloseTo(0.3);
+    state = foldClsShift(state, shift(1900, 0.05));
+    expect(state).toMatchObject({ windowSum: 0.05, windowFirst: 1900, previous: 1900 });
+    expect(state.largest).toBeCloseTo(0.3);
+  });
+
+  it('continues from a carry exactly as one pass over every shift', () => {
+    const shifts = Array.from({ length: 40 }, (_, i) =>
+      shift(i * 450 + (i % 7) * 300, (i % 5) * 0.03, i % 6 === 0)
+    );
+    for (const split of [0, 1, 13, 39, 40]) {
+      const carry = shifts.slice(0, split).reduce(foldClsShift, CLS_START);
+      expect(reduceCls(shifts.slice(split), carry)).toBeCloseTo(reduceCls(shifts), 12);
+    }
+  });
+});
+
 describe('reduceInp', () => {
   it('takes each interaction’s longest entry and the worst interaction', () => {
     const events = [
@@ -119,6 +168,13 @@ describe('reduceInp', () => {
   it('counts the browser’s interactions beyond the reported entries', () => {
     expect(reduceInp(interactions([800, 300]), 50)).toEqual({ value: 300, interactions: 50 });
     expect(reduceInp(interactions([800, 300]), 1)).toEqual({ value: 800, interactions: 2 });
+  });
+
+  it('counts interactions the page dropped (never the slowest)', () => {
+    const slow = interactions([300, 200, 100]);
+    expect(reduceInp(slow, null, 47)).toEqual({ value: 200, interactions: 50 });
+    expect(reduceInp(slow, 60, 47)).toEqual({ value: 200, interactions: 60 });
+    expect(reduceInp(slow, null)).toEqual({ value: 300, interactions: 3 });
   });
 
   it('never skips past the 10th longest interaction', () => {
@@ -207,6 +263,51 @@ describe('reduceCurrentVisit', () => {
     expect(reduceCurrentVisit(input({ fcpTime: 1500, firstHiddenTime: 1000 })).cls).toEqual({
       state: 'no-data'
     });
+  });
+
+  it('continues CLS from the page’s carry', () => {
+    const visit = reduceCurrentVisit(
+      input({
+        clsCarry: { largest: 0.4, windowSum: 0.05, windowFirst: 1000, previous: 1500 },
+        layoutShifts: [shift(1800, 0.1)]
+      })
+    );
+    expect(visit.cls).toMatchObject({ state: 'measured', value: 0.4 });
+  });
+
+  it('reduces a restored visit: entries since the restore, CLS ungated, flagged', () => {
+    const visit = reduceCurrentVisit(
+      input({
+        restoredAt: 5000,
+        fcpTime: null,
+        lcpEntries: [{ startTime: 4000 }],
+        layoutShifts: [shift(4500, 0.9), shift(5200, 0.05)],
+        events: interactions([80]),
+        interactionCount: 1
+      })
+    );
+    expect(visit).toEqual({
+      lcp: { state: 'no-data' },
+      cls: { state: 'measured', value: 0.05, rating: 'good' },
+      inp: { state: 'measured', value: 80, rating: 'good', interactions: 1 },
+      restored: true
+    });
+  });
+
+  it('gives a restored visit with only unreported interactions the 8 ms INP floor', () => {
+    expect(reduceCurrentVisit(input({ restoredAt: 10, interactionCount: 3 })).inp).toEqual({
+      state: 'measured',
+      value: INP_RESTORED_FLOOR_MS,
+      rating: 'good',
+      interactions: 3
+    });
+    expect(reduceCurrentVisit(input({ restoredAt: 10, interactionCount: 0 })).inp).toEqual({
+      state: 'no-data'
+    });
+    expect(reduceCurrentVisit(input({ restoredAt: 10 })).inp).toEqual({ state: 'no-data' });
+    // Without a restore, unreported interactions give no INP (first input reports one).
+    expect(reduceCurrentVisit(input({ interactionCount: 3 })).inp).toEqual({ state: 'no-data' });
+    expect(INP_RESTORED_FLOOR_MS).toBe(8);
   });
 
   it('reports each unsupported entry type on its own', () => {

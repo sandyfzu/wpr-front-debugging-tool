@@ -798,6 +798,10 @@ describe('JavaScriptView — complete snapshot copy', () => {
         Promise.resolve(readScriptSourceChunk(raw, snapshotId, request)),
       startRucssTest: () => Promise.resolve(null),
       applyRucssTest: () => Promise.resolve(null),
+      runBeaconTest: () => Promise.resolve(null),
+      runLcpAnalysis: () => Promise.resolve(null),
+      getScriptRuntimeStatuses: () => Promise.resolve(null),
+      getCurrentVisitVitals: () => Promise.resolve(null),
       listPageStyles: () => Promise.resolve(null)
     };
     const relayed: TabRelayRequest[] = [];

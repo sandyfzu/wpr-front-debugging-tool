@@ -10,7 +10,7 @@
  * never the whole sheet.
  */
 import { hasOnlyKeys, isRecord, ownValue } from '../../utils/is-record';
-import { isCount } from './guard-policy';
+import { boundedString, isCount } from './guard-policy';
 
 /** Bounds of one inventory reply. */
 export const PAGE_STYLE_LIMITS = {
@@ -58,16 +58,6 @@ export interface PageStylesReply {
 const ENTRY_KEYS = ['kind', 'id', 'className', 'href', 'media', 'preview', 'chars'] as const;
 
 /**
- * A string of at most `max` characters.
- *
- * @param value The boundary value.
- * @param max The character cap.
- */
-function isCappedString(value: unknown, max: number): value is string {
-  return typeof value === 'string' && value.length <= max;
-}
-
-/**
  * Guard one entry.
  *
  * @param input The boundary value.
@@ -84,11 +74,11 @@ export function parsePageStyleEntry(input: unknown): PageStyleEntry | null {
   const chars = ownValue(input, 'chars');
   if (kind !== 'inline' && kind !== 'link') return null;
   if (
-    !isCappedString(id, PAGE_STYLE_LIMITS.idChars) ||
-    !isCappedString(className, PAGE_STYLE_LIMITS.classChars) ||
-    !isCappedString(href, PAGE_STYLE_LIMITS.hrefChars) ||
-    !isCappedString(media, PAGE_STYLE_LIMITS.mediaChars) ||
-    !isCappedString(preview, PAGE_STYLE_LIMITS.previewChars) ||
+    !boundedString(id, PAGE_STYLE_LIMITS.idChars) ||
+    !boundedString(className, PAGE_STYLE_LIMITS.classChars) ||
+    !boundedString(href, PAGE_STYLE_LIMITS.hrefChars) ||
+    !boundedString(media, PAGE_STYLE_LIMITS.mediaChars) ||
+    !boundedString(preview, PAGE_STYLE_LIMITS.previewChars) ||
     !isCount(chars)
   ) {
     return null;

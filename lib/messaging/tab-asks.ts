@@ -1,8 +1,9 @@
 /**
  * The DevTools surfaces' asks to the inspected tab's content script — the
  * page-data warm-up, the full page data, one script-source chunk, the
- * RUCSS test's two steps and the page-style inventory —
- * behind one transport choice.
+ * RUCSS test's two steps, the page-style inventory, and the live analysis
+ * tools (beacon test, LCP analysis, live script states, current-visit
+ * vitals) — behind one transport choice.
  *
  * Where the context has the `tabs` API (Chromium), the asks go to the tab
  * directly. Where it does not (Firefox DevTools pages), the same asks go
@@ -11,6 +12,8 @@
  * that choice is made.
  */
 import { sendMessage } from './index';
+import type { BeaconTestRequest } from './beacon-test';
+import type { LcpAnalysisRequest } from './lcp-analysis';
 import type { RucssApplyRequest, RucssStartRequest } from './rucss-test';
 import type { ScriptSourceRequest } from './script-source';
 import { canMessageRuntime, canMessageTabs } from './tab-messaging';
@@ -35,6 +38,14 @@ export interface TabAsks {
   readonly startRucssTest: (tabId: number, request: RucssStartRequest) => Promise<unknown>;
   /** Apply a started RUCSS test, in the top frame only. */
   readonly applyRucssTest: (tabId: number, request: RucssApplyRequest) => Promise<unknown>;
+  /** Run one beacon test, in the top frame only. */
+  readonly runBeaconTest: (tabId: number, request: BeaconTestRequest) => Promise<unknown>;
+  /** Read the page's LCP facts, in the top frame only. */
+  readonly runLcpAnalysis: (tabId: number, request: LcpAnalysisRequest) => Promise<unknown>;
+  /** Read the live scripts' attributes, in the top frame only. */
+  readonly getScriptRuntimeStatuses: (tabId: number) => Promise<unknown>;
+  /** Read this visit's vitals entries, in the top frame only. */
+  readonly getCurrentVisitVitals: (tabId: number) => Promise<unknown>;
   /** List the page's styles, from the top frame only. */
   readonly listPageStyles: (tabId: number) => Promise<unknown>;
 }
@@ -47,6 +58,12 @@ export const DIRECT_TAB_ASKS: TabAsks = {
     sendMessage('getScriptSourceChunk', request, { tabId, frameId: 0 }),
   startRucssTest: (tabId, request) => sendMessage('startRucssTest', request, { tabId, frameId: 0 }),
   applyRucssTest: (tabId, request) => sendMessage('applyRucssTest', request, { tabId, frameId: 0 }),
+  runBeaconTest: (tabId, request) => sendMessage('runBeaconTest', request, { tabId, frameId: 0 }),
+  runLcpAnalysis: (tabId, request) => sendMessage('runLcpAnalysis', request, { tabId, frameId: 0 }),
+  getScriptRuntimeStatuses: (tabId) =>
+    sendMessage('getScriptRuntimeStatuses', undefined, { tabId, frameId: 0 }),
+  getCurrentVisitVitals: (tabId) =>
+    sendMessage('getCurrentVisitVitals', undefined, { tabId, frameId: 0 }),
   listPageStyles: (tabId) => sendMessage('listPageStyles', undefined, { tabId, frameId: 0 })
 };
 

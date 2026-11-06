@@ -1,6 +1,6 @@
 /** Tests for the bounded ask: every outcome arm, deadline handling and the timer seam. */
 import { describe, expect, it, vi } from 'vitest';
-import { boundedAsk, type ScheduleTimer } from './bounded-ask';
+import { boundedAsk, logAskMiss, type ScheduleTimer } from './bounded-ask';
 
 /** Accepts only the string 'ok'. */
 const parseOk = (answer: unknown): 'ok' | null => (answer === 'ok' ? 'ok' : null);
@@ -188,5 +188,28 @@ describe('boundedAsk', () => {
         boundedAsk({ send: () => Promise.resolve('ok'), parse: parseOk, timeoutMs })
       ).toThrow(RangeError);
     }
+  });
+});
+
+describe('logAskMiss', () => {
+  /** A logger recording its calls. */
+  const logDouble = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+
+  it('logs a real failure loudly, with the cause’s message or the cause itself', () => {
+    const log = logDouble();
+    logAskMiss(log, 'Read', { kind: 'failed', cause: new Error('boom') });
+    logAskMiss(log, 'Read', { kind: 'failed', cause: 'raw' });
+    expect(log.warn.mock.calls).toEqual([
+      ['Read failed', 'boom'],
+      ['Read failed', 'raw']
+    ]);
+    expect(log.debug).not.toHaveBeenCalled();
+  });
+
+  it.each(['no-receiver', 'timeout', 'invalid-reply'] as const)('logs %s quietly', (kind) => {
+    const log = logDouble();
+    logAskMiss(log, 'Read', { kind });
+    expect(log.debug).toHaveBeenCalledWith(`Read got no answer: ${kind}`);
+    expect(log.warn).not.toHaveBeenCalled();
   });
 });

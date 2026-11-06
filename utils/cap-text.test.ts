@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capText, capTitle, clipToUnits, cutToUnits, TITLE_MAX } from './cap-text';
+import { capText, capTitle, cappedUnits, clipToUnits, cutToUnits, TITLE_MAX } from './cap-text';
 
 describe('capText', () => {
   it.each([
@@ -37,6 +37,16 @@ describe('capTitle', () => {
     const text = `data:image/svg+xml,${'x'.repeat(100000)}`;
     expect(capTitle(text)).toBe(`${text.slice(0, 300)}…`);
     expect(text).toHaveLength(100019);
+  });
+});
+
+describe('cappedUnits', () => {
+  it('bounds every capText result at the cap, astral code points and ellipsis included', () => {
+    expect(cappedUnits(0)).toBe(1);
+    expect(cappedUnits(3)).toBe(7);
+    const astral = '😀'.repeat(10);
+    expect(capText(astral, 3).length).toBeLessThanOrEqual(cappedUnits(3));
+    expect(capText(astral, 3).length).toBe(cappedUnits(3));
   });
 });
 

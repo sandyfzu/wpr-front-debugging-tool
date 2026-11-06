@@ -44,6 +44,27 @@ describe('the direct transport (the Chromium path)', () => {
     ]);
   });
 
+  it('sends the live analysis asks to the top frame only', async () => {
+    const config = {
+      features: { aboveTheFold: false, lazyRender: true },
+      mobile: false,
+      widthThreshold: 1,
+      heightThreshold: 1,
+      lazyRenderThreshold: 1,
+      selectors: []
+    };
+    await DIRECT_TAB_ASKS.runBeaconTest(12, { config });
+    await DIRECT_TAB_ASKS.runLcpAnalysis(12, { highlight: true });
+    await DIRECT_TAB_ASKS.getScriptRuntimeStatuses(12);
+    await DIRECT_TAB_ASKS.getCurrentVisitVitals(12);
+    expect(sendMessage.mock.calls).toEqual([
+      ['runBeaconTest', { config }, { tabId: 12, frameId: 0 }],
+      ['runLcpAnalysis', { highlight: true }, { tabId: 12, frameId: 0 }],
+      ['getScriptRuntimeStatuses', undefined, { tabId: 12, frameId: 0 }],
+      ['getCurrentVisitVitals', undefined, { tabId: 12, frameId: 0 }]
+    ]);
+  });
+
   it('asks the page-style inventory of the top frame only, without a payload', async () => {
     await DIRECT_TAB_ASKS.listPageStyles(12);
     expect(sendMessage.mock.calls).toEqual([

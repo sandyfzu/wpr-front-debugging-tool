@@ -133,6 +133,12 @@ export function relayTabAsks(send: RelaySend): TabAsks {
       relay(send, { tabId, ask: 'startRucssTest', payload: request }),
     applyRucssTest: (tabId, request) =>
       relay(send, { tabId, ask: 'applyRucssTest', payload: request }),
+    runBeaconTest: (tabId, request) =>
+      relay(send, { tabId, ask: 'runBeaconTest', payload: request }),
+    runLcpAnalysis: (tabId, request) =>
+      relay(send, { tabId, ask: 'runLcpAnalysis', payload: request }),
+    getScriptRuntimeStatuses: (tabId) => relay(send, { tabId, ask: 'getScriptRuntimeStatuses' }),
+    getCurrentVisitVitals: (tabId) => relay(send, { tabId, ask: 'getCurrentVisitVitals' }),
     listPageStyles: (tabId) => relay(send, { tabId, ask: 'listPageStyles' })
   };
 }
