@@ -1,5 +1,12 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import config, { FIREFOX_ADDON_ID, FIREFOX_MIN_VERSION } from './wxt.config';
+import config, {
+  extensionApiBeforeMessaging,
+  FIREFOX_ADDON_ID,
+  FIREFOX_MIN_VERSION
+} from './wxt.config';
 
 /** The manifest the config emits for one target browser. */
 async function manifestFor(browser: string): Promise<Record<string, unknown>> {
@@ -26,5 +33,69 @@ describe('manifest browser_specific_settings', () => {
     for (const browser of ['chrome', 'edge']) {
       expect(await manifestFor(browser)).not.toHaveProperty('browser_specific_settings');
     }
+  });
+});
+
+describe('extension namespace alias', () => {
+  it('resolves exactly `@wxt-dev/browser` to the project resolver in every build', async () => {
+    const vite = config.vite;
+    if (typeof vite !== 'function') throw new Error('vite is not the function form');
+    const { resolve } = await vite({
+      browser: 'chrome',
+      manifestVersion: 3,
+      command: 'build',
+      mode: 'production'
+    });
+    const aliases = resolve?.alias;
+    if (!Array.isArray(aliases)) throw new Error('resolve.alias is not the array form');
+    const [entry] = aliases as { find: RegExp; replacement: string }[];
+    expect(aliases).toHaveLength(1);
+    expect(entry?.find.test('@wxt-dev/browser')).toBe(true);
+    for (const other of ['@wxt-dev/browser/x', 'wxt/browser', '@wxt-dev/storage']) {
+      expect(entry?.find.test(other)).toBe(false);
+    }
+    expect(entry?.replacement.endsWith('/utils/extension-api/index.ts')).toBe(true);
+    expect(existsSync(entry?.replacement ?? '')).toBe(true);
+  });
+});
+
+describe('extension namespace before the messaging library', () => {
+  /** Run the plugin's transform hook over one module. */
+  const transform = (id: string): unknown => {
+    const hook = extensionApiBeforeMessaging().transform;
+    if (typeof hook !== 'function') throw new Error('transform is not the function form');
+    return (hook as (code: string, id: string) => unknown).call({}, 'BODY', id);
+  };
+  const pnpmDist =
+    '/repo/node_modules/.pnpm/@webext-core+messaging@4.0.1/node_modules/@webext-core/messaging/dist/';
+
+  it('prepends the namespace module import to the library entry (plain or queried id)', () => {
+    for (const id of [`${pnpmDist}index.mjs`, `${pnpmDist}index.mjs?v=1`]) {
+      const out = transform(id) as { code: string };
+      const [first, rest] = out.code.split('\n');
+      expect(first).toMatch(/^import ".*[\\/]utils[\\/]extension-api[\\/]index\.ts";$/);
+      expect(rest).toBe('BODY');
+    }
+  });
+
+  it('leaves every other module alone', () => {
+    for (const id of [
+      `${pnpmDist}page.mjs`,
+      `${pnpmDist}generic-67DrFc4U.mjs`,
+      '/repo/node_modules/@webext-core/isolated-element/dist/index.mjs',
+      '/repo/lib/messaging/index.ts'
+    ]) {
+      expect(transform(id)).toBeNull();
+    }
+  });
+
+  it('the installed library reads the bare chrome global only in its extension entry', () => {
+    // A new file reading `chrome` would escape the ordering the plugin pins.
+    const require = createRequire(import.meta.url);
+    const dist = path.dirname(require.resolve('@webext-core/messaging'));
+    const readers = readdirSync(dist)
+      .filter((file) => file.endsWith('.mjs'))
+      .filter((file) => /(^|[^.\w$])chrome\./.test(readFileSync(path.join(dist, file), 'utf8')));
+    expect(readers).toEqual(['index.mjs']);
   });
 });
