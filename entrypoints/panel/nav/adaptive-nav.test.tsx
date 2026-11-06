@@ -79,7 +79,7 @@ function staticWatch(): RailWatchFn {
 
 /**
  * The synthetic rail's layout: the shipped anatomy (32px rows, 4px list
- * gaps, 13px group leads; Overview 0 / Inspect + 13 / Diagnose + 13,
+ * gaps, 13px group leads; Overview 0 / Inspect + 13 / Diagnose + 13 / Tools + 13,
  * browser-measured) over every registry row — the same numbers the pure
  * tests pin, so both tiers describe one geometry.
  */
@@ -91,7 +91,8 @@ function layoutRows(): readonly RailRowBox[] {
     { route: 'preloaded-resources', top: 117, height: 32 },
     { route: 'headers-cookies', top: 153, height: 32 },
     { route: 'undefined-references', top: 198, height: 32 },
-    { route: 'diagnoser', top: 234, height: 32 }
+    { route: 'diagnoser', top: 234, height: 32 },
+    { route: 'rucss-tester', top: 279, height: 32 }
   ] as const;
 }
 
@@ -158,17 +159,19 @@ describe('AdaptiveNav structure', () => {
     renderNav();
     const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
     expect(document.querySelectorAll('nav')).toHaveLength(1); // never two trees
-    expect(screen.getAllByRole('list')).toHaveLength(3); // Overview · Inspect · Diagnose (Tools is empty — no rows yet)
+    expect(screen.getAllByRole('list')).toHaveLength(4); // Overview · Inspect · Diagnose · Tools
     expect(screen.getByRole('list', { name: 'Overview' })).toBeTruthy();
     expect(screen.getByRole('list', { name: 'Inspect' })).toBeTruthy();
     expect(screen.getByRole('list', { name: 'Diagnose' })).toBeTruthy();
+    expect(screen.getByRole('list', { name: 'Tools' })).toBeTruthy();
     for (const id of [
       'detections',
       'javascript',
       'lazyload',
       'preloaded-resources',
       'headers-cookies',
-      'undefined-references'
+      'undefined-references',
+      'rucss-tester'
     ]) {
       expect(nav.querySelector(`a[href="#/${id}"]`)).not.toBeNull();
     }
@@ -191,10 +194,9 @@ describe('AdaptiveNav structure', () => {
     // with symmetric breathing space (mt-1.5 above = pt-1.5 below; never
     // flush under the previous row's hover box — the owner-report decision).
     const groups = [...nav.querySelectorAll('[data-fdt-nav-group]')];
-    // Empty groups (Tools, today) stay out of the DOM: a stranded separator
-    // over nothing would be noise, not scent.
-    expect(groups).toHaveLength(3);
-    expect(nav.textContent).not.toContain('Tools');
+    // One separated block per group with rows (an empty group stays out of
+    // the DOM: a stranded separator over nothing would be noise, not scent).
+    expect(groups).toHaveLength(4);
     expect(groups[0]?.className).toContain('first:border-t-0');
     expect(groups[0]?.className).toContain('first:mt-0');
     expect(groups[1]?.className).toContain('border-t');
@@ -235,7 +237,8 @@ describe('AdaptiveNav structure', () => {
       'preloaded-resources',
       'headers-cookies',
       'undefined-references',
-      'diagnoser'
+      'diagnoser',
+      'rucss-tester'
     ]);
   });
 });
@@ -438,7 +441,7 @@ describe('AdaptiveNav overflow — the geometry stub', () => {
     renderNav();
     const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
     const stubRows = [...nav.querySelectorAll(`[${NAV_MIRROR_ROW_ATTR}]`)] as HTMLElement[];
-    expect(stubRows).toHaveLength(7); // every registry row, in order
+    expect(stubRows).toHaveLength(8); // every registry row, in order
     expect(stubRows.map((row) => row.getAttribute(NAV_MIRROR_ROW_ATTR))).toEqual([
       'detections',
       'javascript',
@@ -446,7 +449,8 @@ describe('AdaptiveNav overflow — the geometry stub', () => {
       'preloaded-resources',
       'headers-cookies',
       'undefined-references',
-      'diagnoser'
+      'diagnoser',
+      'rucss-tester'
     ]);
     const mirror = nav.querySelector('[data-fdt="panel-nav-mirror"]');
     expect(mirror?.getAttribute('aria-hidden')).toBe('true');
@@ -499,7 +503,7 @@ describe('AdaptiveNav overflow — the slice', () => {
       screen
         .getByRole('navigation', { name: 'WPR FDT pages' })
         .querySelectorAll(
-          'a[href="#/detections"], a[href="#/javascript"], a[href="#/lazyload"], a[href="#/preloaded-resources"], a[href="#/headers-cookies"], a[href="#/undefined-references"], button[disabled]'
+          'a[href="#/detections"], a[href="#/javascript"], a[href="#/lazyload"], a[href="#/preloaded-resources"], a[href="#/headers-cookies"], a[href="#/undefined-references"], a[href="#/rucss-tester"], button[disabled]'
         ).length;
     expect(railControls()).toBe(1); // Detections only
     expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
@@ -509,7 +513,7 @@ describe('AdaptiveNav overflow — the slice', () => {
     expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
 
     rail.resize(9999);
-    expect(railControls()).toBe(7); // the full rail back, reserved row included
+    expect(railControls()).toBe(8); // the full rail back, reserved row included
     expect(screen.queryByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeNull();
   });
 
@@ -549,15 +553,15 @@ describe('AdaptiveNav overflow — the slice', () => {
   });
 
   it('fits exactly at the boundary: every row stays (the trigger never appears)', () => {
-    renderNav({ measure: syntheticRail(266).measure, watch: staticWatch() });
+    renderNav({ measure: syntheticRail(311).measure, watch: staticWatch() });
     expect(screen.queryByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Diagnoser' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'RUCSS Tester' })).toBeTruthy();
   });
 
   it('one pixel short of the boundary, the last row leaves for the trigger', () => {
-    renderNav({ measure: syntheticRail(265).measure, watch: staticWatch() });
+    renderNav({ measure: syntheticRail(310).measure, watch: staticWatch() });
     expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Diagnoser' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'RUCSS Tester' })).toBeNull();
   });
 });
 
@@ -591,9 +595,9 @@ describe('AdaptiveNav overflow — the “More pages” menu', () => {
     renderNav({ measure: syntheticRail(90).measure, watch: staticWatch() });
     openMenu();
     const menu = await screen.findByRole('menu');
-    // Hidden rows span Inspect (3) + Diagnose (2): one separator, and no
-    // group captions (the rail shows no visible captions either).
-    expect(within(menu).getAllByRole('separator')).toHaveLength(1);
+    // Hidden rows span Inspect (3) + Diagnose (2) + Tools (1): two
+    // separators, and no group captions (the rail shows none either).
+    expect(within(menu).getAllByRole('separator')).toHaveLength(2);
   });
 
   it('carries the hidden active row’s `aria-current` on its menu item', async () => {

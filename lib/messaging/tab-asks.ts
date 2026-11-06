@@ -1,7 +1,7 @@
 /**
  * The DevTools surfaces' asks to the inspected tab's content script — the
- * page-data warm-up, the full page data, one script-source chunk, and the
- * RUCSS test's two steps —
+ * page-data warm-up, the full page data, one script-source chunk, the
+ * RUCSS test's two steps and the page-style inventory —
  * behind one transport choice.
  *
  * Where the context has the `tabs` API (Chromium), the asks go to the tab
@@ -35,6 +35,8 @@ export interface TabAsks {
   readonly startRucssTest: (tabId: number, request: RucssStartRequest) => Promise<unknown>;
   /** Apply a started RUCSS test, in the top frame only. */
   readonly applyRucssTest: (tabId: number, request: RucssApplyRequest) => Promise<unknown>;
+  /** List the page's styles, from the top frame only. */
+  readonly listPageStyles: (tabId: number) => Promise<unknown>;
 }
 
 /** The direct transport: the extension's tab send, one typed call per ask. */
@@ -44,7 +46,8 @@ export const DIRECT_TAB_ASKS: TabAsks = {
   getScriptSourceChunk: (tabId, request) =>
     sendMessage('getScriptSourceChunk', request, { tabId, frameId: 0 }),
   startRucssTest: (tabId, request) => sendMessage('startRucssTest', request, { tabId, frameId: 0 }),
-  applyRucssTest: (tabId, request) => sendMessage('applyRucssTest', request, { tabId, frameId: 0 })
+  applyRucssTest: (tabId, request) => sendMessage('applyRucssTest', request, { tabId, frameId: 0 }),
+  listPageStyles: (tabId) => sendMessage('listPageStyles', undefined, { tabId, frameId: 0 })
 };
 
 /** The transports {@link selectTabAsks} picks from (tests inject doubles). */

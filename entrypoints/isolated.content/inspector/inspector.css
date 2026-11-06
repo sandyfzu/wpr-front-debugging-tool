@@ -600,6 +600,32 @@
   color: var(--fg-muted);
 }
 
+/* The RUCSS test line: the builder note's shape, its glyph leading the
+ * words (a shape, never colour alone). */
+.ins-rucss-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+}
+.ins-rucss-glyph {
+  display: inline-flex;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 1px;
+  color: var(--status-warn);
+}
+.ins-rucss-glyph svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* On the pill: the test's tone, beside the builder glyph. */
+.ins-pill-rucss {
+  color: var(--status-warn);
+}
+
 /* The pending/failed body copies (the KC state-lines pattern). */
 .ins-state {
   display: flex;

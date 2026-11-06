@@ -15,6 +15,7 @@ import ScrollText from 'lucide-solid/icons/scroll-text';
 import SearchX from 'lucide-solid/icons/search-x';
 import ShieldCheck from 'lucide-solid/icons/shield-check';
 import Stethoscope from 'lucide-solid/icons/stethoscope';
+import TestTubeDiagonal from 'lucide-solid/icons/test-tube-diagonal';
 import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
 import { IMAGE_NOUN } from '../../lib/detection/count-nouns';
@@ -38,7 +39,8 @@ export const ROUTE_IDS = [
   'preloaded-resources',
   'headers-cookies',
   'undefined-references',
-  'diagnoser'
+  'diagnoser',
+  'rucss-tester'
 ] as const;
 
 /** One panel page's route id. */
@@ -98,8 +100,7 @@ function shownTotal(count: number, partial: boolean): string {
 
 /**
  * The nav registry, in render order — today's pages. Future rows land
- * additively here with their named owners: RUCSS Tester (P13, Tools),
- * Beacon & LCP (P14, Tools), Compare (P17 — decision-gated optional SBS
+ * additively here with their named owners: Beacon & LCP (P14, Tools), Compare (P17 — decision-gated optional SBS
  * panel home, Tools).
  *
  * The Overview row carries no live state on purpose: WPR presence, version
@@ -201,6 +202,14 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     group: 'Diagnose',
     reserved: true,
     reservedNote: 'Returns with the Diagnoser plugin v2'
+  },
+  {
+    // A tool, not a reading of the page: TEST MODE is the page's own fact
+    // (Detections and the on-page widget carry it), so the row stays quiet.
+    id: 'rucss-tester',
+    label: 'RUCSS Tester',
+    icon: TestTubeDiagonal,
+    group: 'Tools'
   }
 ];
 

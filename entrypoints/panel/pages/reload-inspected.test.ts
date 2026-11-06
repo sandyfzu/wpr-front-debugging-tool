@@ -3,7 +3,7 @@
  * the API; a standalone page does not) and the three outcomes.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { canReloadInspected, reloadInspected } from './reload-inspected';
+import { canReloadInspected, inspectedReloadAction, reloadInspected } from './reload-inspected';
 
 describe('reloadInspected', () => {
   it('detects the API', () => {
@@ -37,5 +37,35 @@ describe('reloadInspected', () => {
       })
     ).toBe('failed');
     warn.mockRestore();
+  });
+});
+
+describe('inspectedReloadAction', () => {
+  it('is absent outside a DevTools window', () => {
+    expect(inspectedReloadAction({})).toBeUndefined();
+    expect(inspectedReloadAction({ devtools: { inspectedWindow: {} } })).toBeUndefined();
+  });
+
+  it('reloads and confirms, or tells the user the remedy on a failure', async () => {
+    const { toastItems: toasts } = await import('../../../components/ui/toast-store');
+    const reload = vi.fn();
+    inspectedReloadAction({ devtools: { inspectedWindow: { reload } } })?.();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(toasts().at(-1)?.title).toBe(
+      'Reloading the page — the panel refreshes when it reports back'
+    );
+    inspectedReloadAction({
+      devtools: {
+        inspectedWindow: {
+          reload: () => {
+            throw new Error('Extension context invalidated.');
+          }
+        }
+      }
+    })?.();
+    expect(toasts().at(-1)).toMatchObject({
+      title: 'Reload failed',
+      description: 'Reload the inspected page from its own tab.'
+    });
   });
 });

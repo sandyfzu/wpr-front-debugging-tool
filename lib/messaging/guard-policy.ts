@@ -1,7 +1,8 @@
 /**
- * Primitives shared by the session-contract guards (`./exclusion-session`,
- * `./exclusion-simulation`): the unknown-key policy and the count check —
- * declared once so both contract modules read keys and counts alike.
+ * Primitives shared by the messaging guards (`./exclusion-session`,
+ * `./exclusion-simulation`, `./page-styles`, `./validate`): the unknown-key
+ * policy and the count check — declared once so every contract reads keys
+ * and counts alike.
  */
 import { hasOnlyKeys } from '../../utils/is-record';
 

@@ -22,7 +22,7 @@ function liveStateOf(
 }
 
 describe('NAV_ROUTES', () => {
-  it('lists the seven rows in the journey order', () => {
+  it('lists the eight rows in the journey order', () => {
     expect(NAV_ROUTES.map((row) => row.id)).toEqual([
       'detections',
       'javascript',
@@ -30,7 +30,8 @@ describe('NAV_ROUTES', () => {
       'preloaded-resources',
       'headers-cookies',
       'undefined-references',
-      'diagnoser'
+      'diagnoser',
+      'rucss-tester'
     ]);
     expect(NAV_ROUTES.map((row) => row.group)).toEqual([
       'Overview',
@@ -39,8 +40,17 @@ describe('NAV_ROUTES', () => {
       'Inspect',
       'Inspect',
       'Diagnose',
-      'Diagnose'
+      'Diagnose',
+      'Tools'
     ]);
+  });
+
+  it('declares the RUCSS Tester as a state-free Tools row', () => {
+    const row = navRoute('rucss-tester');
+    expect(row?.label).toBe('RUCSS Tester');
+    expect(row?.group).toBe('Tools');
+    expect(row?.reserved).toBeUndefined();
+    expect(row?.liveState).toBeUndefined();
   });
 
   it('declares Headers & Cookies as a state-free Inspect row', () => {

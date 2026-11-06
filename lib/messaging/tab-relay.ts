@@ -26,6 +26,7 @@ export interface TabRelayPayloads {
   getScriptSourceChunk: ScriptSourceRequest;
   startRucssTest: RucssStartRequest;
   applyRucssTest: RucssApplyRequest;
+  listPageStyles: undefined;
 }
 
 /** One relayable ask's name. */
@@ -93,6 +94,10 @@ export const TAB_RELAY_ASKS: { readonly [K in TabRelayAsk]: TabRelayAskRow<K> } 
   applyRucssTest: {
     parsePayload: (input) => box(parseRucssApplyRequest(input)),
     forward: (asks, tabId, request) => asks.applyRucssTest(tabId, request)
+  },
+  listPageStyles: {
+    parsePayload: parseNoPayload,
+    forward: (asks, tabId) => asks.listPageStyles(tabId)
   }
 };
 

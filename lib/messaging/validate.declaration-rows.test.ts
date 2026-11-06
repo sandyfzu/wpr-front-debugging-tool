@@ -209,6 +209,30 @@ describe('the bypass mark', () => {
   });
 });
 
+describe('the RUCSS test fact', () => {
+  it('is additive: absent, or exactly a positive whole run count', () => {
+    expect(parseFdtData({ ...validFdt(), rucssTestMode: { runs: 1 } })).toMatchObject({
+      rucssTestMode: { runs: 1 }
+    });
+    expect(parseFdtData(validFdt())?.rucssTestMode).toBeUndefined();
+    expect(parseFdtData({ ...validFdt(), rucssTestMode: undefined })).toEqual(
+      parseFdtData(validFdt())
+    );
+    for (const bad of [
+      { runs: 0 },
+      { runs: 1.5 },
+      { runs: '1' },
+      { runs: Number.MAX_SAFE_INTEGER + 1 },
+      { runs: 1, extra: true },
+      {},
+      null,
+      true
+    ]) {
+      expect(parseFdtData({ ...validFdt(), rucssTestMode: bad })).toBeNull();
+    }
+  });
+});
+
 describe('the WordPress version envelope field', () => {
   it('is additive: absent, or a non-empty string within the version cap', () => {
     expect(parseFdtData({ ...validFdt(), wordpressVersion: '6.8.1' })).toMatchObject({

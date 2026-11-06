@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capText, capTitle, TITLE_MAX } from './cap-text';
+import { capText, capTitle, clipToUnits, cutToUnits, TITLE_MAX } from './cap-text';
 
 describe('capText', () => {
   it.each([
@@ -37,5 +37,31 @@ describe('capTitle', () => {
     const text = `data:image/svg+xml,${'x'.repeat(100000)}`;
     expect(capTitle(text)).toBe(`${text.slice(0, 300)}…`);
     expect(text).toHaveLength(100019);
+  });
+});
+
+describe('cutToUnits', () => {
+  it('keeps text within the cap and cuts longer text at the cap', () => {
+    expect(cutToUnits('abc', 3)).toBe('abc');
+    expect(cutToUnits('abcd', 3)).toBe('abc');
+    expect(cutToUnits('abc', 0)).toBe('');
+  });
+
+  it('never leaves half a surrogate pair', () => {
+    // 'a😀' is 3 units: a cut at 2 would end on the high surrogate.
+    expect(cutToUnits('a😀b', 2)).toBe('a');
+    expect(cutToUnits('a😀b', 3)).toBe('a😀');
+  });
+});
+
+describe('clipToUnits', () => {
+  it('marks a cut with an ellipsis counted in the cap', () => {
+    expect(clipToUnits('abc', 3)).toBe('abc');
+    expect(clipToUnits('abcdef', 4)).toBe('abc…');
+    expect(clipToUnits('abcdef', 4)).toHaveLength(4);
+  });
+
+  it('never splits a surrogate pair at the cut', () => {
+    expect(clipToUnits('ab😀cd', 4)).toBe('ab…');
   });
 });
