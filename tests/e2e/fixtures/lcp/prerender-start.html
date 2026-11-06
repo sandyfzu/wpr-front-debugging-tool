@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Prerender start</title>
+    <script type="speculationrules">
+      { "prerender": [{ "source": "list", "urls": ["/lcp/hero.html?prerendered=1"] }] }
+    </script>
+  </head>
+  <body>
+    <!-- Prerenders the LCP fixture; following the link activates the prerendered page. -->
+    <a id="go" href="/lcp/hero.html?prerendered=1">Open the prerendered page</a>
+  </body>
+</html>

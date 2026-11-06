@@ -281,6 +281,30 @@ export function mergeErrorWords(existing: string[], incoming: string[]): string[
 }
 
 /**
+ * Call `onRestore` each time the page is shown again from the back/forward
+ * cache: the same document comes back without a load, so nothing else tells
+ * an open panel (which went on to the next page, or lost its read to the
+ * cache) to read this page again.
+ *
+ * @param target The page's window.
+ * @param signal Removes the listener (the content script's context).
+ * @param onRestore Called once per restore.
+ */
+export function onBackForwardRestore(
+  target: Pick<Window, 'addEventListener'>,
+  signal: AbortSignal,
+  onRestore: () => void
+): void {
+  target.addEventListener(
+    'pageshow',
+    (event: PageTransitionEvent) => {
+      if (event.persisted) onRestore();
+    },
+    { passive: true, signal }
+  );
+}
+
+/**
  * Wire the data hub into this content script: capture, message serving and
  * window-bridge relays. Thin by design — the logic above and the P1 engine
  * carry the tested weight.
@@ -398,6 +422,7 @@ export function setupDataHub(ctx: ContentScriptContext): void {
     // moment would never fire again — serialize now, same snapshot semantics.
     onParserReady();
   }
+  onBackForwardRestore(window, ctx.signal, notifyPanel);
 
   /** The live context's invalidation, read without control-flow narrowing. */
   const invalidated = (): boolean => ctx.isInvalid;

@@ -152,15 +152,24 @@ export class ExtensionDriver {
   /** Profile cleanup hook (the fixture deletes the temp dir when told). */
   private readonly cleanup: (profileDir: string, reason: string) => void;
 
+  /** Playwright default switches this driver's launches drop (beyond `--hide-scrollbars`). */
+  private readonly droppedDefaults: readonly string[];
+
   /**
    * Create an unlaunched driver (the fixture does the launch).
    *
    * @param profileDir An existing directory to launch the profile in.
    * @param cleanup Teardown hook (receives the profile dir it may delete).
    */
-  private constructor(profileDir: string, cleanup: (profileDir: string, reason: string) => void) {
+  private constructor(
+    profileDir: string,
+    cleanup: (profileDir: string, reason: string) => void,
+    options: DriverLaunchOptions
+  ) {
     this.profileDir = profileDir;
     this.cleanup = cleanup;
+    this.droppedDefaults =
+      options.backForwardCache === true ? ['--disable-back-forward-cache'] : [];
   }
 
   /** The live context. */
@@ -178,12 +187,14 @@ export class ExtensionDriver {
    * version here (156.0.8078.4) is above the manifest's 145 floor.
    *
    * @param cleanup Profile teardown hook (receives the profile dir).
+   * @param options Launch variations (a suite's own browser; the shared fixture uses none).
    */
   static async launch(
-    cleanup: (profileDir: string, reason: string) => void
+    cleanup: (profileDir: string, reason: string) => void,
+    options: DriverLaunchOptions = {}
   ): Promise<ExtensionDriver> {
     const profileDir = mkdtempSync(path.join(tmpdir(), 'wpr-fdt-e2e-'));
-    const driver = new ExtensionDriver(profileDir, cleanup);
+    const driver = new ExtensionDriver(profileDir, cleanup, options);
     await driver.openContext();
     return driver;
   }
@@ -200,7 +211,7 @@ export class ExtensionDriver {
         headless: process.env.E2E_HEADED !== '1',
         // Playwright hides painted scrollbars in headless by default. Keep real
         // scrollbar geometry/painting so layout and visibility assertions are honest.
-        ignoreDefaultArgs: ['--hide-scrollbars'],
+        ignoreDefaultArgs: ['--hide-scrollbars', ...this.droppedDefaults],
         viewport: { width: 1280, height: 800 },
         timeout: LAUNCH_TIMEOUT_MS,
         args: [
@@ -566,6 +577,15 @@ export const test = base.extend<DriverTestFixtures, { extension: ExtensionDriver
     }
   ]
 });
+
+/** Variations of {@link ExtensionDriver.launch} for a suite's own browser. */
+export interface DriverLaunchOptions {
+  /**
+   * Keep Chromium's back/forward cache (Playwright disables it by default):
+   * a back navigation can then restore the page instead of reloading it.
+   */
+  readonly backForwardCache?: boolean;
+}
 
 /** Re-exported so suites do not import from two places. */
 export { expect };
