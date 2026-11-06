@@ -137,7 +137,7 @@ describe('candidateFacts', () => {
 });
 
 describe('lcpResource', () => {
-  it('matches the first entry by the full URL', () => {
+  it('matches the last entry of the full URL requested by the LCP time', () => {
     const performance = timeline(
       [],
       [
@@ -146,19 +146,26 @@ describe('lcpResource', () => {
         { name: 'https://a.test/hero.jpg', startTime: 99, requestStart: 99, responseEnd: 99 }
       ]
     );
-    expect(lcpResource('https://a.test/hero.jpg', performance)).toEqual({
+    expect(lcpResource({ url: 'https://a.test/hero.jpg', startTime: 50 }, performance)).toEqual({
       name: 'https://a.test/hero.jpg',
       startTime: 10,
       requestStart: 0,
       responseEnd: 30
     });
+    // Painted after the refetch started: the refetch is the one.
+    expect(lcpResource({ url: 'https://a.test/hero.jpg', startTime: 120 }, performance)).toEqual({
+      name: 'https://a.test/hero.jpg',
+      startTime: 99,
+      requestStart: 99,
+      responseEnd: 99
+    });
   });
 
   it('has none for text or an unknown URL', () => {
     const getEntriesByType = vi.fn(() => []);
-    expect(lcpResource('', { getEntriesByType })).toBeNull();
+    expect(lcpResource({ url: '', startTime: 1 }, { getEntriesByType })).toBeNull();
     expect(getEntriesByType).not.toHaveBeenCalled();
-    expect(lcpResource('https://a.test/x.jpg', timeline([], []))).toBeNull();
+    expect(lcpResource({ url: 'https://a.test/x.jpg', startTime: 1 }, timeline([], []))).toBeNull();
   });
 });
 

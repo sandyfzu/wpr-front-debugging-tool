@@ -13,6 +13,7 @@ import {
   type LcpHighlight
 } from '../messaging/lcp-analysis';
 import type { TabAsks } from '../messaging/tab-asks';
+import { domTiming } from '../../utils/dom-timing';
 import { computeLcpBreakdown, type LcpBreakdown, type LcpBreakdownGap } from './breakdown';
 import { LCP_ANALYSIS_ASK_DEADLINE_MS } from './deadlines';
 
@@ -28,6 +29,11 @@ export type LcpAnalysisOutcome =
       readonly breakdown: LcpBreakdown | LcpBreakdownGap;
       /** Every candidate, in order (the last is the page's LCP). */
       readonly candidates: readonly LcpCandidateFacts[];
+      /**
+       * The prerender activation offset (ms; 0 when not prerendered or
+       * unknown): candidate times read from it, as the breakdown's do.
+       */
+      readonly activationStart: number;
       readonly highlight: LcpHighlight;
     };
 
@@ -72,6 +78,7 @@ export function analysisOf(
       reply.resource === null ? [] : [reply.resource]
     ),
     candidates: reply.candidates,
+    activationStart: domTiming(reply.navigation?.activationStart),
     highlight: reply.highlight
   };
 }

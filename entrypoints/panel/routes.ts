@@ -10,7 +10,9 @@
  */
 import type { LucideIcon } from 'lucide-solid';
 import FileCode from 'lucide-solid/icons/file-code';
+import Gauge from 'lucide-solid/icons/gauge';
 import Images from 'lucide-solid/icons/images';
+import Radar from 'lucide-solid/icons/radar';
 import ScrollText from 'lucide-solid/icons/scroll-text';
 import SearchX from 'lucide-solid/icons/search-x';
 import ShieldCheck from 'lucide-solid/icons/shield-check';
@@ -40,7 +42,9 @@ export const ROUTE_IDS = [
   'headers-cookies',
   'undefined-references',
   'diagnoser',
-  'rucss-tester'
+  'rucss-tester',
+  'beacon-tester',
+  'lcp-vitals'
 ] as const;
 
 /** One panel page's route id. */
@@ -100,8 +104,8 @@ function shownTotal(count: number, partial: boolean): string {
 
 /**
  * The nav registry, in render order — today's pages. Future rows land
- * additively here with their named owners: Beacon & LCP (P14, Tools), Compare (P17 — decision-gated optional SBS
- * panel home, Tools).
+ * additively here with their named owners: Compare (P17 — decision-gated optional SBS panel home,
+ * Tools).
  *
  * The Overview row carries no live state on purpose: WPR presence, version
  * and cache age are the status bar's first-paint answers, owned there — the
@@ -209,6 +213,22 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     id: 'rucss-tester',
     label: 'RUCSS Tester',
     icon: TestTubeDiagonal,
+    group: 'Tools'
+  },
+  {
+    // A tool like the RUCSS Tester: its results are a run's, not the page's
+    // payload, so the row stays quiet.
+    id: 'beacon-tester',
+    label: 'Beacon Tester',
+    icon: Radar,
+    group: 'Tools'
+  },
+  {
+    // A tool too: its answers are asked of the live page on demand, not
+    // read from the payload, so the row stays quiet.
+    id: 'lcp-vitals',
+    label: 'LCP & Vitals',
+    icon: Gauge,
     group: 'Tools'
   }
 ];

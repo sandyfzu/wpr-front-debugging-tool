@@ -69,6 +69,7 @@ describe('analysisOf', () => {
     const analysis = analysisOf(MEASURED);
     expect(analysis.candidates).toBe(MEASURED.candidates);
     expect(analysis.highlight).toBe('shown');
+    expect(analysis.activationStart).toBe(0);
     expect(analysis.breakdown).toMatchObject({
       kind: 'breakdown',
       total: 1000,
@@ -80,6 +81,16 @@ describe('analysisOf', () => {
         { key: 'elementRenderDelay', duration: 300, percent: 30 }
       ]
     });
+  });
+
+  it('carries the prerender activation and measures the breakdown from it', () => {
+    const analysis = analysisOf({
+      ...MEASURED,
+      navigation: { responseStart: 200, activationStart: 250 }
+    });
+    expect(analysis.activationStart).toBe(250);
+    expect(analysis.breakdown).toMatchObject({ kind: 'breakdown', total: 750 });
+    expect(analysisOf({ ...MEASURED, navigation: null }).activationStart).toBe(0);
   });
 
   it('reads an image without a resource entry as missing', () => {

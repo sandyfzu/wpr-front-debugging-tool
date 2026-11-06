@@ -18,7 +18,9 @@ const ROUTES = [
   'headers-cookies',
   'undefined-references',
   'diagnoser',
-  'rucss-tester'
+  'rucss-tester',
+  'beacon-tester',
+  'lcp-vitals'
 ];
 
 /**

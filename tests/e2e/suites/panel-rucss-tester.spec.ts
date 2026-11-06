@@ -627,7 +627,7 @@ test.describe('RUCSS tester (panel → page → background → mocked service)',
       await panel.getByRole('button', { name: 'Add replacement' }).click();
       await panel.getByRole('textbox', { name: 'Replacement 1 search' }).fill('(unclosed');
       await expect(panel.locator('[data-fdt-rucss-pair="0"] [data-fdt-field-error]')).toBeVisible();
-      await expect(panel.locator('[data-fdt-rucss-save="saved"]')).toBeVisible();
+      await expect(panel.locator('[data-fdt-save="saved"]')).toBeVisible();
       expect(await run(panel)).toBe('invalid-config');
       const outcome = panel.locator('[data-fdt="rucss-outcome"]');
       await expect(outcome).toContainText('Replacement 1:');

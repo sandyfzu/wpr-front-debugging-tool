@@ -1,5 +1,6 @@
 /**
- * The debounced writer: one write per pause, flush writes now and waits,
+ * The debounced writer (bound here to the RUCSS tester's store check, a
+ * real tool's): one write per pause, flush writes now and waits,
  * a store-refused configuration is never sent, a storage rejection is
  * shown and retried by the next flush, an edit during a write queues the
  * next one.
@@ -11,7 +12,19 @@ import {
   RUCSS_CONFIG_LIMITS,
   type RucssTesterConfig
 } from '../../../../lib/rucss-tester/config';
-import { createConfigWriter } from './config-writer';
+import { findStoreProblem } from '../../../../lib/rucss-tester/form-check';
+import { createConfigWriter, type ConfigWriter, type ConfigWriterDeps } from './config-writer';
+
+/**
+ * The writer under test, with the RUCSS tester's store check.
+ *
+ * @param deps The write and timer doubles.
+ */
+function createWriter(
+  deps: Omit<ConfigWriterDeps<RucssTesterConfig>, 'check'>
+): ConfigWriter<RucssTesterConfig> {
+  return createConfigWriter({ ...deps, check: findStoreProblem });
+}
 
 /** A manual timer: `fire()` runs the armed callback. */
 function manualTimer(): { schedule: ScheduleTimer; fire: () => void; armed: () => boolean } {
@@ -46,7 +59,7 @@ describe('createConfigWriter', () => {
   it('writes the last edit of a burst once the pause passes', async () => {
     const timer = manualTimer();
     const write = vi.fn(() => Promise.resolve());
-    const writer = createConfigWriter({ write, schedule: timer.schedule, delayMs: 400 });
+    const writer = createWriter({ write, schedule: timer.schedule, delayMs: 400 });
     expect(writer.state()).toEqual({ status: 'saved' });
     writer.queue(config('a'));
     writer.queue(config('ab'));
@@ -63,7 +76,7 @@ describe('createConfigWriter', () => {
   it('flush writes now, waits for it and disarms the timer', async () => {
     const timer = manualTimer();
     const write = vi.fn(() => Promise.resolve());
-    const writer = createConfigWriter({ write, schedule: timer.schedule, delayMs: 400 });
+    const writer = createWriter({ write, schedule: timer.schedule, delayMs: 400 });
     writer.queue(config('x'));
     await expect(writer.flush()).resolves.toBe(true);
     expect(write).toHaveBeenCalledTimes(1);
@@ -76,7 +89,7 @@ describe('createConfigWriter', () => {
   it('never sends what the store would refuse, and says why', async () => {
     const timer = manualTimer();
     const write = vi.fn(() => Promise.resolve());
-    const writer = createConfigWriter({ write, schedule: timer.schedule, delayMs: 400 });
+    const writer = createWriter({ write, schedule: timer.schedule, delayMs: 400 });
     const heavy = '\u0001'.repeat(RUCSS_CONFIG_LIMITS.cssChars);
     writer.queue({ ...config(''), prepend: heavy, append: heavy });
     await expect(writer.flush()).resolves.toBe(false);
@@ -93,7 +106,7 @@ describe('createConfigWriter', () => {
       .fn<(config: RucssTesterConfig) => Promise<void>>()
       .mockRejectedValueOnce(new Error('QUOTA_BYTES quota exceeded'))
       .mockResolvedValue(undefined);
-    const writer = createConfigWriter({ write, schedule: timer.schedule, delayMs: 400 });
+    const writer = createWriter({ write, schedule: timer.schedule, delayMs: 400 });
     writer.queue(config('q'));
     await expect(writer.flush()).resolves.toBe(false);
     expect(writer.state()).toEqual({
@@ -118,7 +131,7 @@ describe('createConfigWriter', () => {
           })
       )
       .mockResolvedValue(undefined);
-    const writer = createConfigWriter({ write, schedule: timer.schedule, delayMs: 400 });
+    const writer = createWriter({ write, schedule: timer.schedule, delayMs: 400 });
     writer.queue(config('one'));
     timer.fire();
     await settle();
@@ -142,7 +155,7 @@ describe('createConfigWriter', () => {
           })
       )
       .mockResolvedValue(undefined);
-    const writer = createConfigWriter({ write, schedule: timer.schedule, delayMs: 400 });
+    const writer = createWriter({ write, schedule: timer.schedule, delayMs: 400 });
     writer.queue(config('at-run'));
     const flushing = writer.flush();
     await settle();
@@ -171,7 +184,7 @@ describe('createConfigWriter', () => {
           })
       )
       .mockResolvedValue(undefined);
-    const writer = createConfigWriter({ write, schedule: timer.schedule, delayMs: 400 });
+    const writer = createWriter({ write, schedule: timer.schedule, delayMs: 400 });
     writer.queue(config('debounced'));
     timer.fire();
     await settle();
@@ -184,7 +197,7 @@ describe('createConfigWriter', () => {
   it('flush reports a held edit refused by a concurrent write pass', async () => {
     const timer = manualTimer();
     const write = vi.fn(() => Promise.resolve());
-    const writer = createConfigWriter({ write, schedule: timer.schedule, delayMs: 400 });
+    const writer = createWriter({ write, schedule: timer.schedule, delayMs: 400 });
     const heavy = '\u0001'.repeat(RUCSS_CONFIG_LIMITS.cssChars);
     writer.queue({ ...config(''), prepend: heavy, append: heavy });
     timer.fire();
@@ -197,7 +210,7 @@ describe('createConfigWriter', () => {
   it('cancel drops a queued write', async () => {
     const timer = manualTimer();
     const write = vi.fn(() => Promise.resolve());
-    const writer = createConfigWriter({ write, schedule: timer.schedule, delayMs: 400 });
+    const writer = createWriter({ write, schedule: timer.schedule, delayMs: 400 });
     writer.queue(config('gone'));
     writer.cancel();
     timer.fire();

@@ -26,8 +26,7 @@ import {
   lineCount,
   pruneRowFlags,
   sameScript,
-  scriptStateBadges,
-  toggleRowFlag
+  scriptStateBadges
 } from './script-view';
 
 /** A classified script with overrides. */
@@ -264,14 +263,6 @@ describe('row-flag bookkeeping', () => {
     const changed = buildRowView(script({ content: 'b2' }), 'b');
     expect([...pruneRowFlags(new Set(['a', 'b']), [a, b], [a])]).toEqual(['a']);
     expect([...pruneRowFlags(new Set(['a', 'b']), [a, b], [a, changed])]).toEqual(['a']);
-  });
-
-  it('toggles membership into a fresh set', () => {
-    const empty = new Set<string>();
-    const one = toggleRowFlag(empty, 'k');
-    expect(one).not.toBe(empty);
-    expect([...one]).toEqual(['k']);
-    expect([...toggleRowFlag(one, 'k')]).toEqual([]);
   });
 });
 

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Runtime states fixture</title>
+    <script type="application/ld+json">
+      { "@context": "https://schema.org", "@type": "WebPage", "name": "Runtime states fixture" }
+    </script>
+  </head>
+  <body>
+    <h1>Scripts in every Delay JS state</h1>
+    <p>
+      Delayed scripts (a theme file, a plugin file that does not exist, an inline script) wait for
+      the first click; a plain script runs as served; a nomodule fallback is stamped skipped. The
+      small runner below stands in for Delay JS: on the first click it swaps each delayed tag for a
+      runnable one and stamps <code>data-rocket-status</code> once it loaded or failed.
+    </p>
+    <script src="/runtime/vendor/lib.js" id="vendor-lib-js"></script>
+    <script nomodule src="/runtime/vendor/legacy.js" data-rocket-status="skipped"></script>
+    <script
+      type="rocketlazyloadscript"
+      data-rocket-src="/runtime/wp-content/themes/demo/theme.js"
+      id="demo-theme-js"
+      class="theme-main"
+    ></script>
+    <script
+      type="rocketlazyloadscript"
+      data-rocket-src="/runtime/wp-content/plugins/demo/missing.js"
+      id="demo-plugin-js"
+    ></script>
+    <script type="rocketlazyloadscript" id="demo-inline-js">
+      window.runtimeInlineRan = true;
+    </script>
+    <script id="fixture-runner">
+      addEventListener(
+        'click',
+        () => {
+          for (const delayed of document.querySelectorAll('script[type="rocketlazyloadscript"]')) {
+            const runnable = document.createElement('script');
+            for (const { name, value } of delayed.attributes) {
+              if (name !== 'type' && name !== 'data-rocket-src') runnable.setAttribute(name, value);
+            }
+            const src = delayed.getAttribute('data-rocket-src');
+            if (src === null) {
+              runnable.text = delayed.text;
+              runnable.setAttribute('data-rocket-status', 'executed');
+            } else {
+              runnable.addEventListener('load', () => {
+                runnable.setAttribute('data-rocket-status', 'executed');
+              });
+              runnable.addEventListener('error', () => {
+                runnable.setAttribute('data-rocket-status', 'failed-network');
+              });
+              runnable.src = src;
+            }
+            delayed.replaceWith(runnable);
+          }
+        },
+        { once: true }
+      );
+    </script>
+  </body>
+</html>
