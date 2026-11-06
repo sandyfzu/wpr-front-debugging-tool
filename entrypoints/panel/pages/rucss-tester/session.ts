@@ -23,7 +23,6 @@
  * they ran on, so a reload (a new page identity) clears them.
  */
 import { createMemo, createSignal, type Accessor } from 'solid-js';
-import { createStore, reconcile, unwrap } from 'solid-js/store';
 import type { Logger } from '../../../../lib/logger';
 import type { AskOutcome, ScheduleTimer } from '../../../../lib/messaging/bounded-ask';
 import type { PageStylesReply } from '../../../../lib/messaging/page-styles';
@@ -33,9 +32,10 @@ import {
   type RucssReplacement,
   type RucssTesterConfig
 } from '../../../../lib/rucss-tester/config';
-import { clampRucssTesterConfig } from '../../../../lib/rucss-tester/form-check';
+import { clampRucssTesterConfig, findStoreProblem } from '../../../../lib/rucss-tester/form-check';
 import type { RucssTestOutcome } from '../../../../lib/rucss-tester/run-test';
-import { createConfigWriter, type ConfigSaveState } from './config-writer';
+import type { ConfigSaveState } from '../settings/config-writer';
+import { createStoredSettings, type SettingsLoadState } from '../settings/stored-settings';
 
 /** The form's text fields. */
 export type RucssTextField = 'safelist' | 'inlinePreserve' | 'excludeFiles' | 'prepend' | 'append';
@@ -44,8 +44,7 @@ export type RucssTextField = 'safelist' | 'inlinePreserve' | 'excludeFiles' | 'p
 export type RucssFlagField = 'mobile' | 'home';
 
 /** The stored settings' load. */
-export type ConfigLoadState =
-  { readonly status: 'loading' } | { readonly status: 'ready' } | { readonly status: 'failed' };
+export type ConfigLoadState = SettingsLoadState;
 
 /** A run that ended with an outcome. */
 export interface FinishedRun {
@@ -211,19 +210,26 @@ export function pageChangeOf(outcome: RucssTestOutcome): 'applied' | 'unconfirme
  * @param deps See {@link RucssTesterSessionDeps}.
  */
 export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTesterSession {
-  const [form, setForm] = createStore<RucssFormState>(toFormState(DEFAULT_RUCSS_TESTER_CONFIG));
-  const [load, setLoad] = createSignal<ConfigLoadState>({ status: 'loading' });
+  const settings = createStoredSettings<RucssTesterConfig, RucssFormState>({
+    read: deps.readConfig,
+    write: deps.writeConfig,
+    watch: deps.watchConfig,
+    check: findStoreProblem,
+    toForm: toFormState,
+    toValue: clampRucssTesterConfig,
+    initial: DEFAULT_RUCSS_TESTER_CONFIG,
+    schedule: deps.schedule,
+    delayMs: deps.saveDelayMs,
+    log: deps.log,
+    label: 'RUCSS tester'
+  });
+  const { form, setForm, load, edited } = settings;
   const [run, setRun] = createSignal<RucssRunState>({ status: 'idle' });
   const [inventoryRead, setInventoryRead] = createSignal<InventoryRead>({ status: 'idle' });
   const [localTests, setLocalTests] = createSignal<LocalTests>({
     page: null,
     applied: 0,
     unconfirmed: 0
-  });
-  const writer = createConfigWriter({
-    write: deps.writeConfig,
-    schedule: deps.schedule,
-    delayMs: deps.saveDelayMs
   });
   let sequence = 0;
   let disposed = false;
@@ -240,41 +246,6 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
     const current = deps.pageId();
     return current !== null && current !== page;
   };
-
-  /** The form as plain data, within every cap (what gets written). */
-  const snapshot = (): RucssTesterConfig => clampRucssTesterConfig(unwrap(form));
-
-  /** Queue the form's current settings for writing. */
-  const edited = (): void => {
-    writer.queue(snapshot());
-  };
-
-  /** Load the stored settings into the form (load machine: loading → ready | failed). */
-  const readStored = async (): Promise<void> => {
-    setLoad({ status: 'loading' });
-    try {
-      const stored = await deps.readConfig();
-      if (disposed) return;
-      setForm(reconcile(toFormState(stored)));
-      setLoad({ status: 'ready' });
-    } catch (cause) {
-      deps.log.warn(
-        'RUCSS tester: reading the settings failed',
-        cause instanceof Error ? cause.message : cause
-      );
-      if (!disposed) setLoad({ status: 'failed' });
-    }
-  };
-
-  // Another window's write lands here too; local edits in flight win (theirs would undo typing).
-  // A storage callback, not a render scope: it reads the current states once per write.
-  // eslint-disable-next-line solid/reactivity
-  const stopWatch = deps.watchConfig((config) => {
-    if (load().status === 'ready' && writer.state().status === 'saved') {
-      setForm(reconcile(toFormState(config)));
-    }
-  });
-  void readStored();
 
   // Each applied run's result, seen on the page at least once (a fresh payload landed).
   const seenOnPage = createMemo<{ sequence: number; seen: boolean }>(
@@ -382,7 +353,7 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
   const execute = async (): Promise<RucssTestOutcome | 'blocked'> => {
     try {
       // The run reads the store: it must hold what the form showed at Run.
-      if (!(await writer.flush())) return 'blocked';
+      if (!(await settings.flush())) return 'blocked';
     } catch (cause) {
       deps.log.error(
         'RUCSS tester: saving the settings before the run threw',
@@ -442,7 +413,7 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
   return {
     form,
     load,
-    save: writer.state,
+    save: settings.save,
     run,
     inventory,
     pageRuns: deps.pageRuns,
@@ -470,20 +441,17 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
       setForm('replacements', index, part, value);
       edited();
     },
-    retryLoad: () => {
-      void readStored();
-    },
+    retryLoad: settings.retryLoad,
     start,
     cancelRepeat: () => {
       const current = run();
       if (current.status === 'confirm-repeat') setRun(current.previous ?? { status: 'idle' });
     },
     inspect,
-    flush: writer.flush,
+    flush: settings.flush,
     dispose: () => {
       disposed = true;
-      stopWatch();
-      writer.cancel();
+      settings.dispose();
     }
   };
 }

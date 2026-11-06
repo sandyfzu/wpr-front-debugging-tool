@@ -217,9 +217,9 @@ describe('RucssTesterPage — form', () => {
     ).toMatch(/^Invalid pattern: /);
     fireEvent.click(screen.getByRole('button', { name: 'Remove replacement 1' }));
     expect(handle.session.form.replacements).toEqual([{ search: '(', replacement: '' }]);
-    expect(
-      document.querySelector('[data-fdt-rucss-save]')?.getAttribute('data-fdt-rucss-save')
-    ).toBe('pending');
+    expect(document.querySelector('[data-fdt-save]')?.getAttribute('data-fdt-save')).toBe(
+      'pending'
+    );
   });
 });
 

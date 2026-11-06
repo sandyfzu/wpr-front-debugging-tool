@@ -205,6 +205,25 @@
     "required": true
   },
   {
+    "surface": "Beacon Tester page (panel chunk, loaded on first visit)",
+    "globs": ["chunks/beacon-tester-*.js"],
+    "maxKb": {
+      "raw": 32.4,
+      "gzip": 10.6
+    },
+    "required": true
+  },
+  {
+    "surface": "Beacon Tester page (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["chunks/beacon-tester-*.js"],
+    "maxKb": {
+      "raw": 32.4,
+      "gzip": 10.6
+    },
+    "required": true
+  },
+  {
     "surface": "background page (Firefox)",
     "build": "firefox-mv2",
     "globs": ["background.js"],
@@ -225,7 +244,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1948.8
+      "raw": 1986.5
     }
   }
 ]

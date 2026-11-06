@@ -4,6 +4,9 @@
  * folder and is mapped here once; routes without a page folder render the
  * shared honest placeholder, so a deep link never dead-ends.
  *
+ * Pages that only some sessions open (tools) load on first visit, from their
+ * own chunk (`./pages/lazy-page`); the panel's start pays nothing for them.
+ *
  * Heading discipline: each body renders exactly one `<h1>` (the page's name)
  * and skips no heading levels — the shell guarantees the page is the only
  * heading surface on the screen.
@@ -17,6 +20,7 @@ import { placeholderPage } from './pages/placeholder';
 import { PreloadedResourcesPage } from './pages/preloaded-resources/page';
 import { RucssTesterPage } from './pages/rucss-tester/page';
 import { UndefinedReferencesPage } from './pages/undefined-references/page';
+import { lazyPage } from './pages/lazy-page';
 import { NAV_ROUTES, type RouteId } from './routes';
 
 /** One route body: renders the page's content (no props — real pages read the shell's store context). */
@@ -30,7 +34,11 @@ export const PAGE_BODIES: Partial<Record<RouteId, PageBody>> = {
   'preloaded-resources': PreloadedResourcesPage,
   'headers-cookies': HeadersCookiesPage,
   'undefined-references': UndefinedReferencesPage,
-  'rucss-tester': RucssTesterPage
+  'rucss-tester': RucssTesterPage,
+  'beacon-tester': lazyPage('beacon-tester', async () => {
+    const { BeaconTesterPage } = await import('./pages/beacon-tester/beacon-tester');
+    return BeaconTesterPage;
+  })
 };
 
 /** The route-body table, generated from the registry — the two cannot drift apart. */

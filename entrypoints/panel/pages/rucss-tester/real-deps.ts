@@ -27,7 +27,11 @@ import {
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { devtoolsInspectedTabId } from '../../state/edges';
 import type { DataState } from '../../state/fdt-state-machine';
+import { pageIdOf } from '../../state/page-identity';
 import type { RucssTesterSessionDeps } from './session';
+
+/** Re-exported: the page identity rule is the shell state's (`state/page-identity`). */
+export { pageIdOf };
 
 const log = createLogger('rucss-tester');
 
@@ -47,19 +51,6 @@ export function pageRunsOf(state: DataState): number {
   if (state.status !== 'ready' && state.status !== 'refreshing') return 0;
   const data: FdtData = state.data;
   return data.rucssTestMode?.runs ?? 0;
-}
-
-/**
- * The page's load identity from the shell's data state: the payload's
- * capture id, generated once per page load (a reload or navigation brings
- * a new one).
- *
- * @param state The shell's data state.
- * @returns The identity, or `null` without loaded data (or a payload without one).
- */
-export function pageIdOf(state: DataState): string | null {
-  if (state.status !== 'ready' && state.status !== 'refreshing') return null;
-  return state.data.scriptSnapshotId ?? null;
 }
 
 /** The inspected tab and its transport, or null when the panel cannot reach it. */

@@ -22,7 +22,7 @@ function liveStateOf(
 }
 
 describe('NAV_ROUTES', () => {
-  it('lists the eight rows in the journey order', () => {
+  it('lists the nine rows in the journey order', () => {
     expect(NAV_ROUTES.map((row) => row.id)).toEqual([
       'detections',
       'javascript',
@@ -31,7 +31,8 @@ describe('NAV_ROUTES', () => {
       'headers-cookies',
       'undefined-references',
       'diagnoser',
-      'rucss-tester'
+      'rucss-tester',
+      'beacon-tester'
     ]);
     expect(NAV_ROUTES.map((row) => row.group)).toEqual([
       'Overview',
@@ -41,6 +42,7 @@ describe('NAV_ROUTES', () => {
       'Inspect',
       'Diagnose',
       'Diagnose',
+      'Tools',
       'Tools'
     ]);
   });
@@ -48,6 +50,14 @@ describe('NAV_ROUTES', () => {
   it('declares the RUCSS Tester as a state-free Tools row', () => {
     const row = navRoute('rucss-tester');
     expect(row?.label).toBe('RUCSS Tester');
+    expect(row?.group).toBe('Tools');
+    expect(row?.reserved).toBeUndefined();
+    expect(row?.liveState).toBeUndefined();
+  });
+
+  it('declares the Beacon Tester as a state-free Tools row', () => {
+    const row = navRoute('beacon-tester');
+    expect(row?.label).toBe('Beacon Tester');
     expect(row?.group).toBe('Tools');
     expect(row?.reserved).toBeUndefined();
     expect(row?.liveState).toBeUndefined();

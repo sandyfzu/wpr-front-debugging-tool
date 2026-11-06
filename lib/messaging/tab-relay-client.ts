@@ -8,7 +8,8 @@
  * {@link RelayUnavailableError}, so no caller blames the page for it.
  */
 import type { TabAsks } from './tab-asks';
-import { parseTabRelayReply, type TabRelayFailure, type TabRelayRequest } from './tab-relay';
+import type { TabRelayRequest } from './tab-relay';
+import { parseTabRelayReply, type TabRelayFailure } from './tab-relay-reply';
 
 /** One relay round trip (production: the runtime send of `relayTabAsk`). */
 export type RelaySend = (request: TabRelayRequest) => Promise<unknown>;

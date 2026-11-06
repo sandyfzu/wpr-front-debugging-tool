@@ -56,6 +56,7 @@ function groupOf(route: RailRowBox['route']): string {
     case 'diagnoser':
       return 'Diagnose';
     case 'rucss-tester':
+    case 'beacon-tester':
       return 'Tools';
     default:
       throw new Error(`Unknown test route: ${String(route)}`);
