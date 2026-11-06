@@ -21,6 +21,11 @@ const messenger = defineExtensionMessaging<ProtocolMap>();
 type InjectedGlobals = {
   chrome?: { tabs?: { sendMessage: typeof chrome.tabs.sendMessage } };
 };
+// The library's own transport object, not a namespace pick: it must be the
+// very `chrome` the library reads. The build pins that global to the genuine
+// namespace before this line (the namespace module is imported ahead of the
+// library — wxt.config.ts), so a page cannot forge it.
+// eslint-disable-next-line no-restricted-syntax -- the transport's `chrome`, pinned first
 const globalChrome = (globalThis as InjectedGlobals).chrome;
 const currentTabSend = globalChrome?.tabs?.sendMessage;
 if (typeof currentTabSend === 'function' && globalChrome?.tabs) {

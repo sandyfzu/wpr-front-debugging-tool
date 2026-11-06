@@ -71,7 +71,14 @@ jobs:
       - name: Type check
         run: pnpm compile
 
+      # Type-aware lint holds the whole TypeScript program (needs ~2.1 GB of heap) while
+      # V8 sizes its default heap from the runner's RAM: ~2 GB on the 8 GB private-repo
+      # runner — too tight (OOM, exit 134). 4 GiB is the default on a 16+ GB dev machine,
+      # where lint is measured (peak RSS ~3.6 GB), and still fits the 8 GB runner. Lint
+      # OOMs at 2048 MB and passes at 4096 MB (~1.9× headroom over the ~2.1 GB need).
       - name: Lint
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm lint
 
       - name: Format check

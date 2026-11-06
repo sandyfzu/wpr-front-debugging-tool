@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>FDT e2e — page whose DOM answers `browser`</title>
+    <script>
+      // Every WXT content script announces its start with a window message
+      // whose type begins with the runtime id its `browser` reports — the
+      // page-visible witness of which namespace each bundle resolved.
+      window.__wxtStarts = [];
+      window.addEventListener('message', (event) => {
+        const type = event.data && event.data.type;
+        if (typeof type === 'string' && type.endsWith(':wxt:content-script-started')) {
+          window.__wxtStarts.push(type);
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <main>
+      <h1>A page with a form named "browser"</h1>
+      <!-- Named access: `browser` is this form, `browser.runtime.id` reads "x". -->
+      <form id="browser"><input name="runtime" id="x" /></form>
+    </main>
+  </body>
+</html>

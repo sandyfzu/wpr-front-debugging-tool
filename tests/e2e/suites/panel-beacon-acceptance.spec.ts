@@ -158,8 +158,9 @@ test('lazy runner, no request to the site, no gate mark, no log, page untouched 
       fetch('/wp-admin/admin-ajax.php', { method: 'POST', body: 'control' }).catch(() => null)
     );
     // Same from the isolated world, where the extension's beacon code runs.
+    // Settles only once the fetch does, so its console line lands before the snapshot.
     await probe.inIsolatedWorld(
-      "fetch('/wp-admin/admin-ajax.php', { method: 'POST', body: 'isolated control' }).catch(() => null), true"
+      "fetch('/wp-admin/admin-ajax.php', { method: 'POST', body: 'isolated control' }).then(() => true, () => true)"
     );
     await expect.poll(() => traffic.requests().filter((r) => r.method() === 'POST').length).toBe(2);
     const control = traffic.requests().length;
