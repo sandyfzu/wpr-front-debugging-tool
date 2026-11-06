@@ -1,18 +1,17 @@
 /**
- * The tester form's debounced, failure-visible persistence. Edits queue a
- * write that runs once typing pauses; a run flushes it first, so the run
- * reads exactly what the form shows. A configuration the store would refuse
- * (over a cap or the byte budget) is never sent and reads `refused`; a
- * write the storage rejects (quota, a dead extension context) reads
- * `failed` — both with their message, never swallowed.
+ * A settings form's debounced, failure-visible persistence (every tool page
+ * binds its own store and check). Edits queue a write that runs once typing
+ * pauses; a run can flush it first, so the run reads exactly what the form
+ * shows. A value the store would refuse (the tool's check names why) is
+ * never sent and reads `refused`; a write the storage rejects (quota, a dead
+ * extension context) reads `failed` — both with their message, never
+ * swallowed.
  *
  * States: `saved` → (edit) `pending` → (pause/flush) `saving` → `saved` |
  * `failed` | `refused`; an edit during `saving` queues the next write.
  */
 import { createSignal, type Accessor } from 'solid-js';
 import type { ScheduleTimer } from '../../../../lib/messaging/bounded-ask';
-import type { RucssTesterConfig } from '../../../../lib/rucss-tester/config';
-import { findStoreProblem } from '../../../../lib/rucss-tester/form-check';
 
 /** Where the form's settings stand against the store. */
 export type ConfigSaveState =
@@ -25,9 +24,11 @@ export type ConfigSaveState =
   | { readonly status: 'failed'; readonly message: string };
 
 /** What the writer needs (tests inject doubles). */
-export interface ConfigWriterDeps {
-  /** Store one configuration (rejects as the storage does). */
-  readonly write: (config: RucssTesterConfig) => Promise<void>;
+export interface ConfigWriterDeps<T> {
+  /** Store one value (rejects as the storage does). */
+  readonly write: (config: T) => Promise<void>;
+  /** Why the store would refuse a value (user words), or null — a refused value is never sent. */
+  readonly check: (config: T) => string | null;
   /** Timer seam. */
   readonly schedule: ScheduleTimer;
   /** Quiet time (ms) after the last edit before writing. */
@@ -35,10 +36,10 @@ export interface ConfigWriterDeps {
 }
 
 /** The writer. */
-export interface ConfigWriter {
+export interface ConfigWriter<T> {
   readonly state: Accessor<ConfigSaveState>;
   /** Queue the latest configuration (replaces any queued one). */
-  readonly queue: (config: RucssTesterConfig) => void;
+  readonly queue: (config: T) => void;
   /**
    * Write the edit current at the call now (an edit made meanwhile keeps its
    * own debounce).
@@ -51,8 +52,8 @@ export interface ConfigWriter {
 }
 
 /** One edit waiting to be written, numbered in edit order. */
-interface QueuedEdit {
-  readonly config: RucssTesterConfig;
+interface QueuedEdit<T> {
+  readonly config: T;
   readonly number: number;
 }
 
@@ -70,9 +71,9 @@ function writeFailureMessage(cause: unknown): string {
  *
  * @param deps See {@link ConfigWriterDeps}.
  */
-export function createConfigWriter(deps: ConfigWriterDeps): ConfigWriter {
+export function createConfigWriter<T>(deps: ConfigWriterDeps<T>): ConfigWriter<T> {
   const [state, setState] = createSignal<ConfigSaveState>({ status: 'saved' });
-  let queued: QueuedEdit | null = null;
+  let queued: QueuedEdit<T> | null = null;
   let cancelTimer: (() => void) | null = null;
   let inFlight: Promise<void> | null = null;
   // Edits are numbered: a flush waits for the edit current at its call, never a later one.
@@ -91,7 +92,7 @@ export function createConfigWriter(deps: ConfigWriterDeps): ConfigWriter {
     const edit = queued;
     if (edit === null) return 'idle';
     queued = null;
-    const problem = findStoreProblem(edit.config);
+    const problem = deps.check(edit.config);
     if (problem !== null) {
       setState({ status: 'refused', message: problem });
       return 'refused';
@@ -120,7 +121,7 @@ export function createConfigWriter(deps: ConfigWriterDeps): ConfigWriter {
   };
 
   /** Hold `config` as the newest edit and (re)start the debounce. */
-  const queue = (config: RucssTesterConfig): void => {
+  const queue = (config: T): void => {
     lastEdit += 1;
     queued = { config, number: lastEdit };
     setState({ status: 'pending' });

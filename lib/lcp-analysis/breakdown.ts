@@ -4,14 +4,28 @@
  * load duration, element render delay — from plain timing values the
  * executor copies out of the navigation, resource and LCP entries.
  *
- * The parts form a max chain, so each boundary is at least the previous one
- * and every part is non-negative even when the browser hides a timing
+ * The total is the LCP time itself, and the parts form a max chain capped
+ * at it, so each boundary is at least the previous one, none passes the
+ * LCP, and every part is non-negative even when the browser hides a timing
  * (cross-origin `requestStart` reads 0 without `Timing-Allow-Origin`):
  *
- *   ttfb     = navigation.responseStart
- *   request  = max(ttfb, resource.requestStart || resource.startTime || 0)
- *   response = max(request, resource.responseEnd || 0)
- *   render   = max(response, lcp.startTime || 0)   // the total
+ *   total    = lcp.startTime
+ *   ttfb     = min(total, navigation.responseStart)
+ *   request  = min(total, max(ttfb, resource.requestStart || resource.startTime || 0))
+ *   response = min(total, max(request, resource.responseEnd || 0))
+ *   render delay = total − response
+ *
+ * The cap matters for media that keeps downloading after its first frame
+ * painted (a video, an animated image): its download end passes the LCP,
+ * and the rest of the download is not part of the wait. The resource is
+ * the last entry for the LCP's URL whose request started by the LCP time
+ * ({@link findLcpResource}): a refetch after the paint cannot be what
+ * painted it, an earlier fetch superseded by a later one is stale.
+ *
+ * On a prerendered page every boundary is first moved to the activation
+ * (`t − activationStart`, floored at 0), as the current-visit LCP is: the
+ * visitor's wait starts when the page is shown, so the total of an analysis
+ * and the visit's LCP agree (a page not prerendered activates at 0).
  */
 import { domTiming } from '../../utils/dom-timing';
 
@@ -19,9 +33,8 @@ import { domTiming } from '../../utils/dom-timing';
 export interface NavigationTiming {
   readonly responseStart: number;
   /**
-   * The prerender activation offset (ms; 0 when not prerendered) — carried
-   * so the panel can align the analysis with the current-visit LCP, which
-   * subtracts it; the breakdown itself does not read it. Absent = unknown.
+   * The prerender activation offset (ms; 0 when not prerendered): every
+   * boundary is measured from it. Absent = unknown, read as 0.
    */
   readonly activationStart?: number;
 }
@@ -74,7 +87,7 @@ export type LcpResourceState =
 /** A computed breakdown. */
 export interface LcpBreakdown {
   readonly kind: 'breakdown';
-  /** The render boundary, milliseconds — the sum of the parts. */
+  /** The LCP time (since activation), milliseconds — the sum of the parts. */
   readonly total: number;
   readonly parts: readonly LcpPart[];
   readonly resource: LcpResourceState;
@@ -97,23 +110,46 @@ export function partPercent(duration: number, total: number): number | null {
 }
 
 /**
- * The first resource entry fetched for the URL (the order the browser
- * buffered them in). Text LCPs have no URL and match nothing.
+ * The resource entry that painted the LCP: the last one (in the order the
+ * browser buffered them) for its URL whose request started by the LCP time
+ * — a fetch that started after the paint cannot be it; one that ended after
+ * it still is (media keeps downloading). Text LCPs have no URL and match
+ * nothing.
  *
- * @param url The LCP's URL.
+ * @param lcp The LCP entry's URL and time.
  * @param resources The page's resource entries.
  * @returns The entry, or null.
  */
-export function findLcpResource(
-  url: string,
-  resources: readonly ResourceTiming[]
-): ResourceTiming | null {
-  if (url === '') return null;
-  return resources.find((entry) => entry.name === url) ?? null;
+export function findLcpResource<R extends ResourceTiming>(
+  lcp: LcpTiming,
+  resources: readonly R[]
+): R | null {
+  if (lcp.url === '') return null;
+  const paintedBy = domTiming(lcp.startTime);
+  return (
+    resources.findLast(
+      (entry) =>
+        entry.name === lcp.url &&
+        (domTiming(entry.requestStart) || domTiming(entry.startTime)) <= paintedBy
+    ) ?? null
+  );
 }
 
 /**
- * Compute the LCP breakdown.
+ * A timeline value measured from the page's activation (the prerender
+ * activation offset; 0 when not prerendered), floored at 0 — a moment before
+ * the page was shown counts as its first.
+ *
+ * @param time The performance-timeline time, ms (non-finite/negative read as 0).
+ * @param activationStart The activation offset, ms (absent/invalid read as 0).
+ * @returns The time since activation, ms.
+ */
+export function sinceActivation(time: number, activationStart: number | undefined): number {
+  return Math.max(0, domTiming(time) - domTiming(activationStart));
+}
+
+/**
+ * Compute the LCP breakdown, every boundary measured from the activation.
  *
  * @param navigation The navigation entry, or null where none exists.
  * @param lcp The last LCP entry, or null when none was reported.
@@ -127,27 +163,35 @@ export function computeLcpBreakdown(
 ): LcpBreakdown | LcpBreakdownGap {
   if (navigation === null) return { kind: 'no-navigation' };
   if (lcp === null) return { kind: 'no-lcp' };
-  const resource = findLcpResource(lcp.url, resources);
-  const ttfb = domTiming(navigation.responseStart);
+  const resource = findLcpResource(lcp, resources);
+  /** A boundary measured from the activation. */
+  const since = (time: number): number => sinceActivation(time, navigation.activationStart);
+  const total = since(lcp.startTime);
+  /** A boundary that cannot pass the LCP. */
+  const capped = (time: number): number => Math.min(total, time);
+  const ttfb = capped(since(navigation.responseStart));
+  // A withheld `requestStart` reads 0: fall back to the entry's start before aligning.
   const request =
     resource === null
       ? ttfb
-      : Math.max(ttfb, domTiming(resource.requestStart) || domTiming(resource.startTime));
-  const response = resource === null ? request : Math.max(request, domTiming(resource.responseEnd));
-  const render = Math.max(response, domTiming(lcp.startTime));
+      : capped(
+          Math.max(ttfb, since(domTiming(resource.requestStart) || domTiming(resource.startTime)))
+        );
+  const response =
+    resource === null ? request : capped(Math.max(request, since(resource.responseEnd)));
   const durations: Record<LcpPartKey, number> = {
     timeToFirstByte: ttfb,
     resourceLoadDelay: request - ttfb,
     resourceLoadDuration: response - request,
-    elementRenderDelay: render - response
+    elementRenderDelay: total - response
   };
   return {
     kind: 'breakdown',
-    total: render,
+    total,
     parts: LCP_PARTS.map((key) => ({
       key,
       duration: durations[key],
-      percent: partPercent(durations[key], render)
+      percent: partPercent(durations[key], total)
     })),
     resource: lcp.url === '' ? 'text' : resource === null ? 'missing' : 'found'
   };

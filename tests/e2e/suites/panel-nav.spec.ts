@@ -91,7 +91,9 @@ const REGISTRY_ROWS = [
   '#/headers-cookies',
   '#/undefined-references',
   'reserved',
-  '#/rucss-tester'
+  '#/rucss-tester',
+  '#/beacon-tester',
+  '#/lcp-vitals'
 ];
 
 /**
@@ -701,7 +703,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       // internally (the designed token-thin hairline), every hidden route
       // stays pointer-reachable through that scroll, and the rail's own
       // scroll-free invariant is untouched by the plate's.
-      for (const height of [90, 120, 170, 220, 240, 250]) {
+      for (const height of [90, 120, 170, 220, 240, 250, 280]) {
         await shrinkTo(page, height);
         await page.getByRole('button', { name: 'More pages' }).click();
         const menu = page.locator('[data-fdt="panel-nav-overflow-menu"]');
@@ -710,13 +712,14 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
         expect(reach.plateOverflowY, `plate overflow at ${String(height)}px`).toBe('auto');
         expect(reach.plateScrollbarGutter, `plate gutter at ${String(height)}px`).toBe('auto');
         expect(reach.plateNoHorizontalOverflow).toBe(true);
-        // The clamp state: at 250 the plate fits without biting (its rows
+        // The clamp state: at 280 the plate fits without biting (its rows
         // truly fit; no scrollbar exists then); below, it bites and the
         // scroll carries the tail. The fit line follows the registry's row
-        // count — with eight rows it sits at 245 px, where the rail keeps a
-        // third row (probed in 5 px steps; 240 now clamps: two rail rows
-        // leave six in the plate).
-        if (height === 250) {
+        // count — with ten rows it still sits at 280 px, where the rail keeps a
+        // fourth row (probed in 5 px steps, 200–400: 245–275 keep three rail
+        // rows and clamp the other seven in the plate; 280–310 keep four and
+        // fit the other six).
+        if (height === 280) {
           expect(reach.plateClamped).toBe(false);
         } else {
           expect(reach.plateClamped, `plate clamped at ${String(height)}px`).toBe(true);
@@ -747,7 +750,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
     try {
       // A height the plate fits within: the auto overflow declares readiness
       // without painting a scrollbar or reserving a gutter for it.
-      await page.setViewportSize({ width: 700, height: 250 });
+      await page.setViewportSize({ width: 700, height: 280 });
       await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
       await page.getByRole('button', { name: 'More pages' }).click();
       const reach = await readPlateReach(page);

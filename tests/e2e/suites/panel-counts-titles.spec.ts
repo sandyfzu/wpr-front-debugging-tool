@@ -109,8 +109,13 @@ test('keeps grouped names, bounded titles and full copy/link values on all list 
             }
           }
         }
-        // Route focus lands on h1; native Tab enters the first grouped chip.
+        // Route focus lands on h1; native Tab enters the first grouped chip
+        // (on JavaScript after its view tabs: the selected tab is one stop).
         await root.getByRole('heading', { level: 1 }).focus();
+        if (id === 'javascript') {
+          await panel.keyboard.press('Tab');
+          await expect(root.getByRole('tab', { selected: true })).toBeFocused();
+        }
         await panel.keyboard.press('Tab');
         await expect(chip).toBeFocused();
         const copy = root.getByRole('button', { name: /URL.*— copy$/ }).first();

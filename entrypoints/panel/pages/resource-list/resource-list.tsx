@@ -4,70 +4,20 @@
  * declares only its rows, summary, empty state and row renderer.
  *
  * Layout (a `fill` frame): header → summary strip (feature presence + row
- * total; per-filter counts live on the chips only) → filter bar → the list
- * region (the one scroller). State matrix — the shell owns loading, error and
- * crash; this body renders:
- * - **empty** (no rows on the page): the page's own empty view in the list region;
- * - **filtered-empty** (chip and/or query hide every row): `NoMatches` with the
- *   one-click ways back, focus handed to the search field / the default chip;
- * - **populated**: the virtualized list (`role="list"`, rows `listitem` with
- *   their set size and position).
- *
- * Search — one query, two inputs, through the shared field binding
- * (`state/search-field`): the in-page field and the DevTools find bar drive
- * the same search store. The field streams into `perform` (the store owns the
- * debounce), keeps its own raw text while typing, and re-syncs from the
- * committed query whenever another input changes (find bar, `cancel`, route
- * reset) — a find-bar cancel drops the field's pending echo even when the
- * committed query is already empty (the reset is a store event with no
- * query change). Clearing it (✕ or Esc) cancels at once. Limitation: the
- * DevTools find bar's own text cannot be written back (no platform setter).
- *
- * Selection and query survive a data refresh (the body stays mounted); the
- * selection resets with the route (the body remounts).
+ * total; per-filter counts live on the chips only) → the filter/search/list
+ * body (`./filtered-list`, which owns the list's state matrix and search).
  */
 import type { JSX } from 'solid-js';
-import { createMemo, createSignal, For, Show } from 'solid-js';
-import { FilterBar } from '../../../../components/ui/filter-bar';
+import { For, Show } from 'solid-js';
 import { StatusBadge } from '../../../../components/ui/status-badge';
-import {
-  VirtualList,
-  type VirtualItem,
-  type VirtualizerFactory
-} from '../../../../components/ui/virtual-list';
-import {
-  filterAndSearch,
-  filterCounts,
-  type ResourcePageDefinition
-} from '../../../../lib/panel/resources-view-model';
-import {
-  countLabel,
-  defaultChipId,
-  fallbackRowKey,
-  type CountNoun
-} from '../../../../lib/panel/list-behavior';
-import { cn } from '../../../../utils/cn';
+import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import type { ResourcePageDefinition } from '../../../../lib/panel/resources-view-model';
+import { countLabel, type CountNoun } from '../../../../lib/panel/list-behavior';
 import type { RouteId } from '../../routes';
-import { useSearch } from '../../state/use-fdt-data';
-import { bindSearchField } from '../../state/search-field';
-import { createCurrentMatch, CURRENT_MATCH_ROW } from '../current-match';
-import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
-import { createResultsAnnouncement } from '../results-announcement';
-import {
-  buildFilterChips,
-  narrowingChipLabel,
-  normalizeQuery,
-  reconcileRows
-} from './resource-list-view';
+import { PageFrame } from '../page-frame';
+import { FilteredList, type ResourceRow } from './filtered-list';
 
-/** The row contract: a unique, stable id (source position) the list keys on. */
-export interface ResourceRow {
-  /** Stable row identity (the virtual list's item key). */
-  readonly id: number;
-}
-
-/** The list region's frame — the same box for rows, empty and filtered-empty views. */
-const LIST_REGION = 'rounded-md border border-line-1 bg-surface-1';
+export type { ResourceRow } from './filtered-list';
 
 /** Props of {@link ResourceListPage}. */
 export interface ResourceListPageProps<Row extends ResourceRow, Id extends string> {
@@ -120,147 +70,28 @@ export interface ResourceListPageProps<Row extends ResourceRow, Id extends strin
 export function ResourceListPage<Row extends ResourceRow, Id extends string>(
   props: ResourceListPageProps<Row, Id>
 ): JSX.Element {
-  const search = useSearch();
-  // The definition is static per page; resolving the default chip once keeps
-  // a definition without chips failing at mount, loudly.
-  // eslint-disable-next-line solid/reactivity -- read once on purpose: a page's definition is a module constant
-  const allChip = defaultChipId(props.definition);
-  const [selected, setSelected] = createSignal<Id>(allChip);
-  // The shared field binding: raw echo, the one store, the Esc rule.
-  const field = bindSearchField(search);
-  let controls: HTMLDivElement | undefined;
-
-  // The list filters on the committed query (the store owns the debounce);
-  // the field's raw echo only shows what the field displays.
-  const query = createMemo(() => normalizeQuery(search.query()));
-  // A refresh rebuilds every row object; reconciling by id keeps unchanged
-  // rows' objects, so their keyed list rows (and focus inside) survive it.
-  const rows = createMemo(
-    (previous: readonly Row[]) => reconcileRows(previous, props.rows, props.sameRow),
-    []
-  );
-  const counts = createMemo(() => filterCounts(rows(), props.definition));
-  const visible = createMemo(() => filterAndSearch(rows(), props.definition, selected(), query()));
-  // The find's page side: the rendered list is the match set — it reports the
-  // count and names the row the find's cursor sits on (highlight + scroll).
-  const match = createCurrentMatch(search, () => visible().length);
-  // Rows are looked up by the list's key, never by window index: an index
-  // read during a chip change can name another row for a moment and remount it.
-  const rowById = createMemo(
-    () => new Map<VirtualItem['key'], Row>(visible().map((row) => [row.id, row]))
-  );
-  const chips = createMemo(() => buildFilterChips(props.definition, counts(), selected()));
-
-  // The shared count line: truthful text always; a data refresh updates it
-  // silently (`aria-live="off"` in the same reactive wave), a committed
-  // filter/query change announces again — never per keystroke, never on
-  // mount (the region renders with its initial content). The noun is a
-  // page-level constant (declared with the page's rows' vocabulary).
-  // eslint-disable-next-line solid/reactivity -- read once on purpose: a page's noun is a module constant
-  const noun = props.noun;
-  const { text: announcement, live } = createResultsAnnouncement({
-    rows,
-    visible,
-    noun,
-    actions: [() => selected(), query]
-  });
-
-  /** Where focus lands once a `NoMatches` way back removes its button. */
-  const focusAfter = (action: 'clear-search' | 'show-all'): HTMLElement | null | undefined =>
-    action === 'clear-search'
-      ? controls?.querySelector<HTMLElement>('input[type="search"]')
-      : controls?.querySelector<HTMLElement>(`[data-fdt-filter-chip="${allChip}"]`);
-
   return (
     <PageFrame id={props.id} title={props.title} subtitle={props.subtitle} fill>
       <ResourceSummary
         featureLabel={props.featureLabel}
         featurePresent={props.featurePresent}
         featureSimulated={props.featureSimulated === true}
-        total={rows().length > 0 ? countLabel(rows().length, noun) : undefined}
+        total={props.rows.length > 0 ? countLabel(props.rows.length, props.noun) : undefined}
         notes={props.notes}
       />
-      <Show
-        when={rows().length > 0}
-        fallback={<div class={cn(PAGE_FILL_SCROLLER, LIST_REGION, 'grid')}>{props.empty}</div>}
-      >
-        {/* Esc in the field is the binding's rule; the ref targets the way-back focus. */}
-        <div ref={controls} onKeyDown={field.onKeyDown}>
-          <FilterBar
-            chips={chips()}
-            selected={selected()}
-            onSelect={(value) => {
-              // Chip values are the definition's own ids (the bar echoes them back).
-              setSelected(() => value as Id);
-            }}
-            filterLabel={`Filter ${props.listLabel.toLowerCase()}`}
-            searchQuery={field.value()}
-            onSearchChange={(raw) => {
-              field.input(raw);
-            }}
-            searchLabel={props.searchLabel}
-            searchPlaceholder={props.searchPlaceholder}
-          />
-        </div>
-        <Show
-          when={visible().length > 0}
-          fallback={
-            <div class={cn(PAGE_FILL_SCROLLER, LIST_REGION, 'grid place-items-center')}>
-              <NoMatches
-                chipLabel={narrowingChipLabel(props.definition, selected())}
-                query={query()}
-                onClearSearch={() => {
-                  field.clear();
-                }}
-                onShowAll={() => {
-                  setSelected(() => allChip);
-                }}
-                focusAfter={focusAfter}
-              />
-            </div>
-          }
-        >
-          <VirtualList
-            scrollerRole="list"
-            aria-label={props.listLabel}
-            count={visible().length}
-            estimateSize={(index) => {
-              const row = visible()[index];
-              return row === undefined ? 36 : props.estimateSize(row);
-            }}
-            // Row ids are source positions — unique even when two rows share a
-            // URL (the same image twice), stable across chip/search changes.
-            getItemKey={(index) => visible()[index]?.id ?? fallbackRowKey(index)}
-            createVirtualizer={props.createVirtualizer}
-            scrollTo={match.request}
-            class={cn(PAGE_FILL_SCROLLER, LIST_REGION)}
-          >
-            {(item) => (
-              <Show when={rowById().get(item.key)} keyed>
-                {(row) => (
-                  <div
-                    role="listitem"
-                    aria-setsize={visible().length}
-                    aria-posinset={item.index + 1}
-                    data-fdt="resource-row"
-                    aria-current={match.current() === item.index ? 'true' : undefined}
-                    class={cn(
-                      'min-h-8 px-2 py-1.5',
-                      item.index > 0 && 'border-t border-line-1',
-                      match.current() === item.index && CURRENT_MATCH_ROW
-                    )}
-                  >
-                    {props.renderRow(row)}
-                  </div>
-                )}
-              </Show>
-            )}
-          </VirtualList>
-        </Show>
-      </Show>
-      <div role="status" aria-live={live()} class="sr-only" data-fdt="resource-results-status">
-        {announcement()}
-      </div>
+      <FilteredList
+        definition={props.definition}
+        rows={props.rows}
+        sameRow={props.sameRow}
+        empty={props.empty}
+        noun={props.noun}
+        listLabel={props.listLabel}
+        searchLabel={props.searchLabel}
+        searchPlaceholder={props.searchPlaceholder}
+        estimateSize={props.estimateSize}
+        renderRow={props.renderRow}
+        createVirtualizer={props.createVirtualizer}
+      />
     </PageFrame>
   );
 }

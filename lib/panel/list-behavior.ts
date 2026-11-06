@@ -127,3 +127,46 @@ export function resultsAnnouncement(shown: number, total: number, noun: CountNou
   if (shown === total) return `Showing all ${countLabel(total, noun)}`;
   return `Showing ${formatCount(shown)} of ${countLabel(total, noun)}`;
 }
+
+/**
+ * Keep only the row keys whose row is still there **unchanged** in a
+ * list's per-row keyed state (expanded, wrapped): a refresh that removed a
+ * row — or changed it under the same key — forgets its flags (a different
+ * row must not open expanded or wrapped). "Unchanged" is object identity:
+ * the rows were reconciled, so an unchanged row keeps its object.
+ *
+ * @param states The flags to prune.
+ * @param previous The rows the flags were set on.
+ * @param next The refreshed rows.
+ * @param keyOf A row's key.
+ * @returns `states` itself when nothing was dropped, else the kept keys.
+ */
+export function pruneKeyedFlags<K, R>(
+  states: ReadonlySet<K>,
+  previous: readonly R[],
+  next: readonly R[],
+  keyOf: (row: R) => K
+): ReadonlySet<K> {
+  if (states.size === 0) return states;
+  const before = new Map(previous.map((row) => [keyOf(row), row]));
+  const after = new Map(next.map((row) => [keyOf(row), row]));
+  const kept = [...states].filter((key) => {
+    const row = after.get(key);
+    return row !== undefined && row === before.get(key);
+  });
+  return kept.length === states.size ? states : new Set(kept);
+}
+
+/**
+ * Flip one key's membership in a list's per-row keyed state (the expanded
+ * and wrapped sets).
+ *
+ * @param states The flags.
+ * @param key The row to flip.
+ * @returns A new set (sets in signals must change identity to notify).
+ */
+export function toggleRowFlag<K>(states: ReadonlySet<K>, key: K): ReadonlySet<K> {
+  const next = new Set(states);
+  if (!next.delete(key)) next.add(key);
+  return next;
+}

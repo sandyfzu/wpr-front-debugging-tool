@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Beacon candidates</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+      }
+      .hero {
+        display: block;
+        width: 900px;
+        height: 420px;
+      }
+      .thumb {
+        display: block;
+        width: 200px;
+        height: 120px;
+      }
+      .banner {
+        width: 600px;
+        height: 150px;
+        background-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22600%22 height=%22150%22%3E%3Crect width=%22600%22 height=%22150%22 fill=%22%23c9d%22/%3E%3C/svg%3E#banner');
+      }
+      .far {
+        height: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- A beacon-test fixture: a large hero (the LCP candidate), a smaller image and
+         a background banner above the fold, then two marked sections far below it. -->
+    <div id="wrap">
+      <img
+        class="hero"
+        alt="Hero"
+        src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22900%22 height=%22420%22%3E%3Crect width=%22900%22 height=%22420%22 fill=%22%239bc%22/%3E%3C/svg%3E#hero"
+      />
+      <img
+        class="thumb"
+        alt="Thumb"
+        src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22120%22%3E%3Crect width=%22200%22 height=%22120%22 fill=%22%23db9%22/%3E%3C/svg%3E#thumb"
+      />
+      <div class="banner"></div>
+      <div style="height: 3000px"></div>
+      <section class="far" data-rocket-location-hash="far-section-one">One</section>
+      <section class="far" data-rocket-location-hash="far-section-two">Two</section>
+    </div>
+  </body>
+</html>

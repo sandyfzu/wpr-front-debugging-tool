@@ -24,10 +24,11 @@ import {
 } from '../../../../lib/rucss-tester/test-mode';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
+import { pageIdOf } from '../../state/page-identity';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { PAIR_EFFECT_COPY } from './form';
 import { createRucssTesterHandle, RucssTesterPage } from './page';
-import { pageIdOf, pageRunsOf } from './real-deps';
+import { pageRunsOf } from './real-deps';
 import { RUNNING_COPY } from './run-panel';
 import { createRucssTesterSession, type RucssTesterSessionDeps } from './session';
 
@@ -217,9 +218,9 @@ describe('RucssTesterPage — form', () => {
     ).toMatch(/^Invalid pattern: /);
     fireEvent.click(screen.getByRole('button', { name: 'Remove replacement 1' }));
     expect(handle.session.form.replacements).toEqual([{ search: '(', replacement: '' }]);
-    expect(
-      document.querySelector('[data-fdt-rucss-save]')?.getAttribute('data-fdt-rucss-save')
-    ).toBe('pending');
+    expect(document.querySelector('[data-fdt-save]')?.getAttribute('data-fdt-save')).toBe(
+      'pending'
+    );
   });
 });
 
@@ -438,20 +439,6 @@ describe('RucssTesterPage — page styles', () => {
     await settle();
     expect(handle.tab()).toBe('styles');
     expect(handle.session.inventory().status).toBe('ready');
-  });
-});
-
-describe('pageIdOf', () => {
-  it('reads the page load identity from loaded data only', () => {
-    expect(pageIdOf({ status: 'fetching' })).toBeNull();
-    expect(pageIdOf({ status: 'ready', data: makeFdtData(), fetchedAt: 0 })).toBeNull();
-    expect(
-      pageIdOf({
-        status: 'refreshing',
-        data: makeFdtData({ scriptSnapshotId: 'load-1' }),
-        requestedAt: 0
-      })
-    ).toBe('load-1');
   });
 });
 

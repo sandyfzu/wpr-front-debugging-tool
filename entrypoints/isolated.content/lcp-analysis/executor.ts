@@ -20,6 +20,8 @@ import {
 } from '../../../lib/messaging/lcp-analysis';
 import {
   dedupeCandidates,
+  findLcpResource,
+  type LcpTiming,
   type NavigationTiming,
   type ResourceTiming
 } from '../../../lib/lcp-analysis/breakdown';
@@ -99,21 +101,23 @@ export function candidateFacts(entry: LcpEntryLike): LcpCandidateFacts {
 }
 
 /**
- * The LCP URL's first resource entry, as the contract carries it.
+ * The resource entry that painted the LCP (the last one for its URL whose
+ * request started by the LCP time), as the contract carries it.
  *
- * @param url The LCP entry's full URL (`''` for text).
+ * @param lcp The LCP entry's full URL (`''` for text) and time.
  * @param performance The timeline.
- * @returns The timing, or null for text or when no entry has that name.
+ * @returns The timing, or null for text or when no entry qualifies.
  */
 export function lcpResource(
-  url: string,
+  lcp: LcpTiming,
   performance: LcpAnalysisDeps['performance']
 ): ResourceTiming | null {
-  if (url === '') return null;
-  const entry = performance
-    .getEntriesByType('resource')
-    .find((candidate) => candidate.name === url) as PerformanceResourceTiming | undefined;
-  if (entry === undefined) return null;
+  if (lcp.url === '') return null;
+  const entry = findLcpResource(
+    lcp,
+    performance.getEntriesByType('resource') as PerformanceResourceTiming[]
+  );
+  if (entry === null) return null;
   return {
     name: capText(entry.name, LCP_ANALYSIS_LIMITS.urlPoints),
     startTime: domTiming(entry.startTime),
@@ -234,7 +238,7 @@ export async function analyseLcp(
     kind: 'measured',
     navigation: navigationTiming(deps.performance),
     candidates: kept.map(candidateFacts),
-    resource: last === undefined ? null : lcpResource(last.url, deps.performance),
+    resource: last === undefined ? null : lcpResource(last, deps.performance),
     highlight: await highlightOf(request.highlight, last?.element ?? null, deps.highlight)
   };
 }

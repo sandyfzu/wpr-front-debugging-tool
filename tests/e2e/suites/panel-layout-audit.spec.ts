@@ -11,7 +11,9 @@ const ROUTES = [
   'headers-cookies',
   'undefined-references',
   'diagnoser',
-  'rucss-tester'
+  'rucss-tester',
+  'beacon-tester',
+  'lcp-vitals'
 ];
 
 test('contains long captured URLs and retains virtualization on 5000 scripts', async ({

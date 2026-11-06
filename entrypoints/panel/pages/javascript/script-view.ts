@@ -5,6 +5,7 @@
  * chip states and the expanded-row bookkeeping. No DOM, no Solid: the page
  * wraps these in one memo chain and the rows only read the results.
  */
+import { pruneKeyedFlags } from '../../../../lib/panel/list-behavior';
 import type { FilterChip } from '../../../../components/ui/filter-bar';
 import type { StatusKind } from '../../../../components/ui/status-badge';
 import type {
@@ -345,10 +346,7 @@ export function estimateRowSize(view: ScriptRowView): number {
 }
 
 /**
- * Keep only the row keys whose row is still there **unchanged** in the
- * page's per-row keyed state (the expanded and wrapped sets): a refresh that
- * removed a script — or changed it under the same key — forgets its flags
- * (a different script must not open expanded or wrapped).
+ * {@link pruneKeyedFlags} over this page's script rows (keyed by script identity).
  *
  * @param states The flags to prune.
  * @param previous The row views the flags were set on.
@@ -360,28 +358,7 @@ export function pruneRowFlags(
   previous: readonly ScriptRowView[],
   next: readonly ScriptRowView[]
 ): ReadonlySet<string> {
-  if (states.size === 0) return states;
-  const before = new Map(previous.map((view) => [view.key, view]));
-  const after = new Map(next.map((view) => [view.key, view]));
-  const kept = [...states].filter((key) => {
-    const view = after.get(key);
-    return view !== undefined && view === before.get(key);
-  });
-  return kept.length === states.size ? states : new Set(kept);
-}
-
-/**
- * Flip one key's membership in a page's per-row keyed state (the expanded
- * and wrapped sets).
- *
- * @param states The flags.
- * @param key The row to flip.
- * @returns A new set (sets in signals must change identity to notify).
- */
-export function toggleRowFlag(states: ReadonlySet<string>, key: string): ReadonlySet<string> {
-  const next = new Set(states);
-  if (!next.delete(key)) next.add(key);
-  return next;
+  return pruneKeyedFlags(states, previous, next, (view) => view.key);
 }
 
 /** Code lines, in their two count forms. */

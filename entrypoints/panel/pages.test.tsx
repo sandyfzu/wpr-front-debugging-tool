@@ -1,8 +1,9 @@
 /**
  * Wiring tests for the route-body table and the shared placeholder: the six
- * page folders are mapped to their routes and every other route falls back to
- * the placeholder. Page bodies are tested in their own folders (the placeholder
- * in `pages/placeholder.test.tsx`), never here.
+ * page folders are mapped to their routes, the Beacon Tester loads lazily
+ * (`pages/lazy-page.test.tsx`), and every other route falls back to the
+ * placeholder. Page bodies are tested in their
+ * own folders (the placeholder in `pages/placeholder.test.tsx`), never here.
  */
 import { cleanup, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -45,5 +46,15 @@ describe('PAGES wiring', () => {
       expect(screen.getByRole('heading', { level: 1, name: row.label })).toBeTruthy();
       cleanup();
     }
+  });
+});
+
+describe('lazily loaded routes', () => {
+  it('maps the Beacon Tester route to a lazily loaded body', () => {
+    expect(typeof PAGE_BODIES['beacon-tester']).toBe('function');
+  });
+
+  it('maps the LCP & Vitals route to a lazily loaded body', () => {
+    expect(typeof PAGE_BODIES['lcp-vitals']).toBe('function');
   });
 });

@@ -8,7 +8,7 @@
  * store refuses or the storage rejects is shown, never swallowed.
  */
 import type { JSX } from 'solid-js';
-import { createMemo, For, Index, Match, Show, Switch as SolidSwitch } from 'solid-js';
+import { createMemo, For, Index, Show } from 'solid-js';
 import Plus from 'lucide-solid/icons/plus';
 import Trash from 'lucide-solid/icons/trash';
 import { Button } from '../../../../components/ui/button';
@@ -27,7 +27,7 @@ import {
 import { DEFAULT_INLINE_PRESERVES } from '../../../../lib/rucss-tester/run-plan';
 import { formatCount } from '../../../../utils/format-count';
 import { cn } from '../../../../utils/cn';
-import type { ConfigSaveState } from './config-writer';
+import { SaveLine } from '../settings/save-line';
 import type { RucssTesterSession, RucssTextField } from './session';
 
 /** The element id of a text field (the `review-patterns` recovery focuses it). */
@@ -72,13 +72,6 @@ export const PAIRS_HINT =
 export const PAIR_EFFECT_COPY: Readonly<Record<'deletes' | 'skipped', string>> = {
   deletes: 'Empty replacement: every match is deleted.',
   skipped: 'No search yet: this replacement is skipped.'
-};
-
-/** The save line's words per state (failures carry their own message). */
-export const SAVE_COPY: Readonly<Record<'saved' | 'pending' | 'saving', string>> = {
-  saved: 'Settings saved for every site.',
-  pending: 'Unsaved changes…',
-  saving: 'Saving…'
 };
 
 /** The field caps (the textarea `maxlength`s). */
@@ -285,46 +278,6 @@ function Replacements(props: { session: RucssTesterSession }): JSX.Element {
         </ol>
       </Show>
     </div>
-  );
-}
-
-/**
- * The save line: where the form stands against the store.
- *
- * @param props.state The writer's state.
- */
-export function SaveLine(props: { state: ConfigSaveState }): JSX.Element {
-  return (
-    <SolidSwitch>
-      <Match
-        when={
-          props.state.status === 'refused' || props.state.status === 'failed'
-            ? props.state
-            : undefined
-        }
-      >
-        {(failure) => (
-          <p data-fdt-rucss-save="failed" class={cn('text-2xs', STATUS_TEXT_CLASSES.error)}>
-            {failure().message}
-          </p>
-        )}
-      </Match>
-      <Match
-        when={
-          props.state.status === 'saved' ||
-          props.state.status === 'pending' ||
-          props.state.status === 'saving'
-            ? props.state.status
-            : undefined
-        }
-      >
-        {(status) => (
-          <p data-fdt-rucss-save={status()} class="text-2xs text-fg-muted">
-            {SAVE_COPY[status()]}
-          </p>
-        )}
-      </Match>
-    </SolidSwitch>
   );
 }
 

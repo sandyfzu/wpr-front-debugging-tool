@@ -8,17 +8,14 @@
  */
 import type { JSX } from 'solid-js';
 import { createMemo, For, Match, Show, Switch } from 'solid-js';
-import { Dynamic } from 'solid-js/web';
 import Play from 'lucide-solid/icons/play';
 import RotateCw from 'lucide-solid/icons/rotate-cw';
 import ShieldAlert from 'lucide-solid/icons/shield-alert';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
-import { MOTION_REVEAL } from '../../../../components/ui/classes';
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { KeyValueList } from '../../../../components/ui/key-value';
 import {
-  STATUS_ICONS,
   STATUS_SOFT_CLASSES,
   STATUS_TEXT_CLASSES,
   type StatusKind
@@ -37,6 +34,7 @@ import {
 } from '../../../../lib/rucss-tester/test-mode';
 import { cn } from '../../../../utils/cn';
 import { countLabel, formatCount } from '../../../../utils/format-count';
+import { OutcomeNotice } from '../outcome-notice';
 import type { RucssTesterSession } from './session';
 
 /** The running line (the bound is the panel's worst-case wait: start, build and apply in turn). */
@@ -195,23 +193,13 @@ function OutcomeBlock(props: {
   const kind = (): StatusKind => TONE_KIND[view().tone];
   const applied = () => (props.outcome.kind === 'applied' ? props.outcome : undefined);
   return (
-    <div
+    <OutcomeNotice
       data-fdt="rucss-outcome"
       data-fdt-rucss-outcome={props.outcome.kind}
-      class={cn('flex flex-col gap-2 rounded-md p-2.5', STATUS_SOFT_CLASSES[kind()], MOTION_REVEAL)}
+      kind={kind()}
+      title={view().title}
+      message={view().message}
     >
-      <div class="flex items-start gap-1.5">
-        <Dynamic
-          component={STATUS_ICONS[kind()]}
-          size={14}
-          class={cn('mt-px shrink-0', STATUS_TEXT_CLASSES[kind()])}
-          aria-hidden="true"
-        />
-        <div class="flex min-w-0 flex-col gap-0.5">
-          <p class="text-xs font-semibold text-fg-primary">{view().title}</p>
-          <p class="text-2xs text-fg-secondary">{view().message}</p>
-        </div>
-      </div>
       <Show when={props.outcome.kind === 'invalid-config' ? props.outcome : undefined}>
         {(invalid) => (
           <ul class="flex flex-col gap-0.5 ps-5 text-2xs text-fg-secondary">
@@ -271,7 +259,7 @@ function OutcomeBlock(props: {
           </For>
         </div>
       </Show>
-    </div>
+    </OutcomeNotice>
   );
 }
 
