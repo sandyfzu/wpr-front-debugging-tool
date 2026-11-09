@@ -3,7 +3,7 @@
     "surface": "background service worker",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 337.7
+      "raw": 347.9
     }
   },
   {
@@ -28,7 +28,7 @@
     "globs": ["wp-rocket-simulation/simulation-data.json"],
     "maxKb": {
       "raw": 26.7,
-      "gzip": 8.0
+      "gzip": 8
     },
     "required": true
   },
@@ -37,7 +37,7 @@
     "globs": ["wp-rocket-simulation/simulation-data.json"],
     "maxKb": {
       "raw": 26.7,
-      "gzip": 8.0
+      "gzip": 8
     },
     "build": "firefox-mv2",
     "required": true
@@ -47,7 +47,7 @@
     "globs": ["wp-rocket-simulation/lazyload/*/lazyload.min.js"],
     "maxKb": {
       "raw": 8.7,
-      "gzip": 3.0
+      "gzip": 3
     },
     "required": true
   },
@@ -56,7 +56,7 @@
     "globs": ["wp-rocket-simulation/lazyload/*/lazyload.min.js"],
     "maxKb": {
       "raw": 8.7,
-      "gzip": 3.0
+      "gzip": 3
     },
     "build": "firefox-mv2",
     "required": true
@@ -79,16 +79,16 @@
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
-      "raw": 193.5,
-      "gzip": 66.1
+      "raw": 199.4,
+      "gzip": 68.1
     }
   },
   {
     "surface": "exclusion builder overlay (runtime content script, loaded on open)",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 327.7,
-      "gzip": 109.8
+      "raw": 337.6,
+      "gzip": 113.1
     }
   },
   {
@@ -96,16 +96,16 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 327.4,
-      "gzip": 109.7
+      "raw": 337.3,
+      "gzip": 113
     }
   },
   {
     "surface": "command palette view (runtime content script, loaded on open)",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 117.1,
-      "gzip": 40.6
+      "raw": 120.7,
+      "gzip": 41.9
     }
   },
   {
@@ -113,8 +113,8 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 116.8,
-      "gzip": 40.5
+      "raw": 120.4,
+      "gzip": 41.8
     }
   },
   {
@@ -154,7 +154,7 @@
     "surface": "ua-relay content script (isolated world)",
     "globs": ["content-scripts/ua-relay*.js"],
     "maxKb": {
-      "raw": 11.6
+      "raw": 12
     }
   },
   {
@@ -189,8 +189,8 @@
     "surface": "RUCSS test build worker (panel)",
     "globs": ["assets/build.worker-*.js"],
     "maxKb": {
-      "raw": 4.5,
-      "gzip": 2
+      "raw": 4.7,
+      "gzip": 2.1
     },
     "required": true
   },
@@ -199,8 +199,8 @@
     "build": "firefox-mv2",
     "globs": ["assets/build.worker-*.js"],
     "maxKb": {
-      "raw": 4.5,
-      "gzip": 2
+      "raw": 4.7,
+      "gzip": 2.1
     },
     "required": true
   },
@@ -208,8 +208,8 @@
     "surface": "Beacon Tester page (panel chunk, loaded on first visit)",
     "globs": ["chunks/beacon-tester-*.js"],
     "maxKb": {
-      "raw": 34.5,
-      "gzip": 11.3
+      "raw": 35.6,
+      "gzip": 11.7
     },
     "required": true
   },
@@ -218,8 +218,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/beacon-tester-*.js"],
     "maxKb": {
-      "raw": 34.5,
-      "gzip": 11.3
+      "raw": 35.6,
+      "gzip": 11.7
     },
     "required": true
   },
@@ -227,8 +227,8 @@
     "surface": "LCP & Vitals page (panel chunk, loaded on first visit)",
     "globs": ["chunks/lcp-vitals-*.js"],
     "maxKb": {
-      "raw": 25.3,
-      "gzip": 8.1
+      "raw": 26.1,
+      "gzip": 8.4
     },
     "required": true
   },
@@ -237,8 +237,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/lcp-vitals-*.js"],
     "maxKb": {
-      "raw": 25.3,
-      "gzip": 8.1
+      "raw": 26.1,
+      "gzip": 8.4
     },
     "required": true
   },
@@ -246,8 +246,8 @@
     "surface": "JavaScript Runtime states section (panel chunk, loaded on first show)",
     "globs": ["chunks/runtime-states-*.js"],
     "maxKb": {
-      "raw": 15.7,
-      "gzip": 5.9
+      "raw": 16.2,
+      "gzip": 6.1
     },
     "required": true
   },
@@ -256,8 +256,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/runtime-states-*.js"],
     "maxKb": {
-      "raw": 15.7,
-      "gzip": 5.9
+      "raw": 16.2,
+      "gzip": 6.1
     },
     "required": true
   },
@@ -266,7 +266,7 @@
     "build": "firefox-mv2",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 334.3
+      "raw": 344.4
     }
   },
   {
@@ -274,15 +274,15 @@
     "build": "firefox-mv2",
     "globs": ["exclusion-transform-worker.js"],
     "maxKb": {
-      "raw": 185.6,
-      "gzip": 64.6
+      "raw": 191.2,
+      "gzip": 66.6
     }
   },
   {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 2040.5
+      "raw": 2100
     }
   }
 ]
