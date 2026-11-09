@@ -1,11 +1,12 @@
 /**
  * Every outcome's words and recoveries: each kind has its own view, every
  * outcome that left the page as it was says so, a request sent stays
- * copyable, and a pattern failure leads to its field.
+ * copyable, a pattern failure leads to its field, and a page-changing
+ * outcome stops claiming its change once the page reloaded or navigated.
  */
 import { describe, expect, it } from 'vitest';
 import type { RucssFetchFailure } from './response';
-import { describeRucssOutcome } from './outcome-view';
+import { describeRucssOutcome, RUCSS_STALE_TITLE } from './outcome-view';
 import type { RucssTestOutcome } from './run-test';
 
 const URL = 'https://mega.wp-rocket.me/support/wpr-rucss-v2.php?url=https://a.test/?1';
@@ -196,5 +197,59 @@ describe('describeRucssOutcome', () => {
       tone: 'warn',
       title: 'Test applied — the result is empty'
     });
+  });
+});
+
+describe('describeRucssOutcome — stale (the page reloaded or navigated since)', () => {
+  const applied = (cssChars: number): RucssTestOutcome => ({
+    kind: 'applied',
+    requestUrl: URL,
+    summary: { removed: 12, preserved: 2, excluded: 1, gone: 0, cssChars },
+    applied: []
+  });
+
+  it('an applied test, empty or not, no longer reads as applied; its request stays', () => {
+    for (const cssChars of [1_234, 0]) {
+      expect(describeRucssOutcome(applied(cssChars), { stale: true })).toEqual({
+        tone: 'neutral',
+        title: RUCSS_STALE_TITLE,
+        message:
+          'The page reloaded or changed since this test, so its own styles are back — these details describe the earlier page load. Run again to test it as it is now.',
+        recoveries: ['retry'],
+        requestUrl: URL,
+        focus: null
+      });
+    }
+  });
+
+  it('an unconfirmed apply no longer asks for a reload', () => {
+    expect(
+      describeRucssOutcome(
+        { kind: 'page-unreachable', step: 'apply', miss: 'timeout' },
+        { stale: true }
+      )
+    ).toEqual({
+      tone: 'neutral',
+      title: RUCSS_STALE_TITLE,
+      message:
+        'The page reloaded or changed since this test, so anything it may have changed is gone. Run again to test it as it is now.',
+      recoveries: ['retry'],
+      requestUrl: null,
+      focus: null
+    });
+  });
+
+  it('an outcome that left the page untouched keeps its words', () => {
+    for (const outcome of UNTOUCHED) {
+      expect(describeRucssOutcome(outcome, { stale: true }), JSON.stringify(outcome)).toEqual(
+        describeRucssOutcome(outcome)
+      );
+    }
+  });
+
+  it('a current outcome reads as before', () => {
+    expect(describeRucssOutcome(applied(1), { stale: false })).toEqual(
+      describeRucssOutcome(applied(1))
+    );
   });
 });

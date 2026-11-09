@@ -23,6 +23,9 @@
  *   gone after the Reload buttons (DevTools' `inspectedWindow.reload` is
  *   stubbed in the standalone panel to reload the inspected tab — the call
  *   and its effect are real, the DevTools window is not);
+ * - a reload from the browser itself: an open repeat question goes, the applied
+ *   outcome stops reading as a current success (stale, its request kept), and
+ *   Run again tests the clean page;
  * - failures (HTTP error, unusable answers, the service's own error code,
  *   network failure): the page's styles byte-identical, honest words, Run
  *   again recovers;
@@ -526,7 +529,7 @@ test.describe('RUCSS tester (panel → page → background → mocked service)',
       expect(await bodyBackground(fixture.page)).toBe('rgb(0, 0, 255)');
       await expect(fixture.page.locator(STRIP_HOST)).toHaveCount(1);
       await expect(pillGlyph).toHaveCount(0);
-      await expect(panel.locator('[data-fdt-rucss-restored]')).toBeVisible();
+      await expect(panel.locator('[data-fdt="rucss-outcome"][data-fdt-rucss-stale]')).toBeVisible();
       await go('detections');
       await expect(notice).toHaveCount(0);
 
@@ -550,6 +553,54 @@ test.describe('RUCSS tester (panel → page → background → mocked service)',
         'theme-inline-css',
         'rocket-lazyrender-inline-css'
       ]);
+    } finally {
+      await closeAll(opened);
+      await service.unroute();
+    }
+  });
+
+  test('a browser reload turns the applied outcome stale, and Run again tests the clean page', async ({
+    extension
+  }) => {
+    const service = await routeService(extension, { body: OK_ANSWER });
+    const opened = await openTester(extension);
+    const { panel, fixture } = opened;
+    const outcome = panel.locator('[data-fdt="rucss-outcome"]');
+    const repeat = panel.locator('[data-fdt-rucss-repeat]');
+    try {
+      expect(await run(panel)).toBe('applied');
+      await expect(outcome).not.toHaveAttribute('data-fdt-rucss-stale');
+      await expect(outcome).toContainText('Test applied');
+      await expect(outcome).toHaveClass(/bg-status-ok-soft/);
+      await expect(fixture.page.locator(`#${RESULT_ID}`)).toHaveCount(1);
+      // Run on the same page: the repeat question opens, and is left open.
+      await panel.locator('[data-fdt-rucss-run]').click();
+      await expect(repeat).toContainText("A test already replaced this page's styles.");
+
+      // The user reloads the page from the browser, not from the panel.
+      await fixture.page.reload();
+      await expect(fixture.page.locator(`#${RESULT_ID}`)).toHaveCount(0);
+      // Nothing is left to ask about on the clean page: the question goes.
+      await expect(repeat).toHaveCount(0);
+      await expect(outcome).toHaveAttribute('data-fdt-rucss-stale', '');
+      await expect(outcome).toContainText('Test no longer on the page');
+      await expect(outcome).not.toContainText('Test applied');
+      await expect(outcome).toHaveClass(/bg-status-neutral-soft/);
+      await expect(outcome).not.toHaveClass(/bg-status-ok-soft/);
+      // The run's details stay; the next step is a new run, not a reload.
+      await expect(panel.locator('[data-fdt-rucss-request]')).toHaveText(
+        service.calls[0]?.url ?? ''
+      );
+      await expect(panel.locator('[data-fdt-rucss-recovery="reload-page"]')).toHaveCount(0);
+
+      expect(
+        await nextOutcome(panel, () => panel.locator('[data-fdt-rucss-recovery="retry"]').click())
+      ).toBe('applied');
+      // The clean page asked nothing first.
+      await expect(repeat).toHaveCount(0);
+      expect(service.calls).toHaveLength(2);
+      await expect(outcome).not.toHaveAttribute('data-fdt-rucss-stale');
+      await expect(outcome).toContainText('Test applied');
     } finally {
       await closeAll(opened);
       await service.unroute();
