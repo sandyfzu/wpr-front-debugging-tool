@@ -282,7 +282,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 2039.7
+      "raw": 2040.5
     }
   }
 ]

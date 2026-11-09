@@ -27,7 +27,7 @@ import {
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { devtoolsInspectedTabId } from '../../state/edges';
 import type { DataState } from '../../state/fdt-state-machine';
-import { pageIdOf } from '../../state/page-identity';
+import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import type { RucssTesterSessionDeps } from './session';
 
 const log = createLogger('rucss-tester');
@@ -95,6 +95,7 @@ export function realRucssTesterDeps(shell: {
     },
     pageRuns: () => pageRunsOf(shell.state()),
     pageId: () => pageIdOf(shell.state()),
+    pageSettled: () => pageSettledOf(shell.state()),
     onApplied: shell.reload,
     schedule: scheduleWithTimeout,
     saveDelayMs: SETTINGS_SAVE_DELAY_MS,

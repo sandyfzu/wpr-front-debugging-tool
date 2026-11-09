@@ -8,7 +8,8 @@
  * Machines:
  * - load: `loading` → `ready` | `failed` (retry → `loading`);
  * - run: `idle` | `finished` → (`confirm-repeat{previous}` when a test
- *   changed — or may have changed — the page; Cancel restores `previous`)
+ *   changed — or may have changed — the page; Cancel restores `previous`,
+ *   and so does a settled page load that no earlier test remains on)
  *   → `running` → `finished{outcome}`; `blocked` when the settings could
  *   not be saved first (the run would read stale ones). `running` always
  *   ends: a run that throws is logged and reported as an unconfirmed apply;
@@ -17,12 +18,16 @@
  *   `idle` again; a test that may have applied re-reads a shown (or
  *   loading) list.
  *
+ * A finished run is stamped with the page load it ran on: once the page
+ * reloads or navigates, a run that changed it (or may have) reads `stale`
+ * — its change is gone.
+ *
  * Earlier tests: the page's payload counts the applied ones; the session
- * also counts its own runs that applied or may have (a payload refresh can
- * be dropped, and an unconfirmed apply leaves no fact) against the page
- * they ran on, so a reload (a new page identity) clears them.
+ * also records its own runs that applied or may have (a payload refresh can
+ * be dropped, and an unconfirmed apply leaves no fact), each stamped like
+ * the run, so a reload (a new page identity) clears them.
  */
-import { createMemo, createSignal, type Accessor } from 'solid-js';
+import { createComputed, createMemo, createSignal, type Accessor } from 'solid-js';
 import type { Logger } from '../../../../lib/logger';
 import type { AskOutcome, ScheduleTimer } from '../../../../lib/messaging/bounded-ask';
 import type { PageStylesReply } from '../../../../lib/messaging/page-styles';
@@ -33,8 +38,8 @@ import {
   type RucssTesterConfig
 } from '../../../../lib/rucss-tester/config';
 import { clampRucssTesterConfig, findStoreProblem } from '../../../../lib/rucss-tester/form-check';
-import type { RucssTestOutcome } from '../../../../lib/rucss-tester/run-test';
-import { isOtherLoad } from '../../state/page-identity';
+import { pageChangeOf, type RucssTestOutcome } from '../../../../lib/rucss-tester/run-test';
+import { isOtherLoad, settleStamp, stampAsk, type LoadStamp } from '../../state/page-identity';
 import type { ConfigSaveState } from '../settings/config-writer';
 import { createStoredSettings, type SettingsLoadState } from '../settings/stored-settings';
 
@@ -51,8 +56,10 @@ export type ConfigLoadState = SettingsLoadState;
 export interface FinishedRun {
   readonly status: 'finished';
   readonly outcome: RucssTestOutcome;
-  /** Tests the page carried when this run started. */
-  readonly pageRunsBefore: number;
+  /** The page load the run ran on (payload identity; null when unknown or not yet settled). */
+  readonly page: string | null;
+  /** Started mid-refetch: `page` becomes the load the shell settles on. */
+  readonly provisional: boolean;
   /** Names this run (a newer run gets a higher one). */
   readonly sequence: number;
 }
@@ -103,11 +110,9 @@ type InventoryRead =
       readonly page: string | null;
     };
 
-/** This session's own runs that changed the page or may have, on the page they ran on. */
-interface LocalTests {
-  readonly page: string | null;
-  readonly applied: number;
-  readonly unconfirmed: number;
+/** One of this session's runs that changed the page or may have, stamped with the load it ran on. */
+export interface LocalTest extends LoadStamp {
+  readonly change: 'applied' | 'unconfirmed';
 }
 
 /** What the session runs against (production binds the inspected tab; tests inject doubles). */
@@ -127,6 +132,8 @@ export interface RucssTesterSessionDeps {
    * reload or navigation; `null` without a payload (or an older one).
    */
   readonly pageId: Accessor<string | null>;
+  /** Whether `pageId` is current (no shell refetch in flight). */
+  readonly pageSettled: Accessor<boolean>;
   /** A test applied, or may have: refresh the page's payload (its TEST MODE fact). */
   readonly onApplied: () => void;
   readonly schedule: ScheduleTimer;
@@ -148,10 +155,10 @@ export interface RucssTesterSession {
   /** Earlier tests a new run would land on top of (see {@link PriorTests}). */
   readonly priorTests: Accessor<PriorTests>;
   /**
-   * A finished applied run whose result the page no longer carries (it
-   * reloaded since): its styles are back.
+   * The shown run changed the page (or may have), and the page reloaded or
+   * navigated since: that change is gone.
    */
-  readonly pageRestored: Accessor<boolean>;
+  readonly stale: Accessor<boolean>;
   readonly setText: (field: RucssTextField, value: string) => void;
   readonly setFlag: (field: RucssFlagField, value: boolean) => void;
   /** Add an empty pair (no-op at the pair cap). */
@@ -193,16 +200,74 @@ function toFormState(config: RucssTesterConfig): RucssFormState {
 }
 
 /**
- * How an outcome left the page.
+ * Settle a finished run's provisional stamp ({@link settleStamp}).
  *
- * @param outcome A run's outcome.
- * @returns `applied` (the result is on the page), `unconfirmed` (it may
- *   be: the apply got no answer), or `null` (the page is untouched).
+ * @param finished The finished run.
+ * @param id The shell's identity now.
+ * @param settled Whether that identity is current.
+ * @returns The same run when nothing settles, else the settled copy.
  */
-export function pageChangeOf(outcome: RucssTestOutcome): 'applied' | 'unconfirmed' | null {
-  if (outcome.kind === 'applied') return 'applied';
-  if (outcome.kind === 'page-unreachable' && outcome.step === 'apply') return 'unconfirmed';
-  return null;
+function settleFinished(finished: FinishedRun, id: string | null, settled: boolean): FinishedRun {
+  if (!finished.provisional) return finished;
+  const stamp = settleStamp(finished, id, settled);
+  return stamp === finished ? finished : { ...finished, ...stamp };
+}
+
+/**
+ * Settle the run's provisional stamp — the one the repeat question holds included.
+ *
+ * @param state The run.
+ * @param id The shell's identity now.
+ * @param settled Whether that identity is current.
+ * @returns The same state when nothing settles, else the settled copy.
+ */
+export function settleRunStamp(
+  state: RucssRunState,
+  id: string | null,
+  settled: boolean
+): RucssRunState {
+  if (state.status === 'finished') return settleFinished(state, id, settled);
+  if (state.status !== 'confirm-repeat' || state.previous === null) return state;
+  const previous = settleFinished(state.previous, id, settled);
+  return previous === state.previous ? state : { ...state, previous };
+}
+
+/**
+ * Settle the provisional stamps of this session's own tests ({@link settleStamp}).
+ *
+ * @param tests The recorded tests.
+ * @param id The shell's identity now.
+ * @param settled Whether that identity is current.
+ * @returns The same list when nothing settles, else the settled copy.
+ */
+export function settleLocalTests(
+  tests: readonly LocalTest[],
+  id: string | null,
+  settled: boolean
+): readonly LocalTest[] {
+  if (!settled || !tests.some((test) => test.provisional)) return tests;
+  return tests.map((test) =>
+    test.provisional ? { ...test, ...settleStamp(test, id, true) } : test
+  );
+}
+
+/**
+ * Leave an open repeat question once a settled page load carries no
+ * earlier test: the question is about a test that is gone.
+ *
+ * @param state The run.
+ * @param prior Earlier tests on the page now.
+ * @param settled Whether the page identity is current.
+ * @returns The run the question held (or `idle`), else `state` unchanged.
+ */
+export function dropAnsweredQuestion(
+  state: RucssRunState,
+  prior: PriorTests,
+  settled: boolean
+): RucssRunState {
+  if (state.status !== 'confirm-repeat' || !settled) return state;
+  if (prior.applied > 0 || prior.unconfirmed > 0) return state;
+  return state.previous ?? { status: 'idle' };
 }
 
 /**
@@ -227,11 +292,7 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
   const { form, setForm, load, edited } = settings;
   const [run, setRun] = createSignal<RucssRunState>({ status: 'idle' });
   const [inventoryRead, setInventoryRead] = createSignal<InventoryRead>({ status: 'idle' });
-  const [localTests, setLocalTests] = createSignal<LocalTests>({
-    page: null,
-    applied: 0,
-    unconfirmed: 0
-  });
+  const [localTests, setLocalTests] = createSignal<readonly LocalTest[]>([]);
   let sequence = 0;
   let disposed = false;
   // A test may have applied while a read was in the air: read once more when it lands.
@@ -250,27 +311,22 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
     return current !== null && (page === null || isOtherLoad(page, current));
   };
 
-  // Each applied run's result, seen on the page at least once (a fresh payload landed).
-  const seenOnPage = createMemo<{ sequence: number; seen: boolean }>(
-    (previous) => {
-      const current = run();
-      if (current.status !== 'finished' || current.outcome.kind !== 'applied') {
-        return { sequence: -1, seen: false };
-      }
-      const seen = previous.sequence === current.sequence && previous.seen;
-      return { sequence: current.sequence, seen: seen || deps.pageRuns() > current.pageRunsBefore };
-    },
-    { sequence: -1, seen: false }
-  );
+  // A run (and its own test record) started mid-refetch takes the load the shell settles on.
+  createComputed(() => {
+    const id = deps.pageId();
+    const settled = deps.pageSettled();
+    setRun((current) => settleRunStamp(current, id, settled));
+    setLocalTests((tests) => settleLocalTests(tests, id, settled));
+  });
 
-  /** Whether the shown applied result was on the page and a reload has since cleared it. */
-  const pageRestored = createMemo((): boolean => {
+  /**
+   * Whether the shown run's page change is gone: the page is a known load
+   * other than the run's (an unknown one on either side proves nothing).
+   */
+  const stale = createMemo((): boolean => {
     const current = run();
-    return (
-      current.status === 'finished' &&
-      seenOnPage().seen &&
-      deps.pageRuns() <= current.pageRunsBefore
-    );
+    if (current.status !== 'finished' || pageChangeOf(current.outcome) === null) return false;
+    return isOtherLoad(current.page, deps.pageId());
   });
 
   /** The inventory as shown: a read of an earlier page load reads `idle` (stale). */
@@ -285,12 +341,22 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
 
   /** Earlier tests a new run would land on top of. */
   const priorTests = createMemo((): PriorTests => {
-    const local = localTests();
-    const stale = isOtherPage(local.page);
-    return {
-      applied: Math.max(deps.pageRuns(), stale ? 0 : local.applied),
-      unconfirmed: stale ? 0 : local.unconfirmed
-    };
+    // A provisional record counts until it settles: asking once too often is the safe side.
+    let applied = 0;
+    let unconfirmed = 0;
+    for (const test of localTests()) {
+      if (!test.provisional && isOtherPage(test.page)) continue;
+      if (test.change === 'applied') applied += 1;
+      else unconfirmed += 1;
+    }
+    return { applied: Math.max(deps.pageRuns(), applied), unconfirmed };
+  });
+
+  // A reload leaves nothing to ask about: the question goes, the run it held comes back.
+  createComputed(() => {
+    const prior = priorTests();
+    const settled = deps.pageSettled();
+    setRun((current) => dropAnsweredQuestion(current, prior, settled));
   });
 
   /**
@@ -336,16 +402,17 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
   };
 
   /**
-   * Count a run that changed the page, or may have, against the page it ran on.
+   * Record a run that changed the page, or may have, stamped with the load
+   * it ran on; records of earlier loads go.
    *
-   * @param page The page identity at the run's start.
+   * @param stamp The run's stamp.
    * @param change How the run left the page.
    */
-  const noteLocalTest = (page: string | null, change: 'applied' | 'unconfirmed'): void => {
-    setLocalTests((previous) => {
-      const base = previous.page === page ? previous : { page, applied: 0, unconfirmed: 0 };
-      return { ...base, [change]: base[change] + 1 };
-    });
+  const noteLocalTest = (stamp: LoadStamp, change: LocalTest['change']): void => {
+    setLocalTests((tests) => [
+      ...tests.filter((test) => test.provisional || !isOtherPage(test.page)),
+      { page: stamp.page, provisional: stamp.provisional, change }
+    ]);
   };
 
   /**
@@ -396,19 +463,19 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
       setRun({ status: 'confirm-repeat', previous });
       return;
     }
-    const page = deps.pageId();
+    const started: LoadStamp = stampAsk(deps.pageId(), deps.pageSettled());
     setRun({ status: 'running' });
-    const pageRunsBefore = deps.pageRuns();
     const outcome = await execute();
     if (outcome === 'blocked') {
       setRun({ status: 'blocked' });
       return;
     }
     sequence += 1;
-    setRun({ status: 'finished', outcome, pageRunsBefore, sequence });
+    const stamp = settleStamp(started, deps.pageId(), deps.pageSettled());
+    setRun({ status: 'finished', outcome, ...stamp, sequence });
     const change = pageChangeOf(outcome);
     if (change === null || disposed) return;
-    noteLocalTest(page, change);
+    noteLocalTest(stamp, change);
     deps.onApplied();
     followPage();
   };
@@ -421,7 +488,7 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
     inventory,
     pageRuns: deps.pageRuns,
     priorTests,
-    pageRestored,
+    stale,
     setText: (field, value) => {
       setForm(field, value);
       edited();

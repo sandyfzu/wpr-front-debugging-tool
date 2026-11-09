@@ -3,7 +3,9 @@
  * sentences naming what happened and whether the page changed, and the
  * recovery actions that apply — exhaustive over {@link RucssTestOutcome},
  * so a new outcome kind cannot ship without its words (the compiler stops
- * it). Pure; the panel renders the view verbatim.
+ * it). An outcome that changed the page (or may have) reads differently once
+ * the page reloaded or navigated: its change is gone, so it no longer claims
+ * one. Pure; the panel renders the view verbatim.
  */
 import { countLabel, formatCount } from '../../utils/format-count';
 import type { RucssApplyFailure, RucssStartFailure } from '../messaging/rucss-test';
@@ -18,7 +20,7 @@ import {
 import type { RucssFetchFailure } from './response';
 import { RUCSS_RESPONSE_MAX_BYTES } from './response';
 import { RUCSS_RESULT_CSS_MAX_CHARS } from './run-plan';
-import type { RucssAskMiss, RucssTestOutcome } from './run-test';
+import { pageChangeOf, type RucssAskMiss, type RucssTestOutcome } from './run-test';
 
 /**
  * What the user can do next:
@@ -37,7 +39,8 @@ export type RucssFocusTarget =
 
 /** One outcome, ready to render. */
 export interface RucssOutcomeView {
-  readonly tone: 'ok' | 'warn' | 'error';
+  /** `neutral`: the run's change is no longer on the page (it reloaded or navigated since). */
+  readonly tone: 'ok' | 'warn' | 'error' | 'neutral';
   readonly title: string;
   readonly message: string;
   /** Recovery actions, the main one first (may be empty: the form's Run stays available). */
@@ -47,6 +50,9 @@ export interface RucssOutcomeView {
   /** Where `review-patterns` leads when one field is to blame (null: the pattern fields' start). */
   readonly focus: RucssFocusTarget | null;
 }
+
+/** The title of a page-changing outcome once the page reloaded or navigated since. */
+export const RUCSS_STALE_TITLE = 'Test no longer on the page';
 
 /** The closing clause of every outcome that left the page as it was. */
 const UNCHANGED = 'Nothing on the page was changed.';
@@ -396,12 +402,35 @@ function appliedView(outcome: Extract<RucssTestOutcome, { kind: 'applied' }>): R
 }
 
 /**
- * Describe one outcome.
+ * A page-changing outcome once the page reloaded or navigated: the change is
+ * gone, the run's details (request, counts) still describe the earlier load,
+ * and the next step is a new run on the page as it is now.
+ *
+ * @param outcome The outcome (it changed the page, or may have: an unconfirmed apply).
+ */
+function staleView(outcome: RucssTestOutcome): RucssOutcomeView {
+  return outcome.kind === 'applied'
+    ? view(
+        'neutral',
+        RUCSS_STALE_TITLE,
+        'The page reloaded or changed since this test, so its own styles are back — these details describe the earlier page load. Run again to test it as it is now.',
+        ['retry'],
+        { requestUrl: outcome.requestUrl }
+      )
+    : view(
+        'neutral',
+        RUCSS_STALE_TITLE,
+        'The page reloaded or changed since this test, so anything it may have changed is gone. Run again to test it as it is now.',
+        ['retry']
+      );
+}
+
+/**
+ * Describe one outcome as of the page load it ran on.
  *
  * @param outcome How the run ended.
- * @returns The view to render.
  */
-export function describeRucssOutcome(outcome: RucssTestOutcome): RucssOutcomeView {
+function currentView(outcome: RucssTestOutcome): RucssOutcomeView {
   switch (outcome.kind) {
     case 'config-unreadable':
       return view(
@@ -441,4 +470,22 @@ export function describeRucssOutcome(outcome: RucssTestOutcome): RucssOutcomeVie
     case 'applied':
       return appliedView(outcome);
   }
+}
+
+/**
+ * Describe one outcome.
+ *
+ * @param outcome How the run ended.
+ * @param options.stale The page reloaded or navigated since the run: an
+ *   outcome that changed it (or may have) no longer reads as current; one that
+ *   left it untouched keeps its words (still true of the page as it is now).
+ * @returns The view to render.
+ */
+export function describeRucssOutcome(
+  outcome: RucssTestOutcome,
+  options: { readonly stale?: boolean } = {}
+): RucssOutcomeView {
+  return options.stale === true && pageChangeOf(outcome) !== null
+    ? staleView(outcome)
+    : currentView(outcome);
 }

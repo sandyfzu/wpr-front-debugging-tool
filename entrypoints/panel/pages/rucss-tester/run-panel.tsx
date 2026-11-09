@@ -3,8 +3,9 @@
  * the Run control, and the run's state — running (a real wait, bounded by
  * the deadlines), the repeat-run question, a run held by an unsaved form,
  * or the finished outcome with its recoveries, the copyable request
- * address, the counts and each replacement's matches. Every state is read
- * from the session; nothing here latches.
+ * address, the counts and each replacement's matches (reworded once the
+ * page reloaded or navigated since a run that changed it). Every state is
+ * read from the session; nothing here latches.
  */
 import type { JSX } from 'solid-js';
 import { createMemo, For, Match, Show, Switch } from 'solid-js';
@@ -44,9 +45,6 @@ export const RUNNING_COPY = `Waiting for the RUCSS service, then building and ap
 export const BLOCKED_COPY =
   'The test did not start: the settings could not be saved, so it would run with old ones. Fix the problem named under the form, then run again.';
 
-/** The line once the page reloaded after a test. */
-export const RESTORED_COPY = 'The page reloaded since this test — its own styles are back.';
-
 /** The recoveries' button labels. */
 export const RECOVERY_LABELS: Readonly<Record<RucssRecovery, string>> = {
   retry: 'Run again',
@@ -59,7 +57,8 @@ export const RECOVERY_LABELS: Readonly<Record<RucssRecovery, string>> = {
 const TONE_KIND: Readonly<Record<RucssOutcomeView['tone'], StatusKind>> = {
   ok: 'ok',
   warn: 'warn',
-  error: 'error'
+  error: 'error',
+  neutral: 'neutral'
 };
 
 /** What the run card's actions do (the page binds them). */
@@ -189,13 +188,16 @@ function OutcomeBlock(props: {
   session: RucssTesterSession;
   actions: RunPanelActions;
 }): JSX.Element {
-  const view = createMemo(() => describeRucssOutcome(props.outcome));
+  const view = createMemo(() =>
+    describeRucssOutcome(props.outcome, { stale: props.session.stale() })
+  );
   const kind = (): StatusKind => TONE_KIND[view().tone];
   const applied = () => (props.outcome.kind === 'applied' ? props.outcome : undefined);
   return (
     <OutcomeNotice
       data-fdt="rucss-outcome"
       data-fdt-rucss-outcome={props.outcome.kind}
+      data-fdt-rucss-stale={props.session.stale() ? '' : undefined}
       kind={kind()}
       title={view().title}
       message={view().message}
@@ -214,11 +216,6 @@ function OutcomeBlock(props: {
             </For>
           </ul>
         )}
-      </Show>
-      <Show when={props.session.pageRestored()}>
-        <p data-fdt-rucss-restored class="ps-5 text-2xs text-fg-secondary">
-          {RESTORED_COPY}
-        </p>
       </Show>
       <Show when={applied()}>{(outcome) => <AppliedDetails outcome={outcome()} />}</Show>
       <Show when={view().requestUrl}>
@@ -244,7 +241,7 @@ function OutcomeBlock(props: {
           </div>
         )}
       </Show>
-      <Show when={view().recoveries.length > 0 && !(applied() && props.session.pageRestored())}>
+      <Show when={view().recoveries.length > 0}>
         <div class="flex flex-wrap gap-1.5">
           <For each={view().recoveries}>
             {(recovery, index) => (

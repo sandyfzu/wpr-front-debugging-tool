@@ -71,6 +71,19 @@ export type RucssTestOutcome =
       readonly applied: readonly ReplacementCount[];
     };
 
+/**
+ * How an outcome left the page.
+ *
+ * @param outcome A run's outcome.
+ * @returns `applied` (the result is on the page), `unconfirmed` (it may
+ *   be: the apply got no answer), or `null` (the page is untouched).
+ */
+export function pageChangeOf(outcome: RucssTestOutcome): 'applied' | 'unconfirmed' | null {
+  if (outcome.kind === 'applied') return 'applied';
+  if (outcome.kind === 'page-unreachable' && outcome.step === 'apply') return 'unconfirmed';
+  return null;
+}
+
 /** What a run needs (the caller binds the tab; tests inject doubles). */
 export interface RucssTestDeps {
   /** Read the stored configuration. */

@@ -3,7 +3,8 @@
  * load states, live pattern validation and pair effects, the disclosure
  * before Run, the run's states (running, finished with copyable request
  * and counts, typed recovery, repeat question), TEST MODE, the style
- * inventory tab, and a data refresh that keeps everything.
+ * inventory tab, a data refresh that keeps everything, and a page-changing
+ * outcome read as stale once the page reloads or navigates.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
@@ -24,12 +25,14 @@ import {
 } from '../../../../lib/rucss-tester/test-mode';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
-import { pageIdOf } from '../../state/page-identity';
+import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { PAIR_EFFECT_COPY } from './form';
 import { createRucssTesterHandle, RucssTesterPage } from './page';
 import { pageRunsOf } from './real-deps';
 import { RUNNING_COPY } from './run-panel';
+import { STATUS_SOFT_CLASSES } from '../../../../components/ui/status-badge';
+import { RUCSS_STALE_TITLE as STALE_TITLE } from '../../../../lib/rucss-tester/outcome-view';
 import { createRucssTesterSession, type RucssTesterSessionDeps } from './session';
 
 const URL = 'https://mega.wp-rocket.me/support/wpr-rucss-v2.php?url=https://a.test/?1';
@@ -97,11 +100,16 @@ function renderPage(
     readConfig?: () => Promise<RucssTesterConfig>;
     runs?: number;
     reload?: (() => void) | null;
+    /** The first payload's load identity (none by default). */
+    pageId?: string;
   } = {}
 ) {
   const [state, setState] = createSignal<DataState>({
     status: 'ready',
-    data: makeFdtData(options.runs ? { rucssTestMode: { runs: options.runs } } : {}),
+    data: makeFdtData({
+      ...(options.runs ? { rucssTestMode: { runs: options.runs } } : {}),
+      ...(options.pageId === undefined ? {} : { scriptSnapshotId: options.pageId })
+    }),
     fetchedAt: 0
   } as DataState);
   const reloadData = vi.fn();
@@ -123,6 +131,7 @@ function renderPage(
       options.listStyles ?? (() => Promise.resolve({ kind: 'reply', reply: STYLES } as const)),
     pageRuns: () => pageRunsOf(state()),
     pageId: () => pageIdOf(state()),
+    pageSettled: () => pageSettledOf(state()),
     onApplied: () => {
       store.reload();
     },
@@ -350,7 +359,7 @@ describe('RucssTesterPage — run', () => {
   });
 
   it('a data refresh keeps the form, the outcome and the tab', async () => {
-    const { setState, handle } = renderPage();
+    const { setState, handle } = renderPage({ pageId: 'page-1' });
     await settle();
     fireEvent.input(screen.getByLabelText('Safelist'), { target: { value: '.keep' } });
     fireEvent.click(runButton());
@@ -358,15 +367,144 @@ describe('RucssTesterPage — run', () => {
     const outcome = document.querySelector('[data-fdt="rucss-outcome"]');
     setState({
       status: 'ready',
-      data: makeFdtData({ rucssTestMode: { runs: 1 } }),
+      data: makeFdtData({ scriptSnapshotId: 'page-1', rucssTestMode: { runs: 1 } }),
       fetchedAt: 1
     } as DataState);
     expect(document.querySelector('[data-fdt="rucss-outcome"]')).toBe(outcome);
     expect(screen.getByLabelText<HTMLTextAreaElement>('Safelist').value).toBe('.keep');
     // The page reloads: the result is gone, said once.
-    setState({ status: 'ready', data: makeFdtData(), fetchedAt: 2 } as DataState);
-    expect(document.querySelector('[data-fdt-rucss-restored]')).not.toBeNull();
+    setState({
+      status: 'ready',
+      data: makeFdtData({ scriptSnapshotId: 'page-2' }),
+      fetchedAt: 2
+    } as DataState);
+    expect(document.querySelector('[data-fdt-rucss-stale]')).not.toBeNull();
     expect(handle.tab()).toBe('test');
+  });
+});
+
+describe('RucssTesterPage — after the page reloads or navigates', () => {
+  /** The shown outcome notice. */
+  function notice(): HTMLElement {
+    const element = document.querySelector<HTMLElement>('[data-fdt="rucss-outcome"]');
+    if (element === null) throw new Error('no outcome notice');
+    return element;
+  }
+
+  /** The inspected page's next load lands: the shell refetches, then settles on it. */
+  function nextLoad(setState: (state: DataState) => void, id: string): void {
+    setState({
+      status: 'refreshing',
+      data: makeFdtData({ scriptSnapshotId: 'page-1', rucssTestMode: { runs: 1 } }),
+      requestedAt: 3
+    });
+    setState({
+      status: 'ready',
+      data: makeFdtData({ scriptSnapshotId: id }),
+      fetchedAt: 4
+    });
+  }
+
+  it('an applied test no longer reads as a current success, its details kept', async () => {
+    const { setState } = renderPage({ pageId: 'page-1' });
+    await settle();
+    fireEvent.click(runButton());
+    await settle();
+    // The payload refresh after the apply lands: the result is on the page.
+    setState({
+      status: 'ready',
+      data: makeFdtData({ scriptSnapshotId: 'page-1', rucssTestMode: { runs: 1 } }),
+      fetchedAt: 1
+    } as DataState);
+    expect(screen.getByText('Test applied')).toBeTruthy();
+    expect(notice().className).toContain(STATUS_SOFT_CLASSES.ok);
+    nextLoad(setState, 'page-2');
+    expect(screen.queryByText('Test applied')).toBeNull();
+    expect(notice().className).not.toContain(STATUS_SOFT_CLASSES.ok);
+    expect(notice().className).toContain(STATUS_SOFT_CLASSES.neutral);
+    expect(notice().hasAttribute('data-fdt-rucss-stale')).toBe(true);
+    expect(screen.getByText(STALE_TITLE)).toBeTruthy();
+    // The run's details stay readable; the next step is a new run, not a reload.
+    expect(document.querySelector('[data-fdt-rucss-request]')?.textContent).toBe(URL);
+    expect(document.querySelector('[data-fdt="rucss-summary"]')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reload page' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Run again' }));
+    await settle();
+    // A clean page: no repeat question, a fresh current result.
+    expect(document.querySelector('[data-fdt-rucss-repeat]')).toBeNull();
+    expect(screen.getByText('Test applied')).toBeTruthy();
+    expect(notice().hasAttribute('data-fdt-rucss-stale')).toBe(false);
+  });
+
+  it('reads stale even when the reload lands before the payload showed the result', async () => {
+    const { setState } = renderPage({ pageId: 'page-1' });
+    await settle();
+    fireEvent.click(runButton());
+    await settle();
+    setState({
+      status: 'ready',
+      data: makeFdtData({ scriptSnapshotId: 'page-2' }),
+      fetchedAt: 1
+    } as DataState);
+    expect(screen.queryByText('Test applied')).toBeNull();
+    expect(screen.getByText(STALE_TITLE)).toBeTruthy();
+  });
+
+  it('an empty result and an unconfirmed apply read stale too', async () => {
+    const empty: RucssTestOutcome = {
+      ...APPLIED,
+      summary: { ...APPLIED.summary, cssChars: 0 }
+    };
+    const outcomes: RucssTestOutcome[] = [
+      empty,
+      { kind: 'page-unreachable', step: 'apply', miss: 'timeout' }
+    ];
+    for (const outcome of outcomes) {
+      const { setState } = renderPage({
+        pageId: 'page-1',
+        runTest: () => Promise.resolve(outcome)
+      });
+      await settle();
+      fireEvent.click(runButton());
+      await settle();
+      expect(screen.queryByText(STALE_TITLE)).toBeNull();
+      nextLoad(setState, 'page-2');
+      expect(screen.getByText(STALE_TITLE)).toBeTruthy();
+      expect(notice().className).toContain(STATUS_SOFT_CLASSES.neutral);
+      expect(screen.queryByRole('button', { name: 'Reload page' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Run again' })).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it('a repeat question left open closes once the reloaded page carries no test', async () => {
+    const { setState } = renderPage({ pageId: 'page-1' });
+    await settle();
+    fireEvent.click(runButton());
+    await settle();
+    fireEvent.click(runButton());
+    await settle();
+    expect(document.querySelector('[data-fdt-rucss-repeat]')).not.toBeNull();
+    nextLoad(setState, 'page-2');
+    // No sentence about an earlier test on a clean page: the earlier outcome, read stale.
+    expect(document.querySelector('[data-fdt-rucss-repeat]')).toBeNull();
+    expect(screen.queryByText(RUCSS_UNCONFIRMED_REPEAT_WARNING)).toBeNull();
+    expect(screen.getByText(STALE_TITLE)).toBeTruthy();
+  });
+
+  it('a failure that left the page untouched keeps its words', async () => {
+    const { setState } = renderPage({
+      pageId: 'page-1',
+      runTest: () => Promise.resolve({ kind: 'apply-failed', failure: 'css-blocked' })
+    });
+    await settle();
+    fireEvent.click(runButton());
+    await settle();
+    const title = "This page's security policy blocked the test's CSS";
+    expect(screen.getByText(title)).toBeTruthy();
+    nextLoad(setState, 'page-2');
+    expect(screen.getByText(title)).toBeTruthy();
+    expect(notice().hasAttribute('data-fdt-rucss-stale')).toBe(false);
   });
 });
 

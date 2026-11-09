@@ -11,7 +11,7 @@ import type { TabAsks } from '../messaging/tab-asks';
 import type { RucssBuildOutcome } from './build-client';
 import { DEFAULT_RUCSS_TESTER_CONFIG, type RucssTesterConfig } from './config';
 import { DEFAULT_INLINE_PRESERVES } from './run-plan';
-import { rucssTabSteps, runRucssTest, type RucssTestDeps } from './run-test';
+import { pageChangeOf, rucssTabSteps, runRucssTest, type RucssTestDeps } from './run-test';
 
 const RUN = '0123456789abcdef0123456789abcdef';
 const SUMMARY = { removed: 2, preserved: 1, excluded: 1, gone: 0, cssChars: 5 };
@@ -208,5 +208,24 @@ describe('rucssTabSteps', () => {
     await expect(steps.apply({ runId: RUN, css: '', keepLinks: [] })).resolves.toEqual({
       kind: 'invalid-reply'
     });
+  });
+});
+
+describe('pageChangeOf', () => {
+  it('names how each outcome left the page', () => {
+    expect(
+      pageChangeOf({
+        kind: 'applied',
+        requestUrl: 'https://mega.test/?url=x',
+        summary: { removed: 1, preserved: 0, excluded: 0, gone: 0, cssChars: 3 },
+        applied: []
+      })
+    ).toBe('applied');
+    expect(pageChangeOf({ kind: 'page-unreachable', step: 'apply', miss: 'timeout' })).toBe(
+      'unconfirmed'
+    );
+    expect(pageChangeOf({ kind: 'page-unreachable', step: 'start', miss: 'timeout' })).toBeNull();
+    expect(pageChangeOf({ kind: 'apply-failed', failure: 'css-blocked' })).toBeNull();
+    expect(pageChangeOf({ kind: 'config-unreadable' })).toBeNull();
   });
 });
