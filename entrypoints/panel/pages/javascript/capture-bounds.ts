@@ -12,8 +12,8 @@ import type { WprDetections } from '../../../../lib/wp-rocket/types';
 import type { ContentCapture } from './script-view';
 
 /**
- * Whether the script list was cut: the mark alone also covers clipped
- * strings, so only a marked list sitting at its count cap may have lost entries
+ * Whether the script list was cut: the mark alone also covers clipped or
+ * dropped per-script fields (text, URL, original type), so only a marked list sitting at its count cap may have lost entries
  * (the nav's rule for the same list). The mark cannot prove extra rows exist.
  *
  * @param delayJs The Delay JS detection row.
@@ -24,7 +24,8 @@ export function scriptListCut(delayJs: WprDetections['delay_js']): boolean {
 
 /**
  * Each script's text capture, by document position. Unmarked rows are
- * complete. In a marked row each inline script was given
+ * complete. The mark is row-wide (any cut field, a dropped original type
+ * included), so in a marked row each inline script was given
  * `min(per-script cap, budget left)` chars: a script that got nothing
  * because the list-wide budget was spent was **not captured**; one whose
  * text fills its allowance was **clipped** (a text exactly that long reads
@@ -46,4 +47,20 @@ export function contentCaptures(delayJs: WprDetections['delay_js']): ContentCapt
     if (allowance <= 0) return 'not-captured';
     return script.content.length >= allowance - 1 ? 'clipped' : 'complete';
   });
+}
+
+/**
+ * Whether the capture cut the page's inline script text: the list lost
+ * entries at its count cap, or an inline script's text was clipped or left
+ * out. Never the bare mark — it also covers cuts to non-inline fields (a
+ * clipped URL, a dropped original type) that leave every inline text whole.
+ *
+ * @param delayJs The Delay JS detection row.
+ */
+export function inlineScriptsCut(delayJs: WprDetections['delay_js']): boolean {
+  if (scriptListCut(delayJs)) return true;
+  const captures = contentCaptures(delayJs);
+  return delayJs.scripts.some(
+    (script, index) => script.content !== undefined && captures[index] !== 'complete'
+  );
 }

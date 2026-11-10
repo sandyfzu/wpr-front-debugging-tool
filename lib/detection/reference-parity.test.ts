@@ -66,6 +66,36 @@ describe('port ≡ reference: Delay JS row shape', () => {
   });
 });
 
+describe('port ≡ reference: original type on delayed records', () => {
+  it('agrees key-for-key on parked, empty, valueless, missing and executed types', () => {
+    const html = page(
+      '',
+      [
+        '<script type="rocketlazyloadscript" data-rocket-type="module" data-rocket-src="/m.js"></script>',
+        '<script type="text/rocketlazyloadscript" data-rocket-type=" ">a();</script>',
+        '<script type="rocketlazyloadscript" data-rocket-type="" data-rocket-src="/e.js"></script>',
+        '<script type="rocketlazyloadscript" data-rocket-type data-rocket-src="/v.js"></script>',
+        '<script type="rocketlazyloadscript" data-rocket-src="/n.js"></script>',
+        '<script type="module" data-rocket-type="module" src="/ran.js"></script>'
+      ].join('')
+    );
+    const port = runDetection(html).detections.delay_js.scripts;
+    const reference = runReferenceDetection(html).wprDetections.delay_js.scripts;
+    expect(port).toEqual(reference);
+    expect(port.map((record) => Object.keys(record))).toEqual(
+      reference.map((record) => Object.keys(record))
+    );
+    expect(port.map((record) => record.originalType)).toEqual([
+      'module',
+      ' ',
+      undefined,
+      undefined,
+      undefined,
+      undefined
+    ]);
+  });
+});
+
 describe('port ≡ reference: footprint branches fixture', () => {
   it('is equal key-for-key on the combined footprint page', () => {
     const html = readFileSync(join(FIXTURE_DIR, 'footprint-branches.html'), 'utf8');

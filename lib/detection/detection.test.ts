@@ -11,6 +11,7 @@ import { parsePage } from './parse-page';
 import { detectWpr } from './detect-wpr';
 import {
   detectAsyncCss,
+  delayedOriginalType,
   detectDeferAllJs,
   detectDelayJs,
   detectLazyload,
@@ -389,6 +390,48 @@ describe('detectDelayJs', () => {
       false,
       false
     ]);
+  });
+
+  it('carries the parked original type on still-delayed scripts only, non-empty values only', () => {
+    const result = detectDelayJs(
+      page(
+        `<script type="rocketlazyloadscript" data-rocket-type="module" data-rocket-src="/m.js"></script>
+        <script type="text/rocketlazyloadscript" data-rocket-type="text/javascript">a();</script>
+        <script type="rocketlazyloadscript" data-rocket-type=" ">b();</script>
+        <script type="rocketlazyloadscript" data-rocket-type="" data-rocket-src="/e.js"></script>
+        <script type="rocketlazyloadscript" data-rocket-type data-rocket-src="/v.js"></script>
+        <script type="rocketlazyloadscript" data-rocket-src="/n.js"></script>
+        <script type="module" data-rocket-type="module" src="/ran.js"></script>
+        <script data-rocket-type="text/javascript">c();</script>`
+      )
+    );
+    expect(result.scripts.map((script) => script.originalType)).toEqual([
+      'module',
+      'text/javascript',
+      ' ',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined
+    ]);
+    // Absent means no key at all: the record stays key-for-key with the reference.
+    expect(result.scripts.filter((script) => 'originalType' in script)).toHaveLength(3);
+  });
+
+  it('reads an original type exactly as parked, else null', () => {
+    const script = (attrs: string): Element => {
+      const found = page(`<script ${attrs}></script>`).scripts[0];
+      if (found === undefined) throw new Error(`no script parsed from ${attrs}`);
+      return found;
+    };
+    expect(delayedOriginalType(script('data-rocket-type="module"'))).toBe('module');
+    expect(delayedOriginalType(script('data-rocket-type="Text/JavaScript "'))).toBe(
+      'Text/JavaScript '
+    );
+    expect(delayedOriginalType(script('data-rocket-type=""'))).toBeNull();
+    expect(delayedOriginalType(script('data-rocket-type'))).toBeNull();
+    expect(delayedOriginalType(script('type="module"'))).toBeNull();
   });
 
   it('keeps controllers without version markers present-but-versionless', () => {

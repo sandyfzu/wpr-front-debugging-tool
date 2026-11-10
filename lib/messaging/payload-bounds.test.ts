@@ -279,6 +279,38 @@ describe('boundWprDetections — string caps at the boundary', () => {
   }
 });
 
+describe('boundWprDetections — the original type is dropped past its cap, never clipped', () => {
+  const cap = PAYLOAD_LIMITS.delayScripts.originalType;
+  const withType = (originalType: string): WprDetections => {
+    const d = detections();
+    return {
+      ...d,
+      delay_js: {
+        ...d.delay_js,
+        scripts: [{ ...script, src: '/a.js', fdtExcluded: null, originalType }]
+      }
+    };
+  };
+
+  for (const delta of [-1, 0]) {
+    it(`keeps a ${String(cap + delta)}-char type, row untouched`, () => {
+      const input = withType('t'.repeat(cap + delta));
+      expect(boundWprDetections(input).delay_js).toBe(input.delay_js);
+    });
+  }
+
+  it(`drops a ${String(cap + 1)}-char type and marks the row`, () => {
+    const input = withType('t'.repeat(cap + 1));
+    const bounded = boundWprDetections(input);
+    expect(bounded.delay_js.scripts[0]).not.toHaveProperty('originalType');
+    expect(bounded.delay_js.scripts[0]?.src).toBe('/a.js');
+    expect(bounded.delay_js.truncated).toBe(true);
+    // The engine's record is left untouched.
+    expect(input.delay_js.scripts[0]?.originalType).toHaveLength(cap + 1);
+    expect(parseWprDetections(bounded)).not.toBeNull();
+  });
+});
+
 describe('boundWprDetections — identity and isolation', () => {
   it('returns every within-cap row as the same object, with no mark', () => {
     const input = detections();

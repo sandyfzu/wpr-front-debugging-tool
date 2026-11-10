@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import type { DelayedScriptRecord, WprDetections } from '../../../../lib/wp-rocket/types';
-import { contentCaptures, scriptListCut } from './capture-bounds';
+import { contentCaptures, inlineScriptsCut, scriptListCut } from './capture-bounds';
 
 /** An inline record of the given length. */
 function inline(length: number): DelayedScriptRecord {
@@ -93,5 +93,34 @@ describe('contentCaptures', () => {
       'clipped',
       'not-captured'
     ]);
+  });
+});
+
+describe('inlineScriptsCut', () => {
+  it('is false on an unmarked row, even at the caps', () => {
+    expect(inlineScriptsCut(row([inline(CAPS.content), EXTERNAL]))).toBe(false);
+  });
+
+  it('is false when the mark covers only non-inline cuts', () => {
+    // A clipped URL, a dropped original type: inline text whole.
+    const clippedUrl = { ...EXTERNAL, src: 'x'.repeat(CAPS.src) };
+    expect(inlineScriptsCut(row([inline(10), clippedUrl], true))).toBe(false);
+    expect(inlineScriptsCut(row([inline(10), { ...EXTERNAL, delayed: true }], true))).toBe(false);
+  });
+
+  it('is true when an inline text was clipped or left out', () => {
+    expect(inlineScriptsCut(row([EXTERNAL, inline(CAPS.content)], true))).toBe(true);
+    const spent = Array.from({ length: CAPS.contentTotal / CAPS.content }, () =>
+      inline(CAPS.content - 2)
+    );
+    // Sixteen near-full scripts leave 32 chars; the next empty one fills nothing: not captured.
+    const tail = [...spent, inline(32), inline(0)];
+    expect(contentCaptures(row(tail, true)).slice(-2)).toEqual(['clipped', 'not-captured']);
+    expect(inlineScriptsCut(row(tail, true))).toBe(true);
+  });
+
+  it('is true when the list itself was cut at its count cap', () => {
+    const full = Array.from({ length: CAPS.count }, () => EXTERNAL);
+    expect(inlineScriptsCut(row(full, true))).toBe(true);
   });
 });

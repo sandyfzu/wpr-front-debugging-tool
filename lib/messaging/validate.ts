@@ -732,6 +732,14 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
     const minifyAttribute = rawMinifyAttribute === undefined ? false : rawMinifyAttribute;
     if (typeof minifyAttribute !== 'boolean')
       return reject('scripts', at(index), 'minifyAttribute');
+    // Additive field: absent reads as absent. Only a delayed script parks a
+    // type and the engines omit an empty one, so any other shape rejects.
+    const originalType = item['originalType'];
+    if (
+      originalType !== undefined &&
+      (!delayed || !isUsableString(originalType, LIMITS.delayScripts.originalType))
+    )
+      return reject('scripts', at(index), 'originalType');
     const record: WprDetections['delay_js']['scripts'][number] = {
       delayed,
       inline,
@@ -742,6 +750,7 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
     };
     if (src !== undefined) record.src = src;
     if (content !== undefined) record.content = content;
+    if (originalType !== undefined) record.originalType = originalType;
     scripts.push(record);
   }
   return {

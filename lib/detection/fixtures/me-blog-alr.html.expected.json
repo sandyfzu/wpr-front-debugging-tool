@@ -125,7 +125,8 @@
           "deferred": false,
           "deferredByWPR": false,
           "fdtExcluded": null,
-          "minifyAttribute": false
+          "minifyAttribute": false,
+          "originalType": "text/javascript"
         },
         {
           "delayed": false,

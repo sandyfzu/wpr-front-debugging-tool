@@ -15,6 +15,14 @@ import {
   scanPageInSlices,
   type PageCandidate
 } from './exclusions/page-scan';
+import {
+  DATA_LAZY_SRC,
+  DATA_ROCKET_STATUS,
+  DELAY_JS_SRC,
+  DELAY_TYPE_ATTRIBUTE,
+  LAZY_RENDER_ATTRIBUTE,
+  WPR_DEFER_ATTRIBUTE
+} from '../../lib/wp-rocket/constants';
 import { debounce } from '../../utils/debounce';
 
 /** Quiet time after DOM churn before the page is rescanned. */
@@ -44,12 +52,12 @@ const WATCHED_ATTRIBUTES = [
   'src',
   'id',
   'class',
-  'data-rocket-src',
-  'data-rocket-type',
-  'data-rocket-status',
-  'data-rocket-defer',
-  'data-lazy-src',
-  'data-wpr-lazyrender'
+  DELAY_JS_SRC,
+  DELAY_TYPE_ATTRIBUTE,
+  DATA_ROCKET_STATUS,
+  WPR_DEFER_ATTRIBUTE,
+  DATA_LAZY_SRC,
+  LAZY_RENDER_ATTRIBUTE
 ];
 
 /** A pointer pick: the candidate and the element it is for. */

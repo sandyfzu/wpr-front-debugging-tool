@@ -13,6 +13,14 @@ import type { FeatureMetaRow } from './types';
 /** Attribute WP Rocket uses on delayed scripts to carry the original `src`. */
 export const DELAY_JS_SRC = 'data-rocket-src';
 
+/**
+ * Attribute WP Rocket parks a delayed script's original `type` value in; the
+ * Delay JS runtime restores `type` from it when the script runs and removes
+ * it then — except an empty value, which counts as none and may be left on
+ * the executed script.
+ */
+export const DELAY_TYPE_ATTRIBUTE = 'data-rocket-type';
+
 /** Attribute the Delay JS runtime stamps on scripts it has processed. */
 export const DATA_ROCKET_STATUS = 'data-rocket-status';
 

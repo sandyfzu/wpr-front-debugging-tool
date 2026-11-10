@@ -37,12 +37,19 @@ export const PAYLOAD_LIMITS = {
   /** Captured response headers: rows, and per-row name/value lengths. */
   headers: { count: 256, name: 512, value: 4096 },
   /**
-   * Delay JS: script rows, src URL, inline content per script, and inline
+   * Delay JS: script rows, src URL, inline content per script, inline
    * content summed over the whole list (8 Mi chars: ≤ 48 MiB even when every
    * char serializes as a 6-byte escape, so this field alone fits the 64 MiB
-   * message ceiling — the rest of the payload is not counted against it).
+   * message ceiling — the rest of the payload is not counted against it),
+   * and the parked original type (a MIME type or keyword: 64 is generous).
    */
-  delayScripts: { count: 5_000, src: 4096, content: 512 * 1024, contentTotal: 8 * 1024 * 1024 },
+  delayScripts: {
+    count: 5_000,
+    src: 4096,
+    content: 512 * 1024,
+    contentTotal: 8 * 1024 * 1024,
+    originalType: 64
+  },
   /** Defer JS sources. */
   deferScripts: { count: 5_000, chars: 4096 },
   /** Lazyload per-image records. */
@@ -146,7 +153,9 @@ function boundVersion(version: string | null, tracker: CutTracker): string | nul
 /**
  * Delay JS records: src and inline content within their per-script caps, and
  * the inline content within the list's total budget (document order — once
- * spent, later scripts carry empty content, a legitimate engine value).
+ * spent, later scripts carry empty content, a legitimate engine value). An
+ * over-cap original type is dropped, never clipped: a clipped type would read
+ * as a different, real-looking type.
  */
 function boundDelayedScripts(
   scripts: readonly DelayedScriptRecord[],
@@ -160,6 +169,10 @@ function boundDelayedScripts(
     if (script.content !== undefined) {
       out.content = clipString(script.content, Math.min(caps.content, budget), tracker);
       budget -= out.content.length;
+    }
+    if (script.originalType !== undefined && script.originalType.length > caps.originalType) {
+      delete out.originalType;
+      tracker.cut = true;
     }
     return out;
   });

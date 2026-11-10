@@ -22,6 +22,7 @@
  */
 import {
   DATA_LAZY_SRC,
+  DATA_ROCKET_STATUS,
   DELAY_JS_SRC,
   DELAY_JS_TYPE_OLD,
   LAZY_RENDER_ATTRIBUTE,
@@ -29,7 +30,6 @@ import {
   WPR_DEFER_ATTRIBUTE
 } from '../../../lib/wp-rocket/constants';
 import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
-import { DELAY_STATUS_ATTRIBUTE } from '../../../lib/exclusion-builder/delay-js';
 import { storedRowKey, trimExclusionRow } from '../../../lib/exclusion-builder/field-text';
 import { recoverOriginalScript } from '../../../lib/wp-rocket/minify-url-recovery';
 import { parseUrl } from '../../../utils/urls';
@@ -424,7 +424,7 @@ function storable(candidate: PickCandidate): PickCandidate | null {
 function isDelayedScript(el: ElementSnapshot): boolean {
   // Substring match, like the engine's candidacy: `;charset=…` suffixes count.
   if ((el.attribute('type') ?? '').includes(DELAY_JS_TYPE_OLD)) return true;
-  return el.attribute(DELAY_STATUS_ATTRIBUTE) !== null;
+  return el.attribute(DATA_ROCKET_STATUS) !== null;
 }
 
 /** The script's effective URL: the delay-parked original, else `src`. */

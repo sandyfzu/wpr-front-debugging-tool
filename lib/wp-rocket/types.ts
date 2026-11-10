@@ -68,6 +68,14 @@ export interface DelayedScriptRecord {
    * tag fact only: page-level Minify JS counts it under its proof guard.
    */
   minifyAttribute: boolean;
+  /**
+   * A still-delayed script's original `type` (`data-rocket-type`); absent
+   * when the attribute is missing or empty (the runtime then runs it as a
+   * classic script) and on every undelayed record — a script the runtime
+   * already ran has its real `type` back (a non-empty attribute is removed;
+   * an empty one may stay behind, and is never read here).
+   */
+  originalType?: string;
 }
 
 /** One image classified by the lazyload check. */

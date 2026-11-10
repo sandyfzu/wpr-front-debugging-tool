@@ -95,6 +95,58 @@ describe('createPageTools', () => {
     expect(tools?.candidates()).toHaveLength(2);
   });
 
+  // The attribute names are pinned as literals: a renamed or dropped watch
+  // would leave pickable changes (a script delayed or run, an image swapped
+  // in) unseen until some unrelated churn.
+  const WATCHED = [
+    'type',
+    'src',
+    'id',
+    'class',
+    'data-rocket-src',
+    'data-rocket-type',
+    'data-rocket-status',
+    'data-rocket-defer',
+    'data-lazy-src',
+    'data-wpr-lazyrender'
+  ];
+  const UNWATCHED = ['title', 'style', 'data-foo', 'data-rocket-foo', 'data-lazy-srcset'];
+
+  /** Change one attribute on the script and report whether a rescan followed. */
+  const rescannedAfter = async (attribute: string): Promise<boolean> => {
+    const before = tools?.candidates();
+    document.getElementById('x-js')?.setAttribute(attribute, 'changed');
+    await microtasks();
+    vi.advanceTimersByTime(RESCAN_DEBOUNCE_MS);
+    return tools?.candidates() !== before;
+  };
+
+  for (const attribute of WATCHED) {
+    it(`rescans when a watched attribute changes: ${attribute}`, async () => {
+      expect(await rescannedAfter(attribute)).toBe(true);
+    });
+  }
+
+  for (const attribute of UNWATCHED) {
+    it(`never rescans for an unwatched attribute: ${attribute}`, async () => {
+      expect(await rescannedAfter(attribute)).toBe(false);
+    });
+  }
+
+  it('picks up a script delayed in place (its `type` is watched)', async () => {
+    const script = document.createElement('script');
+    script.id = 'y-js';
+    script.textContent = 'b()';
+    document.body.append(script);
+    await microtasks();
+    vi.advanceTimersByTime(RESCAN_DEBOUNCE_MS);
+    expect(tools?.candidates()).toHaveLength(2);
+    script.setAttribute('type', 'rocketlazyloadscript');
+    await microtasks();
+    vi.advanceTimersByTime(RESCAN_DEBOUNCE_MS);
+    expect(tools?.candidates()).toHaveLength(3);
+  });
+
   it('rescans under churn that never goes quiet, at least every max wait', async () => {
     for (let elapsed = 0; elapsed <= RESCAN_MAX_WAIT_MS; elapsed += 100) {
       const img = document.createElement('img');

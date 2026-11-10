@@ -7,13 +7,13 @@
  */
 import {
   DATA_LAZY_SRC,
+  DATA_ROCKET_STATUS,
   DELAY_JS_SRC,
   DELAY_JS_TYPE_OLD,
+  DELAY_TYPE_ATTRIBUTE,
   LAZY_RENDER_ATTRIBUTE,
   WPR_DEFER_ATTRIBUTE
 } from '../../../lib/wp-rocket/constants';
-import { DELAY_STATUS_ATTRIBUTE } from '../../../lib/exclusion-builder/delay-js';
-import { DELAY_TYPE_ATTRIBUTE } from '../../../lib/exclusion-builder/delay-js-match';
 import {
   candidatesFor,
   lazyRenderPeerText,
@@ -32,7 +32,7 @@ const SCRIPT_TEXT_CHARS = 512;
 /** The scripts Delay JS holds — its footprints on a live page. */
 export const DELAY_FOOTPRINT_SELECTOR = [
   `script[type*="${DELAY_JS_TYPE_OLD}"]`,
-  `script[${DELAY_STATUS_ATTRIBUTE}]`,
+  `script[${DATA_ROCKET_STATUS}]`,
   `script[${DELAY_TYPE_ATTRIBUTE}]`,
   `script[${DELAY_JS_SRC}]`
 ].join(',');

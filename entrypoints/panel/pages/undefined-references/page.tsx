@@ -47,6 +47,7 @@ import { toast } from '../../../../components/ui/toast-store';
 import { LABEL_DELAY_JAVASCRIPT_EXECUTION } from '../../../../lib/detection/labels';
 import { runtimeOnPage } from '../../../../lib/detection/simulation-fact';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
+import { inlineScriptsCut } from '../javascript/capture-bounds';
 import { cn } from '../../../../utils/cn';
 import { useFdtData } from '../../state/use-fdt-data';
 import { PageFrame } from '../page-frame';
@@ -209,7 +210,10 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
         <Match when={listed()}>
           <WordsState
             store={store}
-            inlineCut={() => loaded()?.wprDetections.delay_js.truncated === true}
+            inlineCut={() => {
+              const delayJs = loaded()?.wprDetections.delay_js;
+              return delayJs !== undefined && inlineScriptsCut(delayJs);
+            }}
           />
         </Match>
       </Switch>
@@ -262,8 +266,9 @@ interface WordsStateProps {
   /** The page store. */
   store: UndefinedReferencesStore;
   /**
-   * The capture cut the page's inline scripts to its size caps (the Delay JS
-   * row arrived marked truncated): the inline search saw only part of them.
+   * The capture cut the page's inline script text to its size caps (list
+   * entries or text lost, never just another field clipped): the inline
+   * search saw only part of them.
    */
   inlineCut: () => boolean;
 }

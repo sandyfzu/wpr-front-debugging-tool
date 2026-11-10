@@ -22,8 +22,10 @@
  * the comment or attribute that holds them.
  */
 import {
+  DATA_ROCKET_STATUS,
   DELAY_JS_CONTROLLER,
   DELAY_JS_SRC,
+  DELAY_TYPE_ATTRIBUTE,
   INLINE_WRAP_OPEN,
   isDelayJSType
 } from '../wp-rocket/constants';
@@ -37,12 +39,7 @@ import {
   maskedForMatching,
   type MaskedRegion
 } from './delay-js-mask';
-import {
-  readDelayRows,
-  DELAY_TYPE_ATTRIBUTE,
-  type DelayRowMatch,
-  type DelayVerdict
-} from './delay-js-match';
+import { readDelayRows, type DelayRowMatch, type DelayVerdict } from './delay-js-match';
 import {
   hasSpanningWrapper,
   inlinePassUnder,
@@ -62,9 +59,6 @@ import {
   type TextPatch
 } from './tag-edit';
 import type { ExclusionFeatureId, ExclusionSet } from './set';
-
-/** The delay controller's runtime status marker — a snapshot's delayed-script evidence. */
-export const DELAY_STATUS_ATTRIBUTE = 'data-rocket-status';
 
 const FEATURE: ExclusionFeatureId = 'delay_js';
 const TYPE_ATTRIBUTE = 'type';
@@ -181,7 +175,7 @@ export interface DelayScriptMatch {
 function isDelayedScript(tag: ParsedTag): boolean {
   const type = findAttribute(tag, TYPE_ATTRIBUTE);
   if (type?.value != null && isDelayJSType(type.value)) return true;
-  return findAttribute(tag, DELAY_STATUS_ATTRIBUTE) !== null;
+  return findAttribute(tag, DATA_ROCKET_STATUS) !== null;
 }
 
 /**

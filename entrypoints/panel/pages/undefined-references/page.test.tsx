@@ -13,6 +13,7 @@ import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MOTION_REVEAL } from '../../../../components/ui/classes';
 import { toast, toastItems } from '../../../../components/ui/toast-store';
+import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import { ERROR_WORD_LIMIT } from '../../../../lib/messaging/validate';
 import type { InlineScriptSource, ScriptAsset } from '../../../../lib/panel/undefined-refs';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
@@ -412,13 +413,22 @@ describe('UndefinedReferencesPage — results', () => {
     for (const fact of facts) expect(fact.className).toContain('whitespace-nowrap');
   });
 
-  it('says so when the capture cut the inline scripts (Delay JS row marked truncated)', async () => {
+  it('says so when the capture cut the inline scripts (an inline text clipped to its cap)', async () => {
     const data = pageData({ words: ['nope'] });
     const cut = makeFdtData({
       ...data,
       wprDetections: {
         ...data.wprDetections,
-        delay_js: { ...data.wprDetections.delay_js, truncated: true }
+        delay_js: {
+          ...data.wprDetections.delay_js,
+          scripts: [
+            makeDelayScript({
+              inline: true,
+              content: 'x'.repeat(PAYLOAD_LIMITS.delayScripts.content)
+            })
+          ],
+          truncated: true
+        }
       }
     });
     const { reads } = mount({ data: cut });
@@ -428,6 +438,24 @@ describe('UndefinedReferencesPage — results', () => {
       '1 undefined reference · 0 with a possible definition · inline scripts only partly captured'
     );
     expect(screen.getByText('No definition found in the readable scripts')).toBeTruthy();
+  });
+
+  it('keeps not-found verdicts whole when the mark covers only a non-inline cut', async () => {
+    // A marked row whose inline text is whole: the cut was elsewhere (a
+    // clipped URL, a dropped original type), so the inline search saw it all.
+    const data = pageData({ words: ['nope'] });
+    const marked = makeFdtData({
+      ...data,
+      wprDetections: {
+        ...data.wprDetections,
+        delay_js: { ...data.wprDetections.delay_js, truncated: true }
+      }
+    });
+    const { reads } = mount({ data: marked });
+    reads[0]?.resolve(ASSETS);
+    await flush();
+    expect(summary()).toBe('1 undefined reference · 0 with a possible definition');
+    expect(screen.queryByText('No definition found in the readable scripts')).toBeNull();
   });
 
   it('hints at a rescan when the page loaded scripts after the read', async () => {
