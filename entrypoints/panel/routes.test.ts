@@ -148,7 +148,7 @@ describe('nav live-state selectors', () => {
     });
     expect(liveStateOf('javascript', loaded)?.text).toBe('delayed 1,000/1,000');
     expect(liveStateOf('lazyload', loaded)?.text).toBe('1,000 images');
-    expect(liveStateOf('preloaded-resources', loaded)?.text).toBe('1,000 links');
+    expect(liveStateOf('preloaded-resources', loaded)?.text).toBe('1,000 hints');
     expect(liveStateOf('undefined-references', loaded)?.text).toBe('1,000 found');
   });
 
@@ -239,7 +239,27 @@ describe('nav live-state selectors', () => {
         truncated: true
       }
     });
-    expect(liveStateOf('preloaded-resources', links)?.text).toBe('5,000+ links');
+    expect(liveStateOf('preloaded-resources', links)?.text).toBe('5,000+ hints');
+    // The hint inventory reads its own mark, never the preload list's.
+    const hints = makeFdtData({
+      preloadedResources: {
+        present: true,
+        resources: [{ href: '/x', type: 'image' }],
+        truncated: true,
+        hints: Array.from({ length: 5000 }, () => ({
+          rel: 'preconnect' as const,
+          href: '/x',
+          as: ''
+        }))
+      }
+    });
+    expect(liveStateOf('preloaded-resources', hints)?.text).toBe('5,000 hints');
+    expect(
+      liveStateOf('preloaded-resources', {
+        ...hints,
+        preloadedResources: { ...hints.preloadedResources, hintsTruncated: true }
+      })?.text
+    ).toBe('5,000+ hints');
   });
 
   it('keeps plain counts when the mark only means clipped strings (list under its cap)', () => {
@@ -258,7 +278,7 @@ describe('nav live-state selectors', () => {
         truncated: true
       }
     });
-    expect(liveStateOf('preloaded-resources', oneLink)?.text).toBe('1 link');
+    expect(liveStateOf('preloaded-resources', oneLink)?.text).toBe('1 hint');
     const clippedDelay = makeFdtData({
       wprDetections: {
         ...base,
@@ -312,31 +332,38 @@ describe('nav live-state selectors', () => {
     expect(liveStateOf('lazyload', makeFdtData())).toBeNull();
   });
 
-  it('counts preloaded links only when an inventory was collected', () => {
+  it('counts every collected hint, plain ones included, and stays silent on none', () => {
     const collected = makeFdtData({
       preloadedResources: {
-        present: true,
-        resources: [
-          { href: '/x.css', type: 'style' },
-          { href: '/y.js', type: 'script' }
+        present: false,
+        hints: [
+          { rel: 'dns-prefetch', href: 'https://a/', as: '' },
+          { rel: 'modulepreload', href: '/y.js', as: '' }
         ]
       }
     });
     expect(liveStateOf('preloaded-resources', collected)).toEqual({
-      text: '2 links',
+      text: '2 hints',
       tone: 'info'
     });
+    // A capture without the inventory counts its preload list.
     expect(
       liveStateOf('preloaded-resources', {
         ...collected,
-        preloadedResources: { present: true, resources: [] }
+        preloadedResources: { present: true, resources: [{ href: '/x.css', type: 'style' }] }
       })
-    ).toEqual({ text: 'None', tone: 'neutral' });
-    // Present without a collected list (unknown) and absent both stay silent.
+    ).toEqual({ text: '1 hint', tone: 'info' });
+    // No hint, no list (unknown) and no data all stay silent.
+    for (const preloadedResources of [
+      { present: false, hints: [] },
+      { present: true, resources: [], hints: [] },
+      { present: true, resources: [] },
+      { present: true }
+    ]) {
+      expect(liveStateOf('preloaded-resources', { ...collected, preloadedResources })).toBeNull();
+    }
     expect(liveStateOf('preloaded-resources', makeFdtData())).toBeNull();
-    expect(
-      liveStateOf('preloaded-resources', { ...collected, preloadedResources: { present: true } })
-    ).toBeNull();
+    expect(navRoute('preloaded-resources')?.liveState?.(null)).toBeNull();
   });
 
   it('leaves the overview and reserved rows stateless', () => {

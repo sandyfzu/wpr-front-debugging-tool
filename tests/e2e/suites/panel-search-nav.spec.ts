@@ -40,7 +40,7 @@ function navInventory(): string {
     ).padStart(2, '0')}-part.js`;
     return `<script type="rocketlazyloadscript" data-rocket-src="${url}"></script>
       <img data-lazy-src="${url}" alt="Fixture ${String(index)}">
-      <link data-rocket-preload as="image" href="${url}">`;
+      <link rel="preload" data-rocket-preload as="image" href="${url}">`;
   });
   return `<!doctype html><html lang="en"><head><title>Search nav fixture</title></head>
     <body><h1>Search nav fixture</h1>${rows.join('')}</body></html>`;

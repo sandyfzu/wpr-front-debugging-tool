@@ -207,6 +207,13 @@
     }
   },
   "preloadedResources": {
-    "present": false
+    "present": false,
+    "hints": [
+      {
+        "rel": "modulepreload",
+        "href": "https://ahmed.e2e.rocketlabsqa.ovh/wp-includes/js/dist/interactivity.min.js?ver=6.5.12",
+        "as": ""
+      }
+    ]
   }
 }

@@ -118,6 +118,34 @@
     }
   },
   "preloadedResources": {
-    "present": false
+    "present": false,
+    "hints": [
+      {
+        "rel": "preload",
+        "href": "https://example.com/manual.woff2",
+        "as": "font"
+      },
+      {
+        "rel": "preload",
+        "href": "https://cdn.thirdparty.com/x.woff2",
+        "as": "font"
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://cdn.rocketcdn.me/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://unrelated.example.net/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://fonts.bunny.net/",
+        "as": "",
+        "mark": "prefetch"
+      }
+    ]
   }
 }

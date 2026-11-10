@@ -842,6 +842,33 @@
     }
   },
   "preloadedResources": {
-    "present": false
+    "present": false,
+    "hints": [
+      {
+        "rel": "preload",
+        "href": "https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/wp-rocket.svg",
+        "as": "image"
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "http://static.klaviyo.com/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "http://www.dwin1.com/",
+        "as": ""
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://fonts.gstatic.com/",
+        "as": ""
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://dev.visualwebsiteoptimizer.com/",
+        "as": ""
+      }
+    ]
   }
 }

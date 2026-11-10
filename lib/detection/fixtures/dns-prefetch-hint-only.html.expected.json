@@ -92,6 +92,24 @@
     }
   },
   "preloadedResources": {
-    "present": false
+    "present": false,
+    "hints": [
+      {
+        "rel": "dns-prefetch",
+        "href": "http://fonts.googleapis.com/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "http://cdn.fdt.test/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://www.googletagmanager.com/",
+        "as": "",
+        "mark": "prefetch"
+      }
+    ]
   }
 }

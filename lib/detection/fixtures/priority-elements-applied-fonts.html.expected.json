@@ -105,6 +105,20 @@
         "href": "https://example.com/wp-content/cache/fonts/1/fonts.gstatic.com/s/opensans-v35.woff2",
         "type": "font"
       }
+    ],
+    "hints": [
+      {
+        "rel": "preload",
+        "href": "https://example.com/wp-content/cache/fonts/1/fonts.gstatic.com/s/roboto-v30.woff2",
+        "as": "font",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://example.com/wp-content/cache/fonts/1/fonts.gstatic.com/s/opensans-v35.woff2",
+        "as": "font",
+        "mark": "preload"
+      }
     ]
   }
 }

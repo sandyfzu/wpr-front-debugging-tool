@@ -97,6 +97,32 @@
     }
   },
   "preloadedResources": {
-    "present": false
+    "present": false,
+    "hints": [
+      {
+        "rel": "dns-prefetch",
+        "href": "https://fonts.bunny.net/",
+        "as": "",
+        "mark": "prefetch"
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://analytics.example-partner.com/",
+        "as": "",
+        "mark": "prefetch"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://fonts.gstatic.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://cdn.example-cdn.net/",
+        "as": "",
+        "mark": "preconnect"
+      }
+    ]
   }
 }

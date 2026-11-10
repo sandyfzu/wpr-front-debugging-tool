@@ -13,7 +13,13 @@
  * and the counts come out of a single items pass (no double iteration).
  */
 
-import type { PreloadedResources, WprDetections } from '../wp-rocket/types';
+import type {
+  PreloadedResources,
+  ResourceHint,
+  ResourceHintRel,
+  WprDetections
+} from '../wp-rocket/types';
+import { hintAttribution, hintRank, type HintAttribution } from './hint-attribution';
 import {
   NO_SCRIPT_PAGE_FACTS,
   jsScriptState,
@@ -51,13 +57,16 @@ export interface LazyloadImageResource {
   readonly excludedReasons: string[];
 }
 
-/** One preloaded-subresource row on the Preloaded Resources page. */
+/** One resource-hint row on the Preloaded Resources page. */
 export interface PreloadedResource {
+  /** The hint's capture position (rows are shown in inventory order, keyed by this). */
   readonly id: number;
+  readonly rel: ResourceHintRel;
   /** The `as` type ('' when the hint carries none). */
-  readonly type: string;
-  /** The searched field: the preloaded URL. */
+  readonly as: string;
+  /** The searched field: the hinted URL ('' when it has none). */
   readonly href: string;
+  readonly attribution: HintAttribution;
 }
 
 /** One filter chip's data: id, label, and the row predicate it applies. */
@@ -69,8 +78,8 @@ export interface ResourceFilterRow<Row, Id extends string> {
 
 /**
  * One page's resource pattern: its chip rows in render order plus the row
- * field the search box filters over (the reference surface's search lines:
- * scripts → content, images → src, preloaded → href).
+ * field the search box filters over (scripts → content, images → src,
+ * hints → href).
  */
 export interface ResourcePageDefinition<Row, Id extends string> {
   readonly filters: readonly ResourceFilterRow<Row, Id>[];
@@ -158,12 +167,49 @@ export const LAZYLOAD_PAGE_RESOURCES: ResourcePageDefinition<
 };
 
 /** The Preloaded Resources page's chip ids, in render order. */
-export type PreloadedFilterId = 'all' | 'images' | 'fonts';
+export type PreloadedFilterId =
+  | 'all'
+  | 'wp-rocket'
+  | 'unattributed'
+  | 'preload'
+  | 'images'
+  | 'fonts'
+  | 'modulepreload'
+  | 'preconnect'
+  | 'dns-prefetch';
 
 /**
- * The Preloaded Resources page's pattern. The type compare is
- * case-insensitive: the page's classes are the `as` hint's own words, and a
- * hint is an image or a font regardless of attribute casing.
+ * A chip over one hint kind.
+ *
+ * @param id The chip id (the kind's own `rel` token).
+ * @param label The chip label.
+ */
+function kindFilter(
+  id: ResourceHintRel,
+  label: string
+): ResourceFilterRow<PreloadedResource, PreloadedFilterId> {
+  return { id, label, predicate: (row) => row.rel === id };
+}
+
+/**
+ * A chip over one preload `as` type (the hint kind the type matters for).
+ *
+ * @param id The chip id.
+ * @param label The chip label.
+ * @param as The `as` type.
+ */
+function preloadAsFilter(
+  id: PreloadedFilterId,
+  label: string,
+  as: string
+): ResourceFilterRow<PreloadedResource, PreloadedFilterId> {
+  return { id, label, predicate: (row) => row.rel === 'preload' && row.as === as };
+}
+
+/**
+ * The Preloaded Resources page's pattern: attribution first (WP Rocket's
+ * hints vs the unattributed rest), then the hint kinds, preloads with their
+ * two common types beside them.
  */
 export const PRELOADED_PAGE_RESOURCES: ResourcePageDefinition<
   PreloadedResource,
@@ -171,16 +217,18 @@ export const PRELOADED_PAGE_RESOURCES: ResourcePageDefinition<
 > = {
   filters: [
     { id: 'all', label: 'Show all', predicate: () => true },
+    { id: 'wp-rocket', label: 'WP Rocket', predicate: (row) => row.attribution.by === 'wp-rocket' },
     {
-      id: 'images',
-      label: 'Images',
-      predicate: (row) => row.type.toLowerCase() === 'image'
+      id: 'unattributed',
+      label: 'Unattributed',
+      predicate: (row) => row.attribution.by === 'page'
     },
-    {
-      id: 'fonts',
-      label: 'Fonts',
-      predicate: (row) => row.type.toLowerCase() === 'font'
-    }
+    kindFilter('preload', 'Preload'),
+    preloadAsFilter('images', 'Images', 'image'),
+    preloadAsFilter('fonts', 'Fonts', 'font'),
+    kindFilter('modulepreload', 'Module preload'),
+    kindFilter('preconnect', 'Preconnect'),
+    kindFilter('dns-prefetch', 'DNS prefetch')
   ],
   searchField: (row) => row.href
 };
@@ -234,15 +282,60 @@ export function buildLazyloadRows(lazyload: WprDetections['lazyload']): Lazyload
 }
 
 /**
- * Classify the preloaded hint list into page rows; a report without a
- * collected list reads as zero rows (the page's honest empty state).
+ * The report's hints: its inventory, or — on a payload captured before the
+ * inventory existed — its WP Rocket preloads read as stamped preload hints
+ * (the marker is the plugin's preload stamp; their `as` type normalized as
+ * the inventory writes it).
+ *
+ * @param report The payload's preloaded-resources report.
  */
-export function buildPreloadedRows(resources: PreloadedResources): PreloadedResource[] {
-  return (resources.resources ?? []).map((resource, index): PreloadedResource => ({
-    id: index,
-    type: resource.type,
-    href: resource.href
+export function reportHints(report: PreloadedResources): readonly ResourceHint[] {
+  if (report.hints !== undefined) return report.hints;
+  return (report.resources ?? []).map((resource): ResourceHint => ({
+    rel: 'preload',
+    href: resource.href,
+    as: resource.type.trim().toLowerCase(),
+    mark: 'preload'
   }));
+}
+
+/**
+ * The cut mark of the list {@link reportHints} reads: each list carries its
+ * own (the hints `hintsTruncated`, the preload list `truncated`).
+ *
+ * @param report The payload's preloaded-resources report.
+ */
+export function reportHintsTruncated(report: PreloadedResources): true | undefined {
+  return report.hints === undefined ? report.truncated : report.hintsTruncated;
+}
+
+/**
+ * Classify the report's hints into page rows, in inventory order (WP
+ * Rocket's first, then by kind — {@link hintRank}); a report without a
+ * collected list reads as zero rows (the page's honest empty state).
+ *
+ * @param report The payload's preloaded-resources report.
+ * @param detections The page's detection rows (attribution proof).
+ * @returns The rows, `id` = the hint's capture position.
+ */
+export function buildPreloadedRows(
+  report: PreloadedResources,
+  detections: WprDetections
+): PreloadedResource[] {
+  const ranked = reportHints(report).map((hint, index) => {
+    const attribution = hintAttribution(hint, detections);
+    const row: PreloadedResource = {
+      id: index,
+      rel: hint.rel,
+      as: hint.as,
+      href: hint.href,
+      attribution
+    };
+    return { row, rank: hintRank(hint, attribution) };
+  });
+  // Stable: equal ranks keep capture (document) order.
+  ranked.sort((a, b) => a.rank - b.rank);
+  return ranked.map(({ row }) => row);
 }
 
 /**

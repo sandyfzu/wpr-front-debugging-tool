@@ -276,6 +276,41 @@
         "href": "https://all.example/app.js",
         "type": "script"
       }
+    ],
+    "hints": [
+      {
+        "rel": "dns-prefetch",
+        "href": "https://cdn.rocketcdn.me/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://stats.wp.com/",
+        "as": ""
+      },
+      {
+        "rel": "preload",
+        "href": "http://localhost:3000/font.woff2",
+        "as": "font"
+      },
+      {
+        "rel": "preload",
+        "href": "https://all.example/hero.webp",
+        "as": "image",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://all.example/logo.png",
+        "as": "image",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://all.example/app.js",
+        "as": "script",
+        "mark": "preload"
+      }
     ]
   }
 }

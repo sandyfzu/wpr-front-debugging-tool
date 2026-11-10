@@ -111,6 +111,69 @@
     }
   },
   "preloadedResources": {
-    "present": false
+    "present": false,
+    "hints": [
+      {
+        "rel": "dns-prefetch",
+        "href": "javascript:alert(document.domain)",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "data:text/plain,host",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://a.example/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://a.example/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://b.example/",
+        "as": ""
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://multi-token.example/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://multi-token.example/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://cdn.example.com/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://attributed.example/",
+        "as": "",
+        "mark": "prefetch"
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "https://attributed-cors.example/",
+        "as": ""
+      }
+    ]
   }
 }

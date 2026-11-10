@@ -116,6 +116,7 @@
     }
   },
   "preloadedResources": {
-    "present": false
+    "present": false,
+    "hints": []
   }
 }

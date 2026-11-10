@@ -8,7 +8,7 @@
  */
 
 import { escapeRegex } from '../../utils/regex.ts';
-import type { FeatureMetaRow } from './types';
+import type { FeatureMetaRow, ResourceHintMark, ResourceHintRel } from './types';
 
 /** Attribute WP Rocket uses on delayed scripts to carry the original `src`. */
 export const DELAY_JS_SRC = 'data-rocket-src';
@@ -328,6 +328,43 @@ export const LOCATION_HASH_ATTRIBUTE = 'data-rocket-location-hash';
 export const ROCKET_PREFETCH_ATTRIBUTE = 'data-rocket-prefetch';
 /** Preconnect-variant attribution attribute (the filter variant's crossorigin hints). */
 export const ROCKET_PRECONNECT_ATTRIBUTE = 'data-rocket-preconnect';
+
+/**
+ * The resource-hint kinds the hint inventory lists, as `rel` tokens (ASCII
+ * case-insensitive), in the inventory's group order: what the browser fetches
+ * or warms before it needs it.
+ */
+export const RESOURCE_HINT_RELS: readonly ResourceHintRel[] = [
+  'preload',
+  'modulepreload',
+  'preconnect',
+  'dns-prefetch'
+];
+
+/**
+ * WP Rocket's attribution stamps on resource hints, in precedence order: a
+ * stamp counts only on the `rel` its emitter writes (anything else is not the
+ * plugin's markup), and only with its exact value where it has one.
+ * `data-rocket-preload` comes from one shared helper used by several features
+ * (critical images, fonts, Google Fonts), so it names WP Rocket, not a feature.
+ */
+export const RESOURCE_HINT_MARKS: readonly {
+  readonly mark: ResourceHintMark;
+  readonly rel: ResourceHintRel;
+  readonly attribute: string;
+  /** The exact value required, when the plugin writes one. */
+  readonly value?: string;
+}[] = [
+  { mark: 'preload', rel: 'preload', attribute: WPR_PRELOAD_ATTRIBUTE },
+  {
+    mark: 'async',
+    rel: 'preload',
+    attribute: ASYNC_CSS_ATTRIBUTE,
+    value: ASYNC_CSS_ATTRIBUTE_VALUE
+  },
+  { mark: 'preconnect', rel: 'preconnect', attribute: ROCKET_PRECONNECT_ATTRIBUTE },
+  { mark: 'prefetch', rel: 'dns-prefetch', attribute: ROCKET_PREFETCH_ATTRIBUTE }
+];
 
 /** The measurement beacon script's marker attribute value. */
 export const BEACON_DATA_NAME = 'wpr-wpr-beacon';

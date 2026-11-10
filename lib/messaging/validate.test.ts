@@ -292,6 +292,57 @@ describe('parsePreloadedResources', () => {
   });
 });
 
+describe('parsePreloadedResources — the hint inventory', () => {
+  const hint = { rel: 'preconnect', href: 'https://a.example/', as: '' };
+  const stamped = { rel: 'preload', href: '/f.woff2', as: 'font', mark: 'preload' };
+
+  it('accepts the inventory beside either marker state, empty or with its mark', () => {
+    for (const report of [
+      { present: false, hints: [] },
+      { present: false, hints: [hint, stamped] },
+      { present: true, resources: [], hints: [hint] },
+      { present: true, resources: [{ href: '/a', type: '' }], truncated: true, hints: [hint] },
+      { present: false, hints: [hint], hintsTruncated: true },
+      { present: true, resources: [], hints: [hint], hintsTruncated: true },
+      ...['preload', 'modulepreload', 'preconnect', 'dns-prefetch'].map((rel) => ({
+        present: false,
+        hints: [{ rel, href: '', as: '' }]
+      })),
+      ...[
+        ['preload', 'preload'],
+        ['preload', 'async'],
+        ['preconnect', 'preconnect'],
+        ['dns-prefetch', 'prefetch']
+      ].map(([rel, mark]) => ({ present: false, hints: [{ rel, href: '/x', as: '', mark }] }))
+    ]) {
+      expect(parsePreloadedResources(report)).toEqual(report);
+    }
+  });
+
+  it.each([
+    ['a non-list', { present: false, hints: 'all' }],
+    ['an over-cap list', { present: false, hints: Array.from({ length: 5001 }, () => hint) }],
+    ['a mark without a list', { present: false, hintsTruncated: true }],
+    ['a mark on an empty list', { present: false, hints: [], hintsTruncated: true }],
+    ['a false mark', { present: false, hints: [hint], hintsTruncated: false }],
+    ['a non-record hint', { present: false, hints: ['x'] }],
+    ['an unknown kind', { present: false, hints: [{ ...hint, rel: 'prefetch' }] }],
+    ['a non-string href', { present: false, hints: [{ ...hint, href: 1 }] }],
+    ['an over-cap href', { present: false, hints: [{ ...hint, href: 'h'.repeat(4097) }] }],
+    ['an over-cap as', { present: false, hints: [{ ...hint, as: 'a'.repeat(65) }] }],
+    ['a missing as', { present: false, hints: [{ rel: 'preconnect', href: '' }] }],
+    ['an extra hint key', { present: false, hints: [{ ...hint, extra: 1 }] }],
+    ['an extra key beside a stamp', { present: false, hints: [{ ...stamped, extra: 1 }] }],
+    ['an unknown stamp', { present: false, hints: [{ ...stamped, mark: 'rocket' }] }],
+    ['a stamp on another kind', { present: false, hints: [{ ...hint, mark: 'preload' }] }],
+    ['an undefined stamp', { present: false, hints: [{ ...hint, mark: undefined }] }],
+    ['an extra report key', { present: false, hints: [], extra: 1 }],
+    ['the preload mark on an absent marker', { present: false, hints: [hint], truncated: true }]
+  ])('rejects %s', (_label, report) => {
+    expect(parsePreloadedResources(report)).toBeNull();
+  });
+});
+
 describe('parseWprDetections', () => {
   it('passes a valid full payload', () => {
     const payload = minimalDetections();
@@ -861,6 +912,22 @@ describe('parseFdtDataExplained — the first failing field, by path', () => {
       'not a list'
     ],
     ['wprDetections.rocket_cdn', ['wprDetections', 'rocket_cdn'], { present: 1 }],
+    [
+      'preloadedResources.hints[1].mark',
+      ['preloadedResources'],
+      {
+        present: false,
+        hints: [
+          { rel: 'preload', href: '/a', as: 'image', mark: 'preload' },
+          { rel: 'preconnect', href: '/b', as: '', mark: 'preload' }
+        ]
+      }
+    ],
+    [
+      'preloadedResources.hintsTruncated',
+      ['preloadedResources'],
+      { present: false, hints: [], hintsTruncated: true }
+    ],
     [
       'preloadedResources.resources[1].type',
       ['preloadedResources'],

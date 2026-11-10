@@ -386,6 +386,65 @@ describe('boundPreloadedResources', () => {
     expect(boundPreloadedResources(absent)).toBe(absent);
     const within = report(3);
     expect(boundPreloadedResources(within)).toBe(within);
+    const hinted: PreloadedResources = {
+      present: false,
+      hints: [{ rel: 'preconnect', href: 'https://a/', as: '' }]
+    };
+    expect(boundPreloadedResources(hinted)).toBe(hinted);
+  });
+
+  for (const delta of [-1, 0, 1]) {
+    const n = PAYLOAD_LIMITS.preloaded.count + delta;
+    it(`keeps ${String(Math.min(n, PAYLOAD_LIMITS.preloaded.count))} of ${String(n)} hints, under the hints' own mark`, () => {
+      const hinted: PreloadedResources = {
+        ...report(1),
+        hints: Array.from({ length: n }, () => ({
+          rel: 'dns-prefetch' as const,
+          href: '/h',
+          as: ''
+        }))
+      };
+      const bounded = boundPreloadedResources(hinted);
+      expect(bounded.hints).toHaveLength(Math.min(n, PAYLOAD_LIMITS.preloaded.count));
+      expect(bounded.hintsTruncated === true).toBe(n > PAYLOAD_LIMITS.preloaded.count);
+      // The preload list was not cut: its own mark stays off.
+      expect(bounded).not.toHaveProperty('truncated');
+      expect(parsePreloadedResources(bounded)).toEqual(bounded);
+    });
+  }
+
+  it('clips a hint href and as to their caps, keeping its kind and stamp', () => {
+    const caps = PAYLOAD_LIMITS.preloaded;
+    const bounded = boundPreloadedResources({
+      present: false,
+      hints: [
+        {
+          rel: 'preload',
+          href: 'h'.repeat(caps.href + 1),
+          as: 'a'.repeat(caps.type + 1),
+          mark: 'preload'
+        }
+      ]
+    });
+    expect(bounded).toEqual({
+      present: false,
+      hints: [
+        { rel: 'preload', href: 'h'.repeat(caps.href), as: 'a'.repeat(caps.type), mark: 'preload' }
+      ],
+      hintsTruncated: true
+    });
+    expect(parsePreloadedResources(bounded)).toEqual(bounded);
+  });
+
+  it('marks each list on its own when both are cut', () => {
+    const caps = PAYLOAD_LIMITS.preloaded;
+    const bounded = boundPreloadedResources({
+      ...report(caps.count + 1),
+      hints: [{ rel: 'preconnect', href: 'h'.repeat(caps.href + 1), as: '' }]
+    });
+    expect(bounded.truncated).toBe(true);
+    expect(bounded.hintsTruncated).toBe(true);
+    expect(parsePreloadedResources(bounded)).toEqual(bounded);
   });
 });
 

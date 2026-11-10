@@ -16,6 +16,9 @@ import type {
   LazyloadImageRecord,
   MobileCacheVariant,
   PreloadedResources,
+  ResourceHint,
+  ResourceHintMark,
+  ResourceHintRel,
   WprDetections
 } from '../wp-rocket/types';
 import {
@@ -40,6 +43,8 @@ import {
   MOBILE_CACHE_VARIANT_TOKENS,
   PRELOAD_LINKS_CONFIG_MARK,
   PRELOAD_LINKS_SCRIPT_ID,
+  RESOURCE_HINT_MARKS,
+  RESOURCE_HINT_RELS,
   ROCKET_CDN_DOMAIN,
   ROCKET_PRECONNECT_ATTRIBUTE,
   ROCKET_PREFETCH_ATTRIBUTE,
@@ -369,14 +374,84 @@ export function mobileCacheVariant(meta: FeatureMetaEvidence): MobileCacheVarian
  * subsystem — its evidence and the beacon's are one family).
  */
 
-/** Preloaded subresources: WP Rocket-preloaded links with their `as` type. */
+/**
+ * Preloaded subresources: WP Rocket-preloaded links with their `as` type,
+ * plus the page's whole resource-hint inventory ({@link resourceHints}).
+ *
+ * @param page The parsed page (its links).
+ */
 export function detectPreloadedResources(page: ParsedPage): PreloadedResources {
+  const hints = resourceHints(page.links);
   const preloadedLinks = page.links.filter((link) => link.hasAttribute(WPR_PRELOAD_ATTRIBUTE));
-  if (preloadedLinks.length === 0) return { present: false };
+  if (preloadedLinks.length === 0) return { present: false, hints };
   return {
     present: true,
-    resources: preloadedLinks.map((link) => ({ href: link.href, type: link.as }))
+    resources: preloadedLinks.map((link) => ({ href: link.href, type: link.as })),
+    hints
   };
+}
+
+/** ASCII whitespace, the separator of a `rel` token list. */
+const REL_TOKEN_SEPARATOR = /[\t\n\f\r ]+/;
+
+/**
+ * Every resource hint the links declare, document order: one row per listed
+ * `rel` kind a link carries ({@link resourceHintRels}), duplicates kept (two
+ * hints for one URL are two hints). Links inside `<noscript>` are skipped:
+ * a live capture serializes them as text, so they never hint anything.
+ *
+ * @param links The page's `<link>` elements.
+ */
+export function resourceHints(links: readonly HTMLLinkElement[]): ResourceHint[] {
+  const hints: ResourceHint[] = [];
+  for (const link of links) {
+    const rels = resourceHintRels(link);
+    // The ancestor walk only for actual hints: it is the one non-constant test.
+    if (rels.length === 0 || insideNoscript(link)) continue;
+    const href = (link.getAttribute('href') ?? '').trim() === '' ? '' : link.href;
+    const as = (link.getAttribute('as') ?? '').trim().toLowerCase();
+    for (const rel of rels) {
+      const mark = resourceHintMark(link, rel);
+      hints.push(mark === undefined ? { rel, href, as } : { rel, href, as, mark });
+    }
+  }
+  return hints;
+}
+
+/**
+ * The hint kinds one link declares, in {@link RESOURCE_HINT_RELS} order:
+ * its listed `rel` tokens only (ASCII case-insensitive, each once). A
+ * `data-rocket-preload` marker adds no kind: every WP Rocket emitter writes
+ * `rel="preload"` beside it, so a marked link without that token hints
+ * nothing (the `resources` list still keeps it — it reads the marker alone).
+ *
+ * @param link A `<link>` element.
+ */
+export function resourceHintRels(link: Element): ResourceHintRel[] {
+  const tokens = (link.getAttribute('rel') ?? '').toLowerCase().split(REL_TOKEN_SEPARATOR);
+  return RESOURCE_HINT_RELS.filter((rel) => tokens.includes(rel));
+}
+
+/**
+ * WP Rocket's stamp on one hint: the first {@link RESOURCE_HINT_MARKS} entry
+ * written for this `rel` that the link carries (exact value where one is
+ * required). A stamp on another `rel` is no plugin markup and counts as none.
+ *
+ * @param link The hint's `<link>`.
+ * @param rel The hint's kind.
+ * @returns The stamp, `undefined` for a plain hint.
+ */
+export function resourceHintMark(
+  link: Element,
+  rel: ResourceHintRel
+): ResourceHintMark | undefined {
+  return RESOURCE_HINT_MARKS.find(
+    (entry) =>
+      entry.rel === rel &&
+      (entry.value === undefined
+        ? link.hasAttribute(entry.attribute)
+        : link.getAttribute(entry.attribute) === entry.value)
+  )?.mark;
 }
 
 /** Lazyload for CSS background images: the reserved container element. */

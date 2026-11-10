@@ -93,6 +93,20 @@
     }
   },
   "preloadedResources": {
-    "present": false
+    "present": false,
+    "hints": [
+      {
+        "rel": "preload",
+        "href": "https://async-css.example/wp-includes/css/dist/block-library/style.min.css?ver=6.8.3",
+        "as": "style",
+        "mark": "async"
+      },
+      {
+        "rel": "preload",
+        "href": "https://async-css.example/wp-content/cache/min/1/wp-content/themes/twentytwentyfive/style.css?ver=1791299187",
+        "as": "style",
+        "mark": "async"
+      }
+    ]
   }
 }

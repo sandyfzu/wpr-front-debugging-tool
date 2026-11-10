@@ -172,7 +172,7 @@ function inventory(count: number, revision = 0): string {
     const url = `https://example.test/reuse-${String(index)}-${String(revision)}.js`;
     return `<script type="rocketlazyloadscript" data-rocket-src="${url}"></script>
       <img data-lazy-src="${url}" alt="Fixture ${String(index)}">
-      <link data-rocket-preload as="image" href="${url}">`;
+      <link rel="preload" data-rocket-preload as="image" href="${url}">`;
   });
   return `<!doctype html><html lang="en"><head><title>List reuse</title></head><body>
     <h1>List reuse</h1>${rows.join('')}</body></html>`;

@@ -45,13 +45,29 @@ describe('buildFilterChips', () => {
   it('disables zero-count chips but never the default or the selected one', () => {
     const chips = buildFilterChips(
       PRELOADED_PAGE_RESOURCES,
-      { all: 0, images: 0, fonts: 0 },
+      {
+        all: 0,
+        'wp-rocket': 0,
+        unattributed: 2,
+        preload: 0,
+        images: 0,
+        fonts: 0,
+        modulepreload: 0,
+        preconnect: 0,
+        'dns-prefetch': 0
+      },
       'fonts'
     );
     expect(chips.map((chip) => [chip.value, chip.disabled])).toEqual([
       ['all', false],
+      ['wp-rocket', true],
+      ['unattributed', false],
+      ['preload', true],
       ['images', true],
-      ['fonts', false]
+      ['fonts', false],
+      ['modulepreload', true],
+      ['preconnect', true],
+      ['dns-prefetch', true]
     ]);
   });
 });

@@ -241,6 +241,18 @@
     }
   },
   "preloadedResources": {
-    "present": false
+    "present": false,
+    "hints": [
+      {
+        "rel": "dns-prefetch",
+        "href": "http://fdt-dns.example/",
+        "as": ""
+      },
+      {
+        "rel": "modulepreload",
+        "href": "http://127.0.0.1:8493/wp-includes/js/dist/script-modules/interactivity/index.min.js?ver=efaa5193bbad9c60ffd1",
+        "as": ""
+      }
+    ]
   }
 }

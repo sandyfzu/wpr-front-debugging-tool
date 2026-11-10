@@ -54,7 +54,10 @@ export const PAYLOAD_LIMITS = {
   deferScripts: { count: 5_000, chars: 4096 },
   /** Lazyload per-image records. */
   images: { count: 5_000, src: 4096 },
-  /** Preloaded subresource rows. */
+  /**
+   * Preloaded subresource rows, and (each list on its own) the resource-hint
+   * inventory: `type` caps a row's `as` type, which a hint carries as `as`.
+   */
   preloaded: { count: 5_000, href: 4096, type: 64 },
   /** Preloaded critical-image URL lists. */
   preloadedImages: { count: 1_000, chars: 4096 },
@@ -236,13 +239,37 @@ export function boundWprDetections(detections: WprDetections): WprDetections {
 export function boundPreloadedResources(report: PreloadedResources): PreloadedResources {
   const caps = PAYLOAD_LIMITS.preloaded;
   const resources = report.resources;
-  if (resources === undefined) return report;
-  return boundRow(report, (t) => ({
-    resources: boundList(resources, caps.count, t, (resource) => ({
-      href: clipString(resource.href, caps.href, t),
-      type: clipString(resource.type, caps.type, t)
-    }))
+  const bounded =
+    resources === undefined
+      ? report
+      : boundRow(report, (t) => ({
+          resources: boundList(resources, caps.count, t, (resource) => ({
+            href: clipString(resource.href, caps.href, t),
+            type: clipString(resource.type, caps.type, t)
+          }))
+        }));
+  return boundResourceHints(bounded);
+}
+
+/**
+ * Bound the report's hint inventory to the preloaded caps, under its own mark
+ * (`hintsTruncated`): the two lists are cut independently, so one mark per
+ * list keeps each "capped" note honest.
+ *
+ * @param report The report (resources already bounded).
+ * @returns The report with bounded hints, the same object when nothing was cut.
+ */
+function boundResourceHints(report: PreloadedResources): PreloadedResources {
+  const hints = report.hints;
+  if (hints === undefined) return report;
+  const caps = PAYLOAD_LIMITS.preloaded;
+  const tracker: CutTracker = { cut: false };
+  const bounded = boundList(hints, caps.count, tracker, (hint) => ({
+    ...hint,
+    href: clipString(hint.href, caps.href, tracker),
+    as: clipString(hint.as, caps.type, tracker)
   }));
+  return tracker.cut ? { ...report, hints: bounded, hintsTruncated: true } : report;
 }
 
 /**

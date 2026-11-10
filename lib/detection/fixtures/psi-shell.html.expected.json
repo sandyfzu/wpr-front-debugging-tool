@@ -270,6 +270,18 @@
     }
   },
   "preloadedResources": {
-    "present": false
+    "present": false,
+    "hints": [
+      {
+        "rel": "preconnect",
+        "href": "http://www.gstatic.com/",
+        "as": ""
+      },
+      {
+        "rel": "preconnect",
+        "href": "http://gstatic.com/",
+        "as": ""
+      }
+    ]
   }
 }

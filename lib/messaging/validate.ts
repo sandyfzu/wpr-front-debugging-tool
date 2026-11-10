@@ -32,6 +32,7 @@ import type {
   PageTargetsField,
   PanelSearchAction,
   PreloadedResources,
+  ResourceHint,
   RucssTestModeFact,
   WprDetections
 } from '../wp-rocket/types';
@@ -41,7 +42,9 @@ import {
   BEACON_CONFIG_LIST_FIELDS,
   BEACON_STATUS_KEYS,
   LAZYLOAD_EXCLUSIONS_LIST,
-  MAX_CACHE_STAMP_SECONDS
+  MAX_CACHE_STAMP_SECONDS,
+  RESOURCE_HINT_MARKS,
+  RESOURCE_HINT_RELS
 } from '../wp-rocket/constants';
 import { COOKIE_NAME_LIMITS } from '../wp-rocket/cookies';
 import { PANEL_SEARCH_ACTIONS } from '../wp-rocket/types';
@@ -384,11 +387,16 @@ export function parsePreloadedResources(input: unknown): PreloadedResources | nu
   if (!isRecord(input)) return reject();
   const present = input['present'];
   if (typeof present !== 'boolean') return reject('present');
+  const inventory = parseHintInventory(input);
+  if (inventory === null) return null;
   const keys = new Set(Object.keys(input));
-  if (!present) return keys.size === 1 ? { present: false } : reject('keys');
+  const hintKeys = inventory.keys;
+  if (!present) {
+    return keys.size === 1 + hintKeys ? { present: false, ...inventory.fields } : reject('keys');
+  }
   const mark = truncationKeys(input);
   if (mark === null) return reject('truncated');
-  if (!keys.has('resources') || keys.size !== 2 + mark) return reject('keys');
+  if (!keys.has('resources') || keys.size !== 2 + mark + hintKeys) return reject('keys');
   const resources = input['resources'];
   if (!Array.isArray(resources)) return reject('resources');
   if (resources.length > LIMITS.preloaded.count) return reject('resources', 'length');
@@ -406,7 +414,65 @@ export function parsePreloadedResources(input: unknown): PreloadedResources | nu
       return reject('resources', at(index), 'type');
     out.push({ href: item['href'], type: item['type'] });
   }
-  return { present: true, resources: out, ...truncationOf(mark) };
+  return { present: true, resources: out, ...truncationOf(mark), ...inventory.fields };
+}
+
+/** The hint inventory's validated fields and how many report keys they used. */
+interface HintInventoryRead {
+  readonly fields: Pick<PreloadedResources, 'hints' | 'hintsTruncated'>;
+  readonly keys: number;
+}
+
+/**
+ * The report's additive hint inventory: absent on an older payload (no
+ * fields, no keys), else a capped list of well-formed hints with its own
+ * mark (`hintsTruncated`, only `true`, only beside a non-empty list).
+ *
+ * @param input The report record.
+ * @returns The fields and their key count, or `null` (rejected) when malformed.
+ */
+function parseHintInventory(input: Record<string, unknown>): HintInventoryRead | null {
+  const marked = Object.hasOwn(input, 'hintsTruncated');
+  if (!Object.hasOwn(input, 'hints'))
+    return marked ? reject('hintsTruncated') : { fields: {}, keys: 0 };
+  const raw = input['hints'];
+  if (!Array.isArray(raw)) return reject('hints');
+  if (raw.length > LIMITS.preloaded.count) return reject('hints', 'length');
+  if (marked && (input['hintsTruncated'] !== true || raw.length === 0)) {
+    return reject('hintsTruncated');
+  }
+  const hints: ResourceHint[] = [];
+  for (const [index, item] of raw.entries()) {
+    const hint = parseResourceHint(item);
+    if (hint === null) return reject('hints', at(index));
+    hints.push(hint);
+  }
+  return marked
+    ? { fields: { hints, hintsTruncated: true }, keys: 2 }
+    : { fields: { hints }, keys: 1 };
+}
+
+/**
+ * One inventory hint: a listed kind, bounded `href`/`as`, and an optional
+ * stamp that must be one WP Rocket writes on that kind (the engine records
+ * no other pairing).
+ *
+ * @param item One list entry.
+ * @returns The hint, or `null` (rejected) when malformed.
+ */
+function parseResourceHint(item: unknown): ResourceHint | null {
+  if (!isRecord(item)) return reject();
+  const rel = RESOURCE_HINT_RELS.find((kind) => kind === item['rel']);
+  if (rel === undefined) return reject('rel');
+  if (!isBoundedString(item['href'], LIMITS.preloaded.href)) return reject('href');
+  if (!isBoundedString(item['as'], LIMITS.preloaded.type)) return reject('as');
+  const hint: ResourceHint = { rel, href: item['href'], as: item['as'] };
+  if (!Object.hasOwn(item, 'mark')) return Object.keys(item).length === 3 ? hint : reject('keys');
+  const stamp = RESOURCE_HINT_MARKS.find(
+    (entry) => entry.rel === rel && entry.mark === item['mark']
+  );
+  if (stamp === undefined) return reject('mark');
+  return Object.keys(item).length === 4 ? { ...hint, mark: stamp.mark } : reject('keys');
 }
 
 /**

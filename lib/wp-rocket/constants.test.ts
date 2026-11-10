@@ -69,6 +69,8 @@ import {
   PRELOAD_LINKS_SCRIPT_ID,
   ROCKET_CDN_DOMAIN,
   ROCKET_PREFETCH_ATTRIBUTE,
+  RESOURCE_HINT_MARKS,
+  RESOURCE_HINT_RELS,
   ROCKET_PRECONNECT_ATTRIBUTE,
   RUCSS_STYLE_SELECTOR,
   URL_PATTERNS,
@@ -259,6 +261,21 @@ describe('other feature footprints', () => {
     ]) {
       expect(parseCacheTimestampToken(data), data).toBeNull();
     }
+  });
+});
+
+describe('resource hint vocabulary', () => {
+  it('pins the listed kinds in group order', () => {
+    expect(RESOURCE_HINT_RELS).toEqual(['preload', 'modulepreload', 'preconnect', 'dns-prefetch']);
+  });
+
+  it('pins each stamp to its emitter rel and attribute, in precedence order', () => {
+    expect(RESOURCE_HINT_MARKS).toEqual([
+      { mark: 'preload', rel: 'preload', attribute: 'data-rocket-preload' },
+      { mark: 'async', rel: 'preload', attribute: 'data-rocket-async', value: 'style' },
+      { mark: 'preconnect', rel: 'preconnect', attribute: 'data-rocket-preconnect' },
+      { mark: 'prefetch', rel: 'dns-prefetch', attribute: 'data-rocket-prefetch' }
+    ]);
   });
 });
 

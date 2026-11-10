@@ -79,8 +79,8 @@
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
-      "raw": 205.4,
-      "gzip": 70.2
+      "raw": 211.2,
+      "gzip": 72.2
     }
   },
   {
@@ -166,7 +166,7 @@
   },
   {
     "surface": "devtools panel JS (all panel chunks)",
-    "globs": ["chunks/panel-*.js", "panel.js", "chunks/fdt-*.js"],
+    "globs": ["chunks/panel-*.js", "panel.js", "chunks/fdt-*.js", "chunks/page-identity-*.js"],
     "maxKb": {
       "raw": 600
     }
@@ -301,7 +301,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 2100
+      "raw": 2160
     }
   }
 ]
