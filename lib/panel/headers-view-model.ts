@@ -7,7 +7,8 @@
  *
  * Grouping: the caching-relevant rows come first, in the declared evidence
  * order (`cache-control`, the cache's `age` counter, the edge `x-cache`
- * probes, the WP Rocket headers, then the CDN/proxy hint names), each
+ * probe, the WP Rocket headers, the host-layer markers (`host-layers`),
+ * then the remaining probe and proxy hint names), each
  * keeping its capture order inside its group; every other header renders in
  * capture order after them. The whole capture stays present — rows are
  * moved into the caching group, never dropped.
@@ -23,6 +24,8 @@
  */
 
 import type { PageHeaders } from '../wp-rocket/types';
+import { HOST_LAYERS, type MarkerReading } from '../detection/host-layers';
+import { hostLayerHint } from '../detection/host-layer-hints';
 import { PAYLOAD_LIMITS } from '../messaging/payload-bounds';
 import { countNoun, formatCount, type CountNoun } from '../../utils/format-count';
 
@@ -144,34 +147,28 @@ function ageVerdict(value: string): VerdictHint | null {
     : null;
 }
 
-/** The `cache-control` directive copy for Cloudflare's status values. */
-function cloudflareVerdict(value: string): VerdictHint | null {
-  switch (value.toUpperCase()) {
-    case 'DYNAMIC':
-      return {
-        text: 'Cloudflare marks this response dynamic — it does not cache it here (DYNAMIC).',
-        tone: 'warn'
-      };
-    case 'BYPASS':
-      return {
-        text: 'Cloudflare was told to skip its cache for this response (BYPASS).',
-        tone: 'warn'
-      };
-    case 'EXPIRED':
-      // Cloudflare's documented semantics: the cache found the copy expired
-      // and the response came from the origin — a non-serve, like MISS.
-      return {
-        text: 'Cloudflare found its cached copy expired and served this response from the origin (EXPIRED).',
-        tone: 'warn'
-      };
-    default:
-      return hitMissVerdict(
-        value,
-        "Cloudflare's edge cache served this response from its cache (HIT).",
-        "Cloudflare's edge cache did not serve this response (MISS)."
-      );
-  }
-}
+/** The status tone each host-layer reading presents. */
+const READING_TONE: Readonly<Record<MarkerReading, HintTone>> = {
+  served: 'ok',
+  'not-served': 'warn',
+  present: 'info'
+};
+
+/**
+ * One caching class per host-layer marker, in the vocabulary's order: the
+ * hint is the vocabulary's own copy, so the Headers page and the cache
+ * verdict read a header one way.
+ */
+const HOST_LAYER_CLASSES: readonly CachingHeaderClass[] = HOST_LAYERS.flatMap((layer) =>
+  layer.markers.map((marker) => ({
+    exact: marker.header,
+    hint: (value: string): VerdictHint | null => {
+      const read = marker.read(value);
+      const text = read === null ? null : hostLayerHint(marker.header, read);
+      return read === null || text === null ? null : { text, tone: READING_TONE[read.reading] };
+    }
+  }))
+);
 
 /**
  * The caching-relevance registry, in evidence precedence — first match
@@ -197,7 +194,7 @@ const CACHING_CLASSES: readonly CachingHeaderClass[] = [
       tone: 'ok'
     })
   },
-  { exact: 'cf-cache-status', hint: cloudflareVerdict },
+  ...HOST_LAYER_CLASSES,
   {
     exact: 'x-cache-lookup',
     hint: (value) =>
@@ -205,15 +202,6 @@ const CACHING_CLASSES: readonly CachingHeaderClass[] = [
         value,
         'The lookup cache found this response (HIT).',
         'The lookup cache had to pass the request on (MISS).'
-      )
-  },
-  {
-    exact: 'x-litespeed-cache',
-    hint: (value) =>
-      hitMissVerdict(
-        value,
-        'The LiteSpeed cache served this response from cache (HIT).',
-        'The LiteSpeed cache did not serve this response (MISS).'
       )
   },
   {

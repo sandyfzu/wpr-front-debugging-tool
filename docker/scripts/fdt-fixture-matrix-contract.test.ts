@@ -280,8 +280,9 @@ describe('detection-matrix fixture contracts', () => {
     expect(table.map((row) => row.flag)).toEqual(['sg', 'cf', 'cf-dynamic', 'proxy']);
     const layers = table.map((row) => servedCacheLayer([{ name: row.name, value: row.value }]));
     // SiteGround and Cloudflare serves are named; a DYNAMIC Cloudflare
-    // response and the generic proxy header name no layer.
-    expect(layers).toEqual(['SiteGround', 'Cloudflare', null, null]);
+    // response names no layer; the generic proxy header is its own layer
+    // (never SiteGround).
+    expect(layers).toEqual(['SiteGround', 'Cloudflare', null, 'host proxy']);
   });
 
   it('defines the filesystem modes before WordPress loads, so wp-cli settings writes survive the hourly debug-log truncation', () => {

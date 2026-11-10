@@ -7,6 +7,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildHeadersViewModel, headersTruncationNote } from './headers-view-model';
+import { HOST_LAYERS, scanServedLayer } from '../detection/host-layers';
+import { hostLayerHint } from '../detection/host-layer-hints';
 import type { PageHeaders } from '../wp-rocket/types';
 
 /**
@@ -185,6 +187,62 @@ describe('buildHeadersViewModel — the verdict copy', () => {
       ],
       other: []
     });
+  });
+});
+
+describe('buildHeadersViewModel — the host-layer vocabulary', () => {
+  /** One representative value per marker: a served, a not-served or an identity form. */
+  const SAMPLES: readonly (readonly [string, string])[] = [
+    ['sg-f-cache', 'HIT'],
+    ['sg-f-cache', 'BYPASS'],
+    ['cf-cache-status', 'REVALIDATED'],
+    ['cf-cache-status', 'NONE'],
+    ['cf-ray', '230b030023ae2822-SJC'],
+    ['x-litespeed-cache', 'hit,litemage'],
+    ['x-sucuri-cache', 'EXPIRED'],
+    ['x-sucuri-id', '14018'],
+    ['x-varnish', '32770 3'],
+    ['x-varnish', '32770'],
+    ['x-proxy-cache', 'HIT'],
+    ['x-proxy-cache', 'MISS']
+  ];
+
+  it('groups every marker as caching evidence', () => {
+    const markers = HOST_LAYERS.flatMap((layer) => layer.markers.map((marker) => marker.header));
+    const model = buildHeadersViewModel(markers.map((name) => ({ name, value: 'x' })));
+    expect(model.caching.map((row) => row.name).sort()).toEqual([...markers].sort());
+    expect(model.other).toEqual([]);
+  });
+
+  it.each(SAMPLES)(
+    '%s: %s — the hint is the vocabulary copy, its tone agrees with the verdict',
+    (name, value) => {
+      const hint = buildHeadersViewModel([{ name, value }]).caching[0]?.hint;
+      const layer = HOST_LAYERS.find((candidate) =>
+        candidate.markers.some((marker) => marker.header === name)
+      );
+      const read = layer?.markers.find((marker) => marker.header === name)?.read(value);
+      if (read === null || read === undefined) throw new Error(`${name}: ${value} does not read`);
+      expect(hint?.text).toBe(hostLayerHint(name, read));
+      // One vocabulary: an ok hint is exactly a verdict-counting serve.
+      expect(hint?.tone === 'ok').toBe(scanServedLayer([{ name, value }]).kind === 'served');
+      expect(hint?.tone).toBe(
+        read.reading === 'served' ? 'ok' : read.reading === 'not-served' ? 'warn' : 'info'
+      );
+    }
+  );
+
+  it('an undocumented marker value renders without a hint (still grouped)', () => {
+    const model = buildHeadersViewModel([{ name: 'X-Varnish', value: 'garbage' }]);
+    expect(model.caching).toEqual([
+      { name: 'X-Varnish', value: 'garbage', hint: null, redacted: false }
+    ]);
+  });
+
+  it('never words the generic proxy header as SiteGround', () => {
+    const hint = buildHeadersViewModel([{ name: 'x-proxy-cache', value: 'HIT' }]).caching[0]?.hint;
+    expect(hint?.text).toContain("host's proxy cache");
+    expect(hint?.text).not.toContain('SiteGround');
   });
 });
 

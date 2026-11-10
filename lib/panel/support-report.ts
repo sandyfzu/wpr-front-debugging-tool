@@ -24,6 +24,7 @@
 
 import { formatCacheTimestamp } from '../detection/describe';
 import { cacheCopy, cacheLayerCopy } from '../detection/cache-context';
+import { HOST_LAYER_ADD_ON_CAVEAT } from '../detection/host-layers';
 import {
   builderOffSummary,
   LIST_JOINER,
@@ -37,7 +38,7 @@ import {
   headersTruncationNote,
   type HeaderRowVM
 } from './headers-view-model';
-import type { StatusItem } from './detections-view-model';
+import { hostLayerText, type StatusItem } from './detections-view-model';
 import { STATUS_LABELS, summarizeFdtData, type DetectionsSummary } from './detections-summary';
 import { REDACTED, redactHeaderValue, redactUrl } from '../redaction/rule';
 
@@ -158,6 +159,14 @@ function factsCell(item: StatusItem): string {
       return codeSpan(detail.value, true);
     case 'platform':
       return `${cellText(detail.name)} (matched by ${codeSpan(detail.header, true)})`;
+    case 'host-layers':
+      return [
+        ...detail.layers.map(
+          (layer) =>
+            `${cellText(hostLayerText(layer))} (${layer.headers.map((name) => codeSpan(name, true)).join(', ')})`
+        ),
+        cellText(HOST_LAYER_ADD_ON_CAVEAT)
+      ].join('; ');
     case 'cached-at':
       return detail.formatted === null ? 'Time not available' : `Generated ${detail.formatted}`;
     case 'version':

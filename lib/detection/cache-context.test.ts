@@ -188,6 +188,43 @@ describe('cacheStateForPage — verified hosting markers', () => {
     }
   });
 
+  it('every vocabulary layer with a served status names itself; identity markers never serve', () => {
+    for (const [name, value, evidence] of [
+      ['x-litespeed-cache', 'hit', 'LiteSpeed'],
+      ['x-sucuri-cache', 'HIT', 'Sucuri'],
+      ['x-varnish', '32770 3', 'Varnish'],
+      ['x-proxy-cache', 'HIT', 'host proxy']
+    ] as const) {
+      expect(state({ headers: headers(name, value) }), name).toEqual({
+        kind: 'possibly-cached',
+        evidence
+      });
+    }
+    for (const [name, value] of [
+      ['x-litespeed-cache', 'miss'],
+      ['x-sucuri-cache', 'MISS'],
+      ['x-varnish', '32770'],
+      ['x-proxy-cache', 'BYPASS'],
+      ['cf-ray', '230b030023ae2822-SJC'],
+      ['x-sucuri-id', '14018'],
+      // Generic caching evidence names no layer: never a host-layer verdict.
+      ['x-cache', 'HIT'],
+      ['age', '120']
+    ] as const) {
+      expect(state({ headers: headers(name, value) }), name).toEqual({
+        kind: 'not-detected',
+        headers: 'captured'
+      });
+    }
+  });
+
+  it('a withheld status of any vocabulary layer reads redacted', () => {
+    expect(state({ headers: [{ name: 'x-varnish', redacted: true }] })).toEqual({
+      kind: 'not-detected',
+      headers: 'redacted'
+    });
+  });
+
   it('reads header names case-insensitively and the last duplicate row', () => {
     expect(
       state({
@@ -328,6 +365,13 @@ describe('cacheCopy — one copy source', () => {
       'Possibly cached (SiteGround cache-layer marker; no WP Rocket signature; cache bypass requested)'
     ],
     [
+      'possibly cached (generic host proxy)',
+      { kind: 'possibly-cached', evidence: 'host proxy' },
+      'Possibly cached',
+      "A host proxy cache-layer marker was captured, but WP Rocket's cache signature was not found on the served HTML. The page may be served from that cache.",
+      'Possibly cached (host proxy cache-layer marker; no WP Rocket signature)'
+    ],
+    [
       'not detected (unavailable)',
       { kind: 'not-detected', headers: 'unavailable' },
       'Cache not detected',
@@ -383,7 +427,7 @@ describe('servedCacheLayer — the hosting layer that served the response', () =
     ['a Cloudflare MISS (not a serve)', [{ name: 'cf-cache-status', value: 'MISS' }], null],
     ['a SiteGround HIT', [{ name: 'sg-f-cache', value: 'HIT' }], 'SiteGround'],
     ['a withheld marker value', [{ name: 'sg-f-cache', redacted: true as const }], null],
-    ['the generic proxy header', [{ name: 'x-proxy-cache', value: 'HIT' }], null]
+    ['the generic proxy header', [{ name: 'x-proxy-cache', value: 'HIT' }], 'host proxy']
   ] as const)('%s → %s', (_name, headers, expected) => {
     expect(servedCacheLayer(headers as readonly PageHeader[] | null)).toBe(expected);
   });
@@ -401,6 +445,12 @@ describe('servedCacheLayer — the hosting layer that served the response', () =
     expect(copy.fact).toBe('SiteGround cache-layer marker captured');
     expect(copy.report.startsWith(`${copy.fact} (`)).toBe(true);
     expect(copy.report).toContain("may not have reached WP Rocket's cache");
+  });
+
+  it('starts a lowercase layer name with a capital in both renderings', () => {
+    const copy = cacheLayerCopy('host proxy');
+    expect(copy.fact).toBe('Host proxy cache-layer marker captured');
+    expect(copy.report.startsWith('Host proxy cache-layer marker captured (')).toBe(true);
   });
 });
 
