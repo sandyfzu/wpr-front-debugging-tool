@@ -9,7 +9,7 @@
  * page.
  */
 import type { JSX } from 'solid-js';
-import { createSignal, For, Show } from 'solid-js';
+import { createSignal, Show } from 'solid-js';
 import ChevronDown from 'lucide-solid/icons/chevron-down';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
@@ -22,17 +22,18 @@ import {
 } from '../../../../components/ui/code-block';
 import type { CodeLanguage } from '../../../../components/ui/code-block-langs';
 import { CopyButton } from '../../../../components/ui/copy-button';
-import { StatusBadge } from '../../../../components/ui/status-badge';
 import { cn } from '../../../../utils/cn';
 import { CURRENT_MATCH_ROW } from '../current-match';
 import { ExternalLink } from '../page-frame';
+import { StateChips } from '../resource-list/state-chip-list';
 import type { ContentCapture, InlineCode, ScriptRowView } from './script-view';
 import {
   COLLAPSED_CODE_LINES,
   codeCaption,
   codeToggleLabel,
   expandedCutNote,
-  expandedText
+  expandedText,
+  ORIGINAL_TYPE_TITLE
 } from './script-view';
 
 /** One remedy for unavailable/stale source reads; partial previews are never a copy fallback. */
@@ -139,10 +140,13 @@ export function ScriptRow(props: ScriptRowProps): JSX.Element {
 }
 
 /**
- * The type chip and the state chips — what the row is and how WP Rocket
+ * The type chip, the state chips (at most three, then "+N") and, on a
+ * delayed row, its original `type` — what the row is and how WP Rocket
  * treats it. Text always names the state; color only reinforces it. Rendered
  * as bare items so the caller's wrapping line lays them out with its own
- * trailing items; a chip never breaks inside its own label.
+ * trailing items; a chip never breaks inside its own label, while the type
+ * (a page value, up to 64 characters) breaks anywhere rather than push the
+ * row sideways.
  *
  * @param props.view The row.
  */
@@ -152,13 +156,18 @@ function RowChips(props: { view: ScriptRowView }): JSX.Element {
       <Badge variant="outline" class="font-medium whitespace-nowrap">
         {props.view.row.type === 'inline' ? 'Inline' : 'External'}
       </Badge>
-      <For each={props.view.badges}>
-        {(badge) => (
-          <StatusBadge kind={badge.kind} class="whitespace-nowrap">
-            {badge.label}
-          </StatusBadge>
+      <StateChips chips={props.view.chips} />
+      <Show when={props.view.typeDetail}>
+        {(detail) => (
+          <span
+            data-fdt="script-original-type"
+            title={ORIGINAL_TYPE_TITLE}
+            class="min-w-0 font-mono text-2xs break-all text-fg-secondary"
+          >
+            {detail()}
+          </span>
         )}
-      </For>
+      </Show>
     </>
   );
 }

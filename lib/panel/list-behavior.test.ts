@@ -71,6 +71,9 @@ describe('shared chip rules', () => {
       'Non-delayed',
       'Deferred',
       'Non-deferred',
+      'Minified',
+      'Combined',
+      'Excluded',
       'Inline',
       'External'
     ]);

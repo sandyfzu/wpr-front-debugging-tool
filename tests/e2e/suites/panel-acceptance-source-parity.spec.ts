@@ -168,15 +168,21 @@ const SCRIPT_ROWS: readonly ScriptRow[] = [
 ];
 
 /** The chips' expected counts, derived from the same array the HTML reads.
- * `deferred` counts the native `defer` attribute's scripts (both builds'
- * chip predicate); the plugin's own `data-rocket-defer` rows state
- * "Deferred (By WP Rocket)" on their labels instead. */
+ * `deferred` counts the native `defer` attribute's scripts (the source's
+ * chip predicate). Deliberate port delta: the port's Deferred filter selects
+ * exactly the rows showing its Deferred row chip — an external script with a
+ * native `defer` or the plugin's own `data-rocket-defer` stamp
+ * (`portDeferred`), so a filter never misses a row its chip names. */
 const SCRIPT_COUNTS = {
   total: SCRIPT_ROWS.length,
   delayed: SCRIPT_ROWS.filter((row) => row.delayed).length,
   nonDelayed: SCRIPT_ROWS.filter((row) => !row.delayed).length,
   deferred: SCRIPT_ROWS.filter((row) => row.deferred).length,
   nonDeferred: SCRIPT_ROWS.filter((row) => !row.deferred).length,
+  portDeferred: SCRIPT_ROWS.filter((row) => !row.inline && (row.deferred || row.deferredByWPR))
+    .length,
+  portNonDeferred: SCRIPT_ROWS.filter((row) => row.inline || !(row.deferred || row.deferredByWPR))
+    .length,
   inline: SCRIPT_ROWS.filter((row) => row.inline).length,
   external: SCRIPT_ROWS.filter((row) => !row.inline).length
 };
@@ -559,10 +565,10 @@ sourceTest.describe('source-build parity over one served fixture', () => {
           SCRIPT_COUNTS.nonDelayed.toString()
         );
         expect(await portChipCount(round.portPanel, 'deferred')).toBe(
-          SCRIPT_COUNTS.deferred.toString()
+          SCRIPT_COUNTS.portDeferred.toString()
         );
         expect(await portChipCount(round.portPanel, 'non-deferred')).toBe(
-          SCRIPT_COUNTS.nonDeferred.toString()
+          SCRIPT_COUNTS.portNonDeferred.toString()
         );
         expect(await portChipCount(round.portPanel, 'inline')).toBe(
           SCRIPT_COUNTS.inline.toString()

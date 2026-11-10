@@ -1,5 +1,5 @@
 /**
- * The JavaScript page's pure view layer: state badges, the inline-code shape
+ * The JavaScript page's pure view layer: state chips, the inline-code shape
  * (line counting, the bounded preview, expandability), chips, estimates, the
  * per-row keyed flag bookkeeping (expanded, wrapped) and the count phrases.
  */
@@ -25,8 +25,11 @@ import {
   inlineCode,
   lineCount,
   pruneRowFlags,
+  ORIGINAL_TYPE_TITLE,
+  originalTypeDetail,
   sameScript,
-  scriptStateBadges
+  scriptChipSplit,
+  scriptStateChips
 } from './script-view';
 
 /** A classified script with overrides. */
@@ -39,6 +42,9 @@ function script(overrides: Partial<JsScriptResource> = {}): JsScriptResource {
     deferred: false,
     deferredByWPR: false,
     fdtExcluded: null,
+    minified: false,
+    combined: false,
+    originalType: null,
     ...overrides
   };
 }
@@ -51,48 +57,158 @@ describe('delaySummaryBadge', () => {
   });
 });
 
-describe('scriptStateBadges', () => {
+/** The chips' visible words, in order (label plus its mark). */
+function words(row: JsScriptResource, deferSimulated = false): string[] {
+  return scriptStateChips(row, deferSimulated).map((chip) =>
+    chip.mark === undefined ? chip.label : `${chip.label} (${chip.mark})`
+  );
+}
+
+describe('scriptStateChips', () => {
   it.each([
-    [{ delayed: true }, 'Delayed', 'info'],
-    [{ fdtExcluded: 'delay_js' }, 'Not delayed (Excluded by FDT)', 'warn'],
-    [{ fdtExcluded: 'delay_js,defer_all_js' }, 'Not delayed (Excluded by FDT)', 'warn'],
-    [{ fdtExcluded: 'defer_all_js' }, 'Not delayed', 'neutral'],
-    [{}, 'Not delayed', 'neutral'],
-    // Delayed wins over the marker (the marker only explains a non-delay).
-    [{ delayed: true, fdtExcluded: 'delay_js' }, 'Delayed', 'info']
-  ] as const)('delay state of %j → %s (%s)', (overrides, label, kind) => {
-    expect(scriptStateBadges(script(overrides))[0]).toEqual({ label, kind });
+    [{}, []],
+    [{ type: 'inline' as const }, []],
+    [{ delayed: true }, ['Delayed']],
+    [{ deferred: true }, ['Deferred']],
+    [{ deferredByWPR: true, deferred: true }, ['Deferred (WP Rocket)']],
+    // The stamp alone still reads WP Rocket's defer.
+    [{ deferredByWPR: true }, ['Deferred (WP Rocket)']],
+    [{ minified: true }, ['Minified']],
+    [{ combined: true }, ['Combined']],
+    [{ fdtExcluded: 'delay_js' }, ['Excluded']],
+    [{ fdtExcluded: 'defer_all_js' }, ['Excluded']],
+    // A marker naming a feature that applied anyway is no exclusion.
+    [{ fdtExcluded: 'delay_js', delayed: true }, ['Delayed']],
+    [{ fdtExcluded: 'defer_all_js', deferred: true }, ['Deferred']],
+    // An inline script cannot be deferred: no Deferred chip, no defer exclusion.
+    [{ type: 'inline' as const, deferred: true, fdtExcluded: 'defer_all_js' }, []],
+    // Most important first: the exclusion, then Delay JS, Defer JS, the file states.
+    [
+      { fdtExcluded: 'defer_all_js', delayed: true, minified: true },
+      ['Excluded', 'Delayed', 'Minified']
+    ],
+    [
+      { delayed: true, deferred: true, deferredByWPR: true, combined: true },
+      ['Delayed', 'Deferred (WP Rocket)', 'Combined']
+    ]
+  ] as const)('%j → %j', (overrides, expected) => {
+    expect(words(script(overrides))).toEqual(expected);
   });
 
-  it.each([
-    [{ deferredByWPR: true, deferred: true }, 'Deferred (By WP Rocket)', 'info'],
-    [{ deferredByWPR: true }, 'Deferred (By WP Rocket)', 'info'],
-    [{ deferred: true }, 'Deferred', 'info'],
-    [{ deferred: true, fdtExcluded: 'defer_all_js' }, 'Deferred', 'info'],
-    [{ fdtExcluded: 'defer_all_js' }, 'Not deferred (Excluded by FDT)', 'warn'],
-    [{ fdtExcluded: 'delay_js' }, 'Not deferred', 'neutral'],
-    [{}, 'Not deferred', 'neutral']
-  ] as const)('defer state of an external %j → %s (%s)', (overrides, label, kind) => {
-    const badges = scriptStateBadges(script(overrides));
-    expect(badges).toHaveLength(2);
-    expect(badges[1]).toEqual({ label, kind });
+  it('negative states are no chips (the filters keep them)', () => {
+    const labels = scriptStateChips(script({ fdtExcluded: 'delay_js,defer_all_js' })).map(
+      (chip) => chip.label
+    );
+    expect(labels).toEqual(['Excluded']);
+    expect(labels.join(' ')).not.toMatch(/Not /);
   });
 
-  it('names a verified Defer JS simulation’s stamp as the simulation’s, never WP Rocket’s', () => {
-    expect(scriptStateBadges(script({ deferredByWPR: true, deferred: true }), true)[1]).toEqual({
-      label: 'Deferred (Simulated)',
-      kind: 'info'
-    });
-    // Only the stamp changes words: a native defer or an excluded script reads as before.
-    expect(scriptStateBadges(script({ deferred: true }), true)[1]?.label).toBe('Deferred');
-    expect(scriptStateBadges(script({ fdtExcluded: 'defer_all_js' }), true)[1]?.label).toBe(
-      'Not deferred (Excluded by FDT)'
+  it('marks the Deferred chip per who deferred: WP Rocket, a verified simulation, the page', () => {
+    const stamped = script({ deferredByWPR: true, deferred: true });
+    expect(words(stamped, true)).toEqual(['Deferred (Simulated)']);
+    expect(words(stamped, false)).toEqual(['Deferred (WP Rocket)']);
+    // The page's own defer carries no mark, simulation or not.
+    expect(words(script({ deferred: true }), true)).toEqual(['Deferred']);
+    const [own] = scriptStateChips(script({ deferred: true }));
+    expect(own).toMatchObject({ kind: 'info', title: "The page's own defer attribute" });
+    expect(own?.mark).toBeUndefined();
+    expect(scriptStateChips(stamped, true)[0]?.title).toBe(
+      "Deferred by the FDT's Load JavaScript deferred simulation"
+    );
+    expect(scriptStateChips(stamped)[0]?.title).toBe(
+      'Deferred by WP Rocket (Load JavaScript deferred)'
     );
   });
 
-  it('gives an inline script the delay state only (it cannot be deferred)', () => {
-    const badges = scriptStateBadges(script({ type: 'inline', deferred: true }));
-    expect(badges).toEqual([{ label: 'Not delayed', kind: 'neutral' }]);
+  it('names the excluded features in the Excluded chip’s title', () => {
+    const chip = (fdtExcluded: string, delayed = false) =>
+      scriptStateChips(script({ fdtExcluded, delayed }))[0];
+    expect(chip('delay_js')).toMatchObject({
+      kind: 'warn',
+      title: 'Excluded by FDT from Delay JavaScript execution'
+    });
+    expect(chip('defer_all_js')?.title).toBe('Excluded by FDT from Load JavaScript deferred');
+    expect(chip('delay_js,defer_all_js')?.title).toBe(
+      'Excluded by FDT from Delay JavaScript execution and Load JavaScript deferred'
+    );
+    // Delayed anyway: only the defer exclusion is named.
+    expect(chip('delay_js defer_all_js', true)?.title).toBe(
+      'Excluded by FDT from Load JavaScript deferred'
+    );
+  });
+
+  it('titles the file states with their feature names', () => {
+    expect(scriptStateChips(script({ minified: true }))[0]).toMatchObject({
+      kind: 'info',
+      title: 'Minified by WP Rocket (Minify JavaScript files)'
+    });
+    expect(scriptStateChips(script({ combined: true }))[0]).toMatchObject({
+      kind: 'info',
+      title: 'Bundle built by WP Rocket (Combine JavaScript files)'
+    });
+    expect(scriptStateChips(script({ delayed: true }))[0]).toEqual({
+      id: 'delayed',
+      label: 'Delayed',
+      kind: 'info'
+    });
+  });
+});
+
+describe('scriptChipSplit', () => {
+  it('shows every chip of a row within the cap, no "+N"', () => {
+    const split = scriptChipSplit(script({ delayed: true, deferred: true, minified: true }));
+    expect(split.visible.map((chip) => chip.id)).toEqual(['delayed', 'deferred', 'minified']);
+    expect(split.overflow).toBeNull();
+  });
+
+  it('a plain row has no chips at all', () => {
+    expect(scriptChipSplit(script())).toEqual({ visible: [], overflow: null });
+  });
+
+  it('past the cap, the least important chips go behind "+N"', () => {
+    // A row shape the detection does not produce today (the states are
+    // mostly exclusive), held to the cap all the same.
+    const split = scriptChipSplit(
+      script({ fdtExcluded: 'defer_all_js', delayed: true, minified: true, combined: true })
+    );
+    expect(split.visible.map((chip) => chip.id)).toEqual(['excluded', 'delayed', 'combined']);
+    expect(split.overflow).toEqual({ label: '+1', title: 'Also: Minified' });
+  });
+});
+
+describe('originalTypeDetail', () => {
+  it.each([
+    'text/javascript',
+    ' Text/JavaScript ',
+    'application/javascript',
+    'text/jscript',
+    ' ',
+    '\t\n'
+  ])('hides a classic or blank type (%j): it says nothing new', (originalType) => {
+    expect(originalTypeDetail(script({ delayed: true, originalType }))).toBeNull();
+  });
+
+  it('shows module whatever its case', () => {
+    expect(originalTypeDetail(script({ delayed: true, originalType: 'Module' }))).toBe(
+      'type: Module'
+    );
+  });
+
+  it('names a delayed row’s original type; none without one', () => {
+    expect(originalTypeDetail(script({ delayed: true, originalType: 'module' }))).toBe(
+      'type: module'
+    );
+    expect(originalTypeDetail(script({ delayed: true }))).toBeNull();
+    expect(originalTypeDetail(script({ delayed: true, originalType: 'text/template' }))).toBe(
+      'type: text/template'
+    );
+    // Parameters make a type a data block, not classic: worth showing.
+    expect(
+      originalTypeDetail(script({ delayed: true, originalType: 'text/javascript; charset=utf-8' }))
+    ).toBe('type: text/javascript; charset=utf-8');
+    expect(ORIGINAL_TYPE_TITLE).toBe(
+      "The script's own type, restored when Delay JavaScript execution runs it"
+    );
   });
 });
 
@@ -188,7 +304,10 @@ describe('sameScript', () => {
       { delayed: true },
       { deferred: true },
       { deferredByWPR: true },
-      { fdtExcluded: 'delay_js' }
+      { fdtExcluded: 'delay_js' },
+      { minified: true },
+      { combined: true },
+      { originalType: 'module' }
     ]) {
       expect(sameScript(base, { ...base, ...change })).toBe(false);
     }
@@ -215,6 +334,9 @@ describe('buildChips', () => {
     'non-delayed': 3,
     deferred: 0,
     'non-deferred': 3,
+    minified: 0,
+    combined: 0,
+    excluded: 0,
     inline: 0,
     external: 3
   };
@@ -222,7 +344,7 @@ describe('buildChips', () => {
   it('disables zero-count chips except "all" and the selected one', () => {
     const chips = buildChips(JS_PAGE_RESOURCES.filters, counts, 'deferred');
     const disabled = chips.filter((chip) => chip.disabled).map((chip) => chip.value);
-    expect(disabled).toEqual(['delayed', 'inline']);
+    expect(disabled).toEqual(['delayed', 'minified', 'combined', 'excluded', 'inline']);
     expect(chips.find((chip) => chip.value === 'deferred')).toMatchObject({
       count: 0,
       disabled: false

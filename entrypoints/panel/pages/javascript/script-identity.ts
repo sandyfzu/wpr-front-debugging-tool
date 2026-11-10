@@ -7,8 +7,9 @@ import type { JsScriptResource } from '../../../../lib/panel/resources-view-mode
 import { reconcileList } from '../../../../lib/panel/list-behavior';
 import {
   inlineCode,
+  originalTypeDetail,
   sameScript,
-  scriptStateBadges,
+  scriptChipSplit,
   type ContentCapture,
   type ScriptRowView
 } from './script-view';
@@ -93,7 +94,8 @@ export function buildRowView(
     domId: domIdOf(key),
     row,
     capture,
-    badges: scriptStateBadges(row, deferSimulated),
+    chips: scriptChipSplit(row, deferSimulated),
+    typeDetail: originalTypeDetail(row),
     code: row.type === 'inline' ? inlineCode(row.content) : null
   };
 }
@@ -108,7 +110,7 @@ export function buildRowView(
  * @param rows The fresh classified rows, in document order.
  * @param captures Each row's capture state, by position (missing: complete).
  * @param deferSimulated A verified simulation ran Defer JS on the page (the
- *   caller passes `[]` as `previous` when it changes: every badge re-derives).
+ *   caller passes `[]` as `previous` when it changes: every chip re-derives).
  * @returns The new views (`previous` itself when nothing changed).
  */
 export function reconcileRowViews(

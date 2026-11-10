@@ -13,7 +13,8 @@ import {
   buildPreloadedRows,
   buildScriptRows,
   filterAndSearch,
-  filterCounts
+  filterCounts,
+  type JsFilterId
 } from './resources-view-model';
 import type { PreloadedResources, WprDetections } from '../wp-rocket/types';
 
@@ -37,7 +38,8 @@ function scripts(
       deferred: record.deferred ?? false,
       deferredByWPR: record.deferredByWPR ?? false,
       fdtExcluded: record.fdtExcluded ?? null,
-      minifyAttribute: record.minifyAttribute ?? false
+      minifyAttribute: record.minifyAttribute ?? false,
+      ...(record.originalType === undefined ? {} : { originalType: record.originalType })
     }))
   };
 }
@@ -58,7 +60,10 @@ describe('buildScriptRows', () => {
         delayed: true,
         deferred: false,
         deferredByWPR: false,
-        fdtExcluded: null
+        fdtExcluded: null,
+        minified: false,
+        combined: false,
+        originalType: null
       },
       {
         id: 1,
@@ -67,7 +72,10 @@ describe('buildScriptRows', () => {
         delayed: false,
         deferred: true,
         deferredByWPR: true,
-        fdtExcluded: null
+        fdtExcluded: null,
+        minified: false,
+        combined: false,
+        originalType: null
       }
     ]);
   });
@@ -82,6 +90,34 @@ describe('buildScriptRows', () => {
       scripts([{ src: '/x.js', delayed: false, fdtExcluded: 'delay_js' }])
     );
     expect(rows[0]).toMatchObject({ fdtExcluded: 'delay_js', type: 'external' });
+  });
+
+  it('keeps the original type on delayed rows only', () => {
+    const rows = buildScriptRows(
+      scripts([
+        { src: '/m.js', delayed: true, originalType: 'module' },
+        { src: '/c.js', delayed: true },
+        // Never recorded on an undelayed script; a stray one is not shown.
+        { src: '/x.js', delayed: false, originalType: 'module' }
+      ])
+    );
+    expect(rows.map((row) => row.originalType)).toEqual(['module', null, null]);
+  });
+
+  it('reads the minify states under the page facts (none by default)', () => {
+    const inventory = scripts([
+      { src: 'https://site.test/wp-content/cache/min/1/wp-includes/js/a.js' },
+      { src: 'https://site.test/wp-content/cache/min/1/0123456789abcdef0123456789abcdef.js' }
+    ]);
+    expect(buildScriptRows(inventory).map((row) => [row.minified, row.combined])).toEqual([
+      [false, false],
+      [false, false]
+    ]);
+    const facts = { minifyJs: true, wprProven: true, combineDeclared: true };
+    expect(buildScriptRows(inventory, facts).map((row) => [row.minified, row.combined])).toEqual([
+      [true, false],
+      [false, true]
+    ]);
   });
 });
 
@@ -132,6 +168,9 @@ describe('the page definitions — chips and predicates', () => {
       ['non-delayed', 'Non-delayed'],
       ['deferred', 'Deferred'],
       ['non-deferred', 'Non-deferred'],
+      ['minified', 'Minified'],
+      ['combined', 'Combined'],
+      ['excluded', 'Excluded'],
       ['inline', 'Inline'],
       ['external', 'External']
     ]);
@@ -231,6 +270,9 @@ describe('filterCounts — one pass, every chip', () => {
       'non-delayed': 2,
       deferred: 1,
       'non-deferred': 3,
+      minified: 0,
+      combined: 0,
+      excluded: 0,
       inline: 1,
       external: 3
     });
@@ -266,5 +308,42 @@ describe('filterCounts — one pass, every chip', () => {
       images: 1,
       fonts: 1
     });
+  });
+});
+
+describe('the JavaScript state filters — one predicate per chip', () => {
+  const rows = buildScriptRows(
+    scripts([
+      { src: '/a.js', delayed: true, fdtExcluded: 'defer_all_js' },
+      { src: '/b.js', deferredByWPR: true },
+      { src: '/c.js', fdtExcluded: 'delay_js', deferred: true },
+      { inline: true, content: 'x;', deferred: true, fdtExcluded: 'defer_all_js' },
+      { src: 'https://s.test/wp-content/cache/min/1/0123456789abcdef0123456789abcdef.js' },
+      { src: 'https://s.test/wp-content/cache/min/1/wp-includes/js/m.js' }
+    ]),
+    { minifyJs: true, wprProven: true, combineDeclared: true }
+  );
+  /** The source paths a chip selects. */
+  const under = (id: JsFilterId): string[] =>
+    filterAndSearch(rows, JS_PAGE_RESOURCES, id, '').map((row) => row.content);
+
+  it('selects exactly the rows each state holds on', () => {
+    expect(under('delayed')).toEqual(['/a.js']);
+    // WP Rocket's stamp alone is Deferred; an inline `defer` is not.
+    expect(under('deferred')).toEqual(['/b.js', '/c.js']);
+    expect(under('excluded')).toEqual(['/a.js', '/c.js']);
+    expect(under('combined')).toEqual([
+      'https://s.test/wp-content/cache/min/1/0123456789abcdef0123456789abcdef.js'
+    ]);
+    expect(under('minified')).toEqual([
+      'https://s.test/wp-content/cache/min/1/wp-includes/js/m.js'
+    ]);
+  });
+
+  it('the negative chips are the exact complements', () => {
+    const counts = filterCounts(rows, JS_PAGE_RESOURCES);
+    expect(counts['delayed'] + counts['non-delayed']).toBe(rows.length);
+    expect(counts['deferred'] + counts['non-deferred']).toBe(rows.length);
+    expect(under('non-deferred')).toContain('x;');
   });
 });

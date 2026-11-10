@@ -40,6 +40,7 @@ import { TabPanel, Tabs } from '../../../../components/ui/tabs';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
+import { sameScriptPageFacts, scriptPageFacts } from '../../../../lib/panel/script-states';
 import {
   buildScriptRows,
   filterAndSearch,
@@ -150,16 +151,21 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
   const deferSimulated = createMemo(
     () => props.data().wprDetections.defer_all_js.simulation === 'simulated'
   );
+  // The page verdicts the Minified/Combined chips read; a changed verdict
+  // changes the rows it touches, so reconciliation re-derives exactly those.
+  const pageFacts = createMemo(() => scriptPageFacts(props.data().wprDetections), undefined, {
+    equals: sameScriptPageFacts
+  });
   // The views a pass reconciled against, with the Defer JS fact they were built under.
   let builtDeferSimulated = false;
   const views = createMemo<readonly ScriptRowView[]>((previous) => {
     const simulated = deferSimulated();
-    // A changed fact re-derives every badge (reuse would keep the old words).
+    // A changed fact re-derives every chip (reuse would keep the old words).
     const reusable = simulated === builtDeferSimulated ? previous : [];
     builtDeferSimulated = simulated;
     return reconcileRowViews(
       reusable,
-      buildScriptRows(delayJs()),
+      buildScriptRows(delayJs(), pageFacts()),
       contentCaptures(delayJs()),
       simulated
     );

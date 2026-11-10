@@ -249,6 +249,9 @@ describe('JavaScriptView — summary and chips', () => {
       'non-delayed': '4',
       deferred: '1',
       'non-deferred': '5',
+      minified: '0',
+      combined: '0',
+      excluded: '1',
       inline: '3',
       external: '3'
     });
@@ -296,8 +299,13 @@ describe('JavaScriptView — rows', () => {
     const row = rows()[1] as HTMLElement;
     expect(row.dataset.fdtScriptType).toBe('external');
     expect(row.textContent).toContain('External');
-    expect(row.textContent).toContain('Not delayed');
-    expect(row.textContent).toContain('Deferred (By WP Rocket)');
+    // Negative states are no chips any more; the WP Rocket mark stays visible.
+    expect(row.textContent).not.toContain('Not delayed');
+    const deferred = row.querySelector('[data-fdt-state="deferred"]');
+    expect(deferred?.textContent).toBe('Deferred (WP Rocket)');
+    expect(deferred?.querySelector('[data-fdt="state-chip-mark"]')?.textContent).toBe(
+      '(WP Rocket)'
+    );
     const link = within(row).getByRole('link');
     expect(link.getAttribute('href')).toBe('https://example.test/cart.js');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
@@ -333,8 +341,9 @@ describe('JavaScriptView — rows', () => {
   it('marks the local exclusion as a warning and omits the toggle for short code', () => {
     renderView();
     const row = rows()[4] as HTMLElement;
-    const badge = within(row).getByText('Not delayed (Excluded by FDT)');
+    const badge = within(row).getByText('Excluded');
     expect(badge.className).toContain('text-status-warn');
+    expect(badge.getAttribute('title')).toBe('Excluded by FDT from Delay JavaScript execution');
     expect(within(row).queryByRole('button', { expanded: false })).toBeNull();
   });
 
@@ -404,6 +413,91 @@ describe('JavaScriptView — rows', () => {
     expect(row.textContent).toContain('Empty inline script');
     expect(row.querySelector('[data-fdt="code-block"]')).toBeNull();
     expect(within(row).queryByRole('button', { name: /copy/ })).toBeNull();
+  });
+});
+
+describe('JavaScriptView — state chips', () => {
+  const BUNDLE = 'https://s.test/wp-content/cache/min/1/5c03bce63bb3260466706a046cb00086.js';
+  const MINIFIED = 'https://s.test/wp-content/cache/min/1/wp-includes/js/a.js';
+
+  /** Page data whose detection verdicts the chips read. */
+  function factsData(
+    list: DelayedScriptRecord[],
+    rows: Partial<FdtData['wprDetections']>
+  ): FdtData {
+    const data = dataWith(list);
+    return { ...data, wprDetections: { ...data.wprDetections, ...rows } };
+  }
+
+  /** The visible state words of one row, in order. */
+  function stateWords(row: HTMLElement): string[] {
+    return [...row.querySelectorAll('[data-fdt="state-chip"]')].map((chip) => chip.textContent);
+  }
+
+  const meta = (present: boolean) => ({ present, source: 'meta' as const });
+
+  it('reads Combined only on a meta-declared Combine JS page, else Minified (no meta)', () => {
+    const list = [makeDelayScript({ src: BUNDLE, delayed: false, minifyAttribute: true })];
+    const wpr = { ...makeFdtData().wprDetections.wpr, present: true };
+    const { setData } = renderView(
+      factsData(list, { wpr, minify_js: meta(false), minify_concatenate_js: meta(true) })
+    );
+    expect(stateWords(rows()[0] as HTMLElement)).toEqual(['Combined']);
+    expect(chip('combined').querySelector('[data-fdt-filter-count]')?.textContent).toBe('1');
+    // The same bundle on a page without the meta: Minify JS by footprint, no Combine JS.
+    setData(
+      factsData(list, {
+        wpr,
+        minify_js: { present: true, source: 'footprint' },
+        minify_concatenate_js: { present: false }
+      })
+    );
+    expect(stateWords(rows()[0] as HTMLElement)).toEqual(['Minified']);
+    expect(chip('combined').disabled).toBe(true);
+    // Refuted: neither (Minify JS refuted too, as the meta says when Combine JS is off).
+    setData(factsData(list, { wpr, minify_js: meta(false), minify_concatenate_js: meta(false) }));
+    expect(stateWords(rows()[0] as HTMLElement)).toEqual([]);
+  });
+
+  it('a minified, delayed, WP Rocket-deferred row shows three chips, most important first', () => {
+    const list = [
+      makeDelayScript({
+        src: MINIFIED,
+        delayed: true,
+        deferred: true,
+        deferredByWPR: true,
+        originalType: 'module'
+      })
+    ];
+    renderView(factsData(list, { minify_js: meta(true) }));
+    const row = rows()[0] as HTMLElement;
+    expect(stateWords(row)).toEqual(['Delayed', 'Deferred (WP Rocket)', 'Minified']);
+    expect(row.querySelector('[data-fdt="state-chip-overflow"]')).toBeNull();
+    const detail = row.querySelector('[data-fdt="script-original-type"]');
+    expect(detail?.textContent).toBe('type: module');
+    expect(chip('minified').querySelector('[data-fdt-filter-count]')?.textContent).toBe('1');
+  });
+
+  it('marks a verified simulation’s defer as Simulated', () => {
+    const list = [makeDelayScript({ delayed: false, deferred: true, deferredByWPR: true })];
+    const data = dataWith(list);
+    const deferAll = { ...data.wprDetections.defer_all_js, simulation: 'simulated' as const };
+    renderView(factsData(list, { defer_all_js: deferAll }));
+    expect(stateWords(rows()[0] as HTMLElement)).toEqual(['Deferred (Simulated)']);
+  });
+
+  it('the Excluded filter lists the rows FDT kept out of a feature', () => {
+    renderView();
+    fireEvent.click(chip('excluded'));
+    expect(rows()).toHaveLength(1);
+    expect(stateWords(rows()[0] as HTMLElement)).toEqual(['Excluded']);
+  });
+
+  it('a plain row renders no state chip and no type detail', () => {
+    renderView(dataWith([makeDelayScript({ delayed: false })]));
+    const row = rows()[0] as HTMLElement;
+    expect(stateWords(row)).toEqual([]);
+    expect(row.querySelector('[data-fdt="script-original-type"]')).toBeNull();
   });
 });
 

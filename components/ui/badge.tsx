@@ -19,6 +19,8 @@ export interface BadgeProps {
   variant?: BadgeVariant;
   /** Extra classes, merged last so callers win. */
   class?: string;
+  /** Hover text (a plain `title`: cheap on virtual rows). */
+  title?: string;
   /** The badge label. */
   children: JSX.Element;
 }
@@ -33,6 +35,7 @@ export interface BadgeProps {
  * @param props.kind The vocabulary colors to borrow (default `neutral`).
  * @param props.variant The chip treatment (default `soft`).
  * @param props.class Extra classes for layout context.
+ * @param props.title Optional hover text.
  * @param props.children The label.
  */
 export function Badge(props: BadgeProps): JSX.Element {
@@ -40,6 +43,7 @@ export function Badge(props: BadgeProps): JSX.Element {
   return (
     <span
       data-fdt="badge"
+      title={props.title}
       class={cn(
         'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs',
         props.variant === 'outline' ? 'border border-line-2' : STATUS_SOFT_CLASSES[kind()],

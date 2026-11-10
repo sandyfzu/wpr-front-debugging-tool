@@ -228,19 +228,15 @@ export const CRITICAL_CSS_STYLE_SELECTOR = `style[id="${CRITICAL_CSS_STYLE_ID}"]
 
 /**
  * The served minify-cache directory shape — `cache/min/<site-id>/` — the atom
- * every minified-URL pattern composes, so the footprint cannot drift between
- * the detection patterns and the exclusion-path recovery helper.
+ * every minified-URL reader composes (the footprint check, the exclusion-path
+ * recovery helper, the overlay's pick target), so the shape cannot drift.
  */
 export const MINIFY_CACHE_DIR_SOURCE = 'cache\\/min\\/\\d+\\/';
 /**
- * Served minified-asset URL footprint (`cache/min/<n>/<hash>….<ext>`) — one
- * base, one derived pattern per extension, so the fragment cannot drift.
+ * A minified-asset URL's head: the cache directory plus the word character
+ * its file name starts with (the extension must follow later on the line).
  */
-const MINIFIED_CACHE_URL_SOURCE = `(.*)${MINIFY_CACHE_DIR_SOURCE}[a-zA-Z0-9_](.*).`;
-/** Minify CSS: stylesheet URLs under the minify cache. */
-export const MINIFY_CSS_URL_PATTERN = new RegExp(`${MINIFIED_CACHE_URL_SOURCE}css(.*)`);
-/** Minify JS: script URLs under the minify cache. */
-export const MINIFY_JS_URL_PATTERN = new RegExp(`${MINIFIED_CACHE_URL_SOURCE}js(.*)`);
+export const MINIFY_CACHE_HEAD_SOURCE = `${MINIFY_CACHE_DIR_SOURCE}[a-zA-Z0-9_]`;
 /**
  * The attribute Minify CSS/JS (and the Combine JS bundle) stamps on every tag
  * it rewrote. It survives a site-moved cache root that the URL patterns miss,

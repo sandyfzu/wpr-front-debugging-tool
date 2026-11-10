@@ -12,6 +12,13 @@
  */
 
 import type { PreloadedResources, WprDetections } from '../wp-rocket/types';
+import {
+  NO_SCRIPT_PAGE_FACTS,
+  jsScriptState,
+  scriptMinifyState,
+  type JsStateId,
+  type ScriptPageFacts
+} from './script-states';
 
 /** One classified script row on the JavaScript page. */
 export interface JsScriptResource {
@@ -24,6 +31,12 @@ export interface JsScriptResource {
   readonly deferred: boolean;
   readonly deferredByWPR: boolean;
   readonly fdtExcluded: string | null;
+  /** Minify JS served this file (see `scriptMinifyState`). */
+  readonly minified: boolean;
+  /** This file is a Combine JS bundle (see `scriptMinifyState`). */
+  readonly combined: boolean;
+  /** A delayed script's original `type`, `null` when it has none. */
+  readonly originalType: string | null;
 }
 
 /** One classified image row on the Lazyload page. */
@@ -64,16 +77,61 @@ export interface ResourcePageDefinition<Row, Id extends string> {
 
 /** The JavaScript page's chip ids, in render order. */
 export type JsFilterId =
-  'all' | 'delayed' | 'non-delayed' | 'deferred' | 'non-deferred' | 'inline' | 'external';
+  | 'all'
+  | 'delayed'
+  | 'non-delayed'
+  | 'deferred'
+  | 'non-deferred'
+  | 'minified'
+  | 'combined'
+  | 'excluded'
+  | 'inline'
+  | 'external';
 
-/** The JavaScript page's pattern (labels are the reference-surface chips). */
+/**
+ * A filter chip over one script state: its label and predicate are the
+ * state's own, so a filter selects exactly the rows showing that chip.
+ *
+ * @param id The state (also the chip id).
+ */
+function stateFilter(
+  id: Extract<JsFilterId, JsStateId>
+): ResourceFilterRow<JsScriptResource, JsFilterId> {
+  const state = jsScriptState(id);
+  return { id, label: state.label, predicate: state.holds };
+}
+
+/**
+ * A filter chip over a state's negation (the negative states are no row
+ * chips; their filters keep them reachable).
+ *
+ * @param id The chip id.
+ * @param label The chip label.
+ * @param of The negated state.
+ */
+function negatedFilter(
+  id: JsFilterId,
+  label: string,
+  of: JsStateId
+): ResourceFilterRow<JsScriptResource, JsFilterId> {
+  const { holds } = jsScriptState(of);
+  return { id, label, predicate: (row) => !holds(row) };
+}
+
+/**
+ * The JavaScript page's pattern: the reference-surface chips, then the file
+ * states and the local exclusion, then the type chips.
+ */
 export const JS_PAGE_RESOURCES: ResourcePageDefinition<JsScriptResource, JsFilterId> = {
   filters: [
     { id: 'all', label: 'Show all', predicate: () => true },
-    { id: 'delayed', label: 'Delayed', predicate: (row) => row.delayed },
-    { id: 'non-delayed', label: 'Non-delayed', predicate: (row) => !row.delayed },
-    { id: 'deferred', label: 'Deferred', predicate: (row) => row.deferred },
-    { id: 'non-deferred', label: 'Non-deferred', predicate: (row) => !row.deferred },
+    stateFilter('delayed'),
+    negatedFilter('non-delayed', 'Non-delayed', 'delayed'),
+    stateFilter('deferred'),
+    negatedFilter('non-deferred', 'Non-deferred', 'deferred'),
+    stateFilter('minified'),
+    stateFilter('combined'),
+    stateFilter('excluded'),
     { id: 'inline', label: 'Inline', predicate: (row) => row.type === 'inline' },
     { id: 'external', label: 'External', predicate: (row) => row.type === 'external' }
   ],
@@ -130,17 +188,32 @@ export const PRELOADED_PAGE_RESOURCES: ResourcePageDefinition<
  * external ones; a record whose content/src is absent reads as an empty
  * searched field (empty attributes and empty scripts are legitimate engine
  * output; an empty string can never match a non-empty query).
+ *
+ * @param delayJs The Delay JS row and its script inventory.
+ * @param facts The page verdicts the minify states read (default: none
+ *   holds, so no row reads Minified or Combined).
+ * @returns One row per record, in document order.
  */
-export function buildScriptRows(delayJs: WprDetections['delay_js']): JsScriptResource[] {
-  return delayJs.scripts.map((script, index): JsScriptResource => ({
-    id: index,
-    type: script.inline ? 'inline' : 'external',
-    content: (script.inline ? script.content : script.src) ?? '',
-    delayed: script.delayed,
-    deferred: script.deferred,
-    deferredByWPR: script.deferredByWPR,
-    fdtExcluded: script.fdtExcluded
-  }));
+export function buildScriptRows(
+  delayJs: WprDetections['delay_js'],
+  facts: ScriptPageFacts = NO_SCRIPT_PAGE_FACTS
+): JsScriptResource[] {
+  return delayJs.scripts.map((script, index): JsScriptResource => {
+    const { minified, combined } = scriptMinifyState(script, facts);
+    return {
+      id: index,
+      type: script.inline ? 'inline' : 'external',
+      content: (script.inline ? script.content : script.src) ?? '',
+      delayed: script.delayed,
+      deferred: script.deferred,
+      deferredByWPR: script.deferredByWPR,
+      fdtExcluded: script.fdtExcluded,
+      minified,
+      combined,
+      // The detection records the original type on delayed scripts only.
+      originalType: script.delayed ? (script.originalType ?? null) : null
+    };
+  });
 }
 
 /**

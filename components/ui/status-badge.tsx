@@ -62,6 +62,8 @@ export interface StatusBadgeProps {
   icon?: boolean;
   /** Extra classes, merged last so callers win. */
   class?: string;
+  /** Hover text with the state's detail (a plain `title`: cheap on virtual rows). */
+  title?: string;
   /** The badge label. */
   children: JSX.Element;
 }
@@ -76,12 +78,14 @@ export interface StatusBadgeProps {
  * @param props.kind The kind; colors and icon come from the tables above.
  * @param props.icon Whether to lead with the kind's icon (default: plain text).
  * @param props.class Extra classes for layout context.
+ * @param props.title Optional hover text.
  * @param props.children The label.
  */
 export function StatusBadge(props: StatusBadgeProps): JSX.Element {
   return (
     <span
       data-fdt="status-badge"
+      title={props.title}
       class={cn(
         'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs font-medium',
         STATUS_SOFT_CLASSES[props.kind],
