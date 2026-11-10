@@ -92,6 +92,7 @@ export type MatrixRow =
   | 'defer_all_js'
   | 'minify_css'
   | 'minify_js'
+  | 'minify_concatenate_js'
   | 'lazyload'
   | 'lazyload_iframes'
   | 'lazyload_css_bg_img'
@@ -158,6 +159,7 @@ const BASELINE_META_ROWS: RowTable = {
   // minify comment after the candidate loop (the recorded declared-without-
   // applied minify exception) — the meta still decides.
   minify_js: 'Active (Meta)',
+  minify_concatenate_js: 'Not active (Meta)',
   lazyload: 'Active (Meta)',
   lazyload_iframes: 'Not active (Meta)',
   lazyload_css_bg_img: 'Not active (Meta)',
@@ -175,6 +177,7 @@ const BASELINE_FOOTPRINT_ROWS: RowTable = {
   defer_all_js: 'Active (Footprint)',
   minify_css: 'Not active',
   minify_js: 'Not active',
+  minify_concatenate_js: 'Unknown',
   lazyload: 'Active (Footprint)',
   lazyload_iframes: 'Not active',
   lazyload_css_bg_img: 'Not active',
@@ -200,6 +203,7 @@ const ALL_REFUTED_ROWS: RowTable = {
   defer_all_js: 'Not active (Meta)',
   minify_css: 'Not active (Meta)',
   minify_js: 'Not active (Meta)',
+  minify_concatenate_js: 'Not active (Meta)',
   lazyload: 'Not active (Meta)',
   lazyload_iframes: 'Not active (Meta)',
   lazyload_css_bg_img: 'Not active (Meta)',
@@ -217,6 +221,7 @@ const NOTHING_ROWS: RowTable = {
   defer_all_js: 'Not active',
   minify_css: 'Not active',
   minify_js: 'Not active',
+  minify_concatenate_js: 'Unknown',
   lazyload: 'Not active',
   lazyload_iframes: 'Not active',
   lazyload_css_bg_img: 'Not active',

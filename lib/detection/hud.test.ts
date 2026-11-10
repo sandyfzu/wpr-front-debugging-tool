@@ -34,6 +34,7 @@ function zero(): WprDetections {
     image_dimensions: { present: false },
     minify_css: { present: false },
     minify_js: { present: false },
+    minify_concatenate_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
@@ -98,6 +99,7 @@ describe('the HUD registry shape', () => {
       async_css: 'Load CSS asynchronously',
       minify_css: 'Minify CSS',
       minify_js: 'Minify JS',
+      minify_concatenate_js: 'Combine JS',
       lazyload: 'Lazyload Images',
       lazyload_iframes: 'Lazyload Iframes',
       lazyload_css_bg_img: 'Lazyload CSS Background Images',
@@ -124,11 +126,11 @@ describe('the HUD registry shape', () => {
     }
   });
 
-  it('only the two rows whose footprint cannot prove absence declare undecided copy', () => {
+  it('only the rows whose footprint cannot prove absence declare undecided copy', () => {
     const undecided = HUD_FEATURES.filter((entry) => entry.undecided !== null).map(
       (entry) => entry.row
     );
-    expect(undecided).toEqual(['image_dimensions', 'self_hosted_fonts']);
+    expect(undecided).toEqual(['minify_concatenate_js', 'image_dimensions', 'self_hosted_fonts']);
   });
 
   it('non-feature rows have no HUD row', () => {

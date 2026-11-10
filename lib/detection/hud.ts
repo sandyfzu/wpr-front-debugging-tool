@@ -30,6 +30,7 @@ import { DOMAIN_NOUN, ELEMENT_NOUN, FONT_NOUN, IMAGE_NOUN, SCRIPT_NOUN } from '.
 import {
   LABEL_ADD_MISSING_IMAGE_DIMENSIONS,
   LABEL_AUTOMATIC_LAZY_RENDERING,
+  LABEL_COMBINE_JAVASCRIPT,
   LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD,
   LABEL_DELAY_JAVASCRIPT_EXECUTION,
   LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD,
@@ -152,6 +153,17 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     unit: null,
     count: null,
     undecided: null
+  },
+  {
+    row: 'minify_concatenate_js',
+    label: LABEL_COMBINE_JAVASCRIPT,
+    shortLabel: 'Combine JS',
+    group: 'file-optimization',
+    unit: null,
+    count: null,
+    // The bundle's digest file name is no attribution: only the meta decides.
+    undecided:
+      "no generator meta declaration decided it, and a combined bundle's file name does not prove it on its own, so its state is unknown."
   },
   {
     row: 'lazyload',

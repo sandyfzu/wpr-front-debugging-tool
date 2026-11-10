@@ -154,6 +154,10 @@
       "present": true,
       "source": "meta"
     },
+    "minify_concatenate_js": {
+      "present": false,
+      "source": "meta"
+    },
     "preload_links": {
       "present": true,
       "source": "meta"

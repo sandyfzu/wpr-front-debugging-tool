@@ -191,6 +191,7 @@ export function generatePerfFixture(seed = 6_003): FdtData {
     image_dimensions: { present: false },
     minify_css: { present: true },
     minify_js: { present: true },
+    minify_concatenate_js: { present: false },
     preload_links: { present: true },
     rocket_cdn: { present: false },
     delay_js: {

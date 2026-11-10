@@ -24,6 +24,5 @@
   "purge_cron_interval": "Cache lifespan",
   "dns_prefetch": "URLs to prefetch",
   "preload_fonts": "Fonts to preload",
-  "minify_concatenate_js": "Combine JavaScript files",
   "critical_css": "Fallback critical CSS"
 }

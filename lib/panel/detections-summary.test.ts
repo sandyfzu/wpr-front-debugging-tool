@@ -163,9 +163,9 @@ describe('summarizeDetections', () => {
       simulated: 0,
       unverified: 0
     });
-    // Every remaining row of the record is an optimization (16 of the 19 rows:
+    // Every remaining row of the record is an optimization (17 of the 20 rows:
     // async_css rides the CSS card, plus the plugin and beacon rows).
-    expect(optimizationCards).toHaveLength(16);
+    expect(optimizationCards).toHaveLength(17);
   });
 
   it('agrees with the cards for every card it states (strip ↔ card consistency)', () => {

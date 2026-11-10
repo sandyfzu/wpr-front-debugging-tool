@@ -98,6 +98,9 @@
     "minify_js": {
       "present": false
     },
+    "minify_concatenate_js": {
+      "present": false
+    },
     "preload_links": {
       "present": false
     },

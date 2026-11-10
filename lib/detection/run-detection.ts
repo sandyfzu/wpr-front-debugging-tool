@@ -17,6 +17,7 @@ import type { PreloadedResources, WprDetections } from '../wp-rocket/types';
 import { detectWpr } from './detect-wpr';
 import {
   detectAsyncCss,
+  detectCombineJs,
   detectDeferAllJs,
   detectDelayJs,
   detectImageDimensions,
@@ -116,6 +117,7 @@ export function runChecks(
     priority_elements_beacon: detectBeacon(page, beaconConfig),
     minify_css: detectMinifyCss(page),
     minify_js: detectMinifyJs(page),
+    minify_concatenate_js: detectCombineJs(),
     preload_links: detectPreloadLinks(page),
     rocket_cdn: detectRocketCdn(page)
   };

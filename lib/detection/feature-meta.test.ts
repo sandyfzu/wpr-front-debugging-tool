@@ -198,6 +198,7 @@ describe('FEATURE_META_TOKENS registry', () => {
     preconnect_external_domains: 'wpr_preconnect_external_domains',
     minify_css: 'wpr_minify_css',
     minify_js: 'wpr_minify_js',
+    minify_concatenate_js: 'wpr_minify_concatenate_js',
     preload_links: 'wpr_preload_links',
     rocket_cdn: 'wpr_cdn'
   };
@@ -214,7 +215,6 @@ describe('FEATURE_META_TOKENS registry', () => {
 
   it('maps no row to the tokens whose rows are not carried yet', () => {
     expect(featureRowForMetaToken('wpr_dns_prefetch')).toBeNull();
-    expect(featureRowForMetaToken('wpr_minify_concatenate_js')).toBeNull();
     expect(featureRowForMetaToken('wpr_cache_webp')).toBeNull();
     expect(featureRowForMetaToken('wpr_mobile')).toBeNull();
     expect(featureRowForMetaToken('wpr_desktop')).toBeNull();

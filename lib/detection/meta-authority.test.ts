@@ -29,7 +29,7 @@ const RUCSS = '<style id="wpr-usedcss">.c{}</style>';
 interface RegistryRowCase {
   readonly row: FeatureMetaRow;
   readonly token: string;
-  /** Absent for declaration-only rows (image dimensions). */
+  /** Absent for declaration-only rows (image dimensions, Combine JS). */
   readonly footprint?: string;
 }
 
@@ -107,6 +107,7 @@ const REGISTRY_ROWS: readonly RegistryRowCase[] = [
     token: 'wpr_minify_js',
     footprint: '<script src="/wp-content/cache/min/1/app.js"></script>'
   },
+  { row: 'minify_concatenate_js', token: 'wpr_minify_concatenate_js' },
   {
     row: 'preload_links',
     token: 'wpr_preload_links',

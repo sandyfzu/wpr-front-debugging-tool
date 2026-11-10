@@ -395,6 +395,7 @@ export const FEATURE_META_TOKENS: Readonly<Record<FeatureMetaRow, string>> = {
   preconnect_external_domains: 'wpr_preconnect_external_domains',
   minify_css: 'wpr_minify_css',
   minify_js: 'wpr_minify_js',
+  minify_concatenate_js: 'wpr_minify_concatenate_js',
   preload_links: 'wpr_preload_links',
   rocket_cdn: 'wpr_cdn'
 };
