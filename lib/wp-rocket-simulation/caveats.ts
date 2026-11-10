@@ -7,13 +7,11 @@
  */
 import type { ScannedTag } from '../exclusion-builder/html-scan';
 import { recoverOriginalScript } from '../wp-rocket/minify-url-recovery';
+import { PLACEHOLDER_BASE_URL } from '../../utils/urls';
 import type { SimulationCaveat } from './spec';
 
 /** Re-exported from its declaring site for this module's callers. */
 export type { SimulationCaveat };
-
-/** The base relative script URLs resolve against: only their path is classified. */
-const PLACEHOLDER_BASE = 'http://document.invalid/';
 
 /**
  * Whether a script URL is a WP Rocket combined bundle (`cache/min/<n>/<md5>.js`).
@@ -23,7 +21,7 @@ const PLACEHOLDER_BASE = 'http://document.invalid/';
 export function isCombinedScriptUrl(src: string): boolean {
   let url: string;
   try {
-    url = new URL(src.trim(), PLACEHOLDER_BASE).href;
+    url = new URL(src.trim(), PLACEHOLDER_BASE_URL).href;
   } catch {
     // Not a URL at all: no bundle.
     return false;

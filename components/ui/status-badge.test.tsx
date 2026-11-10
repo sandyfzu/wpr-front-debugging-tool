@@ -55,3 +55,18 @@ describe('StatusBadge', () => {
     }
   });
 });
+
+describe('StatusBadge title', () => {
+  it('carries an optional title, none by default', () => {
+    render(() => (
+      <>
+        <StatusBadge kind="warn" title="Excluded by FDT">
+          Excluded
+        </StatusBadge>
+        <StatusBadge kind="info">Delayed</StatusBadge>
+      </>
+    ));
+    expect(screen.getByText('Excluded').getAttribute('title')).toBe('Excluded by FDT');
+    expect(screen.getByText('Delayed').hasAttribute('title')).toBe(false);
+  });
+});

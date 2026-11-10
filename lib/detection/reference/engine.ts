@@ -124,8 +124,7 @@ import {
   LOCATION_HASH_ATTRIBUTE,
   MINIFY_ATTRIBUTE,
   MINIFY_ATTRIBUTE_VALUE,
-  MINIFY_CSS_URL_PATTERN,
-  MINIFY_JS_URL_PATTERN,
+  MINIFY_CACHE_HEAD_SOURCE,
   MOBILE_CACHE_VARIANT_TOKENS,
   OPTIMIZE_CRITICAL_IMAGES_COMMENT,
   PRELOAD_LINKS_CONFIG_MARK,
@@ -463,12 +462,17 @@ function resolvedServedSrc(script: HTMLScriptElement): string {
   }
 }
 
+/** Minified stylesheet URL: the cache head, then `css` later on the line. */
+const MINIFIED_CSS_URL = new RegExp(`${MINIFY_CACHE_HEAD_SOURCE}.+?css`);
+/** Minified script URL: the cache head, then `js` later on the line. */
+const MINIFIED_JS_URL = new RegExp(`${MINIFY_CACHE_HEAD_SOURCE}.+?js`);
+
 function checkMinifyCSS({
   pageLinkElements
 }: CheckOptimizationFunctionPayload): WprDetections['minify_css'] {
   const isPresent = pageLinkElements.some((link) => {
     if (isReferenceStylesheet(link)) {
-      if (link.href?.match(MINIFY_CSS_URL_PATTERN)) {
+      if (link.href?.match(MINIFIED_CSS_URL)) {
         return true;
       }
     }
@@ -482,7 +486,7 @@ function checkMinifyJS({
 }: CheckOptimizationFunctionPayload): WprDetections['minify_js'] {
   const isPresent = pageScripts.some((script) => {
     if (rawServedSrc(script)) {
-      if (resolvedServedSrc(script).match(MINIFY_JS_URL_PATTERN)) {
+      if (resolvedServedSrc(script).match(MINIFIED_JS_URL)) {
         return true;
       }
     }

@@ -58,3 +58,11 @@ export function isHttpUrl(raw: string): boolean {
 export function isHttpOrigin(raw: string): boolean {
   return parseHttpUrl(raw)?.origin === raw;
 }
+
+/**
+ * A base for resolving a relative URL when only its path matters (shape
+ * checks, never a request). `.invalid` is reserved (RFC 2606), so it can
+ * never name a real host; `https:` makes every relative form resolve to an
+ * http(s) URL — a protocol-relative one keeps its own host and path.
+ */
+export const PLACEHOLDER_BASE_URL = 'https://document.invalid/';

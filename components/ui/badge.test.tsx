@@ -39,4 +39,15 @@ describe('Badge', () => {
     render(() => <Badge class="ms-1">edge</Badge>);
     expect(screen.getByText('edge').closest('span[data-fdt]')?.className).toContain('ms-1');
   });
+
+  it('carries an optional title, none by default', () => {
+    render(() => (
+      <>
+        <Badge title="Also: Minified">+1</Badge>
+        <Badge>plain</Badge>
+      </>
+    ));
+    expect(screen.getByText('+1').getAttribute('title')).toBe('Also: Minified');
+    expect(screen.getByText('plain').hasAttribute('title')).toBe(false);
+  });
 });

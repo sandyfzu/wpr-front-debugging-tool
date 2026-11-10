@@ -58,8 +58,6 @@ import {
   LOCATION_HASH_ATTRIBUTE,
   MINIFY_ATTRIBUTE,
   MINIFY_ATTRIBUTE_VALUE,
-  MINIFY_CSS_URL_PATTERN,
-  MINIFY_JS_URL_PATTERN,
   MAX_CACHE_STAMP_SECONDS,
   OPTIMIZE_CRITICAL_IMAGES_COMMENT,
   parseCacheTimestampToken,
@@ -160,11 +158,6 @@ describe('other feature footprints', () => {
     expect(GENERATOR_META_SELECTOR).toBe('meta[name="generator"]');
     expect(WPR_FEATURES_ATTRIBUTE).toBe('data-wpr-features');
     expect(WPR_FEATURES_META_SELECTOR).toBe('meta[name="generator"][data-wpr-features]');
-    expect(MINIFY_CSS_URL_PATTERN.test('https://x/wp-content/cache/min/1/abc.css?ver=1')).toBe(
-      true
-    );
-    expect(MINIFY_JS_URL_PATTERN.test('https://x/wp-content/cache/min/1/abc.js?ver=1')).toBe(true);
-    expect(MINIFY_CSS_URL_PATTERN.test('https://x/style.css')).toBe(false);
   });
 
   it('pins the Priority Elements vocabulary', () => {

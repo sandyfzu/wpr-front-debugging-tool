@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>JavaScript chips fixture</title>
+    <meta
+      name="generator"
+      content="WP Rocket 3.24"
+      data-wpr-features="wpr_delay_js wpr_minify_concatenate_js wpr_desktop"
+    />
+  </head>
+  <body>
+    <h1>Delayed scripts the chips read</h1>
+    <p>
+      No runtime: every delayed tag stays as served. Two Combine JS bundles named relatively (root-
+      and protocol-relative), a delayed script whose original type is 64 characters with no break
+      opportunity, and one whose original type is plain classic JavaScript.
+    </p>
+    <script
+      type="rocketlazyloadscript"
+      data-rocket-src="/wp-content/cache/min/1/5c03bce63bb3260466706a046cb00086.js"
+      id="bundle-root-relative"
+    ></script>
+    <script
+      type="rocketlazyloadscript"
+      data-rocket-src="//127.0.0.1/wp-content/cache/min/1/0123456789abcdef0123456789abcdef.js"
+      id="bundle-protocol-relative"
+    ></script>
+    <script
+      type="rocketlazyloadscript"
+      data-rocket-type="xlongoriginaltypewithoutanybreakopportunityatallabcdefghijklmnop"
+      data-rocket-src="/javascript/long-type.js"
+      id="long-type"
+    ></script>
+    <script
+      type="rocketlazyloadscript"
+      data-rocket-type="text/javascript"
+      data-rocket-src="/javascript/classic-type.js"
+      id="classic-type"
+    ></script>
+  </body>
+</html>

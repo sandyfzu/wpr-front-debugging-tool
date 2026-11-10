@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isHttpOrigin, isHttpUrl, parseHttpUrl, parseUrl } from './urls';
+import { PLACEHOLDER_BASE_URL, isHttpOrigin, isHttpUrl, parseHttpUrl, parseUrl } from './urls';
 
 describe('parseUrl', () => {
   it('parses absolute URLs', () => {
@@ -90,5 +90,13 @@ describe('isHttpOrigin', () => {
     ]) {
       expect(isHttpOrigin(raw), raw).toBe(false);
     }
+  });
+});
+
+describe('PLACEHOLDER_BASE_URL', () => {
+  it('is an https URL on a reserved host, keeping a protocol-relative URL’s own host and path', () => {
+    expect(parseHttpUrl(PLACEHOLDER_BASE_URL)?.hostname).toBe('document.invalid');
+    expect(new URL('/a/b.js', PLACEHOLDER_BASE_URL).href).toBe('https://document.invalid/a/b.js');
+    expect(new URL('//cdn.test/a.js', PLACEHOLDER_BASE_URL).href).toBe('https://cdn.test/a.js');
   });
 });

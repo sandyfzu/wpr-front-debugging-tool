@@ -1,6 +1,6 @@
 /**
  * The JavaScript page's pure view layer: everything the page derives from the
- * classified script rows before rendering — state badges, the inline-code
+ * classified script rows before rendering — state chips, the inline-code
  * shape (line count, expandability, collapsed preview), row-height seeds,
  * chip states and the expanded-row bookkeeping. No DOM, no Solid: the page
  * wraps these in one memo chain and the rows only read the results.
@@ -16,10 +16,17 @@ import type {
 } from '../../../../lib/panel/resources-view-model';
 import { JS_PAGE_RESOURCES } from '../../../../lib/panel/resources-view-model';
 import { buildFilterChips } from '../../../../lib/panel/list-behavior';
-import type { WprDetections } from '../../../../lib/wp-rocket/types';
+import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
+import {
+  JS_SCRIPT_STATES,
+  fdtExclusions,
+  type JsStateId
+} from '../../../../lib/panel/script-states';
 import { countLabel, formatCount, type CountNoun } from '../../../../utils/format-count';
+import { isBlankScriptType, isClassicScriptType } from '../../../../utils/script-type';
+import { splitStateChips, type StateChip, type StateChipSplit } from '../resource-list/state-chips';
 
-/** One state chip on a script row: its words and its vocabulary kind. */
+/** A summary-strip state: its words and its vocabulary kind. */
 export interface ScriptBadge {
   readonly label: string;
   readonly kind: StatusKind;
@@ -80,39 +87,107 @@ export interface ScriptRowView {
   readonly row: JsScriptResource;
   /** How much inline text was captured (`complete` for external rows). */
   readonly capture: ContentCapture;
-  readonly badges: readonly ScriptBadge[];
+  /** The row's state chips, split for rendering. */
+  readonly chips: StateChipSplit;
+  /** A delayed row's original-type detail ("type: module"), else `null`. */
+  readonly typeDetail: string | null;
   /** Inline scripts only; `null` for external ones. */
   readonly code: InlineCode | null;
 }
 
-/** The two features a local exclusion marker can name (detection-record ids). */
-type ExcludableFeature = Extract<keyof WprDetections, 'delay_js' | 'defer_all_js'>;
+/** What a chip shows beyond its state's label: its kind, mark and title. */
+type ChipDisplay = (
+  row: JsScriptResource,
+  deferSimulated: boolean
+) => Pick<StateChip, 'kind' | 'mark' | 'title'>;
 
 /**
- * Whether the row's local exclusion marker names a feature. The marker is a
- * free-form attribute value, so it matches by substring (several feature ids
- * may share one value).
+ * Per state: how its chip reads. A delayed, deferred or file state is
+ * `info`; the local exclusion is `warn` (a deliberate exclusion worth
+ * noticing). The Deferred chip keeps its at-a-glance attribution as a short
+ * visible mark: WP Rocket's own defer stamp reads "WP Rocket" — or
+ * "Simulated" on a page where a verified simulation, not WP Rocket, ran
+ * Defer JS — while the page's own `defer` carries no mark.
  */
-function excludedFrom(row: JsScriptResource, feature: ExcludableFeature): boolean {
-  return row.fdtExcluded?.includes(feature) ?? false;
-}
+const JS_CHIP_DISPLAY: Readonly<Record<JsStateId, ChipDisplay>> = {
+  excluded: (row) => ({
+    kind: 'warn',
+    title: `Excluded by FDT from ${fdtExclusions(row).map(getRealOptionName).join(' and ')}`
+  }),
+  delayed: () => ({ kind: 'info' }),
+  deferred: (row, deferSimulated) => {
+    if (!row.deferredByWPR) return { kind: 'info', title: "The page's own defer attribute" };
+    return deferSimulated
+      ? {
+          kind: 'info',
+          mark: 'Simulated',
+          title: `Deferred by the FDT's ${getRealOptionName('defer_all_js')} simulation`
+        }
+      : {
+          kind: 'info',
+          mark: 'WP Rocket',
+          title: `Deferred by WP Rocket (${getRealOptionName('defer_all_js')})`
+        };
+  },
+  combined: () => ({
+    kind: 'info',
+    title: `Bundle built by WP Rocket (${getRealOptionName('minify_concatenate_js')})`
+  }),
+  minified: () => ({
+    kind: 'info',
+    title: `Minified by WP Rocket (${getRealOptionName('minify_js')})`
+  })
+};
 
 /**
- * The state badges of one script row, in reading order: the Delay JS state,
- * then (external scripts only — an inline script cannot be deferred) the
- * defer state. A delayed or deferred script is `info`; a script the local
- * exclusion marker kept out of the feature is `warn` (a deliberate exclusion
- * worth noticing); plain "not" states are `neutral`.
+ * The state chips of one script row, most important first (the shared
+ * state table's order); negative states ("not delayed") are no chips — the
+ * filters keep them.
  *
  * @param row The classified script.
  * @param deferSimulated A verified simulation, not WP Rocket, ran Defer JS
  *   here: its stamp names no WP Rocket defer.
- * @returns One or two badges.
+ * @returns The chips, unsplit.
  */
-export function scriptStateBadges(row: JsScriptResource, deferSimulated = false): ScriptBadge[] {
-  const badges: ScriptBadge[] = [delayBadge(row)];
-  if (row.type === 'external') badges.push(deferBadge(row, deferSimulated));
-  return badges;
+export function scriptStateChips(row: JsScriptResource, deferSimulated = false): StateChip[] {
+  const chips: StateChip[] = [];
+  for (const state of JS_SCRIPT_STATES) {
+    if (!state.holds(row)) continue;
+    chips.push({
+      id: state.id,
+      label: state.label,
+      ...JS_CHIP_DISPLAY[state.id](row, deferSimulated)
+    });
+  }
+  return chips;
+}
+
+/**
+ * The row's chips, split for rendering (at most three, then "+N").
+ *
+ * @param row The classified script.
+ * @param deferSimulated See {@link scriptStateChips}.
+ */
+export function scriptChipSplit(row: JsScriptResource, deferSimulated = false): StateChipSplit {
+  return splitStateChips(scriptStateChips(row, deferSimulated));
+}
+
+/** Hover text of the original-type detail. */
+export const ORIGINAL_TYPE_TITLE = `The script's own type, restored when ${getRealOptionName('delay_js')} runs it`;
+
+/**
+ * The detail a delayed row shows for its original `type` ("type: module").
+ * Only a type worth reading shows: none, a blank one, or a classic
+ * JavaScript MIME type (`text/javascript`, most delayed rows) runs the script
+ * as an ordinary classic script, so naming it is noise.
+ *
+ * @param row The classified script.
+ * @returns The detail text, or `null` when the type says nothing new.
+ */
+export function originalTypeDetail(row: JsScriptResource): string | null {
+  const type = row.originalType;
+  if (type === null || isBlankScriptType(type) || isClassicScriptType(type)) return null;
+  return `type: ${type}`;
 }
 
 /**
@@ -130,31 +205,6 @@ export function delaySummaryBadge(present: boolean, simulated: boolean): ScriptB
   // "Not detected" (never the word alone).
   if (simulated) return { label: 'Simulated', kind: 'info' };
   return { label: 'Not detected', kind: 'neutral' };
-}
-
-/** The Delay JS badge (see {@link scriptStateBadges}). */
-function delayBadge(row: JsScriptResource): ScriptBadge {
-  if (row.delayed) return { label: 'Delayed', kind: 'info' };
-  if (excludedFrom(row, 'delay_js'))
-    return { label: 'Not delayed (Excluded by FDT)', kind: 'warn' };
-  return { label: 'Not delayed', kind: 'neutral' };
-}
-
-/**
- * The defer badge — WP Rocket's own defer wins over a native `defer`; its
- * stamp on a page a verified simulation deferred is the simulation's.
- */
-function deferBadge(row: JsScriptResource, deferSimulated: boolean): ScriptBadge {
-  if (row.deferredByWPR) {
-    return deferSimulated
-      ? { label: 'Deferred (Simulated)', kind: 'info' }
-      : { label: 'Deferred (By WP Rocket)', kind: 'info' };
-  }
-  if (row.deferred) return { label: 'Deferred', kind: 'info' };
-  if (excludedFrom(row, 'defer_all_js')) {
-    return { label: 'Not deferred (Excluded by FDT)', kind: 'warn' };
-  }
-  return { label: 'Not deferred', kind: 'neutral' };
 }
 
 /**
@@ -282,7 +332,10 @@ export function sameScript(a: JsScriptResource, b: JsScriptResource): boolean {
     a.delayed === b.delayed &&
     a.deferred === b.deferred &&
     a.deferredByWPR === b.deferredByWPR &&
-    a.fdtExcluded === b.fdtExcluded
+    a.fdtExcluded === b.fdtExcluded &&
+    a.minified === b.minified &&
+    a.combined === b.combined &&
+    a.originalType === b.originalType
   );
 }
 

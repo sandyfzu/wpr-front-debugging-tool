@@ -7,12 +7,8 @@
  * so the orchestrator counts it only under its proof guard.
  */
 
-import {
-  MINIFY_ATTRIBUTE,
-  MINIFY_ATTRIBUTE_VALUE,
-  MINIFY_CSS_URL_PATTERN,
-  MINIFY_JS_URL_PATTERN
-} from '../wp-rocket/constants';
+import { MINIFY_ATTRIBUTE, MINIFY_ATTRIBUTE_VALUE } from '../wp-rocket/constants';
+import { hasMinifiedCacheUrl, type MinifiedAssetExtension } from '../wp-rocket/minify-cache-url';
 import type { WprDetections } from '../wp-rocket/types';
 import type { ParsedPage } from './parse-page';
 import { servedScriptSrc, servedScriptSrcAttribute } from './served-script-src';
@@ -36,10 +32,12 @@ type CandidateVisit = (url: string, attribute: string | null) => boolean;
  */
 type CandidateWalk = (page: ParsedPage, visit: CandidateVisit) => boolean;
 
-/** Per row: its URL pattern and its candidate walk (registry, no branching). */
-const MINIFY_ROWS: Readonly<Record<MinifyRow, { pattern: RegExp; walk: CandidateWalk }>> = {
-  minify_css: { pattern: MINIFY_CSS_URL_PATTERN, walk: someStylesheet },
-  minify_js: { pattern: MINIFY_JS_URL_PATTERN, walk: someServedScript }
+/** Per row: its asset extension and its candidate walk (registry, no branching). */
+const MINIFY_ROWS: Readonly<
+  Record<MinifyRow, { extension: MinifiedAssetExtension; walk: CandidateWalk }>
+> = {
+  minify_css: { extension: 'css', walk: someStylesheet },
+  minify_js: { extension: 'js', walk: someServedScript }
 };
 
 /** The rows in registry order (the guard walks them). */
@@ -60,16 +58,16 @@ export function carriesMinifyAttribute(element: Element): boolean {
  *
  * @param url The tag's URL as the shipped URL arm reads it.
  * @param attributeValue The raw minify attribute, `null` when absent.
- * @param pattern The row's minify-cache URL pattern.
+ * @param extension The row's asset extension (its minify-cache URL shape).
  * @returns `url` when the URL is a minify-cache URL, else `attribute` on the
  *   exact stamp, else `null`.
  */
 export function minifyFootprint(
   url: string,
   attributeValue: string | null,
-  pattern: RegExp
+  extension: MinifiedAssetExtension
 ): MinifyFootprint | null {
-  if (pattern.test(url)) return 'url';
+  if (hasMinifiedCacheUrl(url, extension)) return 'url';
   return attributeValue === MINIFY_ATTRIBUTE_VALUE ? 'attribute' : null;
 }
 
@@ -119,6 +117,6 @@ export function hasMinifyFootprint(
   row: MinifyRow,
   arm: MinifyFootprint
 ): boolean {
-  const { pattern, walk } = MINIFY_ROWS[row];
-  return walk(page, (url, attribute) => minifyFootprint(url, attribute, pattern) === arm);
+  const { extension, walk } = MINIFY_ROWS[row];
+  return walk(page, (url, attribute) => minifyFootprint(url, attribute, extension) === arm);
 }

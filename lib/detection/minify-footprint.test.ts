@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { MINIFY_CSS_URL_PATTERN, MINIFY_JS_URL_PATTERN } from '../wp-rocket/constants';
 import {
   MINIFY_FOOTPRINT_ROWS,
   carriesMinifyAttribute,
@@ -20,18 +19,18 @@ function page(body: string) {
 
 describe('minifyFootprint', () => {
   it('prefers the URL arm, then the exact attribute, else nothing', () => {
-    expect(minifyFootprint(CACHE_CSS, '1', MINIFY_CSS_URL_PATTERN)).toBe('url');
-    expect(minifyFootprint(CACHE_CSS, null, MINIFY_CSS_URL_PATTERN)).toBe('url');
-    expect(minifyFootprint(MOVED_CSS, '1', MINIFY_CSS_URL_PATTERN)).toBe('attribute');
-    expect(minifyFootprint(MOVED_CSS, null, MINIFY_CSS_URL_PATTERN)).toBeNull();
-    expect(minifyFootprint(CACHE_JS, null, MINIFY_JS_URL_PATTERN)).toBe('url');
+    expect(minifyFootprint(CACHE_CSS, '1', 'css')).toBe('url');
+    expect(minifyFootprint(CACHE_CSS, null, 'css')).toBe('url');
+    expect(minifyFootprint(MOVED_CSS, '1', 'css')).toBe('attribute');
+    expect(minifyFootprint(MOVED_CSS, null, 'css')).toBeNull();
+    expect(minifyFootprint(CACHE_JS, null, 'js')).toBe('url');
     // The row's own extension: a cache CSS URL is not a JS footprint.
-    expect(minifyFootprint(CACHE_CSS, null, MINIFY_JS_URL_PATTERN)).toBeNull();
+    expect(minifyFootprint(CACHE_CSS, null, 'js')).toBeNull();
   });
 
   it('counts only the exact value WP Rocket writes', () => {
     for (const value of ['', '0', 'true', ' 1', '1 ', '01', 'yes']) {
-      expect(minifyFootprint(MOVED_JS, value, MINIFY_JS_URL_PATTERN), value).toBeNull();
+      expect(minifyFootprint(MOVED_JS, value, 'js'), value).toBeNull();
     }
   });
 });
