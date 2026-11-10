@@ -140,6 +140,8 @@ export interface PageData {
   diagnoserData: DiagnoserDocData | null;
   /** The WordPress core version the generator meta declared (within the version cap), or null. */
   wordpressVersion: string | null;
+  /** The page carries WP Rocket's generator meta, readable or degraded (never on a bypass render). */
+  wprGeneratorMeta: boolean;
 }
 
 /**
@@ -151,6 +153,12 @@ export interface PageData {
 export interface PageDataSnapshot {
   data: PageData;
   cacheState: CacheState;
+  /**
+   * The captured URL carried WP Rocket's bypass parameter. Carried apart
+   * from `cacheState`, whose stronger arms (a served stamp, the signature)
+   * outrank and hide the bypass request.
+   */
+  bypassAttested: boolean;
 }
 
 /** The same-context read the hub hands out (null when the pass failed). */
@@ -204,7 +212,13 @@ export async function processSerializedPage(
   // payload carry the same value — an over-cap version is dropped, not clipped.
   const wordpressVersion = servableWordPressVersion(detectWordPressVersion(page.document));
   const diagnoserData = await extractDiagnoserData(page.document);
-  return { detections, preloadedResources, diagnoserData, wordpressVersion };
+  return {
+    detections,
+    preloadedResources,
+    diagnoserData,
+    wordpressVersion,
+    wprGeneratorMeta: page.featureMeta.attributePresent
+  };
 }
 
 /**
@@ -255,6 +269,7 @@ export function composeFdtData(data: PageData, live: LivePageFacts): FdtData {
     diagnoserData: data.diagnoserData,
     ...(live.headerCapture?.truncated === true ? { pageHeadersTruncated: true as const } : {}),
     ...(live.bypassAttested ? { bypassAttested: true as const } : {}),
+    ...(data.wprGeneratorMeta ? { wprGeneratorMeta: true as const } : {}),
     ...(wordpressVersion === null ? {} : { wordpressVersion }),
     ...(live.rucssTestRuns > 0 ? { rucssTestMode: { runs: live.rucssTestRuns } } : {})
   };
@@ -576,7 +591,8 @@ export function setupDataHub(ctx: ContentScriptContext): void {
     await ensureHeaders();
     return {
       data,
-      cacheState: cacheStateFromCapture(data.detections.wpr, headerCapture, bypassAttested)
+      cacheState: cacheStateFromCapture(data.detections.wpr, headerCapture, bypassAttested),
+      bypassAttested
     };
   };
   pageDataReaders.set(ctx, readPageData);

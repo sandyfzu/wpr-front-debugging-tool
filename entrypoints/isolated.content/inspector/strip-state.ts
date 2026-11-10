@@ -31,6 +31,11 @@
 
 import type { PageAnalysisReport } from '../../../lib/detection/describe';
 import { describeDetections } from '../../../lib/detection/describe';
+import {
+  BYPASS_APPLIED_COPY,
+  isAppliedDespiteBypass,
+  isBypassRender
+} from '../../../lib/detection/bypass-applied';
 import { cacheCopy } from '../../../lib/detection/cache-context';
 import type { CacheState } from '../../../lib/detection/cache-context';
 import {
@@ -55,6 +60,7 @@ import type { BuilderFact, SimulationFact } from '../../../lib/wp-rocket/types';
 import { RUCSS_TEST_MODE_LINE } from '../../../lib/rucss-tester/test-mode';
 import { countNoun } from '../../../utils/format-count';
 import type { FeatureMetaRow, WprDetections } from '../../../lib/wp-rocket/types';
+import type { PageDataSnapshot } from '../data-hub';
 import { GROUP_ICONS, type StripIconGlyph, type StripModifierKind } from './icons';
 
 /** The widget's five chrome moods (`ins-*`; the KC vocabulary generalized). */
@@ -72,6 +78,29 @@ export interface StripDataSnapshot {
   detections: WprDetections | null;
   /** The hub's explicit cache answer (null while running/failed). */
   cacheState: CacheState | null;
+  /**
+   * The page is a bypass render ({@link isBypassRender}; absent: it is not,
+   * or no answer yet). Apart from `cacheState`, whose stamp and signature
+   * arms hide the bypass request.
+   */
+  bypassRender?: boolean;
+}
+
+/**
+ * The ready snapshot of one hub read: the pass's rows and cache answer, plus
+ * the bypass-render fact composed from the read's URL attestation and the
+ * page's generator meta.
+ *
+ * @param read The hub's same-context answer.
+ * @returns The snapshot the card model renders.
+ */
+export function readySnapshot(read: PageDataSnapshot): StripDataSnapshot {
+  return {
+    phase: 'ready',
+    detections: read.data.detections,
+    cacheState: read.cacheState,
+    bypassRender: isBypassRender(read.bypassAttested, read.data.wprGeneratorMeta)
+  };
 }
 
 /**
@@ -107,6 +136,8 @@ export interface StripCardRow {
   modifier: StripRowModifier | null;
   /** The simulation modifier (simulated, or marker not verified), or null. */
   simulation: StripRowModifier | null;
+  /** The "applied despite ?nowprocket" warning, or null. */
+  bypass: StripRowModifier | null;
 }
 
 /**
@@ -245,6 +276,13 @@ export function stripSimulationModifier(fact: SimulationFact): StripRowModifier 
   return { kind: fact, chip: copy.chip, sentence: copy.sentence };
 }
 
+/** The bypass warning as a row modifier (the panel card's warning words and sentence). */
+export const STRIP_BYPASS_MODIFIER: StripRowModifier = {
+  kind: 'bypass-applied',
+  chip: BYPASS_APPLIED_COPY.chip,
+  sentence: BYPASS_APPLIED_COPY.sentence
+};
+
 /**
  * One card row from a feature's reading. The chip keeps the served verdict
  * (the builder fact is a modifier on top, never a verdict flip); a feature
@@ -254,8 +292,13 @@ export function stripSimulationModifier(fact: SimulationFact): StripRowModifier 
  *
  * @param feature The HUD row.
  * @param reading The row's reading.
+ * @param bypassApplied The row earns the bypass warning ({@link isAppliedDespiteBypass}).
  */
-export function stripRow(feature: HudFeature, reading: HudReading): StripCardRow {
+export function stripRow(
+  feature: HudFeature,
+  reading: HudReading,
+  bypassApplied = false
+): StripCardRow {
   const count = builderTurnsOff(reading.builder) ? null : reading.count;
   return {
     id: feature.row,
@@ -267,7 +310,8 @@ export function stripRow(feature: HudFeature, reading: HudReading): StripCardRow
     tooltip: rowTooltip(feature, reading),
     modifier: reading.builder === undefined ? null : stripRowModifier(feature, reading.builder),
     simulation:
-      reading.simulation === undefined ? null : stripSimulationModifier(reading.simulation)
+      reading.simulation === undefined ? null : stripSimulationModifier(reading.simulation),
+    bypass: bypassApplied ? STRIP_BYPASS_MODIFIER : null
   };
 }
 
@@ -373,6 +417,7 @@ export function buildStripCardModel(input: {
       : null;
 
   const detections = snapshot.detections;
+  const bypassRender = snapshot.bypassRender === true;
   const groups =
     report === null || detections === null
       ? []
@@ -381,7 +426,11 @@ export function buildStripCardModel(input: {
           heading: group.heading,
           icon: GROUP_ICONS[group.id],
           rows: group.features.map((feature) =>
-            stripRow(feature, readHudFeature(feature, report, detections))
+            stripRow(
+              feature,
+              readHudFeature(feature, report, detections),
+              isAppliedDespiteBypass(detections[feature.row], bypassRender)
+            )
           )
         }));
 

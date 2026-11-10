@@ -217,6 +217,23 @@ describe('composeFdtData — oversize pages still yield a payload the panel acce
     expect('bypassAttested' in composeFdtData(data, LIVE)).toBe(false);
   });
 
+  it('carries the WP Rocket generator meta mark, degraded meta included', async () => {
+    const withMeta = (content: string): string =>
+      pageWithPreloadedImages(1).replace(
+        '<head>',
+        `<head><meta name="generator" content="WP Rocket 3.24" data-wpr-features="${content}">`
+      );
+    const readable = await processSerializedPage(withMeta('wpr_defer_js'));
+    expect(readable.wprGeneratorMeta).toBe(true);
+    expect(parseFdtData(composeFdtData(readable, LIVE))?.wprGeneratorMeta).toBe(true);
+    // Over the token cap: the meta decides nothing, yet it is still there.
+    const degraded = await processSerializedPage(withMeta('x'.repeat(5000)));
+    expect(degraded.wprGeneratorMeta).toBe(true);
+    const bare = await processSerializedPage(pageWithPreloadedImages(1));
+    expect(bare.wprGeneratorMeta).toBe(false);
+    expect('wprGeneratorMeta' in composeFdtData(bare, LIVE)).toBe(false);
+  });
+
   it('carries a declared WordPress version only when it fits the version cap', async () => {
     const page = (version: string): string =>
       pageWithPreloadedImages(1).replace(

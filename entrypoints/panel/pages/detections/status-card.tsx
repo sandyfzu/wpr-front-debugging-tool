@@ -14,8 +14,9 @@
  * Exclusion Builder changed the feature in this tab, its modifier: an
  * at-a-glance badge (icon + short text) plus the full sentence as a visible
  * line, spoken once; likewise when the extension simulated the feature in
- * this tab (or the page's simulation marker went unverified). The verdict
- * badge stays WP Rocket's served verdict.
+ * this tab (or the page's simulation marker went unverified), and the
+ * amber "applied despite ?nowprocket" warning. The verdict badge stays WP
+ * Rocket's served verdict.
  *
  * Tooltips appear only where data would otherwise be hidden — the Cached
  * card's absolute UTC time and the Known Platform card's matching header —
@@ -30,6 +31,7 @@ import CircleOff from 'lucide-solid/icons/circle-off';
 import FlaskConical from 'lucide-solid/icons/flask-conical';
 import ListX from 'lucide-solid/icons/list-x';
 import ShieldQuestionMark from 'lucide-solid/icons/shield-question-mark';
+import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import type { LucideIcon } from 'lucide-solid';
 import { Badge } from '../../../../components/ui/badge';
 import { CARD_LEVEL_CLASSES } from '../../../../components/ui/card';
@@ -250,7 +252,40 @@ function SimulationModifier(props: { item: StatusItem }): JSX.Element {
 }
 
 /**
- * The evidence line: source chip, the simulation and builder modifiers
+ * The bypass warning: a warn badge (alert icon + short text, hidden from
+ * assistive tech) and the full sentence as a visible line, spoken once —
+ * the modifiers' pattern ({@link SimulationModifier}).
+ *
+ * @param props.item The card (carrying `bypassWarning`).
+ * @returns The badge + line, or nothing for a card without the warning.
+ */
+function BypassWarning(props: { item: StatusItem }): JSX.Element {
+  return (
+    <Show when={props.item.bypassWarning}>
+      {(copy) => (
+        <>
+          <Badge kind="warn" class="shrink-0">
+            <span
+              data-fdt-card-bypass-warning
+              aria-hidden="true"
+              class="inline-flex items-center gap-1"
+            >
+              <TriangleAlert size={11} class="shrink-0" />
+              {copy().chip}
+            </span>
+          </Badge>
+          <p data-fdt-card-bypass-line class="min-w-0 text-fg-secondary">
+            <span class="sr-only">, </span>
+            {copy().sentence}
+          </p>
+        </>
+      )}
+    </Show>
+  );
+}
+
+/**
+ * The evidence line: source chip, the bypass warning, the simulation and builder modifiers
  * (badge + sentence each) and/or the unsure verdict's why. Renders nothing for a card with none (non-feature
  * cards, undecided rows whose absence is an honest "not active").
  *
@@ -261,6 +296,8 @@ function CardEvidence(props: { item: StatusItem }): JSX.Element {
   const source = () =>
     props.item.source === undefined ? undefined : SOURCE_COPY[props.item.source];
   return (
+    // No bypass-warning arm: a warned card is always footprint-decided, so
+    // its source chip already opens the line.
     <Show
       when={
         source() !== undefined ||
@@ -284,6 +321,7 @@ function CardEvidence(props: { item: StatusItem }): JSX.Element {
             </Badge>
           )}
         </Show>
+        <BypassWarning item={props.item} />
         <SimulationModifier item={props.item} />
         <ModifierBadge item={props.item} />
         <ModifierLine item={props.item} />

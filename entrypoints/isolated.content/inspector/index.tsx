@@ -86,7 +86,7 @@ import type { DragBox, DragController, DragMachineDeps } from './drag';
 import { createDragController, isPointerInitiatedClick } from './drag';
 import { createContainmentWatch, type ContainmentWatch } from './containment';
 import type { StripDataSnapshot } from './strip-state';
-import { buildStripCardModel, INSPECTOR_UI_NAME, insMood } from './strip-state';
+import { buildStripCardModel, INSPECTOR_UI_NAME, insMood, readySnapshot } from './strip-state';
 import { InspectorView, type InspectorUiActions } from './ui';
 import { widgetVisible } from './visibility';
 import './inspector.css';
@@ -612,11 +612,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       return;
     }
     setState({
-      snapshot: {
-        phase: 'ready',
-        detections: result.data.detections,
-        cacheState: result.cacheState
-      },
+      snapshot: readySnapshot(result),
       wordpressVersion: result.data.wordpressVersion
     });
     // The card's rows just landed (its body changes height): the containment

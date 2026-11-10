@@ -38,6 +38,7 @@ import {
   WPR_FEATURES_ATTRIBUTE,
   WPR_FEATURES_META_SELECTOR,
   isCacheBypassUrl,
+  phpQueryKeyBase,
   isDelayJSType,
   KNOWN_PLATFORMS,
   LAZYLOAD_BG_CONTAINER_ID,
@@ -280,6 +281,33 @@ describe('platforms and ids', () => {
       expect(isCacheBypassUrl(`https://example.test/?${query}`), query).toBe(true);
     }
     expect(isCacheBypassUrl('https://example.test/?nowprocket[=1')).toBe(false);
+    // Keys PHP normalizes into `nowprocket` (each row checked with PHP 8.1
+    // `parse_str`, the same registration `$_GET` uses), and near misses it keeps apart.
+    const phpKeys: Array<[string, boolean]> = [
+      ['+nowprocket=1', true],
+      ['%20nowprocket=1', true],
+      ['++nowprocket', true],
+      ['nowprocket%00z=3', true],
+      ['nowprocket%00', true],
+      ['nowprocket%00[x]=1', true],
+      ['+%20+nowprocket[a]=1', true],
+      ['nowprocket[a[b]=1', true],
+      ['nowprocket[x][=1', true],
+      ['x=1&+nowprocket', true],
+      ['%2Bnowprocket=1', false],
+      ['%09nowprocket=1', false],
+      ['%00nowprocket=1', false],
+      ['a%00nowprocket=1', false],
+      ['nowprocket+=1', false],
+      ['nowprocket%20[x]=1', false],
+      ['nowprocket[%00]=1', false],
+      ['nowprocket][=1', false],
+      ['[nowprocket]=1', false],
+      ['NOWPROCKET=1', false]
+    ];
+    for (const [query, expected] of phpKeys) {
+      expect(isCacheBypassUrl(`https://example.test/?${query}`), query).toBe(expected);
+    }
     // An unparsable URL cannot attest a bypass, and must not throw on boot.
     expect(isCacheBypassUrl('/relative?nowprocket=1')).toBe(false);
     expect(isCacheBypassUrl('not a url')).toBe(false);
@@ -368,5 +396,33 @@ describe('platforms and ids', () => {
     expect(Object.values(PANEL_SEARCH_ACTIONS).sort()).toEqual(
       ['cancelSearch', 'nextSearchResult', 'performSearch', 'previousSearchResult'].sort()
     );
+  });
+});
+
+describe('phpQueryKeyBase', () => {
+  it('names the top-level $_GET entry PHP registers for a decoded key', () => {
+    const cases: Array<[string, string]> = [
+      ['nowprocket', 'nowprocket'],
+      ['  nowprocket', 'nowprocket'],
+      ['nowprocket\0z', 'nowprocket'],
+      ['nowprocket[]', 'nowprocket'],
+      ['nowprocket[x]]', 'nowprocket'],
+      ['nowprocket\0[x]', 'nowprocket'],
+      // An unclosed `[` (also one a NUL cut closes off) stays in the name.
+      ['nowprocket[', 'nowprocket['],
+      ['nowprocket[\0]', 'nowprocket['],
+      ['nowprocket][', 'nowprocket]['],
+      // Only spaces are dropped, and only leading ones.
+      ['\tnowprocket', '\tnowprocket'],
+      ['nowprocket ', 'nowprocket '],
+      // Keys PHP drops entirely.
+      ['', ''],
+      ['   ', ''],
+      ['\0nowprocket', ''],
+      ['[nowprocket]', '']
+    ];
+    for (const [key, expected] of cases) {
+      expect(phpQueryKeyBase(key), JSON.stringify(key)).toBe(expected);
+    }
   });
 });

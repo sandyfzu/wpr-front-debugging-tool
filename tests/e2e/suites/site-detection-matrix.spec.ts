@@ -21,7 +21,11 @@
 
 import type { Page } from '@playwright/test';
 
-import { CACHE_COMMENT_MARKERS, CACHE_TIMESTAMP_PATTERN } from '../../../lib/wp-rocket/constants';
+import {
+  CACHE_COMMENT_MARKERS,
+  CACHE_TIMESTAMP_PATTERN,
+  isCacheBypassUrl
+} from '../../../lib/wp-rocket/constants';
 import { expect, test, type ExtensionDriver } from '../helpers/extension';
 import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
 import { openSitePage, SITE_ORIGIN, SITE_URL } from '../helpers/site';
@@ -187,7 +191,13 @@ interface StripRead {
   readonly cacheText: string | null;
   readonly cacheTooltip: string | null;
   readonly text: string;
-  readonly rows: ReadonlyArray<{ chip: string; className: string; tooltip: string }>;
+  readonly rows: ReadonlyArray<{
+    chip: string;
+    className: string;
+    tooltip: string;
+    /** The row carries the "applied despite ?nowprocket" modifier. */
+    bypassWarned: boolean;
+  }>;
 }
 
 /**
@@ -207,7 +217,8 @@ async function readStripCard(page: Page): Promise<StripRead> {
       rows: [...(root?.querySelectorAll('.ins-row') ?? [])].map((row) => ({
         chip: row.querySelector('.ins-chip')?.textContent ?? '',
         className: row.querySelector('.ins-chip')?.className ?? '',
-        tooltip: row.getAttribute('title') ?? ''
+        tooltip: row.getAttribute('title') ?? '',
+        bypassWarned: row.querySelector('[data-fdt-strip-modifier="bypass-applied"]') !== null
       }))
     };
   }, STRIP_HOST);
@@ -345,6 +356,7 @@ function assertStrip(strip: StripRead, served: ServedRows, round: MatrixRound): 
   expect(strip.cacheText ?? '', `${round.id}: strip cache chip`).toMatch(
     new RegExp(`^${round.cache.chip.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( · |$)`)
   );
+  const bypassRender = isCacheBypassUrl(`${SITE_URL}${round.path}`) && round.meta === 'absent';
   for (const [row, expectation] of Object.entries(round.rows) as [MatrixRow, RowExpectation][]) {
     const expected = parse(expectation);
     const rendered = strip.rows.find((entry) => entry.chip === ROW_UI[row].chip);
@@ -352,6 +364,14 @@ function assertStrip(strip: StripRead, served: ServedRows, round: MatrixRound): 
     expect(rendered?.className, `${round.id}: strip chip state of ${row}`).toContain(
       CHIP_CLASS[expected.status]
     );
+    // A bypass render (bypass URL, no meta) warns each footprint-applied
+    // row; a modified row shows its sentence instead of the tooltip.
+    const warned = bypassRender && expected.status === 'Active' && expected.source === 'Footprint';
+    expect(rendered?.bypassWarned, `${round.id}: strip bypass warning on ${row}`).toBe(warned);
+    if (warned) {
+      expect(rendered?.tooltip, `${round.id}: no tooltip on the warned ${row}`).toBe('');
+      continue;
+    }
     for (const source of ['Meta', 'Footprint'] as const) {
       expect(
         rendered?.tooltip.includes(SOURCE_TEXT[source].tooltip),
