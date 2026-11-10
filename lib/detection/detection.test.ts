@@ -234,16 +234,79 @@ describe('detectRemoveUnusedCss / detectPreloadLinks / ids', () => {
 });
 
 describe('detectAsyncCss', () => {
+  // WP Rocket's swapped link, attribute order as the plugin writes it.
+  const swapped = (attrs = 'data-rocket-async="style"', rel = 'preload') =>
+    `<link rel='${rel}' href='https://s.example/a.css' ${attrs} as="style" onload="this.onload=null;this.rel='stylesheet'" media='all' />`;
+
   it('marks the inline fallback regardless of surrounding markup', () => {
     expect(detectAsyncCss(page('<script>wprRemoveCPCSS && wprRemoveCPCSS();</script>'))).toEqual({
-      present: true
+      present: true,
+      criticalStyle: false
     });
     // On a src script the same text does not count.
     expect(detectAsyncCss(page('<script src="/c.js">wprRemoveCPCSS()</script>'))).toEqual({
-      present: false
+      present: false,
+      criticalStyle: false
     });
     // Arbitrary page text is not the fallback script.
-    expect(detectAsyncCss(page('<p>wprRemoveCPCSS</p>'))).toEqual({ present: false });
+    expect(detectAsyncCss(page('<p>wprRemoveCPCSS</p>'))).toEqual({
+      present: false,
+      criticalStyle: false
+    });
+  });
+
+  it('marks the async-swapped link alone, before and after its load flips rel', () => {
+    expect(detectAsyncCss(page(swapped())).present).toBe(true);
+    expect(detectAsyncCss(page(swapped(undefined, 'stylesheet'))).present).toBe(true);
+    // Read by the attribute, never by rel: any rel carrying the stamp counts.
+    expect(detectAsyncCss(page(swapped(undefined, 'alternate'))).present).toBe(true);
+  });
+
+  it('counts only the exact stamp value', () => {
+    for (const attrs of [
+      'data-rocket-async="script"',
+      'data-rocket-async=""',
+      'data-rocket-async',
+      'data-rocket-async="Style"',
+      'data-rocket-async=" style"',
+      'data-async="style"'
+    ]) {
+      expect(detectAsyncCss(page(swapped(attrs))).present, attrs).toBe(false);
+    }
+    // A plain preload (no stamp) is any page's resource hint.
+    expect(detectAsyncCss(page(swapped(''))).present).toBe(false);
+  });
+
+  it('never counts a stamped link inside <noscript>', () => {
+    expect(detectAsyncCss(page(`<body><noscript>${swapped()}</noscript></body>`)).present).toBe(
+      false
+    );
+  });
+
+  it('records the critical-path style as a fact, never as the verdict', () => {
+    const critical = '<style id="rocket-critical-css">body{margin:0}</style>';
+    expect(detectAsyncCss(page(critical))).toEqual({ present: false, criticalStyle: true });
+    expect(detectAsyncCss(page(critical + swapped()))).toEqual({
+      present: true,
+      criticalStyle: true
+    });
+    // Another element with the id, or a fallback copy, is not the style.
+    expect(detectAsyncCss(page('<div id="rocket-critical-css"></div>')).criticalStyle).toBe(false);
+    expect(
+      detectAsyncCss(page(`<body><noscript>${critical}</noscript></body>`)).criticalStyle
+    ).toBe(false);
+  });
+
+  it('sees no <noscript> link in a live capture (scripting-on serialization)', () => {
+    // A scripting-on document holds <noscript> content as one text node
+    // (built here directly); the capture serializes it escaped, so the
+    // re-parse holds no element — while a raw-HTML parse does.
+    const live = document.implementation.createHTMLDocument('');
+    live.body.innerHTML = '<noscript></noscript>';
+    live.querySelector('noscript')?.append(swapped());
+    const captured = page(new XMLSerializer().serializeToString(live));
+    expect(captured.links).toHaveLength(0);
+    expect(page(`<body><noscript>${swapped()}</noscript></body>`).links).toHaveLength(1);
   });
 });
 
@@ -537,6 +600,31 @@ describe('detectMinifyCss / detectMinifyJs', () => {
       '<link rel="stylesheet" href="https://s.com/wp-content/cache/max/1/a.css">'
     );
     expect(detectMinifyCss(wrongShape)).toEqual({ present: false });
+  });
+
+  it('reads async-swapped stylesheet links, never a fallback or a plain preload', () => {
+    const url = 'https://s.com/wp-content/cache/min/1/wp-content/themes/t/style.css?ver=1';
+    const link = (rel: string, attrs: string) => `<link rel='${rel}' href='${url}' ${attrs} />`;
+    const stamp = 'data-rocket-async="style"';
+    // Still preloading (rel="preload" as="style") or flipped by its onload.
+    expect(detectMinifyCss(page(link('preload', `${stamp} as="style"`)))).toEqual({
+      present: true
+    });
+    expect(detectMinifyCss(page(link('stylesheet', `${stamp} as="style"`)))).toEqual({
+      present: true
+    });
+    for (const attrs of [
+      'as="style"',
+      `${stamp} as="script"`,
+      stamp,
+      'data-rocket-async="script" as="style"'
+    ]) {
+      expect(detectMinifyCss(page(link('preload', attrs))), attrs).toEqual({ present: false });
+    }
+    // The no-JavaScript fallback copy of a minified stylesheet.
+    expect(
+      detectMinifyCss(page(`<body><noscript>${link('stylesheet', '')}</noscript></body>`))
+    ).toEqual({ present: false });
   });
 
   it('checks scripts against resolved sources', () => {

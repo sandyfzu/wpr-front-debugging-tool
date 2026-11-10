@@ -19,7 +19,7 @@ function fullDetections(overrides?: Partial<WprDetections>): WprDetections {
   return {
     wpr: { present: false, cacheMarkerFound: false, cached: false, version: null, timeStamp: null },
     remove_unused_css: { present: false },
-    async_css: { present: false },
+    async_css: { present: false, criticalStyle: false },
     lazyload_css_bg_img: { present: false },
     self_hosted_fonts: { present: false },
     image_dimensions: { present: false },
@@ -328,7 +328,7 @@ describe('buildStatusItems — the RUCSS/async-CSS merge (three branches)', () =
       makeData({
         wprDetections: fullDetections({
           remove_unused_css: { present: true },
-          async_css: { present: false }
+          async_css: { present: false, criticalStyle: false }
         })
       })
     );
@@ -345,7 +345,7 @@ describe('buildStatusItems — the RUCSS/async-CSS merge (three branches)', () =
       makeData({
         wprDetections: fullDetections({
           remove_unused_css: { present: false },
-          async_css: { present: true }
+          async_css: { present: true, criticalStyle: false }
         })
       })
     );
@@ -372,7 +372,7 @@ describe('buildStatusItems — the RUCSS/async-CSS merge (three branches)', () =
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          async_css: { present: true },
+          async_css: { present: true, criticalStyle: false },
           remove_unused_css: { present: true }
         })
       })
@@ -666,7 +666,7 @@ describe('buildStatusItems — evidence source and unsure-state why (HUD reading
       makeData({
         wprDetections: fullDetections({
           remove_unused_css: { present: false, source: 'meta' },
-          async_css: { present: false, source: 'meta' }
+          async_css: { present: false, criticalStyle: false, source: 'meta' }
         })
       })
     );
@@ -683,7 +683,7 @@ describe('buildStatusItems — evidence source and unsure-state why (HUD reading
       makeData({
         wprDetections: fullDetections({
           remove_unused_css: { present: false, source: 'meta' },
-          async_css: { present: true, source: 'footprint' }
+          async_css: { present: true, criticalStyle: false, source: 'footprint' }
         })
       })
     );

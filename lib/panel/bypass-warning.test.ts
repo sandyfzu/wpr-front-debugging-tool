@@ -105,7 +105,7 @@ describe('the Detections cards', () => {
   it('the merged CSS-delivery card warns when async CSS stands in by footprint', () => {
     const detections = emptyDetections();
     detections.wpr.present = true;
-    detections.async_css = { present: true, source: 'footprint' };
+    detections.async_css = { present: true, criticalStyle: false, source: 'footprint' };
     const card = cards(detections, true).find((item) => item.id === 'remove_unused_css');
     expect(card).toMatchObject({ status: 'active', bypassWarning: BYPASS_APPLIED_COPY });
   });

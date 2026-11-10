@@ -25,7 +25,7 @@ function zeroDetections(): WprDetections {
     remove_unused_css: { present: false },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
     defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
-    async_css: { present: false },
+    async_css: { present: false, criticalStyle: false },
     lazyload: { present: false, images: [] },
     lazyload_iframes: { present: false, replaceImage: false },
     lazyload_css_bg_img: { present: false },

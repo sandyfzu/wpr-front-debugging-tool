@@ -11,7 +11,8 @@
       "present": false
     },
     "async_css": {
-      "present": false
+      "present": false,
+      "criticalStyle": false
     },
     "delay_js": {
       "present": true,

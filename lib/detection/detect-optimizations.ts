@@ -19,6 +19,7 @@ import type {
 } from '../wp-rocket/types';
 import {
   CPCSS_MARK,
+  CRITICAL_CSS_STYLE_SELECTOR,
   DATA_LAZY_SRC,
   DATA_LAZY_SRCSET,
   DATA_ROCKET_STATUS,
@@ -47,6 +48,7 @@ import {
 import type { ParsedPage } from './parse-page';
 import { carriesMinifyAttribute, hasMinifyFootprint } from './minify-footprint';
 import { servedScriptSrc, servedScriptSrcAttribute } from './served-script-src';
+import { hasAsyncCssLink, insideNoscript } from './stylesheet-links';
 
 /** Remove Unused CSS: an inline `style` element with the reserved id. */
 export function detectRemoveUnusedCss(page: ParsedPage): WprDetections['remove_unused_css'] {
@@ -55,14 +57,24 @@ export function detectRemoveUnusedCss(page: ParsedPage): WprDetections['remove_u
   return { present: page.document.querySelector(RUCSS_STYLE_SELECTOR) !== null };
 }
 
-/** Load CSS asynchronously: the inline CPCSS fallback script. */
+/**
+ * Load CSS asynchronously: the inline CPCSS fallback script or a stylesheet
+ * link carrying the async stamp (either alone decides), plus whether the
+ * critical-path style was in the capture — a fact only, never the verdict
+ * (the fallback script removes that style on `load`).
+ */
 export function detectAsyncCss(page: ParsedPage): WprDetections['async_css'] {
   // The engines' falsy gate, kept for exact parity: an empty `src` attribute
   // (degenerate markup) still lets the script's text count as the fallback.
-  const present = page.scripts.some(
-    (script) => !script.getAttribute('src') && script.textContent.includes(CPCSS_MARK)
+  const present =
+    page.scripts.some(
+      (script) => !script.getAttribute('src') && script.textContent.includes(CPCSS_MARK)
+    ) || hasAsyncCssLink(page.links);
+  // `<noscript>` content is text in a live capture, so never count it here.
+  const criticalStyle = [...page.document.querySelectorAll(CRITICAL_CSS_STYLE_SELECTOR)].some(
+    (style) => !insideNoscript(style)
   );
-  return { present };
+  return { present, criticalStyle };
 }
 
 /**
@@ -217,7 +229,8 @@ export function detectLazyloadIframes(page: ParsedPage): WprDetections['lazyload
 }
 
 /**
- * Minify CSS: `cache/min/<n>/<hash>…css` stylesheet URLs. The URL arm only —
+ * Minify CSS: `cache/min/<n>/<hash>…css` stylesheet URLs (async-swapped
+ * stylesheet links included, `<noscript>` fallbacks never). The URL arm only —
  * an attribute-only stylesheet is resolved later by the orchestrator's proof
  * guard (the attribute alone never proves WP Rocket).
  */

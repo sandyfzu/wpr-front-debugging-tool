@@ -199,6 +199,13 @@ describe('detection-matrix fixture contracts', () => {
     expect(elements).toBe(DECOY_SELECTORS.length);
   });
 
+  /**
+   * A decoy row's exact expected shape: the verdict plus the row's own facts
+   * (no decoy is a critical-path style, so the async CSS row records none).
+   */
+  const withFacts = (row: string, verdict: { present: boolean; source?: string }) =>
+    row === 'async_css' ? { ...verdict, criticalStyle: false } : verdict;
+
   it('trips exactly the five decoy footprints when the meta is absent', () => {
     const head = phpConstant(FIXTURE_PLUGIN, 'FIXTURE_HEAD_DECOYS');
     const body = phpConstant(FIXTURE_PLUGIN, 'FIXTURE_BODY_DECOYS');
@@ -212,8 +219,10 @@ describe('detection-matrix fixture contracts', () => {
       'lazyload_css_bg_img'
     ] as const;
     for (const row of rows) {
-      expect(plain[row], `${row} without decoys`).toEqual({ present: false });
-      expect(decoyed[row], `${row} with decoys`).toEqual({ present: true, source: 'footprint' });
+      expect(plain[row], `${row} without decoys`).toEqual(withFacts(row, { present: false }));
+      expect(decoyed[row], `${row} with decoys`).toEqual(
+        withFacts(row, { present: true, source: 'footprint' })
+      );
     }
     // Nothing else moved: the decoys assert no other row (inventories such as
     // the script list may grow; presence and source may not).
@@ -241,7 +250,7 @@ describe('detection-matrix fixture contracts', () => {
       'self_hosted_fonts',
       'lazyload_css_bg_img'
     ] as const) {
-      expect(detections[row], row).toEqual({ present: false, source: 'meta' });
+      expect(detections[row], row).toEqual(withFacts(row, { present: false, source: 'meta' }));
     }
   });
 

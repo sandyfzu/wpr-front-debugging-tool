@@ -16,6 +16,7 @@ import {
 import type { WprDetections } from '../wp-rocket/types';
 import type { ParsedPage } from './parse-page';
 import { servedScriptSrc, servedScriptSrcAttribute } from './served-script-src';
+import { isStylesheetLink } from './stylesheet-links';
 
 /** The two rows a minify footprint decides. */
 export type MinifyRow = Extract<keyof WprDetections, 'minify_css' | 'minify_js'>;
@@ -73,8 +74,9 @@ export function minifyFootprint(
 }
 
 /**
- * Stylesheet links (exact `rel`, as the URL arm always read it), by resolved
- * `href`. Any other `<link>` never carries a minify footprint. The attribute
+ * Stylesheet links ({@link isStylesheetLink}: exact `rel`, async-swapped
+ * preloads included, `<noscript>` fallbacks never), by resolved `href`. Any
+ * other `<link>` never carries a minify footprint. The attribute
  * is eligible only beside a non-empty `href` (WP Rocket stamps only the link
  * it rewrote to a minified URL); the URL arm keeps its own reading.
  *
@@ -84,7 +86,7 @@ export function minifyFootprint(
 function someStylesheet(page: ParsedPage, visit: CandidateVisit): boolean {
   return page.links.some(
     (link) =>
-      link.getAttribute('rel') === 'stylesheet' &&
+      isStylesheetLink(link) &&
       visit(link.href, link.getAttribute('href') ? link.getAttribute(MINIFY_ATTRIBUTE) : null)
   );
 }

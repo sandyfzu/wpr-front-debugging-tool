@@ -44,6 +44,10 @@ export const FIXTURES = [
   'combine-js-no-meta.html',
   // Real plugin pass: a `nowprocket` render (footprints without the meta).
   'bypass-render.html',
+  // Source-derived Load CSS asynchronously page: the async-swapped link arm
+  // alone (no fallback script, no meta), the critical style, a <noscript>
+  // fallback.
+  'async-css-link.html',
   // Crafted Priority-Elements states: pending (beacon + config), applied,
   // collecting, mixed, and the adversarial markup/degrade cases.
   'priority-elements-pending.html',

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<!--
+  Source-derived fixture (WP Rocket 3.24, not a live capture: the local
+  site's license keeps Load CSS asynchronously off). The head links are the
+  exact output of `CriticalCSSSubscriber::async_css` (:698-760) run under PHP
+  over WordPress-style stylesheet links, one of them already minified; the
+  `<noscript>` fallback holds the originals, as the plugin prints them;
+  `style#rocket-critical-css` sits after `</title>` as `rocket_head` writes it.
+  The `wprRemoveCPCSS` fallback script and the generator meta are removed, so
+  the async link alone must decide the row.
+  Expected: async_css present (footprint), criticalStyle true; minify_css
+  present (the async-swapped minified link); wpr present by propagation;
+  the `<noscript>` links are never candidates.
+-->
+<html lang="en-US">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Async CSS link</title>
+<style id="rocket-critical-css">body{margin:0;font-family:system-ui}h1{font-size:2rem}</style>
+<link rel='preload'  href='https://async-css.example/wp-includes/css/dist/block-library/style.min.css?ver=6.8.3' data-rocket-async="style" as="style" onload="this.onload=null;this.rel='stylesheet'" onerror="this.removeAttribute('data-rocket-async')"  media='all' />
+<link data-minify="1" rel='preload'  href='https://async-css.example/wp-content/cache/min/1/wp-content/themes/twentytwentyfive/style.css?ver=1791299187' data-rocket-async="style" as="style" onload="this.onload=null;this.rel='stylesheet'" onerror="this.removeAttribute('data-rocket-async')"  media='all' />
+<link rel='stylesheet' id='theme-print-css' href='https://async-css.example/wp-content/themes/twentytwentyfive/print.css?ver=1.0' media='print' />
+</head>
+<body>
+<h1>Load CSS asynchronously, link arm only</h1>
+<noscript><link rel='stylesheet' id='wp-block-library-css' href='https://async-css.example/wp-includes/css/dist/block-library/style.min.css?ver=6.8.3' media='all' /><link data-minify="1" rel='stylesheet' id='theme-css' href='https://async-css.example/wp-content/cache/min/1/wp-content/themes/twentytwentyfive/style.css?ver=1791299187' media='all' /></noscript></body>
+</html>
