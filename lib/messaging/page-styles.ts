@@ -54,17 +54,26 @@ export interface PageStylesReply {
   readonly total: number;
 }
 
-/** The entry keys, exactly. */
-const ENTRY_KEYS = ['kind', 'id', 'className', 'href', 'media', 'preview', 'chars'] as const;
+/** An entry's keys, exactly. */
+export const PAGE_STYLE_ENTRY_KEYS = [
+  'kind',
+  'id',
+  'className',
+  'href',
+  'media',
+  'preview',
+  'chars'
+] as const;
 
 /**
- * Guard one entry.
+ * Read and check an entry's fields, ignoring any other key — the shared
+ * core of this guard and of a wider inventory's guard whose entries carry
+ * these fields plus their own (each guard checks its own exact key set).
  *
- * @param input The boundary value.
- * @returns The rebuilt entry, or null on any violation.
+ * @param input A boundary record.
+ * @returns The rebuilt fields, or null on any violation.
  */
-export function parsePageStyleEntry(input: unknown): PageStyleEntry | null {
-  if (!isRecord(input) || !hasOnlyKeys(input, ENTRY_KEYS)) return null;
+export function readPageStyleFields(input: Record<string, unknown>): PageStyleEntry | null {
   const kind = ownValue(input, 'kind');
   const id = ownValue(input, 'id');
   const className = ownValue(input, 'className');
@@ -87,22 +96,48 @@ export function parsePageStyleEntry(input: unknown): PageStyleEntry | null {
 }
 
 /**
+ * Guard one entry.
+ *
+ * @param input The boundary value.
+ * @returns The rebuilt entry, or null on any violation.
+ */
+export function parsePageStyleEntry(input: unknown): PageStyleEntry | null {
+  if (!isRecord(input) || !hasOnlyKeys(input, PAGE_STYLE_ENTRY_KEYS)) return null;
+  return readPageStyleFields(input);
+}
+
+/**
+ * Guard an inventory reply of any entry shape: the list bound, `total`
+ * never below the listed entries, and every entry through its own guard.
+ *
+ * @param input The boundary value.
+ * @param parseEntry The entry guard (null on any violation).
+ * @returns The rebuilt reply, or null on any violation (an entry included).
+ */
+export function parseStyleInventory<Entry>(
+  input: unknown,
+  parseEntry: (item: unknown) => Entry | null
+): { readonly styles: readonly Entry[]; readonly total: number } | null {
+  if (!isRecord(input) || !hasOnlyKeys(input, ['styles', 'total'])) return null;
+  const raw = ownValue(input, 'styles');
+  const total = ownValue(input, 'total');
+  if (!Array.isArray(raw) || raw.length > PAGE_STYLE_LIMITS.count || !isCount(total)) return null;
+  if (total < raw.length) return null;
+  const styles: Entry[] = [];
+  for (const item of raw) {
+    const entry = parseEntry(item);
+    if (entry === null) return null;
+    styles.push(entry);
+  }
+  return { styles, total };
+}
+
+/**
  * Guard the inventory reply.
  *
  * @param input The boundary value.
  * @returns The rebuilt reply, or null on any violation (an entry included).
  */
 export function parsePageStylesReply(input: unknown): PageStylesReply | null {
-  if (!isRecord(input) || !hasOnlyKeys(input, ['styles', 'total'])) return null;
-  const raw = ownValue(input, 'styles');
-  const total = ownValue(input, 'total');
-  if (!Array.isArray(raw) || raw.length > PAGE_STYLE_LIMITS.count || !isCount(total)) return null;
-  if (total < raw.length) return null;
-  const styles: PageStyleEntry[] = [];
-  for (const item of raw) {
-    const entry = parsePageStyleEntry(item);
-    if (entry === null) return null;
-    styles.push(entry);
-  }
-  return { styles, total };
+  return parseStyleInventory(input, parsePageStyleEntry);
 }

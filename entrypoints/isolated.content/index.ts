@@ -25,6 +25,7 @@ import { setupSideBySide } from './side-by-side';
 import { setupInspectorWidget } from './inspector';
 import { setupCommandPalette } from './palette';
 import { setupRucssTest } from './rucss-test';
+import { setupStylesheetInventory } from './style-inventory';
 import { setupBeaconTest } from './beacon-test';
 import { setupLcpAnalysis } from './lcp-analysis';
 import { setupScriptRuntime } from './script-runtime';
@@ -85,6 +86,7 @@ const ISOLATED_WORLD_MODULES: readonly IsolatedWorldModule[] = [
   { name: 'side-by-side', setup: setupSideBySide },
   { name: 'inspector', setup: setupInspectorWidget },
   { name: 'rucss-test', setup: setupRucssTest },
+  { name: 'stylesheet-inventory', setup: setupStylesheetInventory },
   { name: 'beacon-test', setup: setupBeaconTest },
   { name: 'lcp-analysis', setup: setupLcpAnalysis },
   { name: 'script-runtime', setup: setupScriptRuntime },

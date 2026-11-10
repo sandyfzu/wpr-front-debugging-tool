@@ -75,6 +75,11 @@ describe('relayTabAsks — requests', () => {
     const send = sendAnswering({ ok: true, answer: 'x' });
     await relayTabAsks(send).listPageStyles(4);
     expect(send.requests).toEqual([{ tabId: 4, ask: 'listPageStyles' }]);
+    await relayTabAsks(send).listPageStylesheets(4);
+    expect(send.requests).toEqual([
+      { tabId: 4, ask: 'listPageStyles' },
+      { tabId: 4, ask: 'listPageStylesheets' }
+    ]);
   });
 
   it('fails a missing inspected tab locally as a no-receiver miss (nothing sent)', async () => {

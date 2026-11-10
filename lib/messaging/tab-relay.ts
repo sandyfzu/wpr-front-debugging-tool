@@ -33,6 +33,7 @@ export interface TabRelayPayloads {
   getScriptRuntimeStatuses: undefined;
   getCurrentVisitVitals: undefined;
   listPageStyles: undefined;
+  listPageStylesheets: undefined;
 }
 
 /** One relayable ask's name. */
@@ -121,6 +122,10 @@ export const TAB_RELAY_ASKS: { readonly [K in TabRelayAsk]: TabRelayAskRow<K> } 
   listPageStyles: {
     parsePayload: parseNoPayload,
     forward: (asks, tabId) => asks.listPageStyles(tabId)
+  },
+  listPageStylesheets: {
+    parsePayload: parseNoPayload,
+    forward: (asks, tabId) => asks.listPageStylesheets(tabId)
   }
 };
 

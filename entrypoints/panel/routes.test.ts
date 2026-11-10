@@ -22,10 +22,11 @@ function liveStateOf(
 }
 
 describe('NAV_ROUTES', () => {
-  it('lists the ten rows in the journey order', () => {
+  it('lists the eleven rows in the journey order', () => {
     expect(NAV_ROUTES.map((row) => row.id)).toEqual([
       'detections',
       'javascript',
+      'stylesheets',
       'lazyload',
       'preloaded-resources',
       'headers-cookies',
@@ -37,6 +38,7 @@ describe('NAV_ROUTES', () => {
     ]);
     expect(NAV_ROUTES.map((row) => row.group)).toEqual([
       'Overview',
+      'Inspect',
       'Inspect',
       'Inspect',
       'Inspect',
@@ -69,6 +71,14 @@ describe('NAV_ROUTES', () => {
     const row = navRoute('lcp-vitals');
     expect(row?.label).toBe('LCP & Vitals');
     expect(row?.group).toBe('Tools');
+    expect(row?.reserved).toBeUndefined();
+    expect(row?.liveState).toBeUndefined();
+  });
+
+  it('declares Stylesheets as a state-free Inspect row (its list is read on open)', () => {
+    const row = navRoute('stylesheets');
+    expect(row?.label).toBe('Stylesheets');
+    expect(row?.group).toBe('Inspect');
     expect(row?.reserved).toBeUndefined();
     expect(row?.liveState).toBeUndefined();
   });

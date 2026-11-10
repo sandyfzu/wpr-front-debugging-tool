@@ -30,6 +30,10 @@ export type PageBody = Component;
 export const PAGE_BODIES: Partial<Record<RouteId, PageBody>> = {
   detections: DetectionsPage,
   javascript: JavaScriptPage,
+  stylesheets: lazyPage('stylesheets', async () => {
+    const { StylesheetsPage } = await import('./pages/stylesheets/stylesheets');
+    return StylesheetsPage;
+  }),
   lazyload: LazyloadPage,
   'preloaded-resources': PreloadedResourcesPage,
   'headers-cookies': HeadersCookiesPage,

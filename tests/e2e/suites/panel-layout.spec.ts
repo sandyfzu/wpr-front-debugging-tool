@@ -14,6 +14,7 @@ const AXE_SOURCE = readFileSync(
 const ROUTES = [
   { id: 'detections', label: 'Detections' },
   { id: 'javascript', label: 'JavaScript' },
+  { id: 'stylesheets', label: 'Stylesheets' },
   { id: 'lazyload', label: 'Lazyload' },
   { id: 'preloaded-resources', label: 'Preloaded Resources' },
   { id: 'headers-cookies', label: 'Headers & Cookies' },

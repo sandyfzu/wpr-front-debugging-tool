@@ -6,6 +6,7 @@ import { openPanelForFixture } from '../helpers/panel-data';
 const ROUTES = [
   'detections',
   'javascript',
+  'stylesheets',
   'lazyload',
   'preloaded-resources',
   'headers-cookies',

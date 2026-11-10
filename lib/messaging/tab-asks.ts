@@ -48,6 +48,8 @@ export interface TabAsks {
   readonly getCurrentVisitVitals: (tabId: number) => Promise<unknown>;
   /** List the page's styles, from the top frame only. */
   readonly listPageStyles: (tabId: number) => Promise<unknown>;
+  /** List the page's styles with their WP Rocket stamps, from the top frame only. */
+  readonly listPageStylesheets: (tabId: number) => Promise<unknown>;
 }
 
 /** The direct transport: the extension's tab send, one typed call per ask. */
@@ -64,7 +66,9 @@ export const DIRECT_TAB_ASKS: TabAsks = {
     sendMessage('getScriptRuntimeStatuses', undefined, { tabId, frameId: 0 }),
   getCurrentVisitVitals: (tabId) =>
     sendMessage('getCurrentVisitVitals', undefined, { tabId, frameId: 0 }),
-  listPageStyles: (tabId) => sendMessage('listPageStyles', undefined, { tabId, frameId: 0 })
+  listPageStyles: (tabId) => sendMessage('listPageStyles', undefined, { tabId, frameId: 0 }),
+  listPageStylesheets: (tabId) =>
+    sendMessage('listPageStylesheets', undefined, { tabId, frameId: 0 })
 };
 
 /** The transports {@link selectTabAsks} picks from (tests inject doubles). */

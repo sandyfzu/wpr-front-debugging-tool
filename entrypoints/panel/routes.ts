@@ -12,6 +12,7 @@ import type { LucideIcon } from 'lucide-solid';
 import FileCode from 'lucide-solid/icons/file-code';
 import Gauge from 'lucide-solid/icons/gauge';
 import Images from 'lucide-solid/icons/images';
+import Palette from 'lucide-solid/icons/palette';
 import Radar from 'lucide-solid/icons/radar';
 import ScrollText from 'lucide-solid/icons/scroll-text';
 import SearchX from 'lucide-solid/icons/search-x';
@@ -37,6 +38,7 @@ export type NavGroup = (typeof NAV_GROUPS)[number];
 export const ROUTE_IDS = [
   'detections',
   'javascript',
+  'stylesheets',
   'lazyload',
   'preloaded-resources',
   'headers-cookies',
@@ -136,6 +138,9 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       };
     }
   },
+  // Read live from the page on open (the payload carries no style list), so
+  // the row has no number to show before the page opens.
+  { id: 'stylesheets', label: 'Stylesheets', icon: Palette, group: 'Inspect' },
   {
     id: 'lazyload',
     label: 'Lazyload',

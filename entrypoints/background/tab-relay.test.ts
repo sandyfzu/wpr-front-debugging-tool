@@ -41,6 +41,7 @@ function deps(
     getScriptRuntimeStatuses: vi.fn(() => Promise.resolve(answer)),
     getCurrentVisitVitals: vi.fn(() => Promise.resolve(answer)),
     listPageStyles: vi.fn(() => Promise.resolve(answer)),
+    listPageStylesheets: vi.fn(() => Promise.resolve(answer)),
     ...asks
   };
   return {

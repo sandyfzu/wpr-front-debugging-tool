@@ -7,6 +7,7 @@ import {
   PAGE_STYLE_LIMITS,
   parsePageStyleEntry,
   parsePageStylesReply,
+  parseStyleInventory,
   type PageStyleEntry
 } from './page-styles';
 
@@ -86,5 +87,17 @@ describe('parsePageStylesReply', () => {
     expect(parsePageStylesReply({ styles: {}, total: 0 })).toBeNull();
     expect(parsePageStylesReply({ styles: [], total: -1 })).toBeNull();
     expect(parsePageStylesReply('nope')).toBeNull();
+  });
+});
+
+describe('parseStyleInventory', () => {
+  it('runs every entry through the given guard and keeps the shared reply rules', () => {
+    const numbers = (item: unknown): number | null => (typeof item === 'number' ? item : null);
+    expect(parseStyleInventory({ styles: [1, 2], total: 3 }, numbers)).toEqual({
+      styles: [1, 2],
+      total: 3
+    });
+    expect(parseStyleInventory({ styles: [1, 'x'], total: 2 }, numbers)).toBeNull();
+    expect(parseStyleInventory({ styles: [1, 2], total: 1 }, numbers)).toBeNull();
   });
 });
