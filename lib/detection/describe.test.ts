@@ -142,7 +142,7 @@ describe('describeDetections', () => {
       'deferred scripts': 3
     });
     expect(report['LazyLoad for images']).toEqual({ state: 'applied', 'lazy-loaded images': 2 });
-    expect(report.RocketCDN).toEqual({ state: 'applied' });
+    expect(report['Content Delivery Network']).toEqual({ state: 'applied' });
   });
 
   it('composes collecting / not enabled from the beacon config for the family', () => {
@@ -438,7 +438,7 @@ describe('describeDetections over the real engine (fixture corpus)', () => {
     'Minify CSS files',
     'Minify JavaScript files',
     'Preload Links',
-    'RocketCDN',
+    'Content Delivery Network',
     'Optimize Critical Images',
     'Automatic Lazy Rendering',
     'Preload fonts',

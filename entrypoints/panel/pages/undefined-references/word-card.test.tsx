@@ -301,7 +301,7 @@ describe('WordCard — copy payload names the original path', () => {
     const note = document.querySelector('[data-fdt="combined-note"]');
     if (!note) throw new Error('no combined note rendered');
     expect(note.textContent).toBe(
-      "This script ships inside WP Rocket's combined JS bundle — per-file Delay exclusion is not available. The remedy is disabling Combine JS or excluding the original file in File Optimization."
+      "This script ships inside WP Rocket's combined JS bundle — per-file Delay exclusion is not available. The remedy is disabling Combine JS or excluding the original file in JavaScript & CSS."
     );
   });
 });

@@ -104,7 +104,7 @@ describe('the HUD registry shape', () => {
       image_dimensions: 'Image Dimensions',
       self_hosted_fonts: 'Self-host Google Fonts',
       preload_links: 'Preload Links',
-      rocket_cdn: 'RocketCDN',
+      rocket_cdn: 'CDN',
       rocket_above_the_fold_optimization: 'Critical Images',
       automatic_lazy_rendering: 'Automatic Lazy Rendering',
       auto_preload_fonts: 'Preload Fonts',
@@ -142,10 +142,10 @@ describe('hudGroupedFeatures', () => {
   it('renders the groups in order, rows in registry order, every row exactly once', () => {
     const grouped = hudGroupedFeatures();
     expect(grouped.map((group) => group.heading)).toEqual([
-      'File Optimization',
-      'Media',
+      'JavaScript & CSS',
+      'Image & Media',
       'Preload',
-      'CDN',
+      'Content Delivery',
       'Features'
     ]);
     expect(grouped.map((group) => group.id)).toEqual(HUD_GROUPS.map((group) => group.id));

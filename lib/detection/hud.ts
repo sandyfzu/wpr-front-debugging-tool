@@ -43,27 +43,28 @@ import {
   LABEL_PRELOAD_FONTS,
   LABEL_PRELOAD_LINKS,
   LABEL_REMOVE_UNUSED_CSS,
-  LABEL_ROCKETCDN,
+  LABEL_CDN,
   LABEL_SELF_HOST_GOOGLE_FONTS,
   SHORT_LABEL_DEFER_JS,
   SHORT_LABEL_DELAY_JS
 } from './labels';
 
 /**
- * The feature groups, in render order. The first four are the plugin's own
- * settings vocabulary; `features` holds the Priority Elements family — the
- * four beacon-measured optimizations, grouped by how they work rather than
- * by settings page (Preload fonts is a Media › Fonts field; the other three
- * have no settings field at all).
+ * The feature groups, in render order. The first four headings are the
+ * plugin's settings section titles (the ids are this module's own);
+ * `features` holds the Priority Elements family — the four beacon-measured
+ * optimizations, grouped by how they work rather than by settings page
+ * (Preload fonts is an Image & Media › Fonts field; the other three have no
+ * settings field at all).
  */
 export type HudGroupId = 'file-optimization' | 'media' | 'preload' | 'cdn' | 'features';
 
 /** One group's heading, in render order. */
 export const HUD_GROUPS: readonly { readonly id: HudGroupId; readonly heading: string }[] = [
-  { id: 'file-optimization', heading: 'File Optimization' },
-  { id: 'media', heading: 'Media' },
+  { id: 'file-optimization', heading: 'JavaScript & CSS' },
+  { id: 'media', heading: 'Image & Media' },
   { id: 'preload', heading: 'Preload' },
-  { id: 'cdn', heading: 'CDN' },
+  { id: 'cdn', heading: 'Content Delivery' },
   { id: 'features', heading: 'Features' }
 ];
 
@@ -213,8 +214,8 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   },
   {
     row: 'rocket_cdn',
-    label: LABEL_ROCKETCDN,
-    shortLabel: 'RocketCDN',
+    label: LABEL_CDN,
+    shortLabel: 'CDN',
     group: 'cdn',
     unit: null,
     count: null,

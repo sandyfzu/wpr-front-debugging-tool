@@ -50,7 +50,7 @@ export function copyFailedRemedy(pattern: string): string {
  * words give the working remedy instead.
  */
 export const COMBINED_EXCLUSION_NOTE =
-  "This script ships inside WP Rocket's combined JS bundle — per-file Delay exclusion is not available. The remedy is disabling Combine JS or excluding the original file in File Optimization.";
+  "This script ships inside WP Rocket's combined JS bundle — per-file Delay exclusion is not available. The remedy is disabling Combine JS or excluding the original file in JavaScript & CSS.";
 
 /** Props of {@link ExclusionCopyButton}. */
 export interface ExclusionCopyButtonProps {
