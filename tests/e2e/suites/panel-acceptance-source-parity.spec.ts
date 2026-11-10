@@ -427,7 +427,11 @@ const PORT_NAME_DELTAS: Readonly<Record<string, string>> = {
   'Lazyload for CSS background images': 'LazyLoad CSS backgrounds',
   // The merged CSS-delivery card: the settings field's own casing
   // (WP Rocket 3.23.5.1 settings page, "Optimize CSS delivery").
-  'Optimize CSS Delivery': 'Optimize CSS delivery'
+  'Optimize CSS Delivery': 'Optimize CSS delivery',
+  // The row is decided by `wpr_cdn`, which any CDN set in WP Rocket emits, so
+  // the port names it after the 3.24 settings field ("Enable Content Delivery
+  // Network" minus its verb) instead of the RocketCDN product.
+  RocketCDN: 'Content Delivery Network'
 };
 
 sourceTest.describe('source-build parity over one served fixture', () => {
