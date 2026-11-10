@@ -28,6 +28,7 @@ export {
   MAX_REPRESENTABLE_MS
 };
 import {
+  BEACON_STATUS_KEY_LABELS,
   LABEL_ADD_MISSING_IMAGE_DIMENSIONS,
   LABEL_AUTOMATIC_LAZY_RENDERING,
   LABEL_COMBINE_JAVASCRIPT,
@@ -104,14 +105,6 @@ export interface PageAnalysisReport {
     'enabled features': string[];
   };
 }
-
-/** Real names for the four beacon-served features, keyed by the plugin's own config ids. */
-const FAMILY_FEATURE_NAMES: Record<(typeof BEACON_STATUS_KEYS)[number], string> = {
-  atf: LABEL_OPTIMIZE_CRITICAL_IMAGES,
-  lrc: LABEL_AUTOMATIC_LAZY_RENDERING,
-  preload_fonts: LABEL_PRELOAD_FONTS,
-  preconnect_external_domain: LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS
-};
 
 /** The state of a plain markup-evidence optimization: the evidence is the answer. */
 function simpleState(present: boolean): FeatureState {
@@ -194,7 +187,7 @@ export function describeDetections(
     status === null
       ? []
       : BEACON_STATUS_KEYS.filter((key) => status[key] === true).map(
-          (key) => FAMILY_FEATURE_NAMES[key]
+          (key) => BEACON_STATUS_KEY_LABELS[key]
         );
   return {
     [LABEL_WP_ROCKET]: {

@@ -220,6 +220,9 @@ function parseJsLiteral(text: string): unknown {
     for (;;) {
       skipWs();
       const key = parseKey();
+      // Assigning `__proto__` would set the object's prototype instead of a
+      // key (hiding its values from every field check): never plugin output.
+      if (key === '__proto__') fail('__proto__ key');
       skipWs();
       if (text.charAt(pos) !== ':') fail('expected :');
       pos += 1;
@@ -357,11 +360,44 @@ function parseJsLiteral(text: string): unknown {
   return value;
 }
 
-/** An array of non-empty strings within the payload-list caps, rebuilt fresh. */
+/**
+ * A list key PHP emits for a list with holes: a canonical non-negative
+ * integer (no sign, no leading zero), at most 15 digits so it converts to a
+ * number exactly.
+ */
+const LIST_INDEX_KEY = /^(?:0|[1-9]\d{0,14})$/;
+
+/**
+ * A list field's entries in order. The plugin builds some lists with
+ * `array_filter`, which keeps the surviving keys, and `wp_json_encode` then
+ * writes a list with holes as an object (`{"0":"link","2":"iframe"}`): such
+ * an object reads as its values in numeric key order. An object with any
+ * other key, or over the list count cap, is no list.
+ *
+ * @param value The field's parsed value.
+ * @returns The entries (still unchecked), or null when the value is no list.
+ */
+function listEntries(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) return value as unknown[];
+  if (!isRecord(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.length > BEACON_CONFIG_LIMITS.lists.count) return null;
+  if (!keys.every((key) => LIST_INDEX_KEY.test(key))) return null;
+  return keys
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map((index) => value[String(index)]);
+}
+
+/**
+ * An array of non-empty strings within the payload-list caps, rebuilt fresh
+ * (a list with holes accepted, see {@link listEntries}).
+ */
 function parseBoundedStringList(value: unknown): string[] | null {
-  if (!Array.isArray(value) || value.length > BEACON_CONFIG_LIMITS.lists.count) return null;
+  const entries = listEntries(value);
+  if (entries === null || entries.length > BEACON_CONFIG_LIMITS.lists.count) return null;
   const list: string[] = [];
-  for (const item of value) {
+  for (const item of entries) {
     if (
       typeof item !== 'string' ||
       item.length < 1 ||

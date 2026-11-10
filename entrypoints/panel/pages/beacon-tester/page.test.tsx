@@ -127,7 +127,7 @@ function renderPage(
     saveDelayMs: 400,
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
   };
-  const handle = createBeaconTesterHandle(() => createBeaconTesterSession(deps));
+  const handle = createBeaconTesterHandle(() => createBeaconTesterSession(deps), state);
   const reload = options.reload === null ? null : (options.reload ?? vi.fn());
   const search = createSearchStore();
   render(() => (
@@ -502,5 +502,61 @@ describe('BeaconTesterPage — results', () => {
     expect(handle.tab()).toBe('lazy-render');
     expect(outcome()).not.toBeNull();
     expect(document.querySelectorAll('[data-fdt="beacon-lazy-row"]')).toHaveLength(2);
+  });
+});
+
+describe('BeaconTesterPage — instructions card', () => {
+  /** A payload carrying a readable beacon config. */
+  const withBeacon = (page: string) => {
+    const data = makeFdtData({ scriptSnapshotId: page });
+    return makeFdtData({
+      scriptSnapshotId: page,
+      wprDetections: {
+        ...data.wprDetections,
+        priority_elements_beacon: {
+          present: true,
+          status: { atf: true },
+          isMobile: true,
+          elements: 'img, picture'
+        }
+      }
+    });
+  };
+
+  it('sits above the run card, with the calm line on a page without the beacon', async () => {
+    renderPage();
+    await settle();
+    const instructions = document.querySelector('[data-fdt="beacon-instructions"]');
+    const runCard = document.querySelector('[data-fdt="beacon-run"]');
+    if (instructions === null || runCard === null) throw new Error('missing card');
+    expect(
+      instructions.compareDocumentPosition(runCard) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0);
+    expect(instructions.getAttribute('data-fdt-beacon-instructions')).toBe('none');
+  });
+
+  it('follows the page and keeps its expansion, the tab and the run across a refresh', async () => {
+    const { handle, setState } = renderPage();
+    await settle();
+    await run();
+    handle.setTab('lazy-render');
+    setState({ status: 'ready', data: withBeacon('page-1'), fetchedAt: 1 });
+    const summary = () =>
+      document.querySelector('[data-fdt-beacon-instructions-summary]')?.textContent;
+    expect(summary()).toBe('1 of 4 features on · Mobile');
+    handle.instructions.setExpanded(true);
+    setState({ status: 'refreshing', data: withBeacon('page-1'), requestedAt: 2 });
+    setState({ status: 'ready', data: withBeacon('page-1'), fetchedAt: 3 });
+    expect(handle.instructions.expanded()).toBe(true);
+    expect(document.querySelector('[data-fdt-beacon-instructions-details]')).not.toBeNull();
+    expect(handle.tab()).toBe('lazy-render');
+    expect(outcome()).not.toBeNull();
+    // A navigation to a load without the beacon: the earlier instructions read stale.
+    setState({ status: 'ready', data: makeFdtData({ scriptSnapshotId: 'page-2' }), fetchedAt: 4 });
+    expect(
+      document
+        .querySelector('[data-fdt="beacon-instructions"]')
+        ?.getAttribute('data-fdt-beacon-instructions')
+    ).toBe('stale');
   });
 });

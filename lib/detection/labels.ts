@@ -12,6 +12,8 @@
  * plugin's own naming is the final authority for feature names.
  */
 
+import type { BEACON_STATUS_KEYS } from '../wp-rocket/constants';
+
 /** The report's identity row (the plugin itself, the header's subject). */
 export const LABEL_WP_ROCKET = 'WP Rocket';
 
@@ -80,6 +82,19 @@ export const LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS = 'Preconnect to External Doma
  * user-facing feature for it; "Priority Elements" is its documentation term).
  */
 export const LABEL_PRIORITY_ELEMENTS_BEACON = 'Priority Elements beacon';
+
+/**
+ * The beacon config's status keys by feature name: the plugin keys its
+ * features by these ids, every surface shows them by name.
+ */
+export const BEACON_STATUS_KEY_LABELS: Readonly<
+  Record<(typeof BEACON_STATUS_KEYS)[number], string>
+> = {
+  atf: LABEL_OPTIMIZE_CRITICAL_IMAGES,
+  lrc: LABEL_AUTOMATIC_LAZY_RENDERING,
+  preload_fonts: LABEL_PRELOAD_FONTS,
+  preconnect_external_domain: LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS
+};
 
 /**
  * Compact names where space or a list of several features calls for them

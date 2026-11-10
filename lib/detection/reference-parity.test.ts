@@ -1,7 +1,7 @@
 /**
  * Direct port-vs-reference parity for the crafted edges the fixture corpus
- * cannot express: strict cache timestamps, white-label footers and the Delay
- * row's key order. `toEqual` alone ignores property order, so the key-order
+ * cannot express: strict cache timestamps, white-label footers, the Delay
+ * row's key order and the beacon config's list shapes. `toEqual` alone ignores property order, so the key-order
  * assertion is explicit.
  */
 import { readFileSync } from 'node:fs';
@@ -184,6 +184,36 @@ describe('port ≡ reference: served script URL on delayed tags', () => {
       const port = runDetection(html).detections;
       const reference = runReferenceDetection(html).wprDetections;
       for (const row of rows) expect(port[row], row).toEqual(reference[row]);
+    });
+  }
+});
+
+describe('port ≡ reference: beacon config lists with holes', () => {
+  const lists: [title: string, value: unknown][] = [
+    ['an array', ['link', 'script']],
+    ['holes', { '0': 'link', '2': 'iframe' }],
+    ['numeric order', { '10': 'woff', '2': 'woff2' }],
+    ['empty object', {}],
+    ['a named key', { '0': 'link', a: 'script' }],
+    ['a padded key', { '01': 'link' }],
+    ['a non-string item', { '0': 'link', '1': 5 }]
+  ];
+  for (const [title, value] of lists) {
+    it(title, () => {
+      const config = JSON.stringify({ status: { atf: true }, processed_extensions: value });
+      const html = `<!doctype html><html><head></head><body><script>var rocket_beacon_data = ${config}</script><script data-name="wpr-wpr-beacon" src="/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js" async></script></body></html>`;
+      expect(runDetection(html).detections.priority_elements_beacon).toEqual(
+        runReferenceDetection(html).wprDetections.priority_elements_beacon
+      );
+    });
+  }
+  for (const list of ["{__proto__: {'0': 'x'}}", "{__proto__: {'0': 'x'}, '1': 'a'}"]) {
+    it(`literal ${list}`, () => {
+      const html = `<!doctype html><html><head></head><body><script>var rocket_beacon_data = {status: {atf: true}, processed_extensions: ${list}};</script><script data-name="wpr-wpr-beacon" src="/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js" async></script></body></html>`;
+      const port = runDetection(html).detections.priority_elements_beacon;
+      expect(port).toEqual(runReferenceDetection(html).wprDetections.priority_elements_beacon);
+      // The beacon tag stays the evidence; the hostile config degrades wholesale.
+      expect(port).toMatchObject({ present: true, status: null });
     });
   }
 });
