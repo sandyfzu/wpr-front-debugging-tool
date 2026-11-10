@@ -17,7 +17,8 @@ function asksAnswering(answer: Promise<unknown>): TabAsks {
     runLcpAnalysis: vi.fn(() => Promise.resolve(null)),
     getScriptRuntimeStatuses: vi.fn(() => Promise.resolve(null)),
     getCurrentVisitVitals: vi.fn(() => Promise.resolve(null)),
-    listPageStyles: vi.fn(() => Promise.resolve(null))
+    listPageStyles: vi.fn(() => Promise.resolve(null)),
+    listPageStylesheets: vi.fn(() => Promise.resolve(null))
   };
 }
 

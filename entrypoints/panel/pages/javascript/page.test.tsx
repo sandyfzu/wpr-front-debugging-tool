@@ -991,7 +991,8 @@ describe('JavaScriptView — complete snapshot copy', () => {
       runLcpAnalysis: () => Promise.resolve(null),
       getScriptRuntimeStatuses: () => Promise.resolve(null),
       getCurrentVisitVitals: () => Promise.resolve(null),
-      listPageStyles: () => Promise.resolve(null)
+      listPageStyles: () => Promise.resolve(null),
+      listPageStylesheets: () => Promise.resolve(null)
     };
     const relayed: TabRelayRequest[] = [];
     const reader = createSourceChunkReader({

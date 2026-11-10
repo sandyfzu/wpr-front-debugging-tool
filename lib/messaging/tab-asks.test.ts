@@ -70,6 +70,11 @@ describe('the direct transport (the Chromium path)', () => {
     expect(sendMessage.mock.calls).toEqual([
       ['listPageStyles', undefined, { tabId: 12, frameId: 0 }]
     ]);
+    sendMessage.mockClear();
+    await DIRECT_TAB_ASKS.listPageStylesheets(12);
+    expect(sendMessage.mock.calls).toEqual([
+      ['listPageStylesheets', undefined, { tabId: 12, frameId: 0 }]
+    ]);
   });
 
   it('forwards an absent tab as-is (the send fails as the no-receiver case)', async () => {

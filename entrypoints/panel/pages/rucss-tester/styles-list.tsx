@@ -18,11 +18,12 @@ import { EmptyState } from '../../../../components/ui/empty-state';
 import { ErrorState } from '../../../../components/ui/error-state';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
-import type { AskOutcome } from '../../../../lib/messaging/bounded-ask';
 import type { PageStyleEntry, PageStylesReply } from '../../../../lib/messaging/page-styles';
+import { styleIdentity } from '../../../../lib/panel/style-identity';
 import { RUCSS_RESULT_STYLE_ID } from '../../../../lib/rucss-tester/run-plan';
 import { cn } from '../../../../utils/cn';
 import { countLabel, formatCount } from '../../../../utils/format-count';
+import { PAGE_ASK_MISS_COPY } from '../page-ask-miss';
 import { PAGE_FILL_SCROLLER } from '../page-frame';
 import type { InventoryState } from './session';
 
@@ -35,16 +36,6 @@ export const INVENTORY_IDLE = {
   description:
     'Lists every inline style and stylesheet link on the page now — the ones a test removes or keeps.'
 } as const;
-
-/** Why a read got no inventory, per miss. */
-export const INVENTORY_MISS_COPY: Readonly<
-  Record<Exclude<AskOutcome<unknown>['kind'], 'reply'>, string>
-> = {
-  'no-receiver': 'The extension is not active on this page yet — reload it, then retry.',
-  timeout: "The page didn't answer in time. Retry; reload the page if it keeps happening.",
-  'invalid-reply': 'The page runs another version of the extension — reload it, then retry.',
-  failed: 'Asking the page failed — reload it, then retry.'
-};
 
 /**
  * The inventory's counts line.
@@ -59,22 +50,6 @@ export function inventorySummary(reply: PageStylesReply): string {
   const cut =
     reply.total > reply.styles.length ? ` (first ${formatCount(reply.styles.length)} listed)` : '';
   return `${head}${cut} · ${formatCount(inline)} inline · ${countLabel(links, { one: 'stylesheet link', other: 'stylesheet links' })}`;
-}
-
-/**
- * One style's identity line: `#id`, `.class` tokens, or nothing.
- *
- * @param style The entry.
- * @returns The selector-like identity, or the empty string.
- */
-export function styleIdentity(style: PageStyleEntry): string {
-  const id = style.id === '' ? '' : `#${style.id}`;
-  const classes = style.className
-    .split(/\s+/)
-    .filter((token) => token !== '')
-    .map((token) => `.${token}`)
-    .join('');
-  return `${id}${classes}`;
 }
 
 /**
@@ -176,7 +151,7 @@ export function StylesList(props: StylesListProps): JSX.Element {
           {(miss) => (
             <ErrorState
               title="Couldn't read the page's styles"
-              message={INVENTORY_MISS_COPY[miss()]}
+              message={PAGE_ASK_MISS_COPY[miss()]}
               onRetry={props.onInspect}
             />
           )}
