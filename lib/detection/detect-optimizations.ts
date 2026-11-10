@@ -34,8 +34,6 @@ import {
   LAZYLOAD_IMG_OPTIONS_PATTERN,
   LAZYLOAD_SCRIPT_PATTERN,
   LAZYLOAD_YOUTUBE_PATTERN,
-  MINIFY_CSS_URL_PATTERN,
-  MINIFY_JS_URL_PATTERN,
   PRELOAD_LINKS_CONFIG_MARK,
   PRELOAD_LINKS_SCRIPT_ID,
   ROCKET_CDN_DOMAIN,
@@ -47,6 +45,7 @@ import {
   isDelayJSType
 } from '../wp-rocket/constants';
 import type { ParsedPage } from './parse-page';
+import { carriesMinifyAttribute, hasMinifyFootprint } from './minify-footprint';
 import { servedScriptSrc, servedScriptSrcAttribute } from './served-script-src';
 
 /** Remove Unused CSS: an inline `style` element with the reserved id. */
@@ -96,8 +95,8 @@ export function detectDelayJs(page: ParsedPage): WprDetections['delay_js'] {
     // evidence even when the controller itself was inlined/rewritten away.
     if (script.hasAttribute(DATA_ROCKET_STATUS)) delayJs.present = true;
     // Field insertion order matches the reference record exactly (delayed,
-    // inline, then src/content, then defer markers) so serialized payloads
-    // compare key-for-key.
+    // inline, then src/content, then defer markers, the exclusion marker and
+    // the minify stamp) so serialized payloads compare key-for-key.
     const delayed = isDelayJSType(script.getAttribute('type'));
     const srcSource = delayed ? script.getAttribute(DELAY_JS_SRC) : script.getAttribute('src');
     const record: DelayedScriptRecord = {
@@ -106,7 +105,8 @@ export function detectDelayJs(page: ParsedPage): WprDetections['delay_js'] {
       ...(srcSource === null ? { content: script.textContent } : { src: srcSource }),
       deferred: script.hasAttribute('defer'),
       deferredByWPR: script.hasAttribute(WPR_DEFER_ATTRIBUTE),
-      fdtExcluded: script.getAttribute(FDT_EXCLUDED_RESOURCE)
+      fdtExcluded: script.getAttribute(FDT_EXCLUDED_RESOURCE),
+      minifyAttribute: carriesMinifyAttribute(script)
     };
     if (delayed) {
       delayJs.present = true;
@@ -216,28 +216,22 @@ export function detectLazyloadIframes(page: ParsedPage): WprDetections['lazyload
   return { present, replaceImage: present && extraFound };
 }
 
-/** Minify CSS: `cache/min/<n>/<hash>…css` stylesheet URLs. */
+/**
+ * Minify CSS: `cache/min/<n>/<hash>…css` stylesheet URLs. The URL arm only —
+ * an attribute-only stylesheet is resolved later by the orchestrator's proof
+ * guard (the attribute alone never proves WP Rocket).
+ */
 export function detectMinifyCss(page: ParsedPage): WprDetections['minify_css'] {
-  const present = page.links.some((link) => {
-    if (link.getAttribute('rel') !== 'stylesheet') return false;
-    return MINIFY_CSS_URL_PATTERN.test(link.href);
-  });
-  return { present };
+  return { present: hasMinifyFootprint(page, 'minify_css', 'url') };
 }
 
 /**
  * Minify JS: `cache/min/<n>/<hash>…js` script URLs (resolved, served — Delay
- * JS delays minified files unless an exclusion row matches them).
+ * JS delays minified files unless an exclusion row matches them). The URL
+ * arm only, as Minify CSS.
  */
 export function detectMinifyJs(page: ParsedPage): WprDetections['minify_js'] {
-  // The engines' falsy gate, kept for exact parity: an empty served URL
-  // never runs the URL check (which would otherwise resolve against the
-  // document's own URL).
-  const present = page.scripts.some((script) => {
-    if (!servedScriptSrcAttribute(script)) return false;
-    return MINIFY_JS_URL_PATTERN.test(servedScriptSrc(script));
-  });
-  return { present };
+  return { present: hasMinifyFootprint(page, 'minify_js', 'url') };
 }
 
 /**

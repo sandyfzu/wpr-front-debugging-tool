@@ -1,0 +1,104 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": false,
+      "cacheMarkerFound": false,
+      "cached": false,
+      "version": null,
+      "timeStamp": null
+    },
+    "remove_unused_css": {
+      "present": false
+    },
+    "async_css": {
+      "present": false
+    },
+    "delay_js": {
+      "present": false,
+      "scripts": [
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://moved-root.example/wp-content/wpr-files/min/1/wp-content/themes/twentytwentyfive/assets/js/navigation.js?ver=1791299187",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null,
+          "minifyAttribute": true
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://moved-root.example/wp-content/plugins/slider/slider.js?ver=2.1",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null,
+          "minifyAttribute": false
+        }
+      ],
+      "version": null,
+      "delayedScripts": 0
+    },
+    "defer_all_js": {
+      "present": true,
+      "scripts": ["https://moved-root.example/wp-content/plugins/slider/slider.js?ver=2.1"],
+      "deferredScripts": 1,
+      "source": "footprint"
+    },
+    "lazyload": {
+      "present": false,
+      "images": []
+    },
+    "lazyload_iframes": {
+      "present": false,
+      "replaceImage": false
+    },
+    "lazyload_css_bg_img": {
+      "present": false
+    },
+    "self_hosted_fonts": {
+      "present": false
+    },
+    "image_dimensions": {
+      "present": false
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": false,
+      "lcpComment": false
+    },
+    "automatic_lazy_rendering": {
+      "present": false,
+      "lazyRenderElements": 0,
+      "inlineCssPresent": false,
+      "locationHashes": 0
+    },
+    "auto_preload_fonts": {
+      "present": false,
+      "fonts": []
+    },
+    "preconnect_external_domains": {
+      "present": false,
+      "domains": [],
+      "preconnectCount": 0
+    },
+    "priority_elements_beacon": {
+      "present": false,
+      "status": null,
+      "isMobile": null
+    },
+    "minify_css": {
+      "present": false
+    },
+    "minify_js": {
+      "present": false
+    },
+    "preload_links": {
+      "present": false
+    },
+    "rocket_cdn": {
+      "present": false
+    }
+  },
+  "preloadedResources": {
+    "present": false
+  }
+}

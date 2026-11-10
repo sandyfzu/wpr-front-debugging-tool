@@ -119,7 +119,8 @@ function scriptRecord(random: () => number, index: number): DelayedScriptRecord 
         }),
     deferred: !inline && (deferredByWPR || random() < 0.18),
     deferredByWPR,
-    fdtExcluded: excluded ? exclusion : null
+    fdtExcluded: excluded ? exclusion : null,
+    minifyAttribute: false
   };
   return record;
 }
@@ -158,7 +159,8 @@ export function generatePerfFixture(seed = 6_003): FdtData {
       'class RocketLazyLoadScripts{constructor(){this.v="2.0.4",this.userEvents=["keydown","keyup","mousedown","mousemove","touchmove","touchstart","touchend","wheel"]}}',
     deferred: false,
     deferredByWPR: false,
-    fdtExcluded: null
+    fdtExcluded: null,
+    minifyAttribute: false
   };
   const scripts = [
     controller,

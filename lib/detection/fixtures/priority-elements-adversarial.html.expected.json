@@ -22,7 +22,8 @@
           "content": "var rocket_beacon_data = {\"ajax_url\":\"https:\\/\\/example.com\\/wp-admin/admin-ajax.php\",\"nonce\":\"corrupted",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -30,7 +31,8 @@
           "src": "https://example.com/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         }
       ],
       "version": null,

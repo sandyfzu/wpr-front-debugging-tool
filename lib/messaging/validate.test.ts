@@ -323,6 +323,8 @@ describe('parseWprDetections', () => {
       deferred: false,
       deferredByWPR: false,
       fdtExcluded: null,
+      // Absent additive field: read as false (tolerant), never rejected.
+      minifyAttribute: false,
       content: 'x'
     });
   });

@@ -705,12 +705,19 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
     if (typeof deferredByWPR !== 'boolean') return reject('scripts', at(index), 'deferredByWPR');
     if (fdtExcluded !== null && typeof fdtExcluded !== 'string')
       return reject('scripts', at(index), 'fdtExcluded');
+    // Additive field: a producer that predates it never saw the stamp, so
+    // absent reads as `false`; any other non-boolean (`null` too) rejects.
+    const rawMinifyAttribute = item['minifyAttribute'];
+    const minifyAttribute = rawMinifyAttribute === undefined ? false : rawMinifyAttribute;
+    if (typeof minifyAttribute !== 'boolean')
+      return reject('scripts', at(index), 'minifyAttribute');
     const record: WprDetections['delay_js']['scripts'][number] = {
       delayed,
       inline,
       deferred,
       deferredByWPR,
-      fdtExcluded
+      fdtExcluded,
+      minifyAttribute
     };
     if (src !== undefined) record.src = src;
     if (content !== undefined) record.content = content;

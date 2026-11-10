@@ -209,6 +209,15 @@ const MINIFIED_CACHE_URL_SOURCE = `(.*)${MINIFY_CACHE_DIR_SOURCE}[a-zA-Z0-9_](.*
 export const MINIFY_CSS_URL_PATTERN = new RegExp(`${MINIFIED_CACHE_URL_SOURCE}css(.*)`);
 /** Minify JS: script URLs under the minify cache. */
 export const MINIFY_JS_URL_PATTERN = new RegExp(`${MINIFIED_CACHE_URL_SOURCE}js(.*)`);
+/**
+ * The attribute Minify CSS/JS (and the Combine JS bundle) stamps on every tag
+ * it rewrote. It survives a site-moved cache root that the URL patterns miss,
+ * but any page can write it — so detection counts it only once other
+ * evidence proved WP Rocket on the page.
+ */
+export const MINIFY_ATTRIBUTE = 'data-minify';
+/** The one value WP Rocket writes for {@link MINIFY_ATTRIBUTE}; any other value never counts. */
+export const MINIFY_ATTRIBUTE_VALUE = '1';
 
 /** Preload links: the options blob script WP Rocket prints for the feature. */
 export const PRELOAD_LINKS_SCRIPT_ID = 'rocket-preload-links-js-extra';

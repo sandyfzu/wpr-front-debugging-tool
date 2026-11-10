@@ -1,0 +1,121 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": true,
+      "cacheMarkerFound": false,
+      "cached": false,
+      "version": null,
+      "timeStamp": null
+    },
+    "remove_unused_css": {
+      "present": false
+    },
+    "async_css": {
+      "present": false
+    },
+    "delay_js": {
+      "present": false,
+      "scripts": [
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://moved-root.example/wp-content/wpr-files/min/1/wp-content/themes/twentytwentyfive/assets/js/navigation.js?ver=1791299187",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null,
+          "minifyAttribute": true
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "window.lazyLoadOptions=[{elements_selector:\"img[data-lazy-src],.rocket-lazyload\",data_src:\"lazy-src\",data_srcset:\"lazy-srcset\",data_sizes:\"lazy-sizes\",class_loading:\"lazyloading\",class_loaded:\"lazyloaded\",threshold:300,callback_loaded:function(element){if(element.tagName===\"IFRAME\"&&element.dataset.rocketLazyload==\"fitvidscompatible\"){if(element.classList.contains(\"lazyloaded\")){if(typeof window.jQuery!=\"undefined\"){if(jQuery.fn.fitVids){jQuery(element).parent().fitVids()}}}}}}];window.addEventListener('LazyLoad::Initialized',function(e){var lazyLoadInstance=e.detail.instance;if(window.MutationObserver){var observer=new MutationObserver(function(mutations){var image_count=0;var iframe_count=0;var rocketlazy_count=0;mutations.forEach(function(mutation){for(var i=0;i<mutation.addedNodes.length;i++){if(typeof mutation.addedNodes[i].getElementsByTagName!=='function'){continue}\nif(typeof mutation.addedNodes[i].getElementsByClassName!=='function'){continue}\nimages=mutation.addedNodes[i].getElementsByTagName('img');is_image=mutation.addedNodes[i].tagName==\"IMG\";iframes=mutation.addedNodes[i].getElementsByTagName('iframe');is_iframe=mutation.addedNodes[i].tagName==\"IFRAME\";rocket_lazy=mutation.addedNodes[i].getElementsByClassName('rocket-lazyload');image_count+=images.length;iframe_count+=iframes.length;rocketlazy_count+=rocket_lazy.length;if(is_image){image_count+=1}\nif(is_iframe){iframe_count+=1}}});if(image_count>0||iframe_count>0||rocketlazy_count>0){lazyLoadInstance.update()}});var b=document.getElementsByTagName(\"body\")[0];var config={childList:!0,subtree:!0};observer.observe(b,config)}},!1)",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null,
+          "minifyAttribute": false
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://moved-root.example/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null,
+          "minifyAttribute": false
+        }
+      ],
+      "version": null,
+      "delayedScripts": 0
+    },
+    "defer_all_js": {
+      "present": false,
+      "scripts": [],
+      "deferredScripts": 0
+    },
+    "lazyload": {
+      "present": true,
+      "images": [
+        {
+          "src": "https://moved-root.example/wp-content/uploads/2026/10/hero.jpg",
+          "lazyloadDetected": true,
+          "excludedReasonsFound": []
+        }
+      ],
+      "source": "footprint"
+    },
+    "lazyload_iframes": {
+      "present": false,
+      "replaceImage": false
+    },
+    "lazyload_css_bg_img": {
+      "present": false
+    },
+    "self_hosted_fonts": {
+      "present": false
+    },
+    "image_dimensions": {
+      "present": false
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": false,
+      "lcpComment": false
+    },
+    "automatic_lazy_rendering": {
+      "present": false,
+      "lazyRenderElements": 0,
+      "inlineCssPresent": false,
+      "locationHashes": 0
+    },
+    "auto_preload_fonts": {
+      "present": false,
+      "fonts": []
+    },
+    "preconnect_external_domains": {
+      "present": false,
+      "domains": [],
+      "preconnectCount": 0
+    },
+    "priority_elements_beacon": {
+      "present": false,
+      "status": null,
+      "isMobile": null
+    },
+    "minify_css": {
+      "present": true,
+      "source": "footprint"
+    },
+    "minify_js": {
+      "present": true,
+      "source": "footprint"
+    },
+    "preload_links": {
+      "present": false
+    },
+    "rocket_cdn": {
+      "present": false
+    }
+  },
+  "preloadedResources": {
+    "present": false
+  }
+}

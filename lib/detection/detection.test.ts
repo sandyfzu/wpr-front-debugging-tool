@@ -268,6 +268,7 @@ describe('detectDelayJs', () => {
         deferred: false,
         deferredByWPR: false,
         fdtExcluded: null,
+        minifyAttribute: false,
         content: 'var RocketLazyLoadScripts=function(){this.v="3.20.6"};'
       },
       {
@@ -276,6 +277,7 @@ describe('detectDelayJs', () => {
         deferred: false,
         deferredByWPR: false,
         fdtExcluded: null,
+        minifyAttribute: false,
         src: '/old.js'
       },
       {
@@ -284,6 +286,7 @@ describe('detectDelayJs', () => {
         deferred: true,
         deferredByWPR: false,
         fdtExcluded: null,
+        minifyAttribute: false,
         src: '/plain.js'
       },
       {
@@ -292,8 +295,36 @@ describe('detectDelayJs', () => {
         deferred: false,
         deferredByWPR: false,
         fdtExcluded: null,
+        minifyAttribute: false,
         content: 'var inline = true;'
       }
+    ]);
+  });
+
+  it('stamps the minify attribute per script, exact "1" only, delayed tags included', () => {
+    const result = detectDelayJs(
+      page(
+        `<script data-minify="1" src="/a.js"></script>
+        <script type="rocketlazyloadscript" data-minify="1" data-rocket-src="/b.js"></script>
+        <script data-minify="1">var inline = 1;</script>
+        <script data-minify="" src="/c.js"></script>
+        <script data-minify="0" src="/d.js"></script>
+        <script data-minify="true" src="/e.js"></script>
+        <script data-minify src="/f.js"></script>
+        <script data-no-minify="1" src="/g.js"></script>
+        <script src="/h.js"></script>`
+      )
+    );
+    expect(result.scripts.map((script) => script.minifyAttribute)).toEqual([
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
     ]);
   });
 

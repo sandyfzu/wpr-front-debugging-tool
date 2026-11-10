@@ -22,7 +22,8 @@
           "content": "var rocket_beacon_data = {\"ajax_url\":\"https:\\/\\/example.com\\/wp-admin\\/admin-ajax.php\",\"nonce\":\"55aa77bb\",\"url\":\"https:\\/\\/example.com\\/long-page\\/\",\"is_mobile\":false,\"width_threshold\":1600,\"height_threshold\":700,\"delay\":500,\"debug\":false,\"lrc_threshold\":1800,\"status\":{\"atf\":true,\"lrc\":true,\"preload_fonts\":true,\"preconnect_external_domain\":true},\"elements\":\"img, video, picture, p, main, div, li, svg, section, header, span\"}",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -30,7 +31,8 @@
           "src": "https://example.com/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         }
       ],
       "version": null,

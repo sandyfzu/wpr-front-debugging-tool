@@ -35,7 +35,8 @@ function plantedPage(pageHeaders: FdtData['pageHeaders']): FdtData {
             delayed: true,
             deferred: false,
             deferredByWPR: false,
-            fdtExcluded: null
+            fdtExcluded: null,
+            minifyAttribute: false
           })),
           {
             inline: false,
@@ -43,7 +44,8 @@ function plantedPage(pageHeaders: FdtData['pageHeaders']): FdtData {
             delayed: true,
             deferred: false,
             deferredByWPR: true,
-            fdtExcluded: null
+            fdtExcluded: null,
+            minifyAttribute: false
           }
         ]
       },
@@ -89,7 +91,8 @@ describe('redactPageDataForExport', () => {
         delayed: true,
         deferred: false,
         deferredByWPR: false,
-        fdtExcluded: null
+        fdtExcluded: null,
+        minifyAttribute: false
       }))
     );
     // An external script keeps its src (reduced) and every flag, no content key.
@@ -99,7 +102,8 @@ describe('redactPageDataForExport', () => {
       delayed: true,
       deferred: false,
       deferredByWPR: true,
-      fdtExcluded: null
+      fdtExcluded: null,
+      minifyAttribute: false
     });
     expect(EXPORT_REDACTION_NOTICE.note).toContain('inline script bodies are withheld');
   });
@@ -250,7 +254,8 @@ describe('export cost', () => {
       delayed: true,
       deferred: false,
       deferredByWPR: false,
-      fdtExcluded: null
+      fdtExcluded: null,
+      minifyAttribute: false
     }));
     const data: FdtData = {
       ...base,

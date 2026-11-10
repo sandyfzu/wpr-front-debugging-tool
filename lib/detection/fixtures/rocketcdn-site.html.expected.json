@@ -24,7 +24,8 @@
           "content": "document.documentElement.className = 'js';",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -32,7 +33,8 @@
           "content": "\n\tvar gtm4wp_datalayer_name = \"dataLayer\";\n\tvar dataLayer = dataLayer || [];\n",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -40,7 +42,8 @@
           "content": "{\"@context\":\"https://schema.org\",\"@graph\":[{\"@type\":\"WebPage\",\"@id\":\"https://rocketcdn.me/\",\"url\":\"https://rocketcdn.me/\",\"name\":\"RocketCDN | Fast, Simple and Easy Content Delivery Network\",\"isPartOf\":{\"@id\":\"https://rocketcdn.me/#website\"},\"primaryImageOfPage\":{\"@id\":\"https://rocketcdn.me/#primaryimage\"},\"image\":{\"@id\":\"https://rocketcdn.me/#primaryimage\"},\"thumbnailUrl\":\"https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/enhancement.svg\",\"datePublished\":\"2021-10-09T13:21:16+00:00\",\"dateModified\":\"2025-06-28T03:57:04+00:00\",\"description\":\"Propel your content at the speed of light with RocketCDN! You’ll get automatic configuration and easy integration to reach your users worldwide.\",\"breadcrumb\":{\"@id\":\"https://rocketcdn.me/#breadcrumb\"},\"inLanguage\":\"en-US\",\"potentialAction\":[{\"@type\":\"ReadAction\",\"target\":[\"https://rocketcdn.me/\"]}]},{\"@type\":\"ImageObject\",\"inLanguage\":\"en-US\",\"@id\":\"https://rocketcdn.me/#primaryimage\",\"url\":\"https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/enhancement.svg\",\"contentUrl\":\"https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/enhancement.svg\"},{\"@type\":\"BreadcrumbList\",\"@id\":\"https://rocketcdn.me/#breadcrumb\",\"itemListElement\":[{\"@type\":\"ListItem\",\"position\":1,\"name\":\"Home\"}]},{\"@type\":\"WebSite\",\"@id\":\"https://rocketcdn.me/#website\",\"url\":\"https://rocketcdn.me/\",\"name\":\"RocketCDN\",\"description\":\"\",\"potentialAction\":[{\"@type\":\"SearchAction\",\"target\":{\"@type\":\"EntryPoint\",\"urlTemplate\":\"https://rocketcdn.me/?s={search_term_string}\"},\"query-input\":{\"@type\":\"PropertyValueSpecification\",\"valueRequired\":true,\"valueName\":\"search_term_string\"}}],\"inLanguage\":\"en-US\"}]}",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -48,7 +51,8 @@
           "content": "\n\tvar dataLayer_content = {\"pagePostType\":\"frontpage\",\"pagePostType2\":\"single-page\",\"pagePostAuthor\":\"jonathan\"};\n\tdataLayer.push( dataLayer_content );\n",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -56,7 +60,8 @@
           "content": "\n(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':\nnew Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],\nj=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=\n'//www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);\n})(window,document,'script','dataLayer','GTM-TJMKZZJ');\n",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -64,7 +69,8 @@
           "content": "\n{\"prefetch\":[{\"source\":\"document\",\"where\":{\"and\":[{\"href_matches\":\"/*\"},{\"not\":{\"href_matches\":[\"/wp-*.php\",\"/wp-admin/*\",\"/wp-content/uploads/*\",\"/wp-content/*\",\"/wp-content/plugins/*\",\"/wp-content/themes/v1/*\",\"/*\\\\?(.+)\"]}},{\"not\":{\"selector_matches\":\"a[rel~=\\\"nofollow\\\"]\"}},{\"not\":{\"selector_matches\":\".no-prefetch, .no-prefetch a\"}}]},\"eagerness\":\"conservative\"}]}\n",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -72,7 +78,8 @@
           "src": "https://rocketcdn.me/wp-includes/js/jquery/jquery.min.js?ver=3.7.1",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -80,7 +87,8 @@
           "src": "https://rocketcdn.me/wp-content/themes/v1/assets/js/blocks/pricing.min.js?ver=1790585966",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -88,7 +96,8 @@
           "src": "https://rocketcdn.me/wp-content/themes/v1/assets/js/scripts.min.js?ver=1790585966",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         }
       ],
       "version": null,

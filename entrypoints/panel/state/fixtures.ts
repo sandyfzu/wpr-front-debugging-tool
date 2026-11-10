@@ -75,6 +75,7 @@ export function makeDelayScript(
     deferred: false,
     deferredByWPR: false,
     fdtExcluded: null,
+    minifyAttribute: false,
     ...overrides
   };
 }

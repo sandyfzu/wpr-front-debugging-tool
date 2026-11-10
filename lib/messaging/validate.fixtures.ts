@@ -72,7 +72,8 @@ export function validDetections(): Record<string, unknown> {
           delayed: true,
           deferred: false,
           deferredByWPR: false,
-          fdtExcluded: null
+          fdtExcluded: null,
+          minifyAttribute: false
         }
       ],
       version: '2.0.4',

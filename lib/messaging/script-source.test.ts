@@ -10,6 +10,7 @@ function makeDelayScript(patch: Partial<DelayedScriptRecord>): DelayedScriptReco
     deferred: false,
     deferredByWPR: false,
     fdtExcluded: null,
+    minifyAttribute: false,
     ...patch
   };
 }

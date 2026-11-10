@@ -22,7 +22,8 @@
           "src": "/app.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -30,7 +31,8 @@
           "content": "\n      /* inline-only deferred */\n    ",
           "deferred": false,
           "deferredByWPR": true,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -38,7 +40,8 @@
           "src": "https://branches.example/wp-content/cache/min/7/app.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -46,7 +49,8 @@
           "content": "\n      var RocketPreloadLinksConfig = { a: 1 };\n    ",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -54,7 +58,8 @@
           "content": "\n      var b = RocketPreloadLinksConfig;\n    ",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         }
       ],
       "version": null,
