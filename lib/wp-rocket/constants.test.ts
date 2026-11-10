@@ -50,6 +50,8 @@ import {
   LAZY_RENDER_ATTRIBUTE,
   LAZY_RENDER_INLINE_CSS_ID,
   LOCATION_HASH_ATTRIBUTE,
+  MINIFY_ATTRIBUTE,
+  MINIFY_ATTRIBUTE_VALUE,
   MINIFY_CSS_URL_PATTERN,
   MINIFY_JS_URL_PATTERN,
   MAX_CACHE_STAMP_SECONDS,
@@ -359,6 +361,8 @@ describe('platforms and ids', () => {
     expect(DELAY_JS_SRC).toBe('data-rocket-src');
     expect(FDT_EXCLUDED_RESOURCE).toBe('data-wpr-fdt-excluded');
     expect(WPR_DEFER_ATTRIBUTE).toBe('data-rocket-defer');
+    expect(MINIFY_ATTRIBUTE).toBe('data-minify');
+    expect(MINIFY_ATTRIBUTE_VALUE).toBe('1');
     expect(INLINE_WRAP_OPEN).toBe("window.addEventListener('DOMContentLoaded', function() {");
     expect(INLINE_WRAP_CLOSE).toBe('});');
     expect(Object.values(PANEL_SEARCH_ACTIONS).sort()).toEqual(

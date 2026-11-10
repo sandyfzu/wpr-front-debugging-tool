@@ -36,7 +36,8 @@ function scripts(
       delayed: record.delayed ?? false,
       deferred: record.deferred ?? false,
       deferredByWPR: record.deferredByWPR ?? false,
-      fdtExcluded: record.fdtExcluded ?? null
+      fdtExcluded: record.fdtExcluded ?? null,
+      minifyAttribute: record.minifyAttribute ?? false
     }))
   };
 }

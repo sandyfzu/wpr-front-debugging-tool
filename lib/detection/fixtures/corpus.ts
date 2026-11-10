@@ -34,6 +34,10 @@ export const FIXTURES = [
   'adversarial-exclusion-tokens.html',
   // Real plugin pass: Delay JS on without a generator meta (served URLs).
   'delay-on-no-meta.html',
+  // Crafted minify stamp: a site-moved cache root proven by LazyLoad, and the
+  // stamp with no other proof (deferral alone does not count).
+  'minify-moved-cache-root.html',
+  'minify-attribute-only.html',
   // Crafted Priority-Elements states: pending (beacon + config), applied,
   // collecting, mixed, and the adversarial markup/degrade cases.
   'priority-elements-pending.html',

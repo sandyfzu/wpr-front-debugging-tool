@@ -63,6 +63,11 @@ export interface DelayedScriptRecord {
   deferredByWPR: boolean;
   /** Value of the local exclusion marker attribute, when present. */
   fdtExcluded: string | null;
+  /**
+   * The tag carries WP Rocket's minify stamp (`data-minify="1"`, exact) — a
+   * tag fact only: page-level Minify JS counts it under its proof guard.
+   */
+  minifyAttribute: boolean;
 }
 
 /** One image classified by the lazyload check. */

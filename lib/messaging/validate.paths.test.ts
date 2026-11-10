@@ -249,6 +249,23 @@ describe('parseWprDetections — rejection arms', () => {
     ).toBeNull();
   });
 
+  it('reads the minify stamp tolerantly: absent ⇒ false, booleans kept, anything else rejects', () => {
+    const payload = validDetections();
+    const delayRow = payload.delay_js as Record<string, unknown>;
+    const base = { inline: false, delayed: true, deferred: false, deferredByWPR: false };
+    const parse = (record: Record<string, unknown>) =>
+      parseWprDetections({
+        ...payload,
+        delay_js: { ...delayRow, scripts: [{ ...base, fdtExcluded: null, ...record }] }
+      })?.delay_js.scripts[0];
+    expect(parse({})?.minifyAttribute).toBe(false);
+    expect(parse({ minifyAttribute: true })?.minifyAttribute).toBe(true);
+    expect(parse({ minifyAttribute: false })?.minifyAttribute).toBe(false);
+    for (const hostile of ['1', 1, null, {}]) {
+      expect(parse({ minifyAttribute: hostile })).toBeUndefined();
+    }
+  });
+
   it('rejects iframes rows with wrong-typed fields', () => {
     const payload = validDetections();
     expect(

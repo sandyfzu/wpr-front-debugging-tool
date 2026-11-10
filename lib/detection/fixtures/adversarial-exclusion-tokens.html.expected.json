@@ -22,7 +22,8 @@
           "src": "/wp-content/plugins/wp-rocket/assets/js/lazyload/16.1/lazyload.min.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -30,7 +31,8 @@
           "content": "\n      window.lazyLoadOptions = { elements_selector: 'img' };\n      window.lazyLoadOptions.img = [{ elements_selector: 'img[data-lazy-src]' }];\n    ",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         }
       ],
       "version": null,

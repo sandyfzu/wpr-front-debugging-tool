@@ -23,7 +23,8 @@ function inline(content: string): DelayedScriptRecord {
     delayed: false,
     deferred: false,
     deferredByWPR: false,
-    fdtExcluded: null
+    fdtExcluded: null,
+    minifyAttribute: false
   };
 }
 

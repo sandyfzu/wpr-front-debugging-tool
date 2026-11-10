@@ -22,7 +22,8 @@
           "content": "\n      window.lazyLoadOptions = [\n        {\n          elements_selector: 'img[data-lazy-src],.rocket-lazyload,iframe[data-lazy-src]',\n          data_src: 'lazy-src'\n        }\n      ];\n    ",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -30,7 +31,8 @@
           "content": "\n      function lazyLoadThumb(e) {\n        var t = '<img data-lazy-src=\"https://i.ytimg.com/vi/ID/hqdefault.jpg\">';\n      }\n      function lazyLoadYoutubeIframe() {\n        var e = document.createElement('iframe');\n      }\n    ",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -38,7 +40,8 @@
           "src": "/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         }
       ],
       "version": null,

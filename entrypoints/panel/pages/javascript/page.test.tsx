@@ -119,7 +119,8 @@ function scripts(): DelayedScriptRecord[] {
       delayed: true,
       deferred: false,
       deferredByWPR: false,
-      fdtExcluded: null
+      fdtExcluded: null,
+      minifyAttribute: false
     },
     {
       inline: true,
@@ -127,7 +128,8 @@ function scripts(): DelayedScriptRecord[] {
       delayed: false,
       deferred: false,
       deferredByWPR: false,
-      fdtExcluded: 'delay_js'
+      fdtExcluded: 'delay_js',
+      minifyAttribute: false
     },
     {
       inline: true,
@@ -135,7 +137,8 @@ function scripts(): DelayedScriptRecord[] {
       delayed: false,
       deferred: false,
       deferredByWPR: false,
-      fdtExcluded: null
+      fdtExcluded: null,
+      minifyAttribute: false
     }
   ];
 }
@@ -366,7 +369,8 @@ describe('JavaScriptView — rows', () => {
           delayed: false,
           deferred: false,
           deferredByWPR: false,
-          fdtExcluded: null
+          fdtExcluded: null,
+          minifyAttribute: false
         }
       ])
     );
@@ -1047,7 +1051,8 @@ describe('JavaScriptView — very large scripts', () => {
           delayed: false,
           deferred: false,
           deferredByWPR: false,
-          fdtExcluded: null
+          fdtExcluded: null,
+          minifyAttribute: false
         }
       ])
     );
@@ -1107,7 +1112,8 @@ describe('JavaScriptView — capture bounds', () => {
       delayed: false,
       deferred: false,
       deferredByWPR: false,
-      fdtExcluded: null
+      fdtExcluded: null,
+      minifyAttribute: false
     }));
     const left = { ...(spent[0] as DelayedScriptRecord), content: '' };
     renderView(truncatedData([...spent, left]));

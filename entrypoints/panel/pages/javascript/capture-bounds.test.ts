@@ -15,7 +15,8 @@ function inline(length: number): DelayedScriptRecord {
     delayed: false,
     deferred: false,
     deferredByWPR: false,
-    fdtExcluded: null
+    fdtExcluded: null,
+    minifyAttribute: false
   };
 }
 
@@ -26,7 +27,8 @@ const EXTERNAL: DelayedScriptRecord = {
   delayed: false,
   deferred: false,
   deferredByWPR: false,
-  fdtExcluded: null
+  fdtExcluded: null,
+  minifyAttribute: false
 };
 
 /** A Delay JS row around a script list. */

@@ -24,7 +24,8 @@
           "content": "(()=>{class RocketLazyLoadScripts{constructor(){this.v=\"3.20.6\";}}RocketLazyLoadScripts.run()})();",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": true,
@@ -32,7 +33,8 @@
           "src": "https://all.example/wp-content/plugins/site-widgets/widget.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": true,
@@ -40,7 +42,8 @@
           "src": "https://all.example/wp-content/cache/min/1/forms.min.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": true
         },
         {
           "delayed": true,
@@ -48,7 +51,8 @@
           "content": "\n    // A delayed inline script without a moved source keeps its full text.\n    window.rocketLateTweaks=function(){return this.v;};\n  ",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -56,7 +60,8 @@
           "src": "https://all.example/jquery.min.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": "excluded-by-tool"
+          "fdtExcluded": "excluded-by-tool",
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -64,7 +69,8 @@
           "src": "https://all.example/late.js",
           "deferred": true,
           "deferredByWPR": true,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -72,7 +78,8 @@
           "content": "/* deferred inline, filtered from list */",
           "deferred": true,
           "deferredByWPR": true,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -80,7 +87,8 @@
           "src": "https://all.example/wp-content/cache/min/1/analytics-77f.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -88,7 +96,8 @@
           "content": "function wprRemoveCPCSS(){document.getElementById('rocket-waiting-for-cpcss')?.remove();}",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -96,7 +105,8 @@
           "src": "https://all.example/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -104,7 +114,8 @@
           "content": "window.lazyLoadOptions={elements_selector:\"img[data-lazy-src],.rocket-lazyload,iframe[data-lazy-src]\",data_src:\"lazy-src\",data_srcset:\"lazy-srcset\",data_sizes:\"lazy-sizes\",class_loading:\"lazyloading\",class_loaded:\"lazyloaded\",threshold:300,callback_loaded:function(element){if(element.tagName===\"IFRAME\"&&element.dataset.rocketLazyload==\"fitvidscompatible\"){if(element.classList.contains(\"lazyloaded\")){if(window.jQuery){if(window.jQuery.fn.fitVids){window.jQuery.fn.fitVids(element)}}}}}};\n\nwindow.addEventListener('lazyloadready',function(e){var i=document.querySelectorAll(\"iframe[data-lazy-src]\");for(var k=0;k<i.length;k++){}});</script>\n  <!-- YouTube thumbnail replacement helper, served single-line shape\n       (the multi-line blob above must NOT trip the one-line-only regexes). -->\n  <script type=\"text/javascript\">function lazyLoadThumb(e){var t='<img data-lazy-src=\"https://i.ytimg.com/vi/ID/hqdefault.jpg\">',a='<div class=\"play\"></div>';return t.replace(\"ID\",e)+a}function lazyLoadYoutubeIframe(){var e=document.createElement(\"iframe\");e.setAttribute(\"data-lazy-src\",\"ID\");this.parentNode.replaceChild(e,this)}document.addEventListener(\"DOMContentLoaded\",function(){var e=document.querySelectorAll(\"iframe[data-lazy-src]\");e.forEach(function(t){});});",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -112,7 +123,8 @@
           "content": "var RocketPreloadLinksConfig = {\"excludeUris\":\"\\/cart|\\/my-account\",\"ttl\":\"3600\"}",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -120,7 +132,8 @@
           "src": "https://all.example/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -128,7 +141,8 @@
           "content": "{\"wpr_plugin\":{\"version\":\"3.20.6.1\"},\"get_rocket_option\":{\"delay_js\":{\"option_value\":true},\"version\":\"3.20.6.1\"},\"server_info\":{\"server_load\":\"1.4\",\"web_server\":\"nginx\",\"php_memory_limit\":\"256M\"},\"wpr_diagnoser_version\":\"2.1\"}",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         },
         {
           "delayed": false,
@@ -136,7 +150,8 @@
           "content": "{\"options\":{\"delay_js\":{\"option_name\":\"delay_js\",\"get_rocket_option\":{\"value\":\"1\"}}},\"post_meta_excluded_options\":{\"cdn\":false}}",
           "deferred": false,
           "deferredByWPR": false,
-          "fdtExcluded": null
+          "fdtExcluded": null,
+          "minifyAttribute": false
         }
       ],
       "version": "3.20.6",

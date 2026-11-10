@@ -101,7 +101,8 @@ describe('exportPageDataJson', () => {
             delayed: true,
             deferred: false,
             deferredByWPR: false,
-            fdtExcluded: null
+            fdtExcluded: null,
+            minifyAttribute: false
           }))
         }
       },

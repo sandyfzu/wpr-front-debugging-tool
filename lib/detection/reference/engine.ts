@@ -51,6 +51,13 @@
  *    now match the resolved `src` property instead of the raw attribute —
  *    identical for real URLs, they can differ only on degenerate paths
  *    (`..` segments, backslashes) that resolution normalizes.
+ * 4. The minify attribute (`data-minify="1"`, exact) on a stylesheet link
+ *    with a non-empty `href` or a served-URL script decides its minify row as footprint when the cache
+ *    URL missed — only where the declaration decided nothing (`absent`) and
+ *    WP Rocket was already proven before it (signature/version, generator
+ *    tag, or any present row but `wpr`/`defer_all_js`, the minify rows by
+ *    their URL arm only). Every script record carries the stamp
+ *    (`minifyAttribute`).
  *
  * The port's contract additions (the cache-marker flag with its comment-only
  * white-label registry and strict display-domain timestamp, the defer count
@@ -96,6 +103,8 @@ import {
   LAZY_RENDER_ATTRIBUTE,
   LAZY_RENDER_INLINE_CSS_ID,
   LOCATION_HASH_ATTRIBUTE,
+  MINIFY_ATTRIBUTE,
+  MINIFY_ATTRIBUTE_VALUE,
   MINIFY_CSS_URL_PATTERN,
   MINIFY_JS_URL_PATTERN,
   OPTIMIZE_CRITICAL_IMAGES_COMMENT,
@@ -278,6 +287,7 @@ function checkDelayJS({
     s.deferred = script.hasAttribute('defer');
     s.deferredByWPR = script.hasAttribute(WPR_DEFER_ATTRIBUTE);
     s.fdtExcluded = script.getAttribute(FDT_EXCLUDED_RESOURCE);
+    s.minifyAttribute = script.getAttribute(MINIFY_ATTRIBUTE) === MINIFY_ATTRIBUTE_VALUE;
     delayjs.scripts?.push(s);
   }
   return delayjs;
@@ -896,6 +906,48 @@ function applyReferenceMeta(wprDetections: WprDetections, meta: ReferenceFeature
 }
 
 /**
+ * Deviation 4: the minify attribute, counted only on a page already proven
+ * to be WP Rocket's (proof read once, before either minify row changes).
+ */
+function applyReferenceMinifyAttribute(
+  wprDetections: WprDetections,
+  meta: ReferenceFeatureMeta,
+  { pageScripts, pageLinkElements }: CheckOptimizationFunctionPayload
+): void {
+  let proven = wprDetections.wpr.present;
+  if (!proven) {
+    for (const [key, value] of Object.entries(wprDetections)) {
+      if (key === 'wpr' || key === 'defer_all_js') continue;
+      if (value.present) {
+        proven = true;
+        break;
+      }
+    }
+  }
+  if (!proven) return;
+  const stamped = (element: Element): boolean =>
+    element.getAttribute(MINIFY_ATTRIBUTE) === MINIFY_ATTRIBUTE_VALUE;
+  if (
+    !wprDetections.minify_css.present &&
+    referenceMetaVerdict(meta, FEATURE_META_TOKENS.minify_css) === 'absent' &&
+    pageLinkElements.some(
+      (link) => link.rel === 'stylesheet' && link.getAttribute('href') && stamped(link)
+    )
+  ) {
+    wprDetections.minify_css.present = true;
+    wprDetections.minify_css.source = 'footprint';
+  }
+  if (
+    !wprDetections.minify_js.present &&
+    referenceMetaVerdict(meta, FEATURE_META_TOKENS.minify_js) === 'absent' &&
+    pageScripts.some((script) => rawServedSrc(script) && stamped(script))
+  ) {
+    wprDetections.minify_js.present = true;
+    wprDetections.minify_js.source = 'footprint';
+  }
+}
+
+/**
  * One full detection pass, replicating the reference orchestration exactly:
  * fresh document queries per check, the declaration's authority over the
  * footprint verdicts, then the presence-propagation rule.
@@ -914,7 +966,14 @@ export function runReferenceDetection(pageHTML: string): {
   ][]) {
     wprDetections[name] = func({ pageHTML, HTMLDocument, pageScripts, pageLinkElements });
   }
-  applyReferenceMeta(wprDetections as WprDetections, parseReferenceFeatureMeta(HTMLDocument));
+  const meta = parseReferenceFeatureMeta(HTMLDocument);
+  applyReferenceMeta(wprDetections as WprDetections, meta);
+  applyReferenceMinifyAttribute(wprDetections as WprDetections, meta, {
+    pageHTML,
+    HTMLDocument,
+    pageScripts,
+    pageLinkElements
+  });
   const preloadedResources = checkPreloadedResources(HTMLDocument);
   if (wprDetections.wpr) {
     const temp = wprDetections as WprDetections;

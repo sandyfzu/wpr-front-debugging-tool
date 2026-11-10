@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<!--
+  Crafted fixture: the minify stamp with no other WP Rocket evidence — the
+  same moved-root assets carrying `data-minify="1"`, plus a script with
+  `data-rocket-defer` (deferral alone proves nothing: other tools defer too).
+  No generator meta, no cache footer, no other footprint. The attribute must
+  never prove WP Rocket by itself, nor one minify row the other.
+  Expected: wpr absent; minify_css + minify_js absent; defer_all_js present
+  (1 script); the script records still carry their stamp.
+-->
+<html lang="en-US">
+<head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Minify attribute only</title>
+<link data-minify="1" rel="stylesheet" id="theme-css" href="https://moved-root.example/wp-content/wpr-files/min/1/wp-content/themes/twentytwentyfive/style.css?ver=1791299187" media="all" />
+</head>
+<body>
+<h1>Minify stamp, nothing else</h1>
+<script data-minify="1" src="https://moved-root.example/wp-content/wpr-files/min/1/wp-content/themes/twentytwentyfive/assets/js/navigation.js?ver=1791299187" id="theme-navigation-js"></script>
+<script data-rocket-defer defer src="https://moved-root.example/wp-content/plugins/slider/slider.js?ver=2.1" id="slider-js"></script>
+</body>
+</html>

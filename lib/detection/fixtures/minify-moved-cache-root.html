@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<!--
+  Crafted fixture: Minify CSS/JS on a site whose cache root was moved
+  (`WP_ROCKET_CACHE_ROOT_URL` outside `…/cache/`), so the minified files are
+  served from `wpr-files/min/1/…` — the cache-URL arm misses both, only the
+  `data-minify="1"` stamp WP Rocket writes on each rewritten tag remains. No
+  generator meta, no cache footer: WP Rocket is proven by the LazyLoad
+  footprint (library URL + options blob, verbatim from a real 3.24 render).
+  Expected: minify_css + minify_js present (footprint, the attribute guard);
+  lazyload present; wpr present (propagation); every script record carries
+  its stamp (`minifyAttribute`).
+-->
+<html lang="en-US">
+<head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Moved cache root &#8211; Minify on, no generator meta</title>
+<link data-minify="1" rel="stylesheet" id="theme-css" href="https://moved-root.example/wp-content/wpr-files/min/1/wp-content/themes/twentytwentyfive/style.css?ver=1791299187" media="all" />
+</head>
+<body>
+<h1>Minify on, cache root moved</h1>
+<img width="600" height="400" src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20600%20400'%3E%3C/svg%3E" data-lazy-src="https://moved-root.example/wp-content/uploads/2026/10/hero.jpg" alt="" />
+<script data-minify="1" src="https://moved-root.example/wp-content/wpr-files/min/1/wp-content/themes/twentytwentyfive/assets/js/navigation.js?ver=1791299187" id="theme-navigation-js"></script>
+<script>window.lazyLoadOptions=[{elements_selector:"img[data-lazy-src],.rocket-lazyload",data_src:"lazy-src",data_srcset:"lazy-srcset",data_sizes:"lazy-sizes",class_loading:"lazyloading",class_loaded:"lazyloaded",threshold:300,callback_loaded:function(element){if(element.tagName==="IFRAME"&&element.dataset.rocketLazyload=="fitvidscompatible"){if(element.classList.contains("lazyloaded")){if(typeof window.jQuery!="undefined"){if(jQuery.fn.fitVids){jQuery(element).parent().fitVids()}}}}}}];window.addEventListener('LazyLoad::Initialized',function(e){var lazyLoadInstance=e.detail.instance;if(window.MutationObserver){var observer=new MutationObserver(function(mutations){var image_count=0;var iframe_count=0;var rocketlazy_count=0;mutations.forEach(function(mutation){for(var i=0;i<mutation.addedNodes.length;i++){if(typeof mutation.addedNodes[i].getElementsByTagName!=='function'){continue}
+if(typeof mutation.addedNodes[i].getElementsByClassName!=='function'){continue}
+images=mutation.addedNodes[i].getElementsByTagName('img');is_image=mutation.addedNodes[i].tagName=="IMG";iframes=mutation.addedNodes[i].getElementsByTagName('iframe');is_iframe=mutation.addedNodes[i].tagName=="IFRAME";rocket_lazy=mutation.addedNodes[i].getElementsByClassName('rocket-lazyload');image_count+=images.length;iframe_count+=iframes.length;rocketlazy_count+=rocket_lazy.length;if(is_image){image_count+=1}
+if(is_iframe){iframe_count+=1}}});if(image_count>0||iframe_count>0||rocketlazy_count>0){lazyLoadInstance.update()}});var b=document.getElementsByTagName("body")[0];var config={childList:!0,subtree:!0};observer.observe(b,config)}},!1)</script><script data-no-minify="1" async src="https://moved-root.example/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js"></script>
+</body>
+</html>

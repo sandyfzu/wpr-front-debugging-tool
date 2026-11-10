@@ -40,7 +40,13 @@ interface ListCase {
   readonly read: (d: WprDetections) => { length: number; truncated: boolean };
 }
 
-const script = { inline: false, delayed: true, deferred: false, deferredByWPR: false };
+const script = {
+  inline: false,
+  delayed: true,
+  deferred: false,
+  deferredByWPR: false,
+  minifyAttribute: false
+};
 
 const LIST_CASES: readonly ListCase[] = [
   {
@@ -53,7 +59,8 @@ const LIST_CASES: readonly ListCase[] = [
         scripts: Array.from({ length: n }, (_, i) => ({
           ...script,
           src: `/s${String(i)}.js`,
-          fdtExcluded: null
+          fdtExcluded: null,
+          minifyAttribute: false
         }))
       }
     }),
@@ -342,7 +349,8 @@ describe('boundWprDetections — the list-wide inline content budget', () => {
           ...script,
           inline: true,
           content: 'c'.repeat(length),
-          fdtExcluded: null
+          fdtExcluded: null,
+          minifyAttribute: false
         }))
       }
     };

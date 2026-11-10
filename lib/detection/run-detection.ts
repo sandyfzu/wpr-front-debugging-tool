@@ -8,7 +8,9 @@
  * deferral check (other tools also defer scripts) and the `wpr` row itself.
  * The rule runs after every check. The beacon counts as presence: a
  * beacon-only page (features pending, zero applied markers) is a WP Rocket
- * page.
+ * page. The minify attribute is the one footprint that needs that proof
+ * first (any page can write it), so its guard runs between the declaration
+ * and propagation.
  */
 
 import type { PreloadedResources, WprDetections } from '../wp-rocket/types';
@@ -30,7 +32,8 @@ import {
   detectSelfHostedFonts
 } from './detect-optimizations';
 import { applyBuilderFacts } from './builder-fact';
-import { applyFeatureMetaAuthority } from './feature-meta';
+import { FEATURE_META_TOKENS, applyFeatureMetaAuthority, featureMetaVerdict } from './feature-meta';
+import { MINIFY_FOOTPRINT_ROWS, hasMinifyFootprint } from './minify-footprint';
 import { applySimulationFacts } from './simulation-fact';
 import type { SimulatedFeatureId } from '../wp-rocket-simulation/spec';
 import {
@@ -72,9 +75,10 @@ export function runDetection(html: string): DetectionResult {
  * Run every check once over an already-parsed page, then the simulation
  * facts (a verified simulated row is not served; an unverified marker only
  * annotates), then the generator declaration's authority (it rewrites
- * mapped rows and stamps `source`), then the Exclusion Builder's facts (the
- * additive `builder` field). Single-sourced so the bench and the
- * orchestrator can never drift apart — and both callers' presence
+ * mapped rows and stamps `source`), then the minify attribute guard, then
+ * the Exclusion Builder's facts (the additive `builder` field).
+ * Single-sourced so the bench and the orchestrator can never drift apart —
+ * and both callers' presence
  * propagation, which always runs after this, never counts a simulated row.
  * The beacon config is parsed once here and fed to the beacon row's check
  * (pending-state composition stays out of the engine entirely — the four
@@ -117,6 +121,9 @@ export function runChecks(
   };
   applySimulationFacts(detections, page.simulationMarker, verified, page.featureMeta);
   applyFeatureMetaAuthority(detections, page.featureMeta);
+  // After the meta (it decides when present), before propagation (which then
+  // counts the attribute-decided rows like any footprint).
+  applyMinifyAttributeGuard(detections, page);
   // The builder's in-tab facts annotate the served verdicts, never change them.
   applyBuilderFacts(detections, page.builderNote);
   return detections;
@@ -126,17 +133,60 @@ export function runChecks(
 const NON_PROPAGATING_KEYS: ReadonlySet<keyof WprDetections> = new Set(['wpr', 'defer_all_js']);
 
 /**
+ * Whether a present row proves WP Rocket handled the page — the presence
+ * rule's one declaring site (propagation and the minify guard both ask).
+ *
+ * @param key The detection row.
+ * @returns False for the `wpr` row itself and for deferral (other tools also
+ *   defer scripts); true for every other row, a new one included.
+ */
+export function rowProvesWpr(key: keyof WprDetections): boolean {
+  return !NON_PROPAGATING_KEYS.has(key);
+}
+
+/**
+ * Whether the pass already proves WP Rocket: its own signature/version or
+ * generator tag (`wpr.present`), or any present row that proves it. A
+ * verified simulated row is not present, so it never counts.
+ *
+ * @param detections The pass so far.
+ */
+export function wprProven(detections: WprDetections): boolean {
+  if (detections.wpr.present) return true;
+  const rows = Object.keys(detections) as Array<keyof WprDetections>;
+  return rows.some((key) => rowProvesWpr(key) && detections[key].present);
+}
+
+/**
  * An optimization found on the page implies WP Rocket handled the page. Driven
  * from the record's own keys, so a new check row propagates without a second
- * list to maintain; the exclusions above are the whole rule. Exported so the
- * content script's data hub can own the pass end-to-end over one parsed page —
- * the rule has exactly this one declaring site.
+ * list to maintain; {@link rowProvesWpr} is the whole rule. Exported so the
+ * content script's data hub can own the pass end-to-end over one parsed page.
  */
 export function applyPresencePropagation(detections: WprDetections): void {
-  if (detections.wpr.present) return;
-  const rows = Object.keys(detections) as Array<keyof WprDetections>;
-  if (rows.some((key) => !NON_PROPAGATING_KEYS.has(key) && detections[key].present)) {
-    // Deferral alone would not have counted (defer_all_js excluded above).
-    detections.wpr.present = true;
+  // Deferral alone does not count (see rowProvesWpr).
+  if (wprProven(detections)) detections.wpr.present = true;
+}
+
+/**
+ * Resolve the minify rows' attribute arm: a `data-minify="1"` tag the cache
+ * URL missed (a site-moved cache root) decides the row as footprint, but only
+ * where the generator meta decided nothing and WP Rocket is already proven
+ * by other evidence. Proof is taken once, before either row changes, and
+ * while both minify rows still carry their URL arm only — so the attribute
+ * can never prove WP Rocket, nor one minify row's attribute the other's.
+ *
+ * @param detections The pass after the meta's authority (mutated in place).
+ * @param page The parsed page.
+ */
+export function applyMinifyAttributeGuard(detections: WprDetections, page: ParsedPage): void {
+  if (!wprProven(detections)) return;
+  for (const row of MINIFY_FOOTPRINT_ROWS) {
+    const entry = detections[row];
+    if (entry.present) continue;
+    if (featureMetaVerdict(page.featureMeta, FEATURE_META_TOKENS[row]) !== 'absent') continue;
+    if (!hasMinifyFootprint(page, row, 'attribute')) continue;
+    entry.present = true;
+    entry.source = 'footprint';
   }
 }

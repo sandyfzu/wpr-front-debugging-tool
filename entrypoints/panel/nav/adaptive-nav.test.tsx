@@ -47,7 +47,8 @@ const DELAYED_RECORD: WprDetections['delay_js']['scripts'][number] = {
   delayed: true,
   deferred: false,
   deferredByWPR: false,
-  fdtExcluded: null
+  fdtExcluded: null,
+  minifyAttribute: false
 };
 
 /** A minimal contract-shaped record for one lazyloaded image. */
