@@ -267,6 +267,27 @@ describe('StylesheetsPage — chips', () => {
     await settle();
     expect(rowStates()).toEqual([['async', 'minified', 'font']]);
     expect(document.querySelector('[data-fdt="state-chip-overflow"]')).toBeNull();
+    // Each is WP Rocket's, shown by its rocket.
+    const chips = [...document.querySelectorAll<HTMLElement>('[data-fdt="state-chip"]')];
+    expect(chips.map((state) => state.dataset.fdtSource)).toEqual([
+      'wp-rocket',
+      'wp-rocket',
+      'wp-rocket'
+    ]);
+    expect(chips.every((state) => state.querySelector('svg.lucide-rocket') !== null)).toBe(true);
+  });
+
+  it('shows the source legend once while rows exist, none on an empty page', async () => {
+    renderStylesheets([reply([link({ href: MINIFIED })])], data());
+    await settle();
+    const legends = document.querySelectorAll('[data-fdt="state-source-legend"]');
+    expect(legends).toHaveLength(1);
+    // Every style state is WP Rocket's: the legend names only that source.
+    expect(legends[0]?.textContent).toBe('WP Rocket');
+    cleanup();
+    renderStylesheets([reply([])]);
+    await settle();
+    expect(document.querySelector('[data-fdt="state-source-legend"]')).toBeNull();
   });
 });
 

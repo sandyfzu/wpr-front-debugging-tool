@@ -8,6 +8,11 @@
  * - a classic original type (`text/javascript`) shows no detail, a 64-char
  *   one with no break opportunity does — and wraps inside the page at 320 px
  *   instead of pushing it sideways.
+ *
+ * And each chip's source on `fixtures/javascript/sources.html` (Delay JS,
+ * Defer JS and Minify JS declared): WP Rocket's states, the FDT's exclusion
+ * and the page's own defer each read by their look, under one legend — at
+ * 320 px nothing scrolls sideways, in both themes.
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
@@ -76,3 +81,69 @@ test('relative bundle URLs read Combined; the original type hides when classic a
     await fixture.page.close();
   }
 });
+
+/**
+ * Each visible chip of a row as `label/source`.
+ *
+ * @param row The row.
+ */
+async function chipSources(row: Locator): Promise<string[]> {
+  return await row
+    .locator('[data-fdt="state-chip"]')
+    .evaluateAll((chips) =>
+      chips.map((chip) => `${chip.textContent}/${(chip as HTMLElement).dataset.fdtSource ?? ''}`)
+    );
+}
+
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`each chip shows its source under one legend and fits at 320 px (${colorScheme})`, async ({
+    extension
+  }) => {
+    const { panel, fixture } = await openPanelForFixture(extension, '/javascript/sources.html', {
+      bootHash: '#/javascript',
+      emulation: { colorScheme }
+    });
+    try {
+      await panel.setViewportSize({ width: 1280, height: 1200 });
+      await expect(panel.locator('[data-fdt="script-row"]')).toHaveCount(3);
+      expect(await chipSources(rowWith(panel, 'navigation.min.js'))).toEqual([
+        'Delayed/wp-rocket',
+        'Deferred/wp-rocket',
+        'Minified/wp-rocket'
+      ]);
+      expect(await chipSources(rowWith(panel, 'deferred-two.js'))).toEqual(['Excluded/excluded']);
+      expect(await chipSources(rowWith(panel, 'deferred-one.js'))).toEqual(['Deferred/page']);
+      // Every chip names its source and feature on hover.
+      await expect(
+        rowWith(panel, 'navigation.min.js').locator('[data-fdt-state="delayed"] [title]')
+      ).toHaveAttribute('title', 'Delayed by WP Rocket (Delay JavaScript execution)');
+      const legend = panel.locator('[data-fdt="state-source-legend"]');
+      await expect(legend).toHaveCount(1);
+      await expect(legend).toHaveText('WP RocketSimulated by FDTExcluded by FDTPage');
+
+      const root = panel.locator('[data-fdt-page="javascript"]');
+      await panel.setViewportSize({ width: 320, height: 1200 });
+      await expect
+        .poll(() => root.evaluate((element) => element.scrollWidth - element.clientWidth), {
+          message: `javascript must fit at 320px (${colorScheme})`
+        })
+        .toBe(0);
+      const pageRight = await root.evaluate((element) => element.getBoundingClientRect().right);
+      const rights = await panel
+        .locator('[data-fdt="state-chip"] [data-fdt="badge"], [data-fdt="state-source-legend"] > *')
+        .evaluateAll((elements) =>
+          elements.map((element) => element.getBoundingClientRect().right)
+        );
+      expect(rights).toHaveLength(9);
+      for (const right of rights) {
+        expect(
+          right,
+          `chip/legend item inside the page at 320px (${colorScheme})`
+        ).toBeLessThanOrEqual(pageRight + 0.5);
+      }
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+}

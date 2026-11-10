@@ -83,6 +83,8 @@ export interface FilteredListProps<Row extends ResourceRow, Id extends string> {
   rowHook?: string;
   /** Content above the list rows, inside the scroller's frame (a table's column heads). */
   head?: JSX.Element;
+  /** A key to the rows' chips, between the filter bar and the list (shown while rows exist). */
+  legend?: JSX.Element;
   /** The virtualizer seam (tests inject a layout-free double). */
   createVirtualizer?: VirtualizerFactory;
 }
@@ -168,6 +170,7 @@ export function FilteredList<Row extends ResourceRow, Id extends string>(
             searchPlaceholder={props.searchPlaceholder}
           />
         </div>
+        {props.legend}
         <Show
           when={visible().length > 0}
           fallback={

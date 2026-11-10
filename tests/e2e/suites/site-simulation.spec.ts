@@ -124,10 +124,14 @@ const countLine = (delayed: number, excluded: number): string =>
   `${String(delayed)} delayed by the simulation · ${String(excluded)} excluded by your rows`;
 
 /** Open the real panel on Detections, inspecting `tabId` through the devtools seam. */
-async function openPanel(extension: ExtensionDriver, tabId: number): Promise<Page> {
+async function openPanel(
+  extension: ExtensionDriver,
+  tabId: number,
+  route = 'detections'
+): Promise<Page> {
   const panel = await extension.browserContext.newPage();
   await panel.addInitScript(devtoolsShim(tabId));
-  await panel.goto(`${await panelPageUrl(extension)}#/detections`, { waitUntil: 'load' });
+  await panel.goto(`${await panelPageUrl(extension)}#/${route}`, { waitUntil: 'load' });
   return panel;
 }
 
@@ -391,6 +395,38 @@ test.describe('Delay JS simulation over real sessions', () => {
         await expect(card.locator('[data-fdt-card-modifier]')).toContainText('1 excluded');
       } finally {
         await panel.close();
+      }
+      // The JavaScript page attributes each state: the simulation's Delayed
+      // (never WP Rocket's), the FDT's exclusion on the row's script.
+      const scripts = await openPanel(extension, tabId, 'javascript');
+      try {
+        await scripts.setViewportSize({ width: 1280, height: 1600 });
+        // Filtered to the delayed rows, so every one renders (the list is virtual).
+        await scripts.locator('[data-fdt-filter-chip="delayed"]').click();
+        await expect(scripts.locator('[data-fdt="script-row"]')).toHaveCount(SCENARIO_DELAYED - 1, {
+          timeout: FRESH.timeout
+        });
+        const delayed = scripts.locator('[data-fdt="state-chip"][data-fdt-state="delayed"]');
+        await expect(delayed).toHaveCount(SCENARIO_DELAYED - 1);
+        expect(
+          await delayed.evaluateAll((chips) =>
+            chips.map((chip) => (chip as HTMLElement).dataset.fdtSource)
+          )
+        ).toEqual(Array.from({ length: SCENARIO_DELAYED - 1 }, () => 'simulated'));
+        await expect(
+          scripts.locator('[data-fdt-state="delayed"] .lucide-flask-conical')
+        ).toHaveCount(SCENARIO_DELAYED - 1);
+        await scripts.locator('[data-fdt-filter-chip="excluded"]').click();
+        const lifecycle = scripts.locator('[data-fdt="script-row"]', {
+          hasText: 'fdt-delayed-lifecycle'
+        });
+        await expect(lifecycle.locator('[data-fdt-state="excluded"]')).toHaveText('Excluded');
+        await expect(lifecycle.locator('[data-fdt-state="excluded"]')).toHaveAttribute(
+          'data-fdt-source',
+          'excluded'
+        );
+      } finally {
+        await scripts.close();
       }
       await page.getByRole('button', { name: 'Stop' }).click();
     } finally {

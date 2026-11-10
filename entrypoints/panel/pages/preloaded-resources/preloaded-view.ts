@@ -20,7 +20,7 @@ import type {
 } from '../../../../lib/wp-rocket/types';
 import { formatCount } from '../../../../utils/format-count';
 import { listCapped } from '../resource-list/resource-list-view';
-import type { StateChip, StateChipSplit } from '../resource-list/state-chips';
+import type { StatusKind } from '../../../../components/ui/status-badge';
 
 /**
  * What the page can say about the report:
@@ -140,18 +140,30 @@ const UNNAMED_WHY: Readonly<Partial<Record<ResourceHintMark, string>>> = {
   async: 'Load CSS asynchronously writes it, but that feature is not detected on this page.'
 };
 
+/**
+ * A row's attribution chip — its whole meaning is who wrote the hint, so it
+ * is a label in the status vocabulary, not a state chip with a source.
+ */
+export interface AttributionChip {
+  /** Stable id (test hook). */
+  readonly id: 'wp-rocket' | 'unattributed';
+  /** The visible label. */
+  readonly label: string;
+  /** The vocabulary kind. */
+  readonly kind: StatusKind;
+  /** The proven feature, drawn after the label in parentheses, when one is proven. */
+  readonly mark?: string;
+  /** Hover text: the stamp and why. */
+  readonly title: string;
+}
+
 /** The unattributed chip (shared: no allocation per plain row). */
-const UNATTRIBUTED_CHIPS: StateChipSplit = {
-  visible: [
-    {
-      id: 'unattributed',
-      label: 'Unattributed',
-      kind: 'neutral',
-      title:
-        'No WP Rocket stamp, so its author is unproven: WordPress core, the theme, a plugin, or WP Rocket itself (its DNS prefetch, Google Fonts and CDN hints carry no stamp).'
-    }
-  ],
-  overflow: null
+const UNATTRIBUTED_CHIP: AttributionChip = {
+  id: 'unattributed',
+  label: 'Unattributed',
+  kind: 'neutral',
+  title:
+    'No WP Rocket stamp, so its author is unproven: WordPress core, the theme, a plugin, or WP Rocket itself (its DNS prefetch, Google Fonts and CDN hints carry no stamp).'
 };
 
 /**
@@ -160,25 +172,23 @@ const UNATTRIBUTED_CHIPS: StateChipSplit = {
  *
  * @param attribution The row's attribution.
  */
-export function attributionChips(attribution: HintAttribution): StateChipSplit {
-  if (attribution.by === 'page') return UNATTRIBUTED_CHIPS;
+export function attributionChip(attribution: HintAttribution): AttributionChip {
+  if (attribution.by === 'page') return UNATTRIBUTED_CHIP;
   const attribute = stampAttribute(attribution.mark);
-  const chip: StateChip =
-    attribution.feature === null
-      ? {
-          id: 'wp-rocket',
-          label: 'WP Rocket',
-          kind: 'info',
-          title: `${attribute}: ${UNNAMED_WHY[attribution.mark] ?? 'written by WP Rocket.'}`
-        }
-      : {
-          id: 'wp-rocket',
-          label: 'WP Rocket',
-          kind: 'info',
-          mark: attribution.feature,
-          title: `${attribute}: written by ${attribution.feature}, detected on this page.`
-        };
-  return { visible: [chip], overflow: null };
+  return attribution.feature === null
+    ? {
+        id: 'wp-rocket',
+        label: 'WP Rocket',
+        kind: 'info',
+        title: `${attribute}: ${UNNAMED_WHY[attribution.mark] ?? 'written by WP Rocket.'}`
+      }
+    : {
+        id: 'wp-rocket',
+        label: 'WP Rocket',
+        kind: 'info',
+        mark: attribution.feature,
+        title: `${attribute}: written by ${attribution.feature}, detected on this page.`
+      };
 }
 
 /**

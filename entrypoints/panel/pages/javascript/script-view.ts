@@ -19,12 +19,16 @@ import { buildFilterChips } from '../../../../lib/panel/list-behavior';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import {
   JS_SCRIPT_STATES,
+  NO_SCRIPT_SIMULATION,
   fdtExclusions,
-  type JsStateId
+  type JsStateId,
+  type ScriptSimulation
 } from '../../../../lib/panel/script-states';
 import { countLabel, formatCount, type CountNoun } from '../../../../utils/format-count';
 import { isBlankScriptType, isClassicScriptType } from '../../../../utils/script-type';
 import { splitStateChips, type StateChip, type StateChipSplit } from '../resource-list/state-chips';
+import { STATE_SOURCES, type StateSource } from '../resource-list/state-sources';
+import type { SimulationFact } from '../../../../lib/wp-rocket/types';
 
 /** A summary-strip state: its words and its vocabulary kind. */
 export interface ScriptBadge {
@@ -95,46 +99,64 @@ export interface ScriptRowView {
   readonly code: InlineCode | null;
 }
 
-/** What a chip shows beyond its state's label: its kind, mark and title. */
+/** The sources a JavaScript row's chips can show — all four (the page's legend). */
+export const JS_CHIP_SOURCES: readonly StateSource[] = STATE_SOURCES;
+
+/** What a chip shows beyond its state's label: its source and hover text. */
 type ChipDisplay = (
   row: JsScriptResource,
-  deferSimulated: boolean
-) => Pick<StateChip, 'kind' | 'mark' | 'title'>;
+  simulation: ScriptSimulation
+) => Pick<StateChip, 'source' | 'title'>;
+
+/** Appended to a WP Rocket chip's title while the page carries an unverified simulation marker for its feature. */
+export const UNVERIFIED_SIMULATION_SUFFIX = ' (simulation not verified)';
 
 /**
- * Per state: how its chip reads. A delayed, deferred or file state is
- * `info`; the local exclusion is `warn` (a deliberate exclusion worth
- * noticing). The Deferred chip keeps its at-a-glance attribution as a short
- * visible mark: WP Rocket's own defer stamp reads "WP Rocket" — or
- * "Simulated" on a page where a verified simulation, not WP Rocket, ran
- * Defer JS — while the page's own `defer` carries no mark.
+ * A Delayed or stamped Deferred chip: the simulation's on a page where a
+ * verified simulation, not WP Rocket, ran the feature; else WP Rocket's —
+ * flagged on hover when an unverified marker names the feature, so the chip
+ * claims no more than the Detections card.
+ *
+ * @param fact The feature's simulation fact (`null`: no marker).
+ * @param verb The state's verb ("Delayed").
+ * @param feature The feature's option id.
+ */
+function simulatableChip(
+  fact: SimulationFact | null,
+  verb: string,
+  feature: 'delay_js' | 'defer_all_js'
+): Pick<StateChip, 'source' | 'title'> {
+  const name = getRealOptionName(feature);
+  if (fact === 'simulated') {
+    return { source: 'simulated', title: `${verb} by the FDT's ${name} simulation` };
+  }
+  const flag = fact === 'unverified' ? UNVERIFIED_SIMULATION_SUFFIX : '';
+  return { source: 'wp-rocket', title: `${verb} by WP Rocket (${name})${flag}` };
+}
+
+/**
+ * Per state: who produced it and what its hover text says (the source and
+ * the feature, by its plugin-settings name). The local exclusion is the
+ * FDT's; Delayed and WP Rocket's defer stamp go through
+ * {@link simulatableChip}; a plain `defer` is the page's own; Combined and
+ * Minified are WP Rocket's (their states already require WP Rocket's evidence).
  */
 const JS_CHIP_DISPLAY: Readonly<Record<JsStateId, ChipDisplay>> = {
   excluded: (row) => ({
-    kind: 'warn',
+    source: 'excluded',
     title: `Excluded by FDT from ${fdtExclusions(row).map(getRealOptionName).join(' and ')}`
   }),
-  delayed: () => ({ kind: 'info' }),
-  deferred: (row, deferSimulated) => {
-    if (!row.deferredByWPR) return { kind: 'info', title: "The page's own defer attribute" };
-    return deferSimulated
-      ? {
-          kind: 'info',
-          mark: 'Simulated',
-          title: `Deferred by the FDT's ${getRealOptionName('defer_all_js')} simulation`
-        }
-      : {
-          kind: 'info',
-          mark: 'WP Rocket',
-          title: `Deferred by WP Rocket (${getRealOptionName('defer_all_js')})`
-        };
-  },
+  delayed: (_row, simulation) => simulatableChip(simulation.delay, 'Delayed', 'delay_js'),
+  deferred: (row, simulation) =>
+    row.deferredByWPR
+      ? simulatableChip(simulation.defer, 'Deferred', 'defer_all_js')
+      : { source: 'page', title: "The page's own defer attribute" },
   combined: () => ({
-    kind: 'info',
+    source: 'wp-rocket',
     title: `Bundle built by WP Rocket (${getRealOptionName('minify_concatenate_js')})`
   }),
   minified: () => ({
-    kind: 'info',
+    source: 'wp-rocket',
     title: `Minified by WP Rocket (${getRealOptionName('minify_js')})`
   })
 };
@@ -145,18 +167,21 @@ const JS_CHIP_DISPLAY: Readonly<Record<JsStateId, ChipDisplay>> = {
  * filters keep them.
  *
  * @param row The classified script.
- * @param deferSimulated A verified simulation, not WP Rocket, ran Defer JS
- *   here: its stamp names no WP Rocket defer.
+ * @param simulation The features a verified simulation, not WP Rocket, ran
+ *   on the page (default: none).
  * @returns The chips, unsplit.
  */
-export function scriptStateChips(row: JsScriptResource, deferSimulated = false): StateChip[] {
+export function scriptStateChips(
+  row: JsScriptResource,
+  simulation: ScriptSimulation = NO_SCRIPT_SIMULATION
+): StateChip[] {
   const chips: StateChip[] = [];
   for (const state of JS_SCRIPT_STATES) {
     if (!state.holds(row)) continue;
     chips.push({
       id: state.id,
       label: state.label,
-      ...JS_CHIP_DISPLAY[state.id](row, deferSimulated)
+      ...JS_CHIP_DISPLAY[state.id](row, simulation)
     });
   }
   return chips;
@@ -166,10 +191,13 @@ export function scriptStateChips(row: JsScriptResource, deferSimulated = false):
  * The row's chips, split for rendering (at most three, then "+N").
  *
  * @param row The classified script.
- * @param deferSimulated See {@link scriptStateChips}.
+ * @param simulation See {@link scriptStateChips}.
  */
-export function scriptChipSplit(row: JsScriptResource, deferSimulated = false): StateChipSplit {
-  return splitStateChips(scriptStateChips(row, deferSimulated));
+export function scriptChipSplit(
+  row: JsScriptResource,
+  simulation: ScriptSimulation = NO_SCRIPT_SIMULATION
+): StateChipSplit {
+  return splitStateChips(scriptStateChips(row, simulation));
 }
 
 /** Hover text of the original-type detail. */

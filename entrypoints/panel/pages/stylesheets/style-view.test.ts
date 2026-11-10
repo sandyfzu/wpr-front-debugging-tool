@@ -1,5 +1,5 @@
 /**
- * The Stylesheets page's pure rules: chips per state (label, tone, hover
+ * The Stylesheets page's pure rules: chips per state (label, source, hover
  * text naming the feature), the "+N" split, row views and their reuse test,
  * seed heights, the cut line, and every page state the read machine maps to.
  */
@@ -68,11 +68,11 @@ describe('styleStateChips', () => {
     const chips = styleStateChips(
       row({ rocketAsync: true, minified: true, hostedFont: true, critical: true })
     );
-    expect(chips.map((chip) => [chip.id, chip.label, chip.kind])).toEqual([
-      ['critical', 'Critical', 'info'],
-      ['async', 'Async', 'info'],
-      ['minified', 'Minified', 'info'],
-      ['font', 'Font', 'info']
+    expect(chips.map((chip) => [chip.id, chip.label, chip.source])).toEqual([
+      ['critical', 'Critical', 'wp-rocket'],
+      ['async', 'Async', 'wp-rocket'],
+      ['minified', 'Minified', 'wp-rocket'],
+      ['font', 'Font', 'wp-rocket']
     ]);
     expect(chips.map((chip) => chip.title)).toEqual([
       'Critical-path CSS printed by WP Rocket (Load CSS asynchronously)',
@@ -88,6 +88,22 @@ describe('styleStateChips', () => {
     ).toBe('Printed by WP Rocket for LazyLoad CSS backgrounds');
     expect(styleStateChips(row())).toEqual([]);
   });
+
+  it('attributes every state to WP Rocket (no FDT simulation or exclusion touches styles)', () => {
+    const sources = [
+      row({ rocketAsync: true, minified: true, hostedFont: true, critical: true }),
+      row({ type: 'inline', elementId: 'wpr-usedcss', href: '' }),
+      row({ type: 'inline', elementId: 'wpr-lazyload-bg-container' })
+    ].flatMap((style) => styleStateChips(style).map((chip) => [chip.id, chip.source]));
+    expect(Object.fromEntries(sources)).toEqual({
+      critical: 'wp-rocket',
+      async: 'wp-rocket',
+      minified: 'wp-rocket',
+      font: 'wp-rocket',
+      rucss: 'wp-rocket',
+      'lazy-bg': 'wp-rocket'
+    });
+  });
 });
 
 describe('styleRowViews', () => {
@@ -100,7 +116,12 @@ describe('styleRowViews', () => {
       'Async',
       'Minified'
     ]);
-    expect(view?.chips.overflow).toEqual({ label: '+1', title: 'Also: Font' });
+    // The hidden Font is WP Rocket's: the "+N" chip carries the rocket.
+    expect(view?.chips.overflow).toEqual({
+      label: '+1',
+      title: 'Also: Font (WP Rocket)',
+      hidesWpRocket: true
+    });
   });
 
   it('builds the identity once per view', () => {

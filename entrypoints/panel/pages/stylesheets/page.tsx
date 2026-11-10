@@ -42,10 +42,12 @@ import { useFdtData } from '../../state/use-fdt-data';
 import { PAGE_ASK_MISS_COPY } from '../page-ask-miss';
 import { PageFrame } from '../page-frame';
 import { FilteredList } from '../resource-list/filtered-list';
+import { StateSourceLegend } from '../resource-list/state-source-legend';
 import { realStylesheetsDeps } from './real-deps';
 import { createStylesheetsRead, type StylesheetsReadDeps } from './session';
 import { StyleRow } from './style-row';
 import {
+  CSS_CHIP_SOURCES,
   estimateStyleRow,
   listCutNote,
   sameStyleRow,
@@ -216,6 +218,7 @@ function StylesheetsList(props: StylesheetsListProps): JSX.Element {
         estimateSize={estimateStyleRow}
         renderRow={(row) => <StyleRow view={row} />}
         rowHook="stylesheet-row"
+        legend={<StateSourceLegend sources={CSS_CHIP_SOURCES} />}
         createVirtualizer={props.createVirtualizer}
       />
     </>

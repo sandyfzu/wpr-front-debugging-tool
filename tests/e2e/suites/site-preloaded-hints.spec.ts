@@ -128,8 +128,8 @@ test.describe('Preloaded Resources over the docker site', () => {
         .locator('[data-fdt="resource-row"]')
         .filter({ has: panel.locator('[data-fdt="hint-kind"]', { hasText: /^modulepreload$/ }) })
         .first();
-      await expect(moduleRow.locator('[data-fdt="state-chip"]')).toHaveText('Unattributed');
-      await expect(moduleRow.locator('[data-fdt="state-chip-mark"]')).toHaveCount(0);
+      await expect(moduleRow.locator('[data-fdt="hint-attribution"]')).toHaveText('Unattributed');
+      await expect(moduleRow.locator('[data-fdt="hint-attribution-mark"]')).toHaveCount(0);
       // No DNS prefetch is stored: no proof-limit note.
       await expect(panel.locator('[data-fdt="resource-note"]')).toHaveCount(0);
     } finally {
@@ -154,7 +154,7 @@ test.describe('Preloaded Resources over the docker site', () => {
       const dnsRow = panel.locator('[data-fdt="resource-row"]').filter({ hasText: DNS_HOST });
       await expect(dnsRow).toHaveCount(1);
       await expect(dnsRow.locator('[data-fdt="hint-kind"]')).toHaveText('dns-prefetch');
-      await expect(dnsRow.locator('[data-fdt="state-chip"]')).toHaveText('Unattributed');
+      await expect(dnsRow.locator('[data-fdt="hint-attribution"]')).toHaveText('Unattributed');
       await expect(panel.locator('[data-fdt="resource-note"]')).toHaveText([DNS_PREFETCH_LIMIT]);
       // The declaration decides DNS prefetch, never Preconnect (refuted by the same meta).
       const served = await extension.sendToTab<{

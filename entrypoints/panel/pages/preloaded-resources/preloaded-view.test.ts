@@ -5,7 +5,7 @@ import type { PreloadedResource } from '../../../../lib/panel/resources-view-mod
 import { emptyDetections } from '../../../../lib/panel/support-report.fixtures';
 import type { ResourceHint } from '../../../../lib/wp-rocket/types';
 import {
-  attributionChips,
+  attributionChip,
   hintKindChip,
   missingUrlLabel,
   NO_URL_LABEL,
@@ -110,62 +110,52 @@ describe('wpRocketHintsPresent', () => {
   });
 });
 
-describe('attributionChips', () => {
+describe('attributionChip', () => {
   it('reads a plain hint "Unattributed", never claiming it', () => {
-    const { visible, overflow } = attributionChips(UNATTRIBUTED);
-    expect(overflow).toBeNull();
-    expect(visible).toEqual([
-      {
-        id: 'unattributed',
-        label: 'Unattributed',
-        kind: 'neutral',
-        title:
-          'No WP Rocket stamp, so its author is unproven: WordPress core, the theme, a plugin, or WP Rocket itself (its DNS prefetch, Google Fonts and CDN hints carry no stamp).'
-      }
-    ]);
+    expect(attributionChip(UNATTRIBUTED)).toEqual({
+      id: 'unattributed',
+      label: 'Unattributed',
+      kind: 'neutral',
+      title:
+        'No WP Rocket stamp, so its author is unproven: WordPress core, the theme, a plugin, or WP Rocket itself (its DNS prefetch, Google Fonts and CDN hints carry no stamp).'
+    });
   });
 
   it('marks a proven feature and names the stamp', () => {
     expect(
-      attributionChips({ by: 'wp-rocket', mark: 'preload', feature: 'Optimize Critical Images' })
-        .visible
-    ).toEqual([
-      {
-        id: 'wp-rocket',
-        label: 'WP Rocket',
-        kind: 'info',
-        mark: 'Optimize Critical Images',
-        title: 'data-rocket-preload: written by Optimize Critical Images, detected on this page.'
-      }
-    ]);
+      attributionChip({ by: 'wp-rocket', mark: 'preload', feature: 'Optimize Critical Images' })
+    ).toEqual({
+      id: 'wp-rocket',
+      label: 'WP Rocket',
+      kind: 'info',
+      mark: 'Optimize Critical Images',
+      title: 'data-rocket-preload: written by Optimize Critical Images, detected on this page.'
+    });
     expect(
-      attributionChips({
+      attributionChip({
         by: 'wp-rocket',
         mark: 'prefetch',
         feature: 'Preconnect to External Domains'
-      }).visible[0]?.title
+      }).title
     ).toBe(
       'data-rocket-prefetch: written by Preconnect to External Domains, detected on this page.'
     );
   });
 
   it('says why a shared stamp names no feature', () => {
-    const preload = attributionChips({ by: 'wp-rocket', mark: 'preload', feature: null })
-      .visible[0];
+    const preload = attributionChip({ by: 'wp-rocket', mark: 'preload', feature: null });
     expect(preload).toMatchObject({ label: 'WP Rocket', kind: 'info' });
-    expect(preload?.mark).toBeUndefined();
-    expect(preload?.title).toBe(
+    expect(preload.mark).toBeUndefined();
+    expect(preload.title).toBe(
       'data-rocket-preload: several WP Rocket features write it (critical images, fonts, Google Fonts), and this page does not prove which.'
     );
-    expect(
-      attributionChips({ by: 'wp-rocket', mark: 'async', feature: null }).visible[0]?.title
-    ).toBe(
+    expect(attributionChip({ by: 'wp-rocket', mark: 'async', feature: null }).title).toBe(
       'data-rocket-async: Load CSS asynchronously writes it, but that feature is not detected on this page.'
     );
     // Never happens (Preconnect's stamps always name it); still worded.
-    expect(
-      attributionChips({ by: 'wp-rocket', mark: 'preconnect', feature: null }).visible[0]?.title
-    ).toBe('data-rocket-preconnect: written by WP Rocket.');
+    expect(attributionChip({ by: 'wp-rocket', mark: 'preconnect', feature: null }).title).toBe(
+      'data-rocket-preconnect: written by WP Rocket.'
+    );
   });
 });
 

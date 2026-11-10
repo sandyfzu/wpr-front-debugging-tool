@@ -2,10 +2,10 @@
  * The resource-list rows' state chips, pure: a row's states arrive in
  * importance order (each page owns its state table), and this core keeps
  * several of them compact — at most {@link MAX_VISIBLE_STATE_CHIPS} visible,
- * the rest behind one "+N" chip whose title names them. Pages build the split
- * once per row view (never in the row renderer).
+ * the rest behind one "+N" chip whose title names them with their sources.
+ * Pages build the split once per row view (never in the row renderer).
  */
-import type { StatusKind } from '../../../../components/ui/status-badge';
+import { STATE_SOURCE_LOOKS, type StateSource } from './state-sources';
 
 /** One state chip on a row. */
 export interface StateChip {
@@ -13,11 +13,9 @@ export interface StateChip {
   readonly id: string;
   /** The one-word visible label. */
   readonly label: string;
-  /** The status vocabulary kind. */
-  readonly kind: StatusKind;
-  /** A short visible qualifier drawn after the label ("WP Rocket"), when the state needs one. */
-  readonly mark?: string;
-  /** Hover text with the state's detail, when it has more to say than its words. */
+  /** Who produced the state — it sets the chip's icon and treatment. */
+  readonly source: StateSource;
+  /** Hover text naming the source and the feature, when the state has more to say than its words. */
   readonly title?: string;
 }
 
@@ -25,8 +23,10 @@ export interface StateChip {
 export interface OverflowChip {
   /** "+N". */
   readonly label: string;
-  /** Names every hidden state, in order. */
+  /** Names every hidden state with its source, in order. */
   readonly title: string;
+  /** A hidden state is WP Rocket's: the chip shows the rocket, so no WP Rocket work hides unseen. */
+  readonly hidesWpRocket: boolean;
 }
 
 /** A row's chips, split for rendering. */
@@ -43,13 +43,14 @@ export const MAX_VISIBLE_STATE_CHIPS = 3;
 export const NO_STATE_CHIPS: StateChipSplit = { visible: [], overflow: null };
 
 /**
- * A chip's words as one phrase: the label, then its mark in parentheses
- * ("Deferred (WP Rocket)") — the form the "+N" title lists.
+ * A chip's words as one phrase: the label, then its source in parentheses
+ * ("Minified (WP Rocket)") — the form the "+N" title lists, so a hidden
+ * chip keeps its attribution.
  *
  * @param chip The chip.
  */
 export function chipPhrase(chip: StateChip): string {
-  return chip.mark === undefined ? chip.label : `${chip.label} (${chip.mark})`;
+  return `${chip.label} (${STATE_SOURCE_LOOKS[chip.source].phrase})`;
 }
 
 /**
@@ -74,7 +75,8 @@ export function splitStateChips(
     visible: chips.slice(0, max),
     overflow: {
       label: `+${String(hidden.length)}`,
-      title: `Also: ${hidden.map(chipPhrase).join(', ')}`
+      title: `Also: ${hidden.map(chipPhrase).join(', ')}`,
+      hidesWpRocket: hidden.some((chip) => chip.source === 'wp-rocket')
     }
   };
 }

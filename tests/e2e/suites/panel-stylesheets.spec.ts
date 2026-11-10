@@ -97,6 +97,8 @@ test('chips, filters and search over WP Rocket’s stylesheet markup; Critical f
     await refreshList(panel);
 
     await expect(page.locator('[data-fdt="stylesheets-total"]')).toHaveText('9 styles');
+    // Every style state is WP Rocket's: the legend names that source alone.
+    await expect(page.locator('[data-fdt="state-source-legend"]')).toHaveText('WP Rocket');
     const rows = await renderedRows(panel);
     expect(rows.map((row) => row.chips)).toEqual(FIXTURE_ROWS.map((row) => row.chips));
     FIXTURE_ROWS.forEach((expected, index) => {
@@ -155,7 +157,7 @@ test('chips, filters and search over WP Rocket’s stylesheet markup; Critical f
           .toBe(0);
         const right = await page.evaluate((element) => element.getBoundingClientRect().right);
         for (const box of await page
-          .locator('[data-fdt="state-chip"] [data-fdt="status-badge"]')
+          .locator('[data-fdt="state-chip"] [data-fdt="badge"]')
           .evaluateAll((elements) =>
             elements.map((element) => element.getBoundingClientRect().right)
           )) {
