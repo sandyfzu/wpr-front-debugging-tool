@@ -12,7 +12,7 @@
 
 import type { BuilderBadgeKind, HudGroupId } from '../../../lib/detection/hud';
 import type { SimulationFact } from '../../../lib/wp-rocket/types';
-import type { IconCircle, IconEllipse } from '../ui/icons';
+import { ALERT_ICON_PATHS, type IconCircle, type IconEllipse } from '../ui/icons';
 
 /** One glyph's stroke geometry exactly as the factory consumes it. */
 export interface StripIconGlyph {
@@ -130,15 +130,22 @@ export const RUCSS_TEST_ICON: StripIconGlyph = {
   ]
 };
 
-/** A row modifier's kind: the builder's effect, or the simulation fact. */
-export type StripModifierKind = BuilderBadgeKind | SimulationFact;
+/** Bypass warning glyph: applied despite the bypass request (lucide `triangle-alert`). */
+export const BYPASS_APPLIED_ICON: StripIconGlyph = { paths: ALERT_ICON_PATHS };
+
+/**
+ * A row modifier's kind: the builder's effect, the simulation fact, or the
+ * "applied despite the bypass" warning.
+ */
+export type StripModifierKind = BuilderBadgeKind | SimulationFact | 'bypass-applied';
 
 /** Each row modifier kind's glyph (the panel badges' icons). */
 export const MODIFIER_ICONS: Readonly<Record<StripModifierKind, StripIconGlyph>> = {
   off: BUILDER_OFF_ICON,
   excluded: BUILDER_EXCLUDED_ICON,
   simulated: SIMULATED_ICON,
-  unverified: UNVERIFIED_ICON
+  unverified: UNVERIFIED_ICON,
+  'bypass-applied': BYPASS_APPLIED_ICON
 };
 
 /**

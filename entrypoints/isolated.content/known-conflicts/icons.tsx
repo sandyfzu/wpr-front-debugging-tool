@@ -4,15 +4,8 @@
  * geometry verified against the lucide package the panel surfaces ship
  * (an icon runtime is not justified inside this bundle's budget).
  *
- * The shared glyphs (close) live beside the factory in `ui/icons`.
+ * The shared glyphs (close, alert) live beside the factory in `ui/icons`.
  */
-
-/** Conflict marker: the alert triangle (lucide `triangle-alert`). */
-export const ALERT_ICON_PATHS = [
-  'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3',
-  'M12 9v4',
-  'M12 17h.01'
-] as const;
 
 /** Collapse-handle glyph (lucide `chevron-left`; flipped per state in CSS). */
 export const COLLAPSE_ICON_PATHS = ['m15 18-6-6 6-6'] as const;

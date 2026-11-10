@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bypass render fixture</title>
+  </head>
+  <body>
+    <!-- A cache-bypass render's shape: no generator meta (WP Rocket drops it
+         on a bypass), yet the footprints of the optimizations it does not
+         guard — a minified script, a WP Rocket-deferred script, lazyloaded
+         images — and their feature comments after the document. -->
+    <h1>Bypass render</h1>
+    <script src="/assets/cache/min/1/bypass-page.min.js" data-minify="1"></script>
+    <script data-rocket-defer defer src="/assets/bypass-deferred.js"></script>
+    <!-- WP Rocket prints its options unspaced (the footprint reads that form). -->
+    <!-- prettier-ignore -->
+    <script>window.lazyLoadOptions=[{elements_selector:"img[data-lazy-src],.rocket-lazyload",data_src:"lazy-src"}];</script>
+    <script src="/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js"></script>
+    <img data-lazy-src="/photo.jpg" alt="lazy one" />
+    <img data-lazy-src="/photo-2.jpg" alt="lazy two" />
+    <p>Page below the footprints: enough surface for one full detection pass.</p>
+  </body>
+</html>
+<!-- wpr_defer_js --><!-- wpr_minify_js --><!-- wpr_lazyload_images -->
+
+<!-- This website is like a Rocket, isn't it? Performance optimized by WP Rocket. Learn more: https://wp-rocket.me -->

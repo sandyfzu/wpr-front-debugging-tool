@@ -508,10 +508,11 @@ export const CACHE_BYPASS_QUERY_PARAM = 'nowprocket';
  * itself, and it is deliberately narrow — the server-side constant cannot be
  * observed from the page.
  *
- * PHP's `parse_str` folds array-shaped keys (`nowprocket[]`, `nowprocket[x]`)
- * into a set parameter, so those forms bypass too; a malformed URL cannot
- * attest anything and answers false (the content-script boot path must not
- * throw on a hostile `location.href`).
+ * Keys are read as PHP registers them ({@link phpQueryKeyBase}), so every
+ * spelling that sets `$_GET['nowprocket']` bypasses (`+nowprocket`,
+ * `nowprocket[x]`, `nowprocket%00z`); a malformed URL cannot attest anything
+ * and answers false (the content-script boot path must not throw on a
+ * hostile `location.href`).
  *
  * @param url The captured page URL (absolute).
  * @returns True when the bypass parameter is present.
@@ -528,10 +529,34 @@ export function isCacheBypassUrl(url: string | URL): boolean {
   // `Array.from` answers empty), and this runs on the content-script boot path.
   let bypass = false;
   parsed.searchParams.forEach((_value, key) => {
-    if (key === CACHE_BYPASS_QUERY_PARAM) bypass = true;
-    else if (key.startsWith(`${CACHE_BYPASS_QUERY_PARAM}[`) && key.includes(']')) bypass = true;
+    if (phpQueryKeyBase(key) === CACHE_BYPASS_QUERY_PARAM) bypass = true;
   });
   return bypass;
+}
+
+/**
+ * The top-level `$_GET` name PHP registers for one decoded query key
+ * (`php_register_variable_ex`, shared by the request parser and
+ * `parse_str`): leading spaces dropped (a `+` decodes to one), the key cut
+ * at its first NUL, then a `[` that a later `]` closes opens an array, so
+ * the name is the text before it. Anything else the name would still
+ * contain (` `, `.`, an unclosed `[`) PHP rewrites to `_`; this keeps those
+ * characters, which is enough here: such a name can never equal a plain
+ * word like the bypass parameter, on either side. Not modeled: PHP also
+ * drops a variable nested past `max_input_nesting_level` (64) or parsed
+ * after `max_input_vars` (1000); both are php.ini-dependent, so such
+ * adversarial URLs still read as a bypass here.
+ *
+ * @param key A query key as `URLSearchParams` decodes it (`+` → space, `%XX` → byte).
+ * @returns The base name (empty when PHP drops the key: nothing before a `[`
+ *   or a NUL, or only spaces).
+ */
+export function phpQueryKeyBase(key: string): string {
+  let name = key.replace(/^ +/, '');
+  const nulAt = name.indexOf('\0');
+  if (nulAt !== -1) name = name.slice(0, nulAt);
+  const openAt = name.indexOf('[');
+  return openAt !== -1 && name.indexOf(']', openAt) !== -1 ? name.slice(0, openAt) : name;
 }
 
 /**

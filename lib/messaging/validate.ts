@@ -1214,6 +1214,10 @@ export function parseFdtData(input: unknown): FdtData | null {
   const bypassRaw = input['bypassAttested'];
   if (bypassRaw !== undefined && bypassRaw !== true) return reject('bypassAttested');
   const bypass = bypassRaw === true ? { bypassAttested: true as const } : {};
+  // Same shape as the bypass flag: absent, or exactly `true`.
+  const metaRaw = input['wprGeneratorMeta'];
+  if (metaRaw !== undefined && metaRaw !== true) return reject('wprGeneratorMeta');
+  const generatorMeta = metaRaw === true ? { wprGeneratorMeta: true as const } : {};
   // Additive envelope string: absent, or a non-empty version within its cap.
   const wordpressRaw = input['wordpressVersion'];
   if (
@@ -1228,6 +1232,7 @@ export function parseFdtData(input: unknown): FdtData | null {
   if (rucssTestMode === null) return reject('rucssTestMode');
   const extras = {
     ...bypass,
+    ...generatorMeta,
     ...(wordpressRaw === undefined ? {} : { wordpressVersion: wordpressRaw }),
     ...(rucssTestMode === undefined ? {} : { rucssTestMode })
   };

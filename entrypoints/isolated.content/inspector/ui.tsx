@@ -162,8 +162,9 @@ export function pillSpokenIdentity(model: StripCardModel): string | null {
 }
 
 /**
- * A row's in-tab modifier (Exclusion Builder or simulation): the badge (icon + short words, the
- * at-a-glance cue; hidden from assistive tech) and the full sentence as
+ * A row's modifier (Exclusion Builder, simulation or bypass warning): the
+ * badge (icon + short words, the at-a-glance cue; hidden from assistive
+ * tech) and the full sentence as
  * visible text on its own line (never hover-only), spoken once.
  *
  * @param props.modifier The row's modifier.
@@ -290,7 +291,9 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
                         // A modified row already shows its sentence; the tooltip would
                         // repeat it as the row's accessible description.
                         title={
-                          row.modifier === null && row.simulation === null ? row.tooltip : undefined
+                          row.modifier === null && row.simulation === null && row.bypass === null
+                            ? row.tooltip
+                            : undefined
                         }
                       >
                         <span class={`ins-chip ins-chip-${row.chipState}`}>{row.label}</span>
@@ -298,6 +301,9 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
                           <span class="ins-value">
                             {String(row.count)} {row.unit}
                           </span>
+                        </Show>
+                        <Show when={row.bypass}>
+                          {(bypass) => <RowModifier modifier={bypass()} />}
                         </Show>
                         <Show when={row.simulation}>
                           {(simulation) => <RowModifier modifier={simulation()} />}

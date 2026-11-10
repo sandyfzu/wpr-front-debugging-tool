@@ -13,6 +13,13 @@
  */
 
 import {
+  BYPASS_APPLIED_COPY,
+  isAppliedDespiteBypass,
+  isBypassRender,
+  type BypassAppliedCopy,
+  type BypassAppliedRow
+} from '../detection/bypass-applied';
+import {
   describeDetections,
   formatCacheTimestamp,
   isRepresentableCacheStamp,
@@ -102,6 +109,12 @@ export interface StatusItem {
   readonly simulationSentence?: string;
   /** The simulation modifier's chip text (the shared simulation copy), beside `simulation`. */
   readonly simulationChip?: string;
+  /**
+   * The "applied despite the bypass" warning (the shared copy): WP Rocket
+   * applied this feature on a render whose URL requested its bypass —
+   * present only then, never on a simulated row.
+   */
+  readonly bypassWarning?: BypassAppliedCopy;
 }
 
 /** The measurement beacon's verified label (the one non-feature row the option map lacks). */
@@ -160,13 +173,15 @@ const CARD_STATUS: Readonly<Record<HudVerdict, StatusKind>> = {
  * @param row The feature row.
  * @param report The page-analysis report.
  * @param detections The engine rows.
- * @returns The status plus the optional source/why fields (spread-ready —
- *   absent fields are omitted, never own `undefined`s).
+ * @param bypassRender The page is a bypass render (`isBypassRender`).
+ * @returns The status plus the optional source/why/modifier fields
+ *   (spread-ready — absent fields are omitted, never own `undefined`s).
  */
 function featureFacts(
   row: DetectionRow,
   report: PageAnalysisReport,
-  detections: WprDetections
+  detections: WprDetections,
+  bypassRender: boolean
 ): Pick<StatusItem, 'status' | 'source' | 'why' | FeatureModifierField> {
   const feature = hudFeatureOf(row);
   if (feature === undefined) {
@@ -179,13 +194,37 @@ function featureFacts(
     ...(reading.source === null ? {} : { source: reading.source }),
     ...(reading.why === null ? {} : { why: capitalize(reading.why) }),
     ...(reading.builder === undefined ? {} : builderFacts(feature, reading.builder)),
-    ...(reading.simulation === undefined ? {} : simulationFacts(reading.simulation))
+    ...(reading.simulation === undefined ? {} : simulationFacts(reading.simulation)),
+    ...bypassFacts(detections[feature.row], bypassRender)
   };
 }
 
-/** The card fields the two in-tab modifiers (builder, simulation) fill. */
+/**
+ * The card fields the modifiers fill: the two in-tab ones (builder,
+ * simulation) and the bypass warning.
+ */
 type FeatureModifierField =
-  'builder' | 'modifier' | 'modifierChip' | 'simulation' | 'simulationSentence' | 'simulationChip';
+  | 'builder'
+  | 'modifier'
+  | 'modifierChip'
+  | 'simulation'
+  | 'simulationSentence'
+  | 'simulationChip'
+  | 'bypassWarning';
+
+/**
+ * A feature card's bypass warning field, when the row earns it.
+ *
+ * @param row The feature's detection row.
+ * @param bypassRender The page is a bypass render (`isBypassRender`).
+ * @returns The spread-ready field, or nothing.
+ */
+function bypassFacts(
+  row: BypassAppliedRow,
+  bypassRender: boolean
+): Pick<StatusItem, 'bypassWarning'> {
+  return isAppliedDespiteBypass(row, bypassRender) ? { bypassWarning: BYPASS_APPLIED_COPY } : {};
+}
 
 /**
  * A feature card's simulation fields: the fact plus its shared copy.
@@ -300,6 +339,9 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
   const statusOf = (present: boolean): StatusKind => (present ? 'active' : 'not-active');
   // One report per build: the HUD readings' state owner.
   const report = describeDetections(detections);
+  const bypassRender = isBypassRender(data.bypassAttested === true, data.wprGeneratorMeta === true);
+  const readFacts = (row: DetectionRow): ReturnType<typeof featureFacts> =>
+    featureFacts(row, report, detections, bypassRender);
 
   if (data.pageHeaders !== null) {
     const captured = lastRowByName(data.pageHeaders);
@@ -386,12 +428,13 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
           name: cardName(shown),
           status: 'active',
           subtitle: LABEL_OPTIMIZE_CSS_DELIVERY,
-          ...(source === undefined ? {} : { source })
+          ...(source === undefined ? {} : { source }),
+          ...bypassFacts(detections[shown], bypassRender)
         });
         continue;
       }
       case 'delay_js': {
-        const facts = featureFacts(row, report, detections);
+        const facts = readFacts(row);
         const version = detections.delay_js.version;
         items.push(
           version === null
@@ -407,7 +450,7 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
         continue;
       }
       case 'lazyload_iframes': {
-        const facts = featureFacts(row, report, detections);
+        const facts = readFacts(row);
         const replaceImage = detections.lazyload_iframes.replaceImage;
         items.push(
           replaceImage
@@ -422,7 +465,7 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
         continue;
       }
       case 'rocket_above_the_fold_optimization': {
-        const facts = featureFacts(row, report, detections);
+        const facts = readFacts(row);
         const count = detections.rocket_above_the_fold_optimization.preloadedImages?.length ?? 0;
         // Applied evidence only: the presentation's coarse count (past nine
         // it reads "9+", not the exact figure the card would only sit on).
@@ -443,7 +486,7 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
         continue;
       }
       default:
-        items.push({ id: row, name: cardName(row), ...featureFacts(row, report, detections) });
+        items.push({ id: row, name: cardName(row), ...readFacts(row) });
     }
   }
   return items;
