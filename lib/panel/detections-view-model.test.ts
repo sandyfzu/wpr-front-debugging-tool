@@ -835,7 +835,7 @@ describe('buildStatusItems — keying and coverage', () => {
 
   it('an out-of-contract extra row is carded via the raw-id fallback (futures tolerance)', () => {
     // A payload the boundary validator would reject (it rebuilds the exact
-    // 19-row record) is still admitted by the view model's own contract: the
+    // 22-row record) is still admitted by the view model's own contract: the
     // card set enumerates the record's OWN keys, so a row the name vocabulary
     // does not know yet joins the set — named by its raw id, at its declaring
     // position — instead of being dropped. Pinned here so the fallback reads

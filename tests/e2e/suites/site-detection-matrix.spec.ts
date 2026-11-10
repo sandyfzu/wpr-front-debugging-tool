@@ -11,7 +11,11 @@
  * the served detection payload (row presence + evidence source), the on-page
  * strip (chip state, tooltip source, cache chip, identity), the panel's
  * Detections cards + summary facts, and the support report — plus the
- * Headers page whenever the edge sent a host header.
+ * Headers page whenever the edge sent a host header. A bypass render's
+ * footprint-applied rows carry the "applied despite ?nowprocket" warning on
+ * the strip, the cards and the report alike. One more test requests the hub
+ * as a phone and as a desktop: each served device copy reads on the payload
+ * and the Mobile cache card.
  *
  * The suite runs anonymous (logged-in visitors get no cache and no
  * optimization) and restores what it changed — the stored settings it found
@@ -21,6 +25,7 @@
 
 import type { Page } from '@playwright/test';
 
+import { BYPASS_APPLIED_COPY } from '../../../lib/detection/bypass-applied';
 import {
   CACHE_COMMENT_MARKERS,
   CACHE_TIMESTAMP_PATTERN,
@@ -143,6 +148,23 @@ function cssDeliveryCard(round: MatrixRound): { name: string; expected: ParsedEx
       source: rucss.source === 'Meta' && async.source === 'Meta' ? 'Meta' : null
     }
   };
+}
+
+/**
+ * Whether a row must carry the "applied despite ?nowprocket" warning on every
+ * surface: a bypass render (bypass URL, no generator meta) and the row
+ * applied by its footprint.
+ *
+ * @param round The round.
+ * @param expected The row's parsed expectation.
+ */
+function bypassWarns(round: MatrixRound, expected: ParsedExpectation): boolean {
+  return (
+    isCacheBypassUrl(`${SITE_URL}${round.path}`) &&
+    round.meta === 'absent' &&
+    expected.status === 'Active' &&
+    expected.source === 'Footprint'
+  );
 }
 
 /** The served detection rows the assertions read (the engine's shape, narrowed). */
@@ -283,7 +305,7 @@ async function prepareUrl(round: MatrixRound): Promise<string> {
 async function readCard(
   panel: Page,
   id: string
-): Promise<{ name: string; status: string; source: string | null } | null> {
+): Promise<{ name: string; status: string; source: string | null; bypassWarned: boolean } | null> {
   return await panel.evaluate((cardId: string) => {
     const card = document.querySelector(`[data-fdt="status-card"][data-fdt-card-id="${cardId}"]`);
     if (card === null) return null;
@@ -300,7 +322,8 @@ async function readCard(
     return {
       name: card.querySelector('[data-fdt-card-name]')?.textContent ?? '',
       status: card.querySelector('[data-fdt="status-badge"]')?.textContent ?? '',
-      source: chipWord
+      source: chipWord,
+      bypassWarned: card.querySelector('[data-fdt-card-bypass-warning]') !== null
     };
   }, id);
 }
@@ -358,7 +381,6 @@ function assertStrip(strip: StripRead, served: ServedRows, round: MatrixRound): 
   expect(strip.cacheText ?? '', `${round.id}: strip cache chip`).toMatch(
     new RegExp(`^${round.cache.chip.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( · |$)`)
   );
-  const bypassRender = isCacheBypassUrl(`${SITE_URL}${round.path}`) && round.meta === 'absent';
   for (const [row, expectation] of Object.entries(round.rows) as [MatrixRow, RowExpectation][]) {
     const expected = parse(expectation);
     const rendered = strip.rows.find((entry) => entry.chip === ROW_UI[row].chip);
@@ -368,7 +390,7 @@ function assertStrip(strip: StripRead, served: ServedRows, round: MatrixRound): 
     );
     // A bypass render (bypass URL, no meta) warns each footprint-applied
     // row; a modified row shows its sentence instead of the tooltip.
-    const warned = bypassRender && expected.status === 'Active' && expected.source === 'Footprint';
+    const warned = bypassWarns(round, expected);
     expect(rendered?.bypassWarned, `${round.id}: strip bypass warning on ${row}`).toBe(warned);
     if (warned) {
       expect(rendered?.tooltip, `${round.id}: no tooltip on the warned ${row}`).toBe('');
@@ -397,14 +419,16 @@ async function assertCards(panel: Page, round: MatrixRound): Promise<void> {
     expect(await readCard(panel, row), `${round.id}: card ${row}`).toEqual({
       name: ROW_UI[row].name,
       status: expected.status,
-      source: expected.source
+      source: expected.source,
+      bypassWarned: bypassWarns(round, expected)
     });
   }
   const css = cssDeliveryCard(round);
   expect(await readCard(panel, 'remove_unused_css'), `${round.id}: CSS delivery card`).toEqual({
     name: css.name,
     status: css.expected.status,
-    source: css.expected.source
+    source: css.expected.source,
+    bypassWarned: bypassWarns(round, css.expected)
   });
 
   // Summary facts: the stamped form shows the stamp fact, every other state
@@ -450,10 +474,18 @@ async function assertReport(panel: Page, round: MatrixRound): Promise<string> {
 
   const expectRow = (name: string, expected: ParsedExpectation): void => {
     const source = expected.source === null ? '—' : SOURCE_TEXT[expected.source].report;
+    const line = lines.find((one) =>
+      one.startsWith(`| ${name} | ${expected.status} | ${source} |`)
+    );
     expect(
-      lines.some((line) => line.startsWith(`| ${name} | ${expected.status} | ${source} |`)),
+      line,
       `${round.id}: report row "${name}" reads ${expected.status} / ${source}`
-    ).toBe(true);
+    ).toBeDefined();
+    // The warned row's Details cell carries the warning sentence, no other row does.
+    expect(
+      line?.includes(BYPASS_APPLIED_COPY.sentence),
+      `${round.id}: report bypass warning on "${name}"`
+    ).toBe(bypassWarns(round, expected));
   };
   for (const [row, expectation] of Object.entries(round.rows) as [MatrixRow, RowExpectation][]) {
     if (row === 'remove_unused_css' || row === 'async_css') continue;
@@ -566,6 +598,30 @@ async function runRound(extension: ExtensionDriver, round: MatrixRound): Promise
   }
 }
 
+/**
+ * One served device copy: the request's headers and what the panel must say.
+ * A phone sends both its user agent and the `Sec-CH-UA-Mobile: ?1` client
+ * hint: WP Rocket picks the copy from the user agent, while WordPress's
+ * `wp_is_mobile()` (the beacon's `is_mobile`) reads the hint first —
+ * Chromium's own `?0` with a phone user agent alone reads "not mobile".
+ */
+const DEVICE_COPIES = [
+  {
+    variant: 'mobile',
+    userAgent:
+      'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36',
+    mobileHint: '?1',
+    line: 'Rendered for mobile'
+  },
+  {
+    variant: 'desktop',
+    userAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    mobileHint: '?0',
+    line: 'Rendered for desktop'
+  }
+] as const;
+
 /** The settings found before the suite wrote any (restored in `afterAll`). */
 let found: WprSettings | null = null;
 
@@ -625,6 +681,52 @@ test.describe('detection site matrix (P11.1)', () => {
     }
     if (failures.length > 0) {
       throw new AggregateError(failures, 'detection matrix restore failed');
+    }
+  });
+
+  // Before the combinations: the bootstrap baseline (beforeAll) ships the
+  // mobile cache on, so each device gets its own render.
+  test('both served device copies: the render device on the payload and the Mobile cache card', async ({
+    extension
+  }) => {
+    for (const device of DEVICE_COPIES) {
+      await test.step(device.variant, async () => {
+        // Context-wide so the page's own request carries it; reset whatever happens.
+        await extension.browserContext.setExtraHTTPHeaders({
+          'user-agent': device.userAgent,
+          'sec-ch-ua-mobile': device.mobileHint
+        });
+        const site = await openSitePage(extension, `${SITE_URL}/fdt/?fdt-no-store=1`).finally(
+          async () => {
+            await extension.browserContext.setExtraHTTPHeaders({});
+          }
+        );
+        const panel = await extension.browserContext.newPage();
+        try {
+          const served = await extension.sendToTab<{
+            mobile_cache: { present: boolean; variant: string | null; source?: string };
+            priority_elements_beacon: { isMobile: boolean | null };
+          } | null>(site.tabId, 'getWprDetections');
+          expect(served?.mobile_cache, `${device.variant}: payload row`).toEqual({
+            present: true,
+            variant: device.variant,
+            source: 'meta'
+          });
+          // The beacon config agrees: WP Rocket generated the render for this device.
+          expect(served?.priority_elements_beacon.isMobile).toBe(device.variant === 'mobile');
+          await panel.addInitScript(
+            devtoolsShim(site.tabId, { origin: site.page.url(), resources: [] })
+          );
+          await panel.goto(`${await panelPageUrl(extension)}#/detections`, { waitUntil: 'load' });
+          const card = panel.locator('[data-fdt="status-card"][data-fdt-card-id="mobile_cache"]');
+          await expect(card.locator('[data-fdt="status-badge"]')).toHaveText('Active');
+          // Agreeing beacon: the plain render line, no mismatch suffix.
+          await expect(card.locator('[data-fdt-card-subtitle]')).toHaveText(device.line);
+        } finally {
+          await panel.close();
+          await site.page.close();
+        }
+      });
     }
   });
 

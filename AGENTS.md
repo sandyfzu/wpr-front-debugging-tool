@@ -46,7 +46,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── options/               # options page
 │   ├── isolated.content.ts    # content script — isolated world
 │   │   │                      #   (WXT folder form: `isolated.content/index.ts` entry +
-│   │   │                      #    colocated feature modules; see docs/plans for the list)
+│   │   │                      #    colocated feature modules, e.g. `style-inventory/` (the page's style
+│   │   │                      #    list for the RUCSS Tester + Stylesheets pages); see docs/plans for the list)
 │   ├── exclusion-overlay.content/ # runtime content script (`registration: 'runtime'`, never in the
 │   │                          #   manifest): the in-page exclusion builder overlay, injected into a
 │   │                          #   tab's top frame on open (`scripting.executeScript`) so its code
@@ -80,6 +81,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   │                          #   table (`simulation-parity.fixtures.json`, dev/test only)
 │   ├── page-commands/         # the on-page command vocabulary (labels the menu + palette share), the
 │   │                          #   palette's executor contract and the view↔module bridge
+│   ├── panel/                 # panel view models (pure): Detections cards + summary, support report, resource
+│   │                          #   rows + their chip states (`script-states`, `style-states`), hint attribution
 │   ├── beacon-test/           # beacon test config/result validation + runner bridge; live-analysis
 │   │                          #   siblings: `lcp-analysis/`, `script-runtime/`, `web-vitals/` (current visit)
 │   └── <domain>/              # one folder per feature; its data files colocated
@@ -94,7 +97,7 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 
 - **Dependency direction:** `entrypoints/` → `components/` → `lib/` → `utils/`, never upward. Enforced by `no-restricted-imports` rules in `eslint.config.js`.
 - **Entrypoints are thin wiring:** bootstrap, `defineXxx`, mount UI, register listeners. Code used by a single surface is colocated in its entrypoint folder; promote it to `components/` or `lib/` the moment a second surface needs it.
-- **Panel tool pages stay off the panel's start:** a tool route's body is `lazyPage(...)` (`entrypoints/panel/pages/lazy-page.tsx`, fetched at the first idle moment or first visit) importing a one-line `pages/<route>/<route>.ts` entry, so the chunk is named `chunks/<route>-*.js` with its own `required` `scripts/budgets.json` rows (both builds). Tool forms share `pages/settings/` (stored settings + debounced writer + save line, store via `lib/storage/validated-config-store`), outcomes `pages/outcome-notice.tsx`, lists `pages/resource-list/filtered-list.tsx`.
+- **Panel tool pages stay off the panel's start:** a tool route's body is `lazyPage(...)` (`entrypoints/panel/pages/lazy-page.tsx`, fetched at the first idle moment or first visit) importing a one-line `pages/<route>/<route>.ts` entry, so the chunk is named `chunks/<route>-*.js` with its own `required` `scripts/budgets.json` rows (both builds). Tool forms share `pages/settings/` (stored settings + debounced writer + save line, store via `lib/storage/validated-config-store`), outcomes `pages/outcome-notice.tsx`, lists `pages/resource-list/filtered-list.tsx` (row state chips: `resource-list/state-chips.ts` + `state-chip-list.tsx`, shared by the JavaScript and Stylesheets pages).
 - **`lib/` modules are self-contained:** each owns its logic, types, and data. No shared grab-bag files (`Globals.ts`/`Types.ts` are legacy patterns — don't port them). Cross-surface types are contracts in `lib/messaging/` and `lib/storage/`. Constants live with the module that owns the concept.
 - **Tests:** unit tests colocated as `*.test.ts` next to the code they test; the browser tier (`*.spec.ts`) lives in `tests/e2e/` (see its README).
 - `public/` is copied as-is; `assets/` is imported and bundled.

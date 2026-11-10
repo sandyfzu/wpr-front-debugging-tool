@@ -264,45 +264,114 @@ export function activeStatus(
 const TRANSIENT = new Set(['Checking', 'Applying', 'Stopping', 'Reloading', 'Applied · waiting']);
 
 /**
+ * What one settle poll saw on the tab: the document still marked old (no
+ * reload yet), a new document without the overlay, a navigation in flight,
+ * or the overlay's header word.
+ */
+type SettleReading =
+  | { readonly kind: 'old-document' }
+  | { readonly kind: 'no-overlay' }
+  | { readonly kind: 'navigating' }
+  | { readonly kind: 'word'; readonly word: string };
+
+/**
+ * Describe a settle reading for a failure message.
+ *
+ * @param reading The last reading, or null before the first poll answered.
+ */
+function describeSettle(reading: SettleReading | null): string {
+  if (reading === null) return 'no poll answered';
+  switch (reading.kind) {
+    case 'old-document':
+      return 'the old document is still loaded (the action never reloaded the tab)';
+    case 'no-overlay':
+      return 'the new document has no overlay header (the overlay was not re-opened)';
+    case 'navigating':
+      return 'a navigation was still in flight';
+    case 'word':
+      return `the header still read "${reading.word}"`;
+  }
+}
+
+/** The deadline lines `expect.poll` ends a timed-out failure with (its own, or the test's). */
+const POLL_DEADLINE =
+  /Timeout \d+ms exceeded while waiting on the predicate|Test timeout of \d+ms exceeded/;
+
+/**
+ * Headline a settle-poll failure: the deadline only when the poll actually
+ * ran out of time; any other failure (a probe that threw, a closed page) by
+ * its own first message line, so a crash never reads as a slow reload.
+ *
+ * @param cause What the poll threw.
+ * @returns The headline.
+ */
+function settleFailure(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const deadline = POLL_DEADLINE.exec(message);
+  if (deadline !== null) return `the session reload did not settle (${deadline[0]})`;
+  return `the settle poll failed: ${message.split('\n')[0] ?? message}`;
+}
+
+/**
  * Run an action that reloads the tab through the session (Apply, Re-apply,
  * Reset) and wait for the overlay on the NEW document to settle: the old
  * document is marked first, so an armed state read before the reload never
- * passes for the result.
+ * passes for the result. A failure names the last state seen, so a stall
+ * says where it stalled.
  *
  * @param page The page with the overlay.
  * @param act The click (or key) that starts the reload.
  * @returns The settled header indicator word.
+ * @throws {Error} When the new document does not settle (deadline, or a probe failure), naming the last state seen.
  */
 export async function reloadThroughSession(page: Page, act: () => Promise<void>): Promise<string> {
   await page.evaluate(() => {
     (window as unknown as { e2eOldDocument: boolean }).e2eOldDocument = true;
   });
   await act();
-  let settled = '';
-  await expect
-    .poll(
-      async () => {
-        const reading = await page
-          .evaluate((host) => {
-            if ('e2eOldDocument' in window) return null;
-            const root = document.querySelector(host)?.shadowRoot;
-            const indicator = root?.querySelector('.xo-header .xo-indicator');
-            return indicator === null || indicator === undefined
-              ? null
-              : indicator.textContent.replace('Session: ', '').trim();
-          }, OVERLAY_HOST)
-          // A destroyed context is the navigation in flight: poll again.
-          .catch((error: unknown) => {
-            if (error instanceof Error && error.message.includes('Execution context was destroyed'))
-              return null;
-            throw error;
-          });
-        if (reading === null || TRANSIENT.has(reading)) return false;
-        settled = reading;
-        return true;
-      },
-      { ...APPLIED, intervals: [100, 250, 500] }
-    )
-    .toBe(true);
-  return settled;
+  // A holder: the poll's closure writes it, the failure path reads it.
+  const seen: { last: SettleReading | null } = { last: null };
+  try {
+    await expect
+      .poll(
+        async () => {
+          const reading = await page
+            .evaluate((host): SettleReading => {
+              if ('e2eOldDocument' in window) return { kind: 'old-document' };
+              const root = document.querySelector(host)?.shadowRoot;
+              const indicator = root?.querySelector('.xo-header .xo-indicator');
+              return indicator === null || indicator === undefined
+                ? { kind: 'no-overlay' }
+                : { kind: 'word', word: indicator.textContent.replace('Session: ', '').trim() };
+            }, OVERLAY_HOST)
+            // A destroyed context is the navigation in flight: poll again.
+            .catch((error: unknown): SettleReading => {
+              if (
+                error instanceof Error &&
+                error.message.includes('Execution context was destroyed')
+              )
+                return { kind: 'navigating' };
+              throw error;
+            });
+          seen.last = reading;
+          return reading.kind === 'word' && !TRANSIENT.has(reading.word);
+        },
+        { ...APPLIED, intervals: [100, 250, 500] }
+      )
+      .toBe(true);
+  } catch (cause) {
+    throw new Error(
+      `reloadThroughSession: ${settleFailure(cause)} — ${describeSettle(seen.last)}`,
+      {
+        cause
+      }
+    );
+  }
+  const settled = seen.last;
+  if (settled === null || settled.kind !== 'word') {
+    throw new Error(
+      `reloadThroughSession: settled without a header word (${describeSettle(settled)})`
+    );
+  }
+  return settled.word;
 }

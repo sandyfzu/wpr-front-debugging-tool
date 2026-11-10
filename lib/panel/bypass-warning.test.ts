@@ -71,6 +71,36 @@ describe('the Detections cards', () => {
     expect(stripped).toEqual(plain);
   });
 
+  it('a feature comment with no footprint counts nothing and warns nothing', () => {
+    // WP Rocket's comments for features with no footprint on this render.
+    const tokens = [
+      'wpr_minify_css',
+      'wpr_lazyload_iframes',
+      'wpr_lazyload_css_bg_img',
+      'wpr_async_css',
+      'wpr_remove_unused_css',
+      'wpr_cdn',
+      'wpr_minify_concatenate_js',
+      'wpr_delay_js'
+    ];
+    // Appended at the file's end, where WP Rocket writes its comments (after
+    // `</html>`); the fixture's own header comment also contains `</html>`.
+    const html =
+      fixture('bypass-render.html') + tokens.map((token) => `<!-- ${token} -->`).join('');
+    expect(parsePage(html).comments).toEqual(expect.arrayContaining(tokens));
+    const commented = detect(html);
+    /** Each row's verdict: presence + deciding source. */
+    const verdicts = (detections: WprDetections): Record<string, unknown> =>
+      Object.fromEntries(
+        (Object.keys(detections) as (keyof WprDetections)[]).map((key) => {
+          const row = detections[key];
+          return [key, { present: row.present, source: 'source' in row ? row.source : undefined }];
+        })
+      );
+    expect(verdicts(commented)).toEqual(verdicts(BYPASS_RENDER));
+    expect(warned(cards(commented, true))).toEqual(['defer_all_js', 'minify_js', 'lazyload']);
+  });
+
   it('a meta-decided page served on a bypass URL never warns (a normal copy)', () => {
     expect(warned(cards(detect(fixture('me-home-cached.html')), true))).toEqual([]);
   });
