@@ -472,7 +472,9 @@ describe('parseWprDetections', () => {
         const parsed = parseWprDetections({ ...base, [key]: row });
         // The declaration-only rows: a footprint source is not engine output.
         if (
-          (key === 'image_dimensions' || key === 'minify_concatenate_js') &&
+          (key === 'image_dimensions' ||
+            key === 'minify_concatenate_js' ||
+            key === 'mobile_cache') &&
           source === 'footprint'
         ) {
           expect(parsed, `${key}/${source}`).toBeNull();

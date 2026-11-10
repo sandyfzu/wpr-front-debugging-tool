@@ -246,6 +246,11 @@
     "rocket_cdn": {
       "present": true,
       "source": "meta"
+    },
+    "mobile_cache": {
+      "present": true,
+      "variant": "desktop",
+      "source": "meta"
     }
   },
   "preloadedResources": {

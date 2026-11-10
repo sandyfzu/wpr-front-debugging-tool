@@ -60,6 +60,7 @@ interface SiteDetections {
   minify_concatenate_js: { present: boolean; source?: 'meta' | 'footprint' };
   preload_links: { present: boolean };
   rocket_cdn: { present: boolean };
+  mobile_cache: { present: boolean; source?: 'meta' | 'footprint' };
   image_dimensions: { present: boolean; source?: 'meta' | 'footprint' };
   self_hosted_fonts: { present: boolean; source?: 'meta' | 'footprint' };
   rocket_above_the_fold_optimization: {
@@ -136,7 +137,8 @@ const EXPECTED_ROWS: Array<{ label: string; group: string }> = [
   { label: 'Self-host Google Fonts', group: 'Image & Media' },
   { label: 'Preload Links', group: 'Preload' },
   { label: 'CDN', group: 'Content Delivery' },
-  ...FAMILY_ROWS.map((row) => ({ label: row.label, group: 'Features' }))
+  ...FAMILY_ROWS.map((row) => ({ label: row.label, group: 'Features' })),
+  { label: 'Mobile cache', group: 'Features' }
 ];
 
 /** The chip state a given evidence state maps to (the D-2 matrix). */
@@ -190,7 +192,8 @@ function expectedChip(detections: SiteDetections, label: string): string {
   const undecidable: Record<string, { present: boolean; source?: string } | undefined> = {
     'Combine JS': detections.minify_concatenate_js,
     'Image Dimensions': detections.image_dimensions,
-    'Self-host Google Fonts': detections.self_hosted_fonts
+    'Self-host Google Fonts': detections.self_hosted_fonts,
+    'Mobile cache': detections.mobile_cache
   };
   const undecided = undecidable[label];
   if (undecided !== undefined) {

@@ -29,7 +29,7 @@ const RUCSS = '<style id="wpr-usedcss">.c{}</style>';
 interface RegistryRowCase {
   readonly row: FeatureMetaRow;
   readonly token: string;
-  /** Absent for declaration-only rows (image dimensions, Combine JS). */
+  /** Absent for declaration-only rows (image dimensions, Combine JS, mobile cache). */
   readonly footprint?: string;
 }
 
@@ -117,7 +117,10 @@ const REGISTRY_ROWS: readonly RegistryRowCase[] = [
     row: 'rocket_cdn',
     token: 'wpr_cdn',
     footprint: '<link rel="dns-prefetch" href="https://cdn.rocketcdn.me">'
-  }
+  },
+  // One row, two device tokens: either declares it.
+  { row: 'mobile_cache', token: 'wpr_mobile' },
+  { row: 'mobile_cache', token: 'wpr_desktop' }
 ];
 
 /** The registry rows whose footprint the table can positively detect. */
@@ -313,12 +316,12 @@ describe('meta authority: boundary contract', () => {
 describe('featureMetaVerdict: the authority boundary', () => {
   it('refutes only when the declaration is usable', () => {
     const usable = { attributePresent: true, tokens: ['wpr_cdn'] };
-    expect(featureMetaVerdict(usable, 'wpr_cdn')).toBe('declared');
-    expect(featureMetaVerdict(usable, 'wpr_preload_links')).toBe('refuted');
-    expect(featureMetaVerdict({ attributePresent: true, tokens: [] }, 'wpr_cdn')).toBe('refuted');
+    expect(featureMetaVerdict(usable, ['wpr_cdn'])).toBe('declared');
+    expect(featureMetaVerdict(usable, ['wpr_preload_links'])).toBe('refuted');
+    expect(featureMetaVerdict({ attributePresent: true, tokens: [] }, ['wpr_cdn'])).toBe('refuted');
     expect(
-      featureMetaVerdict({ attributePresent: true, tokens: [], degraded: true }, 'wpr_cdn')
+      featureMetaVerdict({ attributePresent: true, tokens: [], degraded: true }, ['wpr_cdn'])
     ).toBe('absent');
-    expect(featureMetaVerdict({ attributePresent: false, tokens: [] }, 'wpr_cdn')).toBe('absent');
+    expect(featureMetaVerdict({ attributePresent: false, tokens: [] }, ['wpr_cdn'])).toBe('absent');
   });
 });

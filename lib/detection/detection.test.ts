@@ -808,7 +808,8 @@ describe('run-detection — propagation and timing', () => {
       'minify_js',
       'minify_concatenate_js',
       'preload_links',
-      'rocket_cdn'
+      'rocket_cdn',
+      'mobile_cache'
     ]);
     expect(result.elapsedMs).toBeGreaterThanOrEqual(0);
     expect(result.preloadedResources).toEqual({ present: false });

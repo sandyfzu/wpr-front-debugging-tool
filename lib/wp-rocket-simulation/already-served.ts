@@ -26,14 +26,25 @@ import {
 } from '../wp-rocket/constants';
 
 /**
+ * Whether a feature-declaration attribute lists any of a row's tokens.
+ *
+ * @param features The attribute's raw value, or null when absent.
+ * @param tokens The row's exact meta tokens.
+ */
+function listsAnyToken(features: string | null, tokens: readonly string[]): boolean {
+  if (features === null) return false;
+  const listed = features.split(/\s+/);
+  return tokens.some((token) => listed.includes(token));
+}
+
+/**
  * Whether a tag is the generator meta declaring Delay JS.
  *
  * @param tag An opening tag.
  */
 function declaresDelayJs(tag: ScannedTag): boolean {
   if (!isGeneratorMeta(tag)) return false;
-  const features = attributeValue(tag, WPR_FEATURES_ATTRIBUTE);
-  return features?.split(/\s+/).includes(FEATURE_META_TOKENS.delay_js) ?? false;
+  return listsAnyToken(attributeValue(tag, WPR_FEATURES_ATTRIBUTE), FEATURE_META_TOKENS.delay_js);
 }
 
 /**
@@ -91,18 +102,18 @@ export function alreadyServesDeferJs(tags: readonly ScannedTag[]): boolean {
   return tags.some(
     (tag) =>
       (isGeneratorMeta(tag) &&
-        (attributeValue(tag, WPR_FEATURES_ATTRIBUTE)
-          ?.split(/\s+/)
-          .includes(FEATURE_META_TOKENS.defer_all_js) ??
-          false)) ||
+        listsAnyToken(
+          attributeValue(tag, WPR_FEATURES_ATTRIBUTE),
+          FEATURE_META_TOKENS.defer_all_js
+        )) ||
       (tag.name === 'script' && tag.attrs.some((attr) => attr.name === WPR_DEFER_ATTRIBUTE))
   );
 }
 
 /** The generator tokens of WP Rocket's LazyLoad (images or iframes: either means its texts are printed). */
 const LAZYLOAD_META_TOKENS: readonly string[] = [
-  FEATURE_META_TOKENS.lazyload,
-  FEATURE_META_TOKENS.lazyload_iframes
+  ...FEATURE_META_TOKENS.lazyload,
+  ...FEATURE_META_TOKENS.lazyload_iframes
 ];
 
 /** A line break as PCRE's and JS's `.` both refuse it. */
@@ -170,8 +181,7 @@ export function isLazyloadFootprint(element: FootprintElement): boolean {
   switch (element.name) {
     case 'meta': {
       if (!isGeneratorMetaName(element.attr('name'))) return false;
-      const features = element.attr(WPR_FEATURES_ATTRIBUTE)?.split(/\s+/) ?? [];
-      return LAZYLOAD_META_TOKENS.some((token) => features.includes(token));
+      return listsAnyToken(element.attr(WPR_FEATURES_ATTRIBUTE), LAZYLOAD_META_TOKENS);
     }
     case 'style':
       return element.attr('id') === LAZYLOAD_NOJS_STYLE_ID;

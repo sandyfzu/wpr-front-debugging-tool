@@ -7,7 +7,7 @@
  * the evidence-pure checks defer here.
  */
 
-import type { WprDetections } from '../wp-rocket/types';
+import type { MobileCacheVariant, WprDetections } from '../wp-rocket/types';
 import { BEACON_STATUS_KEYS } from '../wp-rocket/constants';
 import {
   absoluteStampFromMs,
@@ -47,6 +47,7 @@ import {
   LABEL_PRIORITY_ELEMENTS_BEACON,
   LABEL_REMOVE_UNUSED_CSS,
   LABEL_CDN,
+  LABEL_MOBILE_CACHE,
   LABEL_SELF_HOST_GOOGLE_FONTS,
   LABEL_WP_ROCKET
 } from './labels';
@@ -90,6 +91,8 @@ export interface PageAnalysisReport {
   [LABEL_COMBINE_JAVASCRIPT]: { state: FeatureState };
   [LABEL_PRELOAD_LINKS]: { state: FeatureState };
   [LABEL_CDN]: { state: FeatureState };
+  /** The device the render was generated for, as declared (null: not declared, or both). */
+  [LABEL_MOBILE_CACHE]: { state: FeatureState; 'rendered for': MobileCacheVariant | null };
   [LABEL_OPTIMIZE_CRITICAL_IMAGES]: { state: FeatureState; 'preloaded images': number };
   [LABEL_AUTOMATIC_LAZY_RENDERING]: {
     state: FeatureState;
@@ -232,6 +235,10 @@ export function describeDetections(
     [LABEL_COMBINE_JAVASCRIPT]: { state: simpleState(detections.minify_concatenate_js.present) },
     [LABEL_PRELOAD_LINKS]: { state: simpleState(detections.preload_links.present) },
     [LABEL_CDN]: { state: simpleState(detections.rocket_cdn.present) },
+    [LABEL_MOBILE_CACHE]: {
+      state: simpleState(detections.mobile_cache.present),
+      'rendered for': detections.mobile_cache.variant
+    },
     [LABEL_OPTIMIZE_CRITICAL_IMAGES]: {
       state: familyState(
         'atf',

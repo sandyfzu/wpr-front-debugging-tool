@@ -252,6 +252,35 @@ export interface PriorityElementsBeaconDetection {
 export type FeatureEvidenceSource = 'meta' | 'footprint';
 
 /**
+ * The device a separate-mobile-cache render was generated for, by WP Rocket's
+ * own mobile detection of the generating request (tablets count as mobile).
+ */
+export type MobileCacheVariant = 'mobile' | 'desktop';
+
+/**
+ * Separate cache files for mobile devices, decided by the generator meta
+ * only: the plugin appends `wpr_mobile`/`wpr_desktop` from the option alone,
+ * so no page markup can prove it — an undeclared page reads `present: false`
+ * with no `source`. The token proves the option that splits the cache; the
+ * second option that makes the plugin write mobile files at all is never
+ * visible on a page. The beacon config's device is not copied here: readers
+ * take it from the Priority Elements row (`isMobile`).
+ */
+export interface MobileCacheDetection {
+  present: boolean;
+  /**
+   * The device the declaration names; null when the row is not declared or
+   * the declaration names both (never a genuine render: the presence is
+   * still trusted, the device is not). Not the cache file: under WP Rocket's
+   * default tablet setting a tablet-generated `mobile` render is the desktop
+   * file.
+   */
+  variant: MobileCacheVariant | null;
+  /** The evidence class that decided the verdict, when one did (only ever the meta). */
+  source?: FeatureEvidenceSource;
+}
+
+/**
  * What the Exclusion Builder's rewrite did to one feature on the displayed
  * document, read from the marker the rewrite left in it (never inferred):
  * turned off feature-wide (`off: 'feature'`), turned off for this page by
@@ -448,6 +477,7 @@ export interface WprDetections {
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
   };
+  mobile_cache: MobileCacheDetection;
   rocket_above_the_fold_optimization: OptimizeCriticalImagesDetection;
   automatic_lazy_rendering: AutomaticLazyRenderingDetection;
   auto_preload_fonts: AutoPreloadFontsDetection;

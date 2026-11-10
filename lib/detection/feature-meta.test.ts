@@ -42,14 +42,14 @@ describe('parseFeatureMeta', () => {
     const meta = read(metaHtml(''));
     expect(meta).toEqual({ attributePresent: true, tokens: [] });
     // Every feature is refuted by an explicitly empty declaration.
-    expect(featureMetaVerdict(meta, 'wpr_cdn')).toBe('refuted');
+    expect(featureMetaVerdict(meta, ['wpr_cdn'])).toBe('refuted');
   });
 
   it('splits on any whitespace run and keeps exact tokens (no case-folding)', () => {
     const meta = read(metaHtml('  wpr_cdn\t wpr_delay_js\n  WPR_OCI '));
     expect(meta.tokens).toEqual(['wpr_cdn', 'wpr_delay_js', 'WPR_OCI']);
     // A casing near-miss is not a declaration.
-    expect(featureMetaVerdict(meta, 'wpr_oci')).toBe('refuted');
+    expect(featureMetaVerdict(meta, ['wpr_oci'])).toBe('refuted');
   });
 
   it('takes the first attribute-bearing generator meta in document order', () => {
@@ -66,7 +66,7 @@ describe('parseFeatureMeta', () => {
     const meta = read(metaHtml('wpr_cdn ' + 'x'.repeat(129)));
     expect(meta).toEqual({ attributePresent: true, tokens: [], degraded: true });
     // Degraded authority falls back to footprint evidence, never refutes.
-    expect(featureMetaVerdict(meta, 'wpr_cdn')).toBe('absent');
+    expect(featureMetaVerdict(meta, ['wpr_cdn'])).toBe('absent');
   });
 
   it('degrades wholesale on too many tokens', () => {
@@ -91,13 +91,13 @@ describe('parseFeatureMeta', () => {
     const over = read(metaHtml(`${atCap} `));
     expect(over).toEqual({ attributePresent: true, tokens: [], degraded: true });
     // Degraded authority falls back to footprint evidence, never refutes.
-    expect(featureMetaVerdict(over, 'wpr_cdn')).toBe('absent');
+    expect(featureMetaVerdict(over, ['wpr_cdn'])).toBe('absent');
   });
 
   it('retains duplicate tokens as declared (occurrence, not a set)', () => {
     const meta = read(metaHtml('wpr_cdn wpr_cdn'));
     expect(meta).toEqual({ attributePresent: true, tokens: ['wpr_cdn', 'wpr_cdn'] });
-    expect(featureMetaVerdict(meta, 'wpr_cdn')).toBe('declared');
+    expect(featureMetaVerdict(meta, ['wpr_cdn'])).toBe('declared');
   });
 
   it('does not match the attribute on a non-generator meta', () => {
@@ -128,19 +128,19 @@ describe('parseFeatureMeta', () => {
     // token, so the near-miss must NOT read as a declaration of wpr_cdn.
     const zwsp = read(metaHtml('\u200bwpr_cdn'));
     expect(zwsp.tokens).toEqual(['\u200bwpr_cdn']);
-    expect(featureMetaVerdict(zwsp, 'wpr_cdn')).toBe('refuted');
+    expect(featureMetaVerdict(zwsp, ['wpr_cdn'])).toBe('refuted');
   });
 
   it('reads a whitespace-only attribute as present-empty (the tag declares nothing)', () => {
     const meta = read(metaHtml('   '));
     expect(meta).toEqual({ attributePresent: true, tokens: [] });
-    expect(featureMetaVerdict(meta, 'wpr_cdn')).toBe('refuted');
+    expect(featureMetaVerdict(meta, ['wpr_cdn'])).toBe('refuted');
   });
 
   it('reads a bare valueless attribute as present-empty exactly like an empty value', () => {
     const meta = read('<meta name="generator" content="WP Rocket 3.23.5.1" data-wpr-features>');
     expect(meta).toEqual({ attributePresent: true, tokens: [] });
-    expect(featureMetaVerdict(meta, 'wpr_cdn')).toBe('refuted');
+    expect(featureMetaVerdict(meta, ['wpr_cdn'])).toBe('refuted');
   });
 
   it('drops the tag when a quote never closes and degrades a giant swallowed raw', () => {
@@ -152,7 +152,7 @@ describe('parseFeatureMeta', () => {
     // attribute value, and its cap violation degrades the declaration.
     const giant = read(`${unclosed}wpr_cdn${'x'.repeat(9000)}">`);
     expect(giant).toEqual({ attributePresent: true, tokens: [], degraded: true });
-    expect(featureMetaVerdict(giant, 'wpr_cdn')).toBe('absent');
+    expect(featureMetaVerdict(giant, ['wpr_cdn'])).toBe('absent');
   });
 });
 
@@ -163,61 +163,79 @@ describe('featureMetaVerdict', () => {
   const absent = parsePage('<p>none</p>').featureMeta;
 
   it('declares listed tokens', () => {
-    expect(featureMetaVerdict(declared, 'wpr_cdn')).toBe('declared');
-    expect(featureMetaVerdict(declared, 'wpr_delay_js')).toBe('declared');
+    expect(featureMetaVerdict(declared, ['wpr_cdn'])).toBe('declared');
+    expect(featureMetaVerdict(declared, ['wpr_delay_js'])).toBe('declared');
   });
 
   it('refutes unlisted tokens only when the declaration is authoritative', () => {
-    expect(featureMetaVerdict(declared, 'wpr_minify_css')).toBe('refuted');
-    expect(featureMetaVerdict(empty, 'wpr_minify_css')).toBe('refuted');
+    expect(featureMetaVerdict(declared, ['wpr_minify_css'])).toBe('refuted');
+    expect(featureMetaVerdict(empty, ['wpr_minify_css'])).toBe('refuted');
   });
 
   it('answers absent when the meta decides nothing (no attribute, degraded)', () => {
-    expect(featureMetaVerdict(absent, 'wpr_cdn')).toBe('absent');
-    expect(featureMetaVerdict(degraded, 'wpr_cdn')).toBe('absent');
+    expect(featureMetaVerdict(absent, ['wpr_cdn'])).toBe('absent');
+    expect(featureMetaVerdict(degraded, ['wpr_cdn'])).toBe('absent');
+  });
+
+  it('declares a multi-token row when any one of its tokens is listed', () => {
+    const mobile = parsePage(metaHtml('wpr_cdn wpr_mobile')).featureMeta;
+    const desktop = parsePage(metaHtml('wpr_desktop')).featureMeta;
+    expect(featureMetaVerdict(mobile, ['wpr_mobile', 'wpr_desktop'])).toBe('declared');
+    expect(featureMetaVerdict(desktop, ['wpr_mobile', 'wpr_desktop'])).toBe('declared');
+    expect(featureMetaVerdict(declared, ['wpr_mobile', 'wpr_desktop'])).toBe('refuted');
+    expect(featureMetaVerdict(degraded, ['wpr_mobile', 'wpr_desktop'])).toBe('absent');
+  });
+
+  it('refutes for an empty token list on a usable declaration', () => {
+    expect(featureMetaVerdict(declared, [])).toBe('refuted');
   });
 });
 
 describe('FEATURE_META_TOKENS registry', () => {
-  // The independent witness: each row and the exact token the plugin's own
+  // The independent witness: each row and the exact tokens the plugin's own
   // emitter declares for it (the emitters' add_meta_comment argument prefixed
   // with wpr_, plus the meta builder's option-driven tokens).
-  const EXPECTED: Record<keyof typeof FEATURE_META_TOKENS, string> = {
-    remove_unused_css: 'wpr_remove_unused_css',
-    async_css: 'wpr_async_css',
-    delay_js: 'wpr_delay_js',
-    defer_all_js: 'wpr_defer_js',
-    lazyload: 'wpr_lazyload_images',
-    lazyload_iframes: 'wpr_lazyload_iframes',
-    lazyload_css_bg_img: 'wpr_lazyload_css_bg_img',
-    self_hosted_fonts: 'wpr_host_fonts_locally',
-    image_dimensions: 'wpr_image_dimensions',
-    rocket_above_the_fold_optimization: 'wpr_oci',
-    automatic_lazy_rendering: 'wpr_automatic_lazy_rendering',
-    auto_preload_fonts: 'wpr_auto_preload_fonts',
-    preconnect_external_domains: 'wpr_preconnect_external_domains',
-    minify_css: 'wpr_minify_css',
-    minify_js: 'wpr_minify_js',
-    minify_concatenate_js: 'wpr_minify_concatenate_js',
-    preload_links: 'wpr_preload_links',
-    rocket_cdn: 'wpr_cdn'
+  const EXPECTED: Record<keyof typeof FEATURE_META_TOKENS, readonly string[]> = {
+    remove_unused_css: ['wpr_remove_unused_css'],
+    async_css: ['wpr_async_css'],
+    delay_js: ['wpr_delay_js'],
+    defer_all_js: ['wpr_defer_js'],
+    lazyload: ['wpr_lazyload_images'],
+    lazyload_iframes: ['wpr_lazyload_iframes'],
+    lazyload_css_bg_img: ['wpr_lazyload_css_bg_img'],
+    self_hosted_fonts: ['wpr_host_fonts_locally'],
+    image_dimensions: ['wpr_image_dimensions'],
+    rocket_above_the_fold_optimization: ['wpr_oci'],
+    automatic_lazy_rendering: ['wpr_automatic_lazy_rendering'],
+    auto_preload_fonts: ['wpr_auto_preload_fonts'],
+    preconnect_external_domains: ['wpr_preconnect_external_domains'],
+    minify_css: ['wpr_minify_css'],
+    minify_js: ['wpr_minify_js'],
+    minify_concatenate_js: ['wpr_minify_concatenate_js'],
+    preload_links: ['wpr_preload_links'],
+    rocket_cdn: ['wpr_cdn'],
+    // Meta.php: the device variant the request was served, one per render.
+    mobile_cache: ['wpr_mobile', 'wpr_desktop']
   };
 
   it('maps every feature row to its exact emitter token', () => {
     expect(FEATURE_META_TOKENS).toEqual(EXPECTED);
   });
 
-  it('round-trips the inverse lookup', () => {
-    for (const [row, token] of Object.entries(EXPECTED)) {
-      expect(featureRowForMetaToken(token)).toBe(row);
+  it('round-trips the inverse lookup (every token of a row)', () => {
+    for (const [row, tokens] of Object.entries(EXPECTED)) {
+      for (const token of tokens) expect(featureRowForMetaToken(token)).toBe(row);
     }
+  });
+
+  it('maps both device tokens to the mobile cache row', () => {
+    expect(featureRowForMetaToken('wpr_mobile')).toBe('mobile_cache');
+    expect(featureRowForMetaToken('wpr_desktop')).toBe('mobile_cache');
   });
 
   it('maps no row to the tokens whose rows are not carried yet', () => {
     expect(featureRowForMetaToken('wpr_dns_prefetch')).toBeNull();
     expect(featureRowForMetaToken('wpr_cache_webp')).toBeNull();
-    expect(featureRowForMetaToken('wpr_mobile')).toBeNull();
-    expect(featureRowForMetaToken('wpr_desktop')).toBeNull();
     expect(featureRowForMetaToken('wpr_nonexistent')).toBeNull();
   });
 });

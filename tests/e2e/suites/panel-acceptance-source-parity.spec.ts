@@ -510,6 +510,7 @@ sourceTest.describe('source-build parity over one served fixture', () => {
           'Automatic Lazy Rendering',
           'Preload fonts',
           'Preconnect to External Domains',
+          'Separate cache files for mobile devices',
           'Priority Elements beacon'
         ]);
         // The two header-derived cards the fixture's headers create, with

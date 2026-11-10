@@ -69,7 +69,8 @@ const ROW_UI: Readonly<Record<MatrixRow, { readonly name: string; readonly chip:
   image_dimensions: { name: 'Add missing image dimensions', chip: 'Image Dimensions' },
   self_hosted_fonts: { name: 'Self-host Google Fonts', chip: 'Self-host Google Fonts' },
   preload_links: { name: 'Preload Links', chip: 'Preload Links' },
-  rocket_cdn: { name: 'Content Delivery Network', chip: 'CDN' }
+  rocket_cdn: { name: 'Content Delivery Network', chip: 'CDN' },
+  mobile_cache: { name: 'Separate cache files for mobile devices', chip: 'Mobile cache' }
 };
 
 /**

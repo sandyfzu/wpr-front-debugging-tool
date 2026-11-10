@@ -68,12 +68,16 @@
  * 6. Every delayed script record carries its parked original type
  *    (`originalType`, from `data-rocket-type`) when that value is non-empty;
  *    undelayed records never do.
+ * 7. Separate cache files for mobile devices (`mobile_cache`): one row, two
+ *    device tokens — either declares it; `variant` names the one listed
+ *    (null when both or neither are). No footprint: an undeclared page
+ *    stays undecided.
  *
  * The port's contract additions (the cache-marker flag with its comment-only
  * white-label registry and strict display-domain timestamp, the defer count,
- * the self-hosted fonts row and the declaration-only image-dimensions and
- * Combine-JavaScript rows) are mirrored here so the records stay key-for-key
- * comparable.
+ * the self-hosted fonts row and the declaration-only image-dimensions,
+ * Combine-JavaScript and mobile-cache rows) are mirrored here so the records
+ * stay key-for-key comparable.
  *
  * Everything else follows the reference algorithm as written, including
  * quirks that matter (reverse lazyload scans, per-check re-queries of the
@@ -122,6 +126,7 @@ import {
   MINIFY_ATTRIBUTE_VALUE,
   MINIFY_CSS_URL_PATTERN,
   MINIFY_JS_URL_PATTERN,
+  MOBILE_CACHE_VARIANT_TOKENS,
   OPTIMIZE_CRITICAL_IMAGES_COMMENT,
   PRELOAD_LINKS_CONFIG_MARK,
   PRELOAD_LINKS_SCRIPT_ID,
@@ -178,7 +183,8 @@ const CheckOptimizationFunctions: Record<keyof WprDetections, CheckOptimizationF
   minify_js: checkMinifyJS,
   minify_concatenate_js: checkCombineJS,
   preload_links: checkPreloadLinks,
-  rocket_cdn: checkRocketCDN
+  rocket_cdn: checkRocketCDN,
+  mobile_cache: checkMobileCache
 } as const;
 
 function wprCached({ HTMLDocument }: CheckOptimizationFunctionPayload): WprDetections['wpr'] {
@@ -515,6 +521,20 @@ function checkRocketCDN({
     }
   }
   return { present: false };
+}
+
+function checkMobileCache({
+  HTMLDocument
+}: CheckOptimizationFunctionPayload): WprDetections['mobile_cache'] {
+  const meta = parseReferenceFeatureMeta(HTMLDocument);
+  let variant: WprDetections['mobile_cache']['variant'] = null;
+  if (meta.attributePresent && !meta.degraded) {
+    const mobile = meta.tokens.indexOf(MOBILE_CACHE_VARIANT_TOKENS.mobile) !== -1;
+    const desktop = meta.tokens.indexOf(MOBILE_CACHE_VARIANT_TOKENS.desktop) !== -1;
+    if (mobile && !desktop) variant = 'mobile';
+    else if (desktop && !mobile) variant = 'desktop';
+  }
+  return { present: false, variant };
 }
 
 function checkScriptsDeferred({
@@ -955,13 +975,16 @@ function parseReferenceFeatureMeta(HTMLDocument: Document): ReferenceFeatureMeta
   return { attributePresent: true, tokens, degraded: false };
 }
 
-/** `declared` / `refuted` / `absent` for one exact token (mirrors the port). */
+/** `declared` / `refuted` / `absent` for a row's exact tokens, any one listed (mirrors the port). */
 function referenceMetaVerdict(
   meta: ReferenceFeatureMeta,
-  token: string
+  rowTokens: readonly string[]
 ): 'declared' | 'refuted' | 'absent' {
   if (!meta.attributePresent || meta.degraded) return 'absent';
-  return meta.tokens.includes(token) ? 'declared' : 'refuted';
+  for (const token of rowTokens) {
+    if (meta.tokens.includes(token)) return 'declared';
+  }
+  return 'refuted';
 }
 
 /** Apply the declaration's authority in the same order as the port. */

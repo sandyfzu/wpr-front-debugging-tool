@@ -28,6 +28,7 @@ export function minimalDetections(): Record<string, unknown> {
     minify_concatenate_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
+    mobile_cache: { present: false, variant: null },
     rocket_above_the_fold_optimization: { present: false, lcpComment: false },
     automatic_lazy_rendering: {
       present: false,
@@ -95,6 +96,7 @@ export function validDetections(): Record<string, unknown> {
     minify_concatenate_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
+    mobile_cache: { present: true, variant: 'desktop', source: 'meta' },
     rocket_above_the_fold_optimization: {
       present: true,
       lcpComment: true,

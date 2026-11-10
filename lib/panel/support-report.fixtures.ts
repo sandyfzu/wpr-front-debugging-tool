@@ -24,6 +24,7 @@ export function emptyDetections(): WprDetections {
     minify_concatenate_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
+    mobile_cache: { present: false, variant: null },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
     defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
     lazyload: { present: false, images: [] },

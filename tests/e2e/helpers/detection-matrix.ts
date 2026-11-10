@@ -99,7 +99,8 @@ export type MatrixRow =
   | 'image_dimensions'
   | 'self_hosted_fonts'
   | 'preload_links'
-  | 'rocket_cdn';
+  | 'rocket_cdn'
+  | 'mobile_cache';
 
 /** One round's full row expectation. */
 export type RowTable = Readonly<Record<MatrixRow, RowExpectation>>;
@@ -166,7 +167,9 @@ const BASELINE_META_ROWS: RowTable = {
   image_dimensions: 'Not active (Meta)',
   self_hosted_fonts: 'Not active (Meta)',
   preload_links: 'Not active (Meta)',
-  rocket_cdn: 'Not active (Meta)'
+  rocket_cdn: 'Not active (Meta)',
+  // The device token (`wpr_desktop`: the browser tier's desktop user agent).
+  mobile_cache: 'Active (Meta)'
 };
 
 /** The baseline render with its meta suppressed: footprints alone decide. */
@@ -184,7 +187,9 @@ const BASELINE_FOOTPRINT_ROWS: RowTable = {
   image_dimensions: 'Unknown',
   self_hosted_fonts: 'Unknown',
   preload_links: 'Not active',
-  rocket_cdn: 'Not active'
+  rocket_cdn: 'Not active',
+  // Declaration-only: no page footprint proves the cache split.
+  mobile_cache: 'Unknown'
 };
 
 /** The bypassed render (`nowprocket`): no meta; Delay skips, Defer/Minify/LazyLoad stay. */
@@ -195,7 +200,7 @@ const BYPASS_ROWS: RowTable = {
   minify_js: 'Active (Footprint)'
 };
 
-/** Every row refuted by a device-only meta. */
+/** Every row refuted by a device-only meta, except the row its device token declares. */
 const ALL_REFUTED_ROWS: RowTable = {
   remove_unused_css: 'Not active (Meta)',
   async_css: 'Not active (Meta)',
@@ -210,7 +215,8 @@ const ALL_REFUTED_ROWS: RowTable = {
   image_dimensions: 'Not active (Meta)',
   self_hosted_fonts: 'Not active (Meta)',
   preload_links: 'Not active (Meta)',
-  rocket_cdn: 'Not active (Meta)'
+  rocket_cdn: 'Not active (Meta)',
+  mobile_cache: 'Active (Meta)'
 };
 
 /** No meta, no footprint: honest Not active, Unknown where absence is unprovable. */
@@ -228,7 +234,8 @@ const NOTHING_ROWS: RowTable = {
   image_dimensions: 'Unknown',
   self_hosted_fonts: 'Unknown',
   preload_links: 'Not active',
-  rocket_cdn: 'Not active'
+  rocket_cdn: 'Not active',
+  mobile_cache: 'Unknown'
 };
 
 /** The scripted rounds, grouped by combination (each group runs under its combo). */
@@ -511,7 +518,8 @@ export const MATRIX_ROUNDS: readonly MatrixRound[] = [
     meta: 'versioned',
     cache: CACHED,
     rows: ALL_REFUTED_ROWS,
-    proves: 'a meta carrying only the device token refutes every row (never Unknown)'
+    proves:
+      'a meta carrying only the device token refutes every other row (never Unknown) and declares the mobile cache'
   },
   {
     id: 'C2-device-only-meta-vs-decoys',
@@ -635,10 +643,11 @@ export function baselineMetaDrift(html: string): string[] {
   if (baseline === undefined) throw new Error('the round list lost its A1-meta baseline round');
   const problems: string[] = [];
   for (const [row, expectation] of Object.entries(baseline.rows) as [MatrixRow, RowExpectation][]) {
-    const token = FEATURE_META_TOKENS[row];
-    if (expectation === 'Active (Meta)' && !tokens.has(token)) problems.push(`${token} missing`);
-    if (expectation === 'Not active (Meta)' && tokens.has(token))
-      problems.push(`${token} declared`);
+    const rowTokens = FEATURE_META_TOKENS[row];
+    const listed = rowTokens.some((token) => tokens.has(token));
+    const named = rowTokens.join('/');
+    if (expectation === 'Active (Meta)' && !listed) problems.push(`${named} missing`);
+    if (expectation === 'Not active (Meta)' && listed) problems.push(`${named} declared`);
   }
   return problems;
 }

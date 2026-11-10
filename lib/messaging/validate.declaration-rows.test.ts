@@ -119,6 +119,58 @@ describe('the declaration-only row invariants', () => {
   });
 });
 
+describe('the mobile cache row', () => {
+  /** A minimal payload with the given mobile cache row. */
+  const withRow = (row: unknown): Record<string, unknown> => ({
+    ...minimalDetections(),
+    mobile_cache: row
+  });
+
+  it.each([
+    { present: false, variant: null },
+    { present: false, variant: null, source: 'meta' },
+    { present: true, variant: 'mobile', source: 'meta' },
+    { present: true, variant: 'desktop', source: 'meta' },
+    { present: true, variant: null, source: 'meta' }
+  ])('accepts and carries %j through', (row) => {
+    expect(parseWprDetections(withRow(row))?.mobile_cache).toEqual(row);
+  });
+
+  it.each([
+    ['a variant on an undeclared row', { present: false, variant: 'mobile' }],
+    ['a variant on a refuted row', { present: false, variant: 'desktop', source: 'meta' }],
+    ['an unknown variant', { present: true, variant: 'tablet', source: 'meta' }],
+    ['a missing variant', { present: false }],
+    // The beacon row owns the device; a copy here is not engine output.
+    ['a device copy', { present: false, variant: null, deviceContext: true }],
+    ['a footprint source', { present: true, variant: 'mobile', source: 'footprint' }],
+    ['a declared row without a source', { present: true, variant: 'mobile' }],
+    ['an extra key', { present: false, variant: null, extra: 1 }],
+    ['a non-object', 'mobile']
+  ])('rejects %s', (_name, row) => {
+    expect(parseWprDetections(withRow(row))).toBeNull();
+  });
+
+  it('names the offending field on rejection', () => {
+    const fdt = validFdt();
+    const detections = fdt['wprDetections'] as Record<string, unknown>;
+    const explained = parseFdtDataExplained({
+      ...fdt,
+      wprDetections: {
+        ...detections,
+        mobile_cache: { present: false, variant: 'x' }
+      }
+    });
+    expect(explained).toEqual({ ok: false, path: 'wprDetections.mobile_cache.variant' });
+  });
+
+  it('a payload missing the row is rejected like any missing row', () => {
+    const payload: Record<string, unknown> = { ...minimalDetections() };
+    delete payload['mobile_cache'];
+    expect(parseWprDetections(payload)).toBeNull();
+  });
+});
+
 describe('the count invariants', () => {
   const base = validDetections();
 

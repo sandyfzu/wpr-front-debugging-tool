@@ -461,6 +461,8 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   if (preconnectDomains === null) return null;
   const beacon = row('priority_elements_beacon', parseBeaconRow);
   if (beacon === null) return null;
+  const mobileCache = row('mobile_cache', parseMobileCacheRow);
+  if (mobileCache === null) return null;
   return {
     wpr,
     remove_unused_css: removeUnusedCss,
@@ -473,6 +475,7 @@ export function parseWprDetections(input: unknown): WprDetections | null {
     minify_concatenate_js: combineJs,
     preload_links: preloadLinks,
     rocket_cdn: rocketCdn,
+    mobile_cache: mobileCache,
     delay_js: delayJs,
     defer_all_js: deferAllJs,
     lazyload,
@@ -887,8 +890,9 @@ function parseIframesRow(input: unknown): WprDetections['lazyload_iframes'] | nu
 }
 
 /**
- * A declaration-only row (image dimensions, Combine JavaScript files): the
- * only deciding source is the generator meta. A footprint source (or a
+ * A declaration-only row (image dimensions, Combine JavaScript files, the
+ * mobile cache verdict): the only deciding source is the generator meta. A
+ * footprint source (or a
  * declared presence without one) is not engine output — neither standard
  * `width`/`height` markup nor a digest-named bundle attributes its feature.
  */
@@ -899,6 +903,25 @@ function parseDeclarationOnlyRow(
   if (parsed === null || parsed.source === 'footprint') return null;
   if (parsed.present && parsed.source !== 'meta') return null;
   return parsed;
+}
+
+/**
+ * Mobile cache row: a declaration-only verdict plus the declared variant
+ * (required: the row has no older shape). A variant on an undeclared row is
+ * not engine output.
+ *
+ * @param input The raw row.
+ */
+function parseMobileCacheRow(input: unknown): WprDetections['mobile_cache'] | null {
+  if (!isRecord(input)) return reject();
+  const { variant, ...verdictRow } = input;
+  if (variant !== null && variant !== 'mobile' && variant !== 'desktop') return reject('variant');
+  const parsed = parseDeclarationOnlyRow(verdictRow);
+  if (parsed === null) return reject();
+  if (variant !== null && !parsed.present) return reject('variant');
+  const row: WprDetections['mobile_cache'] = { present: parsed.present, variant };
+  if (parsed.source !== undefined) row.source = parsed.source;
+  return row;
 }
 
 /**

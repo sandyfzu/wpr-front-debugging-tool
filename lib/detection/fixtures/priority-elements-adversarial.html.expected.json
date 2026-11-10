@@ -107,6 +107,10 @@
     "rocket_cdn": {
       "present": true,
       "source": "footprint"
+    },
+    "mobile_cache": {
+      "present": false,
+      "variant": null
     }
   },
   "preloadedResources": {

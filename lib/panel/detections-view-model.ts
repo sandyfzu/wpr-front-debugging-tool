@@ -28,6 +28,8 @@ import {
 import {
   builderModifierCopy,
   HUD_FEATURES,
+  MOBILE_CACHE_LIMIT,
+  mobileCacheRenderText,
   simulationModifierCopy,
   hudFeatureOf,
   readHudFeature,
@@ -73,7 +75,8 @@ export type StatusItemId = 'server' | 'known-platform' | 'host-layers' | 'cached
  * the captured host layers, the cache
  * stamp (the stamp only when it is a representable instant — a hostile
  * page-crafted digit run stays out of downstream math), a version string,
- * and a preloaded-image count.
+ * a preloaded-image count, and the mobile cache render's device with its
+ * proof limit.
  */
 export type StatusItemDetail =
   | { readonly kind: 'server'; readonly value: string }
@@ -85,7 +88,8 @@ export type StatusItemDetail =
       readonly formatted: string | null;
     }
   | { readonly kind: 'version'; readonly version: string | null }
-  | { readonly kind: 'preloaded-images'; readonly count: number };
+  | { readonly kind: 'preloaded-images'; readonly count: number }
+  | { readonly kind: 'mobile-cache'; readonly rendered: string; readonly limit: string };
 
 /** One status card: name, verdict, subtitle copy and its richer detail. */
 export interface StatusItem {
@@ -540,6 +544,26 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
               }
             : { id: row, name: cardName(row), ...facts }
         );
+        continue;
+      }
+      case 'mobile_cache': {
+        const facts = readFacts(row);
+        // Only a declared row names a device; the limit rides as its detail.
+        if (facts.status !== 'active') {
+          items.push({ id: row, name: cardName(row), ...facts });
+          continue;
+        }
+        const rendered = mobileCacheRenderText(
+          detections.mobile_cache.variant,
+          detections.priority_elements_beacon.isMobile
+        );
+        items.push({
+          id: row,
+          name: cardName(row),
+          ...facts,
+          subtitle: rendered,
+          detail: { kind: 'mobile-cache', rendered, limit: MOBILE_CACHE_LIMIT }
+        });
         continue;
       }
       default:

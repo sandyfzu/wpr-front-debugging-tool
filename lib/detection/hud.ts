@@ -20,6 +20,7 @@ import type {
   BuilderFact,
   FeatureEvidenceSource,
   FeatureMetaRow,
+  MobileCacheVariant,
   SimulationFact,
   WprDetections
 } from '../wp-rocket/types';
@@ -39,6 +40,7 @@ import {
   LABEL_LOAD_JAVASCRIPT_DEFERRED,
   LABEL_MINIFY_CSS,
   LABEL_MINIFY_JAVASCRIPT,
+  LABEL_MOBILE_CACHE,
   LABEL_OPTIMIZE_CRITICAL_IMAGES,
   LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS,
   LABEL_PRELOAD_FONTS,
@@ -56,7 +58,8 @@ import {
  * `features` holds the Priority Elements family — the four beacon-measured
  * optimizations, grouped by how they work rather than by settings page
  * (Preload fonts is an Image & Media › Fonts field; the other three have no
- * settings field at all).
+ * settings field at all) — then the mobile cache split (no settings section
+ * shows it either).
  */
 export type HudGroupId = 'file-optimization' | 'media' | 'preload' | 'cdn' | 'features';
 
@@ -92,6 +95,13 @@ export interface HudFeature {
    * prove absence (no footprint at all, or a knowingly partial one).
    */
   readonly undecided: string | null;
+  /**
+   * The applied verdict's own line, for a row whose applied state carries
+   * more than a count (lower-case start, like every state line). Optional —
+   * unlike the fields above — so the rows on the generic "applied on this
+   * page" line ship no per-row key in the size-capped on-page bundle.
+   */
+  readonly appliedLine?: (detections: WprDetections) => string;
 }
 
 /**
@@ -268,6 +278,22 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     unit: DOMAIN_NOUN,
     count: (report) => report[LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS]['domains hinted'],
     undecided: null
+  },
+  {
+    row: 'mobile_cache',
+    label: LABEL_MOBILE_CACHE,
+    shortLabel: 'Mobile cache',
+    group: 'features',
+    unit: null,
+    count: null,
+    // The plugin's device token follows the option alone: no page markup.
+    undecided:
+      'no generator meta declaration decided it, and the cache split leaves no footprint on the page, so its state is unknown.',
+    appliedLine: (detections) =>
+      mobileCacheAppliedLine(
+        detections.mobile_cache.variant,
+        detections.priority_elements_beacon.isMobile
+      )
   }
 ];
 
@@ -320,6 +346,11 @@ export interface HudReading {
   readonly source: FeatureEvidenceSource | null;
   /** The amber "why" for an unsure verdict (collecting / unknown), else null. */
   readonly why: string | null;
+  /**
+   * The row's own applied line ({@link HudFeature.appliedLine}), present only
+   * on an applied verdict of a row that has one.
+   */
+  readonly appliedLine?: string;
   /**
    * The Exclusion Builder's effect on this feature in this tab (the marker
    * the rewrite left in the displayed document) — a modifier on top of the
@@ -395,11 +426,16 @@ export function readHudFeature(
     simulation !== 'simulated';
   const verdict: HudVerdict = unknown ? 'unknown' : state;
   const builder = builderFactOf(detections, feature.row);
+  const appliedLine =
+    verdict === 'applied' && feature.appliedLine !== undefined
+      ? feature.appliedLine(detections)
+      : null;
   return {
     verdict,
     count: feature.count === null ? null : feature.count(report),
     source,
     why: unknown ? feature.undecided : verdict === 'collecting' ? COLLECTING_WHY : null,
+    ...(appliedLine === null ? {} : { appliedLine }),
     ...(builder === null ? {} : { builder }),
     ...(simulation === null ? {} : { simulation })
   };
@@ -457,6 +493,7 @@ export function hudStateLine(feature: HudFeature, reading: HudReading): string {
 function servedStateLine(feature: HudFeature, reading: HudReading): string {
   switch (reading.verdict) {
     case 'applied':
+      if (reading.appliedLine !== undefined) return reading.appliedLine;
       return reading.count !== null && feature.unit !== null
         ? `applied on this page: ${counted(reading.count, feature.unit)}.`
         : 'applied on this page.';
@@ -474,6 +511,58 @@ function servedStateLine(feature: HudFeature, reading: HudReading): string {
       }
       return "nothing matched on this page (the page may predate the plugin's work).";
   }
+}
+
+/**
+ * The mobile cache row's proof limit: the declaration proves the option that
+ * splits the cache, while writing mobile files at all takes a second option
+ * no page shows; and the declared device is not the file served (WP Rocket's
+ * mobile detection counts tablets as mobile, its default tablet setting
+ * serves them the desktop file).
+ */
+export const MOBILE_CACHE_LIMIT =
+  "Declared on this render; separate mobile files also need WP Rocket's mobile cache option, which the page doesn't show. Tablets count as mobile here but get the desktop file under WP Rocket's default tablet setting.";
+
+/** The device a mobile cache declaration names, as every surface words it. */
+const MOBILE_CACHE_RENDER_TEXT: Readonly<Record<MobileCacheVariant | 'both', string>> = {
+  mobile: 'Rendered for mobile',
+  desktop: 'Rendered for desktop',
+  both: 'Both devices declared'
+};
+
+/**
+ * Which device a declared mobile cache render was generated for, in one
+ * phrase, plus the beacon config's device whenever it does not match (shown
+ * beside the declaration, never resolved against it). The beacon's
+ * `is_mobile` also needs WP Rocket's mobile cache option and WordPress's own
+ * mobile check, so "not mobile" beside a mobile render may mean either
+ * disagrees — never that the device was a desktop.
+ *
+ * @param variant The row's declared device (null: both declared).
+ * @param beaconIsMobile The Priority Elements row's `isMobile` (null: no usable config).
+ * @returns e.g. "Rendered for mobile" or "Rendered for mobile · beacon config: not mobile".
+ */
+export function mobileCacheRenderText(
+  variant: MobileCacheVariant | null,
+  beaconIsMobile: boolean | null
+): string {
+  const text = MOBILE_CACHE_RENDER_TEXT[variant ?? 'both'];
+  if (beaconIsMobile === null || variant === (beaconIsMobile ? 'mobile' : 'desktop')) return text;
+  return `${text}${LIST_JOINER}beacon config: ${beaconIsMobile ? 'mobile' : 'not mobile'}`;
+}
+
+/**
+ * The mobile cache row's applied state line: the render's device, then the
+ * proof limit.
+ *
+ * @param variant The row's declared device.
+ * @param beaconIsMobile The Priority Elements row's `isMobile`.
+ */
+function mobileCacheAppliedLine(
+  variant: MobileCacheVariant | null,
+  beaconIsMobile: boolean | null
+): string {
+  return `applied on this page: ${lowerFirst(mobileCacheRenderText(variant, beaconIsMobile))}. ${MOBILE_CACHE_LIMIT}`;
 }
 
 /** One evidence source's on-screen renderings (chip text, tooltip/accessible text). */

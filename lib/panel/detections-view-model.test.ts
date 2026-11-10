@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { buildStatusItems, hostLayersTooltip, type StatusItem } from './detections-view-model';
 import { HOST_LAYER_ADD_ON_CAVEAT } from '../detection/host-layers';
 import type { FdtData, WprDetections } from '../wp-rocket/types';
-import { HUD_FEATURES } from '../detection/hud';
+import { HUD_FEATURES, MOBILE_CACHE_LIMIT } from '../detection/hud';
 
 /**
  * The record exactly as the payload validator rebuilds it (its literal
@@ -29,6 +29,7 @@ function fullDetections(overrides?: Partial<WprDetections>): WprDetections {
     minify_concatenate_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
+    mobile_cache: { present: false, variant: null },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
     defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
     lazyload: { present: false, images: [] },
@@ -520,6 +521,43 @@ describe('buildStatusItems — per-feature subtitles', () => {
   });
 });
 
+describe('buildStatusItems — the mobile cache card', () => {
+  /** The mobile cache card over a page carrying the given row and beacon device. */
+  const mobileCard = (row: WprDetections['mobile_cache'], isMobile: boolean | null) =>
+    buildStatusItems(
+      makeData({
+        wprDetections: fullDetections({
+          mobile_cache: row,
+          priority_elements_beacon: { present: true, status: null, isMobile }
+        })
+      })
+    ).find((item) => item.id === 'mobile_cache');
+
+  it('a declared row: the render device as subtitle (beacon read off its row), the limit as its detail', () => {
+    expect(mobileCard({ present: true, variant: 'mobile', source: 'meta' }, false)).toEqual({
+      id: 'mobile_cache',
+      name: 'Separate cache files for mobile devices',
+      status: 'active',
+      source: 'meta',
+      subtitle: 'Rendered for mobile · beacon config: not mobile',
+      detail: {
+        kind: 'mobile-cache',
+        rendered: 'Rendered for mobile · beacon config: not mobile',
+        limit: MOBILE_CACHE_LIMIT
+      }
+    });
+  });
+
+  it('a refuted row invents no subtitle, even with a beacon device', () => {
+    expect(mobileCard({ present: false, variant: null, source: 'meta' }, true)).toEqual({
+      id: 'mobile_cache',
+      name: 'Separate cache files for mobile devices',
+      status: 'not-active',
+      source: 'meta'
+    });
+  });
+});
+
 describe('buildStatusItems — the Optimize Critical Images lifecycle subtitle', () => {
   it('applied features count their evidence coarsely (9+ past nine)', () => {
     const twelve = buildStatusItems(
@@ -646,6 +684,7 @@ describe('buildStatusItems — keying and coverage', () => {
       'automatic_lazy_rendering',
       'auto_preload_fonts',
       'preconnect_external_domains',
+      'mobile_cache',
       'priority_elements_beacon'
     ]);
   });

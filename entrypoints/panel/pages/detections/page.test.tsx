@@ -17,6 +17,7 @@ import { makeFdtData } from '../../state/fixtures';
 import type { DataState } from '../../state/fdt-state-machine';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { CARD_PAGE_LINKS } from './card-presentation';
+import { MOBILE_CACHE_LIMIT } from '../../../../lib/detection/hud';
 import { isOptimizationCard } from '../../../../lib/panel/detections-summary';
 import { DETECTIONS_GRID, DETECTIONS_SUBTITLE, DetectionsPage, DetectionsView } from './page';
 import { CARD_SURFACE_PAIR, STATUS_CARD_SURFACE } from './status-card';
@@ -227,6 +228,30 @@ describe('DetectionsView', () => {
   it('shows no Host layers card when no host-layer header was captured', () => {
     render(() => <DetectionsView data={richData()} now={NOW} />);
     expect(document.querySelector('[data-fdt-card-id="host-layers"]')).toBeNull();
+  });
+
+  it('renders the mobile cache render device as a tooltip trigger carrying the proof limit', async () => {
+    const base = richData();
+    render(() => (
+      <DetectionsView
+        data={{
+          ...base,
+          wprDetections: {
+            ...base.wprDetections,
+            mobile_cache: {
+              present: true,
+              variant: 'desktop',
+              source: 'meta'
+            }
+          }
+        }}
+        now={NOW}
+      />
+    ));
+    const trigger = card('mobile_cache').querySelector<HTMLElement>('[data-fdt="tooltip-trigger"]');
+    expect(trigger?.textContent).toBe('Rendered for desktop');
+    trigger?.focus();
+    expect(await screen.findByText(MOBILE_CACHE_LIMIT)).toBeTruthy();
   });
 
   it('ages the cached subtitle as the clock advances', () => {

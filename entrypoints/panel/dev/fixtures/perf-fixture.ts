@@ -194,6 +194,7 @@ export function generatePerfFixture(seed = 6_003): FdtData {
     minify_concatenate_js: { present: false },
     preload_links: { present: true },
     rocket_cdn: { present: false },
+    mobile_cache: { present: false, variant: null },
     delay_js: {
       present: true,
       scripts,
