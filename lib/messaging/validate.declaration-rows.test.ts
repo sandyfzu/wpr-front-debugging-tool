@@ -171,6 +171,60 @@ describe('the mobile cache row', () => {
   });
 });
 
+describe('the DNS prefetch row', () => {
+  /** A minimal payload with the given DNS prefetch row. */
+  const withRow = (row: unknown): Record<string, unknown> => ({
+    ...minimalDetections(),
+    dns_prefetch: row
+  });
+
+  it.each([
+    { present: false, domains: [] },
+    // Undecided or refuted pages keep their plain hints as corroboration.
+    { present: false, domains: ['https://fonts.example/'] },
+    { present: false, domains: ['https://fonts.example/'], source: 'meta' },
+    { present: true, domains: [], source: 'meta' },
+    { present: true, domains: ['https://a.example/', 'https://b.example/'], source: 'meta' },
+    { present: true, domains: ['https://a.example/'], source: 'meta', truncated: true }
+  ])('accepts and carries %j through', (row) => {
+    expect(parseWprDetections(withRow(row))?.dns_prefetch).toEqual(row);
+  });
+
+  it.each([
+    ['a footprint source', { present: true, domains: ['https://a.example/'], source: 'footprint' }],
+    ['a declared row without a source', { present: true, domains: [] }],
+    ['a missing list', { present: false }],
+    ['a non-list', { present: false, domains: 'https://a.example/' }],
+    ['a non-string domain', { present: false, domains: [1] }],
+    ['an empty domain', { present: false, domains: [''] }],
+    ['a mark on an empty list', { present: true, domains: [], source: 'meta', truncated: true }],
+    [
+      'a mark that is not true',
+      { present: false, domains: ['https://a.example/'], truncated: false }
+    ],
+    ['an extra key', { present: false, domains: [], preconnectCount: 0 }],
+    ['a non-object', ['https://a.example/']]
+  ])('rejects %s', (_name, row) => {
+    expect(parseWprDetections(withRow(row))).toBeNull();
+  });
+
+  it('names the offending field on rejection', () => {
+    const fdt = validFdt();
+    const detections = fdt['wprDetections'] as Record<string, unknown>;
+    const explained = parseFdtDataExplained({
+      ...fdt,
+      wprDetections: { ...detections, dns_prefetch: { present: false, domains: [7] } }
+    });
+    expect(explained).toEqual({ ok: false, path: 'wprDetections.dns_prefetch.domains[0]' });
+  });
+
+  it('a payload missing the row is rejected like any missing row', () => {
+    const payload: Record<string, unknown> = { ...minimalDetections() };
+    delete payload['dns_prefetch'];
+    expect(parseWprDetections(payload)).toBeNull();
+  });
+});
+
 describe('the count invariants', () => {
   const base = validDetections();
 

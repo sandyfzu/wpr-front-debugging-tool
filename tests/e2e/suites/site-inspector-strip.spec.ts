@@ -61,6 +61,7 @@ interface SiteDetections {
   preload_links: { present: boolean };
   rocket_cdn: { present: boolean };
   mobile_cache: { present: boolean; source?: 'meta' | 'footprint' };
+  dns_prefetch: { present: boolean; source?: 'meta' | 'footprint' };
   image_dimensions: { present: boolean; source?: 'meta' | 'footprint' };
   self_hosted_fonts: { present: boolean; source?: 'meta' | 'footprint' };
   rocket_above_the_fold_optimization: {
@@ -136,6 +137,7 @@ const EXPECTED_ROWS: Array<{ label: string; group: string }> = [
   { label: 'Image Dimensions', group: 'Image & Media' },
   { label: 'Self-host Google Fonts', group: 'Image & Media' },
   { label: 'Preload Links', group: 'Preload' },
+  { label: 'DNS prefetch', group: 'Preload' },
   { label: 'CDN', group: 'Content Delivery' },
   ...FAMILY_ROWS.map((row) => ({ label: row.label, group: 'Features' })),
   { label: 'Mobile cache', group: 'Features' }
@@ -193,7 +195,8 @@ function expectedChip(detections: SiteDetections, label: string): string {
     'Combine JS': detections.minify_concatenate_js,
     'Image Dimensions': detections.image_dimensions,
     'Self-host Google Fonts': detections.self_hosted_fonts,
-    'Mobile cache': detections.mobile_cache
+    'Mobile cache': detections.mobile_cache,
+    'DNS prefetch': detections.dns_prefetch
   };
   const undecided = undecidable[label];
   if (undecided !== undefined) {

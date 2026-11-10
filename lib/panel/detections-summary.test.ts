@@ -164,9 +164,9 @@ describe('summarizeDetections', () => {
       simulated: 0,
       unverified: 0
     });
-    // Every remaining row of the record is an optimization (17 of the 21 rows:
+    // Every remaining row of the record is an optimization (18 of the 22 rows:
     // async_css rides the CSS card, plus the plugin, beacon and mobile cache rows).
-    expect(optimizationCards).toHaveLength(17);
+    expect(optimizationCards).toHaveLength(18);
   });
 
   it('never counts the Host layers card as an optimization', () => {
@@ -178,7 +178,7 @@ describe('summarizeDetections', () => {
     );
     expect(items.some((item) => item.id === 'host-layers')).toBe(true);
     expect(isOptimizationCard('host-layers')).toBe(false);
-    expect(summarizeDetections(items).optimizations.total).toBe(17);
+    expect(summarizeDetections(items).optimizations.total).toBe(18);
   });
 
   it('never counts the mobile cache card (a cache layout setting), even when active', () => {
@@ -190,7 +190,18 @@ describe('summarizeDetections', () => {
     );
     expect(items.find((item) => item.id === 'mobile_cache')?.status).toBe('active');
     expect(isOptimizationCard('mobile_cache')).toBe(false);
-    expect(summarizeDetections(items).optimizations).toMatchObject({ active: 1, total: 17 });
+    expect(summarizeDetections(items).optimizations).toMatchObject({ active: 1, total: 18 });
+  });
+
+  it('counts an active DNS prefetch card (a page optimization the plugin applies)', () => {
+    const items = buildStatusItems(
+      data({
+        minify_css: { present: true },
+        dns_prefetch: { present: true, domains: ['https://cdn.example.com/'], source: 'meta' }
+      })
+    );
+    expect(isOptimizationCard('dns_prefetch')).toBe(true);
+    expect(summarizeDetections(items).optimizations).toMatchObject({ active: 2, total: 18 });
   });
 
   it('agrees with the cards for every card it states (strip ↔ card consistency)', () => {

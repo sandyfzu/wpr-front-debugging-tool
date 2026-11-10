@@ -111,6 +111,10 @@
     "mobile_cache": {
       "present": false,
       "variant": null
+    },
+    "dns_prefetch": {
+      "present": false,
+      "domains": ["https://cdn.rocketcdn.me/", "https://unrelated.example.net/"]
     }
   },
   "preloadedResources": {

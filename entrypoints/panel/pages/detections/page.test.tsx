@@ -17,7 +17,7 @@ import { makeFdtData } from '../../state/fixtures';
 import type { DataState } from '../../state/fdt-state-machine';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { CARD_PAGE_LINKS } from './card-presentation';
-import { MOBILE_CACHE_LIMIT } from '../../../../lib/detection/hud';
+import { DNS_PREFETCH_LIMIT, MOBILE_CACHE_LIMIT } from '../../../../lib/detection/hud';
 import { isOptimizationCard } from '../../../../lib/panel/detections-summary';
 import { DETECTIONS_GRID, DETECTIONS_SUBTITLE, DetectionsPage, DetectionsView } from './page';
 import { CARD_SURFACE_PAIR, STATUS_CARD_SURFACE } from './status-card';
@@ -254,6 +254,26 @@ describe('DetectionsView', () => {
     expect(await screen.findByText(MOBILE_CACHE_LIMIT)).toBeTruthy();
   });
 
+  it('renders the DNS prefetch hints as a tooltip trigger carrying the proof limit', async () => {
+    const base = richData();
+    render(() => (
+      <DetectionsView
+        data={{
+          ...base,
+          wprDetections: {
+            ...base.wprDetections,
+            dns_prefetch: { present: true, domains: ['https://a.example/'], source: 'meta' }
+          }
+        }}
+        now={NOW}
+      />
+    ));
+    const trigger = card('dns_prefetch').querySelector<HTMLElement>('[data-fdt="tooltip-trigger"]');
+    expect(trigger?.textContent).toBe('1 domain hinted');
+    trigger?.focus();
+    expect(await screen.findByText(DNS_PREFETCH_LIMIT)).toBeTruthy();
+  });
+
   it('ages the cached subtitle as the clock advances', () => {
     const [now, setNow] = createSignal(NOW);
     render(() => <DetectionsView data={richData()} now={now()} />);
@@ -273,7 +293,7 @@ describe('DetectionsView', () => {
         el.querySelector('[data-fdt="status-badge"]')?.textContent === 'Active'
     ).length;
     expect(headline?.textContent).toBe(
-      `${activeOptimizations.toString()} of 17 optimizations active`
+      `${activeOptimizations.toString()} of 18 optimizations active`
     );
     expect(document.querySelector('[data-fdt-summary-fact="cache"]')?.textContent).toBe(
       'Cache generated 2023-11-14 22:13:20 UTC'

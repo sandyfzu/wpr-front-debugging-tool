@@ -40,6 +40,7 @@ function zero(): WprDetections {
     preload_links: { present: false },
     rocket_cdn: { present: false },
     mobile_cache: { present: false, variant: null },
+    dns_prefetch: { present: false, domains: [] },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
     defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
     lazyload: { present: false, images: [] },
@@ -109,6 +110,8 @@ describe('the HUD registry shape', () => {
       image_dimensions: 'Image Dimensions',
       self_hosted_fonts: 'Self-host Google Fonts',
       preload_links: 'Preload Links',
+      // G5: the removed settings field's name, compacted.
+      dns_prefetch: 'DNS prefetch',
       rocket_cdn: 'CDN',
       // The KB article's name for the option (no settings field in 3.24).
       mobile_cache: 'Mobile cache',
@@ -139,6 +142,7 @@ describe('the HUD registry shape', () => {
       'minify_concatenate_js',
       'image_dimensions',
       'self_hosted_fonts',
+      'dns_prefetch',
       'mobile_cache'
     ]);
   });
@@ -365,7 +369,7 @@ describe('the mobile cache row', () => {
     const rows = HUD_FEATURES.filter((entry) => entry.appliedLine !== undefined).map(
       (entry) => entry.row
     );
-    expect(rows).toEqual(['mobile_cache']);
+    expect(rows).toEqual(['dns_prefetch', 'mobile_cache']);
   });
 });
 

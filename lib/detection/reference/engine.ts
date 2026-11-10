@@ -72,11 +72,18 @@
  *    device tokens — either declares it; `variant` names the one listed
  *    (null when both or neither are). No footprint: an undeclared page
  *    stays undecided.
+ * 8. Prefetch DNS Requests (`dns_prefetch`): declaration-only (a plain
+ *    `dns-prefetch` hint never names WP Rocket); `domains` lists the plain
+ *    hints' resolved http(s) hrefs (a blank href, or one on the page's own
+ *    origin, names no other host), unique, in page order, leaving out the
+ *    hints carrying Preconnect to External Domains' attribution. With the
+ *    CDN declared (`wpr_cdn`), a missing `wpr_dns_prefetch` decides nothing:
+ *    the plugin omits it for a one-entry list while printing the hint.
  *
  * The port's contract additions (the cache-marker flag with its comment-only
  * white-label registry and strict display-domain timestamp, the defer count,
  * the self-hosted fonts row and the declaration-only image-dimensions,
- * Combine-JavaScript and mobile-cache rows) are mirrored here so the records
+ * Combine-JavaScript, mobile-cache and DNS-prefetch rows) are mirrored here so the records
  * stay key-for-key comparable.
  *
  * Everything else follows the reference algorithm as written, including
@@ -109,6 +116,7 @@ import {
   DELAY_TYPE_ATTRIBUTE,
   FEATURE_COMMENT_PATTERN,
   FEATURE_META_LIMITS,
+  FEATURE_META_OMISSION_GUARDS,
   FEATURE_META_TOKENS,
   FDT_EXCLUDED_RESOURCE,
   GENERATOR_META_SELECTOR,
@@ -183,7 +191,8 @@ const CheckOptimizationFunctions: Record<keyof WprDetections, CheckOptimizationF
   minify_concatenate_js: checkCombineJS,
   preload_links: checkPreloadLinks,
   rocket_cdn: checkRocketCDN,
-  mobile_cache: checkMobileCache
+  mobile_cache: checkMobileCache,
+  dns_prefetch: checkDnsPrefetch
 } as const;
 
 function wprCached({ HTMLDocument }: CheckOptimizationFunctionPayload): WprDetections['wpr'] {
@@ -539,6 +548,24 @@ function checkMobileCache({
     else if (desktop && !mobile) variant = 'desktop';
   }
   return { present: false, variant };
+}
+
+function checkDnsPrefetch({
+  HTMLDocument,
+  pageLinkElements
+}: CheckOptimizationFunctionPayload): WprDetections['dns_prefetch'] {
+  const pageOrigin = URL.parse(HTMLDocument.URL)?.origin;
+  const plainHints = pageLinkElements.filter(
+    (link) =>
+      link.rel.toLowerCase() === 'dns-prefetch' &&
+      /\S/.test(link.getAttribute('href') ?? '') &&
+      !link.hasAttribute(ROCKET_PREFETCH_ATTRIBUTE) &&
+      !link.hasAttribute(ROCKET_PRECONNECT_ATTRIBUTE)
+  );
+  const hosts = plainHints
+    .map((link) => link.href)
+    .filter((href) => /^https?:\/\//.test(href) && URL.parse(href)?.origin !== pageOrigin);
+  return { present: false, domains: Array.from(new Set(hosts)) };
 }
 
 function checkScriptsDeferred({
@@ -995,7 +1022,15 @@ function referenceMetaVerdict(
 function applyReferenceMeta(wprDetections: WprDetections, meta: ReferenceFeatureMeta): void {
   if (meta.attributePresent) wprDetections.wpr.present = true;
   for (const row of Object.keys(FEATURE_META_TOKENS) as FeatureMetaRow[]) {
-    const verdict = referenceMetaVerdict(meta, FEATURE_META_TOKENS[row]);
+    let verdict = referenceMetaVerdict(meta, FEATURE_META_TOKENS[row]);
+    const guard = FEATURE_META_OMISSION_GUARDS[row];
+    if (
+      verdict === 'refuted' &&
+      guard !== undefined &&
+      referenceMetaVerdict(meta, FEATURE_META_TOKENS[guard]) === 'declared'
+    ) {
+      verdict = 'absent';
+    }
     const entry: any = wprDetections[row];
     if (verdict === 'declared') {
       entry.present = true;

@@ -20,8 +20,8 @@
  *
  * Tooltips appear only where data would otherwise be hidden — the Cached
  * card's absolute UTC time, the Known Platform card's matching header and
- * the mobile cache card's proof limit — with the subtitle text as their
- * (focusable) trigger. A link card never
+ * a declaration-only card's proof limit (mobile cache, DNS prefetch) — with
+ * the subtitle text as their (focusable) trigger. A link card never
  * hosts one: a control nested inside a link is invalid and unreachable.
  */
 import type { JSX } from 'solid-js';
@@ -396,10 +396,10 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
     const current = detail();
     return current?.kind === 'host-layers' ? current : undefined;
   };
-  /** The mobile cache render's device and proof limit when this card carries them. */
-  const mobileCache = () => {
+  /** A declaration-only fact and its proof limit when this card carries them. */
+  const proofLimit = () => {
     const current = detail();
-    return current?.kind === 'mobile-cache' ? current : undefined;
+    return current?.kind === 'proof-limit' ? current : undefined;
   };
   return (
     <Switch
@@ -443,11 +443,11 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
           </div>
         )}
       </Match>
-      <Match when={mobileCache()}>
-        {(cache) => (
+      <Match when={proofLimit()}>
+        {(fact) => (
           <div data-fdt-card-subtitle class={UNDER_NAME}>
-            <Tooltip content={cache().limit} class={TOOLTIP_SUBTITLE}>
-              {cache().rendered}
+            <Tooltip content={fact().limit} class={TOOLTIP_SUBTITLE}>
+              {fact().text}
             </Tooltip>
           </div>
         )}

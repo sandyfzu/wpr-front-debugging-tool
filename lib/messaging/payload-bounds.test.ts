@@ -126,6 +126,18 @@ const LIST_CASES: readonly ListCase[] = [
       length: d.preconnect_external_domains.domains.length,
       truncated: d.preconnect_external_domains.truncated === true
     })
+  },
+  {
+    name: 'dns_prefetch.domains',
+    cap: PAYLOAD_LIMITS.domains.count,
+    fill: (d, n) => ({
+      ...d,
+      dns_prefetch: { present: true, domains: strings(n), source: 'meta' }
+    }),
+    read: (d) => ({
+      length: d.dns_prefetch.domains.length,
+      truncated: d.dns_prefetch.truncated === true
+    })
   }
 ];
 
@@ -259,6 +271,15 @@ const STRING_CASES: readonly StringCase[] = [
     read: (d) => ({
       value: d.preconnect_external_domains.domains[0],
       truncated: d.preconnect_external_domains.truncated === true
+    })
+  },
+  {
+    name: 'dns_prefetch.domains[]',
+    cap: PAYLOAD_LIMITS.domains.chars,
+    fill: (d, value) => ({ ...d, dns_prefetch: { present: false, domains: [value] } }),
+    read: (d) => ({
+      value: d.dns_prefetch.domains[0],
+      truncated: d.dns_prefetch.truncated === true
     })
   }
 ];

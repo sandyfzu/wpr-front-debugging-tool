@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<!--
+  Crafted fixture: a WP Rocket page (cache footer) with no generator meta and
+  the plain `dns-prefetch` hints WordPress core prints for its external hosts
+  (`wp_resource_hints`, single-quoted, scheme-less), beside one attributed
+  Preconnect to External Domains hint. A plain hint never names WP Rocket.
+  Expected: wpr present (footer); dns_prefetch not present, no source, its
+  domains the two plain hints only (resolved, page order); the attributed
+  hint is the Preconnect row's (present, footprint).
+-->
+<html lang="en-US">
+<head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DNS prefetch hints, no meta</title>
+<link rel='dns-prefetch' href='//fonts.googleapis.com' />
+<link rel='dns-prefetch' href='//cdn.fdt.test' />
+<link data-rocket-prefetch href="https://www.googletagmanager.com" rel="dns-prefetch">
+<link rel='stylesheet' id='theme-css' href='https://fonts.googleapis.com/css2?family=Inter&#038;display=swap' media='all' />
+</head>
+<body>
+<h1>Plain hints only</h1>
+</body>
+</html>
+<!-- This website is like a Rocket, isn't it? Performance optimized by WP Rocket. Learn more: https://wp-rocket.me -->

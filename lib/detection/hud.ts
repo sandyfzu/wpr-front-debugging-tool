@@ -18,6 +18,7 @@
 
 import type {
   BuilderFact,
+  DnsPrefetchDetection,
   FeatureEvidenceSource,
   FeatureMetaRow,
   MobileCacheVariant,
@@ -25,8 +26,9 @@ import type {
   WprDetections
 } from '../wp-rocket/types';
 import type { FeatureState, PageAnalysisReport } from './describe';
+import { metaOmissionLeftOpen } from './feature-meta';
 import type { FeatureLabel, LABEL_PRIORITY_ELEMENTS_BEACON } from './labels';
-import { countNoun, formatCount, type CountNoun } from '../../utils/format-count';
+import { countLabel, countNoun, formatCount, type CountNoun } from '../../utils/format-count';
 import { DOMAIN_NOUN, ELEMENT_NOUN, FONT_NOUN, IMAGE_NOUN, SCRIPT_NOUN } from './count-nouns';
 import {
   LABEL_ADD_MISSING_IMAGE_DIMENSIONS,
@@ -34,6 +36,7 @@ import {
   LABEL_COMBINE_JAVASCRIPT,
   LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD,
   LABEL_DELAY_JAVASCRIPT_EXECUTION,
+  LABEL_DNS_PREFETCH,
   LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD,
   LABEL_IMAGE_LAZYLOAD,
   LABEL_LOAD_CSS_ASYNCHRONOUSLY,
@@ -87,8 +90,11 @@ export interface HudFeature {
   readonly group: HudGroupId;
   /** The count's noun (both count forms) when the engine measures one, else null. */
   readonly unit: CountNoun | null;
-  /** The feature's evidence count from the report, when `unit` is set. */
-  readonly count: ((report: PageAnalysisReport) => number) | null;
+  /**
+   * The feature's evidence count from the report, when `unit` is set; the
+   * function returns null where the count is no evidence for the verdict.
+   */
+  readonly count: ((report: PageAnalysisReport) => number | null) | null;
   /**
    * Why an undecided reading (no meta declaration and no footprint) is
    * unknown rather than "not applied" — set only where the footprint cannot
@@ -96,12 +102,32 @@ export interface HudFeature {
    */
   readonly undecided: string | null;
   /**
+   * The undecided why when the row's meta omission guard left it open
+   * ({@link metaOmissionLeftOpen}: the meta is present but omits the token by
+   * rule). Optional: only a guarded row carries one.
+   */
+  readonly omittedWhy?: string;
+  /**
    * The applied verdict's own line, for a row whose applied state carries
    * more than a count (lower-case start, like every state line). Optional —
    * unlike the fields above — so the rows on the generic "applied on this
    * page" line ship no per-row key in the size-capped on-page bundle.
    */
   readonly appliedLine?: (detections: WprDetections) => string;
+}
+
+/** The undecided copy's shared lead: what left the row without a verdict. */
+const UNDECIDED_LEAD = 'no generator meta declaration decided it';
+/** The undecided copy's shared conclusion. */
+const UNDECIDED_TAIL = ', so its state is unknown.';
+
+/**
+ * An undecided row's why: no meta decided it, then why the page cannot.
+ *
+ * @param reason Why the page's own markup cannot decide the row (lower-case start).
+ */
+function undecidedWhy(reason: string): string {
+  return `${UNDECIDED_LEAD}, and ${reason}${UNDECIDED_TAIL}`;
 }
 
 /**
@@ -172,8 +198,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     unit: null,
     count: null,
     // The bundle's digest file name is no attribution: only the meta decides.
-    undecided:
-      "no generator meta declaration decided it, and a combined bundle's file name does not prove it on its own, so its state is unknown."
+    undecided: undecidedWhy("a combined bundle's file name does not prove it on its own")
   },
   {
     row: 'lazyload',
@@ -210,8 +235,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     unit: null,
     count: null,
     // Ordinary width/height attributes are not attribution: only the meta decides.
-    undecided:
-      'no generator meta declaration decided it, and this feature leaves no other footprint, so its state is unknown.'
+    undecided: undecidedWhy('this feature leaves no other footprint')
   },
   {
     row: 'self_hosted_fonts',
@@ -222,8 +246,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     count: null,
     // The footprint check reads the attributed link and the fonts cache path
     // only; fonts self-hosted through other markup leave no proof of absence.
-    undecided:
-      'no generator meta declaration decided it and no self-hosted font link was found; fonts self-hosted through other markup are not detected, so its state is unknown.'
+    undecided: `${UNDECIDED_LEAD} and no self-hosted font link was found; fonts self-hosted through other markup are not detected${UNDECIDED_TAIL}`
   },
   {
     row: 'preload_links',
@@ -233,6 +256,23 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     unit: null,
     count: null,
     undecided: null
+  },
+  {
+    row: 'dns_prefetch',
+    label: LABEL_DNS_PREFETCH,
+    shortLabel: 'DNS prefetch',
+    group: 'preload',
+    unit: DOMAIN_NOUN,
+    // The hints are unattributed (core prints the same): a count only once declared.
+    count: (report) =>
+      report[LABEL_DNS_PREFETCH].state === 'applied'
+        ? report[LABEL_DNS_PREFETCH]['domains hinted']
+        : null,
+    // WordPress core prints the same plain hint for every external host it enqueues.
+    undecided: undecidedWhy('a plain dns-prefetch hint does not name WP Rocket'),
+    omittedWhy: `with the CDN on, WP Rocket omits the declaration for a single domain${UNDECIDED_TAIL}`,
+    appliedLine: (detections) =>
+      `applied on this page: ${dnsPrefetchHintText(detections.dns_prefetch)}. ${DNS_PREFETCH_LIMIT}`
   },
   {
     row: 'rocket_cdn',
@@ -287,8 +327,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     unit: null,
     count: null,
     // The plugin's device token follows the option alone: no page markup.
-    undecided:
-      'no generator meta declaration decided it, and the cache split leaves no footprint on the page, so its state is unknown.',
+    undecided: undecidedWhy('the cache split leaves no footprint on the page'),
     appliedLine: (detections) =>
       mobileCacheAppliedLine(
         detections.mobile_cache.variant,
@@ -434,11 +473,28 @@ export function readHudFeature(
     verdict,
     count: feature.count === null ? null : feature.count(report),
     source,
-    why: unknown ? feature.undecided : verdict === 'collecting' ? COLLECTING_WHY : null,
+    why: unknown
+      ? undecidedWhyOf(feature, detections)
+      : verdict === 'collecting'
+        ? COLLECTING_WHY
+        : null,
     ...(appliedLine === null ? {} : { appliedLine }),
     ...(builder === null ? {} : { builder }),
     ...(simulation === null ? {} : { simulation })
   };
+}
+
+/**
+ * An unknown row's why: the omission guard's own why when the guard left it
+ * open, else the row's undecided copy.
+ *
+ * @param feature The HUD row (undecided, so its copy is set).
+ * @param detections The engine rows.
+ */
+function undecidedWhyOf(feature: HudFeature, detections: WprDetections): string | null {
+  return feature.omittedWhy !== undefined && metaOmissionLeftOpen(detections, feature.row)
+    ? feature.omittedWhy
+    : feature.undecided;
 }
 
 /**
@@ -500,7 +556,7 @@ function servedStateLine(feature: HudFeature, reading: HudReading): string {
     case 'collecting':
       return COLLECTING_WHY;
     case 'unknown':
-      return feature.undecided ?? 'its state is unknown.';
+      return reading.why ?? feature.undecided ?? 'its state is unknown.';
     case 'not enabled':
       return "not enabled in the site's current configuration.";
     case 'not applied':
@@ -511,6 +567,25 @@ function servedStateLine(feature: HudFeature, reading: HudReading): string {
       }
       return "nothing matched on this page (the page may predate the plugin's work).";
   }
+}
+
+/**
+ * The DNS prefetch row's proof limit: the plugin's hints are plain core
+ * `dns-prefetch` links, which core also prints for every external enqueued
+ * host, and CDN CNAMEs join the plugin's own list — none can be told apart,
+ * and a declared list may be core's or the CDN's hosts alone.
+ */
+export const DNS_PREFETCH_LIMIT =
+  "WP Rocket declared DNS prefetch; the hosts may include, or be only, WordPress core's own hints and CDN hosts.";
+
+/**
+ * The plain hints a DNS prefetch row observed, as every surface words them
+ * ("3 domains hinted"; a cut list reads as a floor, "500+ domains hinted").
+ *
+ * @param row The DNS prefetch row.
+ */
+export function dnsPrefetchHintText(row: DnsPrefetchDetection): string {
+  return `${countLabel(row.domains.length, DOMAIN_NOUN, row.truncated === true)} hinted`;
 }
 
 /**

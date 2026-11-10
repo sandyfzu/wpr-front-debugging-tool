@@ -8,7 +8,12 @@ import { describe, expect, it } from 'vitest';
 import optionNames from './option-names.json' with { type: 'json' };
 import otherNames from './other-names.json' with { type: 'json' };
 import { FEATURE_OPTION_LABELS, getRealOptionName, knownOptionIds } from './get-real-option-name';
-import { LABEL_IMAGE_LAZYLOAD, LABEL_MINIFY_CSS, LABEL_MOBILE_CACHE } from '../detection/labels';
+import {
+  LABEL_DNS_PREFETCH,
+  LABEL_IMAGE_LAZYLOAD,
+  LABEL_MINIFY_CSS,
+  LABEL_MOBILE_CACHE
+} from '../detection/labels';
 
 describe('option name maps', () => {
   it('maps every key to a non-empty string', () => {
@@ -18,10 +23,10 @@ describe('option name maps', () => {
     }
   });
 
-  it('carries the expected set sizes (25 non-feature options + 3 labels + 18 feature ids)', () => {
-    expect(Object.keys(optionNames).length).toBe(25);
+  it('carries the expected set sizes (24 non-feature options + 3 labels + 19 feature ids)', () => {
+    expect(Object.keys(optionNames).length).toBe(24);
     expect(Object.keys(otherNames).length).toBe(3);
-    expect(Object.keys(FEATURE_OPTION_LABELS).length).toBe(18);
+    expect(Object.keys(FEATURE_OPTION_LABELS).length).toBe(19);
   });
 
   it('names feature options only through the feature labels (one declaring site)', () => {
@@ -31,6 +36,8 @@ describe('option name maps', () => {
     expect(getRealOptionName('lazyload')).toBe(LABEL_IMAGE_LAZYLOAD);
     expect(getRealOptionName('minify_css')).toBe(LABEL_MINIFY_CSS);
     expect(getRealOptionName('do_caching_mobile_files')).toBe(LABEL_MOBILE_CACHE);
+    // The hidden domains option is the DNS prefetch feature itself.
+    expect(getRealOptionName('dns_prefetch')).toBe(LABEL_DNS_PREFETCH);
     // Its sibling option (writing mobile files at all) keeps the plain JSON name.
     expect(getRealOptionName('cache_mobile')).toBe('Enable caching for mobile devices');
     // A sub-option keeps its own plugin wording.

@@ -463,6 +463,8 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   if (beacon === null) return null;
   const mobileCache = row('mobile_cache', parseMobileCacheRow);
   if (mobileCache === null) return null;
+  const dnsPrefetch = row('dns_prefetch', parseDnsPrefetchRow);
+  if (dnsPrefetch === null) return null;
   return {
     wpr,
     remove_unused_css: removeUnusedCss,
@@ -476,6 +478,7 @@ export function parseWprDetections(input: unknown): WprDetections | null {
     preload_links: preloadLinks,
     rocket_cdn: rocketCdn,
     mobile_cache: mobileCache,
+    dns_prefetch: dnsPrefetch,
     delay_js: delayJs,
     defer_all_js: deferAllJs,
     lazyload,
@@ -920,6 +923,36 @@ function parseMobileCacheRow(input: unknown): WprDetections['mobile_cache'] | nu
   if (parsed === null) return reject();
   if (variant !== null && !parsed.present) return reject('variant');
   const row: WprDetections['mobile_cache'] = { present: parsed.present, variant };
+  if (parsed.source !== undefined) row.source = parsed.source;
+  return row;
+}
+
+/**
+ * DNS prefetch row: a declaration-only verdict plus the observed plain hints
+ * (required: the row has no older shape), independent of the verdict — a
+ * declaration may arrive with no hint, and an undeclared or refuted page
+ * keeps its hints as corroboration. A truncation mark needs a non-empty list.
+ *
+ * @param input The raw row.
+ */
+function parseDnsPrefetchRow(input: unknown): WprDetections['dns_prefetch'] | null {
+  if (!isRecord(input)) return reject();
+  const mark = truncationKeys(input);
+  if (mark === null) return reject('truncated');
+  const domains = parseCappedStringList(input['domains'], LIMITS.domains);
+  if (domains === null) return reject('domains');
+  if (mark === 1 && domains.length === 0) return reject('truncated');
+  // The verdict keys alone go through the declaration-only shape check.
+  const verdictRow: Record<string, unknown> = { ...input };
+  delete verdictRow['domains'];
+  delete verdictRow['truncated'];
+  const parsed = parseDeclarationOnlyRow(verdictRow);
+  if (parsed === null) return reject();
+  const row: WprDetections['dns_prefetch'] = {
+    present: parsed.present,
+    domains,
+    ...truncationOf(mark)
+  };
   if (parsed.source !== undefined) row.source = parsed.source;
   return row;
 }

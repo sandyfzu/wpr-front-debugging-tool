@@ -231,6 +231,11 @@
       "present": true,
       "variant": "mobile",
       "source": "meta"
+    },
+    "dns_prefetch": {
+      "present": false,
+      "domains": [],
+      "source": "meta"
     }
   },
   "preloadedResources": {

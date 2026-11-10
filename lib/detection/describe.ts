@@ -47,6 +47,7 @@ import {
   LABEL_PRIORITY_ELEMENTS_BEACON,
   LABEL_REMOVE_UNUSED_CSS,
   LABEL_CDN,
+  LABEL_DNS_PREFETCH,
   LABEL_MOBILE_CACHE,
   LABEL_SELF_HOST_GOOGLE_FONTS,
   LABEL_WP_ROCKET
@@ -90,6 +91,8 @@ export interface PageAnalysisReport {
   [LABEL_MINIFY_JAVASCRIPT]: { state: FeatureState };
   [LABEL_COMBINE_JAVASCRIPT]: { state: FeatureState };
   [LABEL_PRELOAD_LINKS]: { state: FeatureState };
+  /** The plain hints observed (corroboration only: core and the CDN hint hosts too). */
+  [LABEL_DNS_PREFETCH]: { state: FeatureState; 'domains hinted': number };
   [LABEL_CDN]: { state: FeatureState };
   /** The device the render was generated for, as declared (null: not declared, or both). */
   [LABEL_MOBILE_CACHE]: { state: FeatureState; 'rendered for': MobileCacheVariant | null };
@@ -234,6 +237,10 @@ export function describeDetections(
     [LABEL_MINIFY_JAVASCRIPT]: { state: simpleState(detections.minify_js.present) },
     [LABEL_COMBINE_JAVASCRIPT]: { state: simpleState(detections.minify_concatenate_js.present) },
     [LABEL_PRELOAD_LINKS]: { state: simpleState(detections.preload_links.present) },
+    [LABEL_DNS_PREFETCH]: {
+      state: simpleState(detections.dns_prefetch.present),
+      'domains hinted': detections.dns_prefetch.domains.length
+    },
     [LABEL_CDN]: { state: simpleState(detections.rocket_cdn.present) },
     [LABEL_MOBILE_CACHE]: {
       state: simpleState(detections.mobile_cache.present),

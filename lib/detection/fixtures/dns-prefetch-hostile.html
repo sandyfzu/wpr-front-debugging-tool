@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<!--
+  Crafted fixture: the generator meta declares DNS prefetch over hostile and
+  edge-case hints. Only resolved http(s) hrefs of plain `dns-prefetch` links
+  count, once each in page order: `javascript:`/`data:`/empty/missing hrefs
+  name no host; a scheme-less and a full spelling of one host collapse; the
+  rel value is matched case-insensitively but whole (a multi-token rel is not
+  the core hint); attributed hints (either variant) are Preconnect's.
+  Expected: dns_prefetch present (meta) with https://a.example/,
+  https://b.example/ and https://cdn.example.com/; preconnect present
+  (footprint) with the two attributed hrefs.
+-->
+<html lang="en-US">
+<head><meta charset="UTF-8" />
+<meta name="generator" content="WP Rocket 3.24" data-wpr-features="wpr_dns_prefetch" />
+<title>DNS prefetch hostile hints</title>
+<link rel="dns-prefetch" href="javascript:alert(document.domain)">
+<link rel="dns-prefetch" href="data:text/plain,host">
+<link rel="dns-prefetch" href="">
+<link rel="dns-prefetch">
+<link rel="dns-prefetch" href="https://a.example">
+<link rel="DNS-Prefetch" href="https://a.example/">
+<link rel="dns-prefetch" href="  https://b.example  ">
+<link rel="preconnect dns-prefetch" href="https://multi-token.example">
+<link rel="dns-prefetch" href="https://cdn.example.com">
+<link data-rocket-prefetch href="https://attributed.example" rel="dns-prefetch">
+<link data-rocket-preconnect crossorigin href="https://attributed-cors.example" rel="dns-prefetch">
+</head>
+<body>
+<h1>Hostile hints</h1>
+</body>
+</html>

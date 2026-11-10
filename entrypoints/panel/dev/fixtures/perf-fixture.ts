@@ -195,6 +195,7 @@ export function generatePerfFixture(seed = 6_003): FdtData {
     preload_links: { present: true },
     rocket_cdn: { present: false },
     mobile_cache: { present: false, variant: null },
+    dns_prefetch: { present: false, domains: [] },
     delay_js: {
       present: true,
       scripts,

@@ -58,7 +58,7 @@ export const PAYLOAD_LIMITS = {
   preloaded: { count: 5_000, href: 4096, type: 64 },
   /** Preloaded critical-image URL lists. */
   preloadedImages: { count: 1_000, chars: 4096 },
-  /** Priority-Elements: font-preload list and preconnect domain list. */
+  /** Priority-Elements' font-preload list; the preconnect and DNS prefetch domain lists. */
   fonts: { count: 1_000, chars: 4096 },
   domains: { count: 500, chars: 2048 },
   /**
@@ -219,6 +219,9 @@ export function boundWprDetections(detections: WprDetections): WprDetections {
     })),
     preconnect_external_domains: boundRow(detections.preconnect_external_domains, (t) => ({
       domains: boundStrings(detections.preconnect_external_domains.domains, limits.domains, t)
+    })),
+    dns_prefetch: boundRow(detections.dns_prefetch, (t) => ({
+      domains: boundStrings(detections.dns_prefetch.domains, limits.domains, t)
     }))
   };
 }

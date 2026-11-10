@@ -41,6 +41,8 @@ import {
   PRELOAD_LINKS_CONFIG_MARK,
   PRELOAD_LINKS_SCRIPT_ID,
   ROCKET_CDN_DOMAIN,
+  ROCKET_PRECONNECT_ATTRIBUTE,
+  ROCKET_PREFETCH_ATTRIBUTE,
   RUCSS_STYLE_SELECTOR,
   SELF_HOSTED_FONTS_ATTRIBUTE,
   SELF_HOSTED_FONTS_CACHE_PATH,
@@ -53,6 +55,7 @@ import type { ParsedPage } from './parse-page';
 import { carriesMinifyAttribute, hasMinifyFootprint } from './minify-footprint';
 import { servedScriptSrc, servedScriptSrcAttribute } from './served-script-src';
 import { hasAsyncCssLink, insideNoscript } from './stylesheet-links';
+import { parseHttpUrl, parseUrl } from '../../utils/urls';
 
 /** Remove Unused CSS: an inline `style` element with the reserved id. */
 export function detectRemoveUnusedCss(page: ParsedPage): WprDetections['remove_unused_css'] {
@@ -301,6 +304,38 @@ export function detectRocketCdn(page: ParsedPage): WprDetections['rocket_cdn'] {
       link.href.includes(ROCKET_CDN_DOMAIN)
   );
   return { present };
+}
+
+/**
+ * Prefetch DNS Requests: declaration-only — the plugin's hints are the plain
+ * core `dns-prefetch` links WordPress also prints for every external host it
+ * enqueues, so the verdict comes from the generator meta's authority pass
+ * (`present` starts false here). The observed plain hints ride along as
+ * corroboration: resolved http(s) hrefs off the page's own origin, unique,
+ * first-occurrence order; hints carrying Preconnect to External Domains'
+ * attribution are that row's.
+ *
+ * @param page The parsed page (its document URL and links).
+ */
+export function detectDnsPrefetch(page: ParsedPage): WprDetections['dns_prefetch'] {
+  const pageOrigin = parseUrl(page.document.URL)?.origin ?? null;
+  const domains = new Set<string>();
+  for (const link of page.links) {
+    if (
+      (link.getAttribute('rel') ?? '').toLowerCase() !== 'dns-prefetch' ||
+      link.hasAttribute(ROCKET_PREFETCH_ATTRIBUTE) ||
+      link.hasAttribute(ROCKET_PRECONNECT_ATTRIBUTE)
+    )
+      continue;
+    // A blank href resolves to the page itself: it names no hinted host.
+    if ((link.getAttribute('href') ?? '').trim() === '') continue;
+    // `href` is resolved: a scheme-less `//host` hint reads with the page's
+    // scheme; any other scheme (`javascript:`, `data:`) names no host, and a
+    // same-origin one (`#`, `/x`) names the page's own host, never hinted.
+    const url = parseHttpUrl(link.href);
+    if (url !== null && url.origin !== pageOrigin) domains.add(url.href);
+  }
+  return { present: false, domains: [...domains] };
 }
 
 /**

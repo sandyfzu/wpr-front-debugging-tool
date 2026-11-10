@@ -85,6 +85,10 @@
     "mobile_cache": {
       "present": false,
       "variant": null
+    },
+    "dns_prefetch": {
+      "present": false,
+      "domains": []
     }
   },
   "preloadedResources": {
