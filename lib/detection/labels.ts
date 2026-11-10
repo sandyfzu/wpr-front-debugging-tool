@@ -42,6 +42,11 @@ export const LABEL_ADD_MISSING_IMAGE_DIMENSIONS = 'Add missing image dimensions'
 export const LABEL_MINIFY_CSS = 'Minify CSS files';
 /** Settings field (`Page.php`, `minify_js`). */
 export const LABEL_MINIFY_JAVASCRIPT = 'Minify JavaScript files';
+/**
+ * Settings field (`Page.php`, `minify_concatenate_js`); its trailing
+ * "(Enable Minify JavaScript files to select)" is a hint, not the name.
+ */
+export const LABEL_COMBINE_JAVASCRIPT = 'Combine JavaScript files';
 /** Settings section title (`Page.php`) and support-data name (`Support/Data.php`). */
 export const LABEL_PRELOAD_LINKS = 'Preload Links';
 /**
@@ -104,6 +109,7 @@ export const FEATURE_LABELS = [
   LABEL_ADD_MISSING_IMAGE_DIMENSIONS,
   LABEL_MINIFY_CSS,
   LABEL_MINIFY_JAVASCRIPT,
+  LABEL_COMBINE_JAVASCRIPT,
   LABEL_PRELOAD_LINKS,
   LABEL_CDN,
   LABEL_OPTIMIZE_CRITICAL_IMAGES,

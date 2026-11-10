@@ -470,9 +470,11 @@ describe('parseWprDetections', () => {
       for (const source of ['meta', 'footprint'] as const) {
         const row = { ...(base[key] as Record<string, unknown>), source };
         const parsed = parseWprDetections({ ...base, [key]: row });
-        // Image dimensions is declaration-only: a footprint source is not
-        // engine output for that row.
-        if (key === 'image_dimensions' && source === 'footprint') {
+        // The declaration-only rows: a footprint source is not engine output.
+        if (
+          (key === 'image_dimensions' || key === 'minify_concatenate_js') &&
+          source === 'footprint'
+        ) {
           expect(parsed, `${key}/${source}`).toBeNull();
           continue;
         }

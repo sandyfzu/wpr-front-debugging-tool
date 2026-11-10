@@ -57,6 +57,7 @@ interface SiteDetections {
   lazyload_css_bg_img: { present: boolean };
   minify_css: { present: boolean };
   minify_js: { present: boolean };
+  minify_concatenate_js: { present: boolean; source?: 'meta' | 'footprint' };
   preload_links: { present: boolean };
   rocket_cdn: { present: boolean };
   image_dimensions: { present: boolean; source?: 'meta' | 'footprint' };
@@ -127,6 +128,7 @@ const EXPECTED_ROWS: Array<{ label: string; group: string }> = [
   { label: 'Load CSS asynchronously', group: 'JavaScript & CSS' },
   { label: 'Minify CSS', group: 'JavaScript & CSS' },
   { label: 'Minify JS', group: 'JavaScript & CSS' },
+  { label: 'Combine JS', group: 'JavaScript & CSS' },
   { label: 'Lazyload Images', group: 'Image & Media' },
   { label: 'Lazyload Iframes', group: 'Image & Media' },
   { label: 'Lazyload CSS Background Images', group: 'Image & Media' },
@@ -183,9 +185,10 @@ function familyState(
  */
 function expectedChip(detections: SiteDetections, label: string): string {
   const family = FAMILY_ROWS.find((row) => row.label === label);
-  // The two rows whose footprint cannot prove absence: undecided (no source)
-  // on a WP Rocket page reads unknown — the amber attention pair.
+  // The rows whose footprint cannot prove absence: undecided (no source) on
+  // a WP Rocket page reads unknown — the amber attention set.
   const undecidable: Record<string, { present: boolean; source?: string } | undefined> = {
+    'Combine JS': detections.minify_concatenate_js,
     'Image Dimensions': detections.image_dimensions,
     'Self-host Google Fonts': detections.self_hosted_fonts
   };

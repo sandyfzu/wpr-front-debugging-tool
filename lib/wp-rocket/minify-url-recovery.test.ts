@@ -6,7 +6,7 @@
  * vouch for must land there, never in a fabricated original.
  */
 import { describe, expect, it } from 'vitest';
-import { recoverOriginalScript } from './minify-url-recovery';
+import { isCombinedBundle, recoverOriginalScript } from './minify-url-recovery';
 
 describe('recoverOriginalScript — per-file minified (live docker capture pair)', () => {
   it('recovers the original path from the served minified URL', () => {
@@ -192,5 +192,46 @@ describe('recoverOriginalScript — untouched negatives', () => {
     });
     expect(recoverOriginalScript('not a url')).toEqual({ kind: 'untouched' });
     expect(recoverOriginalScript('')).toEqual({ kind: 'untouched' });
+  });
+});
+
+describe('isCombinedBundle — the bundle shape only', () => {
+  it('answers true for the digest bundle (live Combine arm capture, query tolerated)', () => {
+    const bundle =
+      'http://127.0.0.1:8493/wp-content/cache/min/1/5c03bce63bb3260466706a046cb00086.js';
+    expect(isCombinedBundle(bundle)).toBe(true);
+    expect(isCombinedBundle(`${bundle}?ver=1`)).toBe(true);
+    expect(isCombinedBundle(bundle.replace('5c03bce6', '5C03BCE6'))).toBe(true);
+  });
+
+  it.each([
+    [
+      'a per-file minified original',
+      'http://127.0.0.1:8493/wp-content/cache/min/1/wp-content/x.js'
+    ],
+    [
+      'a digest outside the minify cache',
+      'https://h.example.com/assets/5c03bce63bb3260466706a046cb00086.js'
+    ],
+    [
+      'a 31-digit name',
+      'https://h.example.com/wp-content/cache/min/1/5c03bce63bb3260466706a046cb0008.js'
+    ],
+    [
+      'a non-hex digit',
+      'https://h.example.com/wp-content/cache/min/1/5c03bce63bb3260466706a046cb0008g.js'
+    ],
+    [
+      'a digest stylesheet',
+      'https://h.example.com/wp-content/cache/min/1/5c03bce63bb3260466706a046cb00086.css'
+    ],
+    [
+      'a non-http scheme',
+      'data:text/plain,/wp-content/cache/min/1/5c03bce63bb3260466706a046cb00086.js'
+    ],
+    ['unparseable input', 'not a url'],
+    ['an empty string', '']
+  ])('answers false for %s', (_name, url) => {
+    expect(isCombinedBundle(url)).toBe(false);
   });
 });

@@ -30,6 +30,7 @@ export {
 import {
   LABEL_ADD_MISSING_IMAGE_DIMENSIONS,
   LABEL_AUTOMATIC_LAZY_RENDERING,
+  LABEL_COMBINE_JAVASCRIPT,
   LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD,
   LABEL_DELAY_JAVASCRIPT_EXECUTION,
   LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD,
@@ -85,6 +86,7 @@ export interface PageAnalysisReport {
   [LABEL_ADD_MISSING_IMAGE_DIMENSIONS]: { state: FeatureState };
   [LABEL_MINIFY_CSS]: { state: FeatureState };
   [LABEL_MINIFY_JAVASCRIPT]: { state: FeatureState };
+  [LABEL_COMBINE_JAVASCRIPT]: { state: FeatureState };
   [LABEL_PRELOAD_LINKS]: { state: FeatureState };
   [LABEL_CDN]: { state: FeatureState };
   [LABEL_OPTIMIZE_CRITICAL_IMAGES]: { state: FeatureState; 'preloaded images': number };
@@ -234,6 +236,7 @@ export function describeDetections(
     },
     [LABEL_MINIFY_CSS]: { state: simpleState(detections.minify_css.present) },
     [LABEL_MINIFY_JAVASCRIPT]: { state: simpleState(detections.minify_js.present) },
+    [LABEL_COMBINE_JAVASCRIPT]: { state: simpleState(detections.minify_concatenate_js.present) },
     [LABEL_PRELOAD_LINKS]: { state: simpleState(detections.preload_links.present) },
     [LABEL_CDN]: { state: simpleState(detections.rocket_cdn.present) },
     [LABEL_OPTIMIZE_CRITICAL_IMAGES]: {

@@ -1,5 +1,5 @@
 /**
- * The declaration-only boundary additions: the two new rows, the cache
+ * The declaration-only boundary additions: the presence-only rows, the cache
  * marker invariant, the bypass mark and the defer count. The shared fixtures
  * keep the base payload genuine.
  */
@@ -9,7 +9,7 @@ import { minimalDetections, validFdt, validDetections } from './validate.fixture
 
 describe('the new declaration-only rows', () => {
   it('accepts presence with an optional source and rejects unknown keys', () => {
-    for (const row of ['self_hosted_fonts', 'image_dimensions']) {
+    for (const row of ['self_hosted_fonts', 'image_dimensions', 'minify_concatenate_js']) {
       const base = minimalDetections();
       expect(
         parseWprDetections({ ...base, [row]: { present: true, source: 'meta' } }),
@@ -22,6 +22,12 @@ describe('the new declaration-only rows', () => {
         row
       ).toBeNull();
     }
+  });
+
+  it('a payload missing the Combine JS row is rejected like any missing row', () => {
+    const payload: Record<string, unknown> = { ...minimalDetections() };
+    delete payload['minify_concatenate_js'];
+    expect(parseWprDetections(payload)).toBeNull();
   });
 
   it('an own source: undefined is not engine output', () => {
@@ -94,27 +100,21 @@ describe('the declaration-only row invariants', () => {
     ).not.toBeNull();
   });
 
-  it('image_dimensions is declaration-only', () => {
+  it.each(['image_dimensions', 'minify_concatenate_js'])('%s is declaration-only', (key) => {
     const base = minimalDetections();
     for (const row of [
       { present: false, source: 'footprint' },
       { present: true },
       { present: true, source: 'footprint' }
     ]) {
-      expect(
-        parseWprDetections({ ...base, image_dimensions: row }),
-        JSON.stringify(row)
-      ).toBeNull();
+      expect(parseWprDetections({ ...base, [key]: row }), JSON.stringify(row)).toBeNull();
     }
     for (const row of [
       { present: false },
       { present: false, source: 'meta' },
       { present: true, source: 'meta' }
     ]) {
-      expect(
-        parseWprDetections({ ...base, image_dimensions: row }),
-        JSON.stringify(row)
-      ).not.toBeNull();
+      expect(parseWprDetections({ ...base, [key]: row }), JSON.stringify(row)).not.toBeNull();
     }
   });
 });

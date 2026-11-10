@@ -18,10 +18,10 @@ describe('option name maps', () => {
     }
   });
 
-  it('carries the expected set sizes (27 non-feature options + 3 labels + 16 feature ids)', () => {
-    expect(Object.keys(optionNames).length).toBe(27);
+  it('carries the expected set sizes (26 non-feature options + 3 labels + 17 feature ids)', () => {
+    expect(Object.keys(optionNames).length).toBe(26);
     expect(Object.keys(otherNames).length).toBe(3);
-    expect(Object.keys(FEATURE_OPTION_LABELS).length).toBe(16);
+    expect(Object.keys(FEATURE_OPTION_LABELS).length).toBe(17);
   });
 
   it('names feature options only through the feature labels (one declaring site)', () => {
@@ -37,6 +37,7 @@ describe('option name maps', () => {
   it('resolves known ids and falls back to the raw id otherwise', () => {
     expect(getRealOptionName('delay_js')).toBe('Delay JavaScript execution');
     expect(getRealOptionName('rocket_cdn')).toBe('Content Delivery Network');
+    expect(getRealOptionName('minify_concatenate_js')).toBe('Combine JavaScript files');
     expect(getRealOptionName('not_an_option_at_all')).toBe('not_an_option_at_all');
   });
 

@@ -412,6 +412,17 @@ export interface WprDetections {
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
   };
+  minify_concatenate_js: {
+    /**
+     * The feature verdict, declaration-only: the combined bundle's digest
+     * file name is no attribution of its own (any build tool emits
+     * hash-named scripts), so only the generator meta decides — an
+     * undeclared page reads `present: false` with no `source`.
+     */
+    present: boolean;
+    /** The evidence class that decided the verdict, when one did (only ever the meta). */
+    source?: FeatureEvidenceSource;
+  };
   preload_links: {
     present: boolean;
     /** The evidence class that decided the verdict, when one did. */

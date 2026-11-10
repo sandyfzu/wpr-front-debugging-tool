@@ -235,6 +235,16 @@ export function detectMinifyJs(page: ParsedPage): WprDetections['minify_js'] {
 }
 
 /**
+ * Combine JavaScript files: declaration-only. The bundle's file name is a
+ * bare content digest under the minify cache — a shape any build tool can
+ * serve — so it never attributes the feature; with no declaration the
+ * honest answer is "undecided", never a guess from the URL.
+ */
+export function detectCombineJs(): WprDetections['minify_concatenate_js'] {
+  return { present: false };
+}
+
+/**
  * Preload links: the options blob's id, or its inline config identifier
  * repeated across the page's scripts (the blob names itself more than once,
  * so a stripped/renamed id still leaves the config behind). A single

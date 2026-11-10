@@ -55,6 +55,7 @@ const ROW_UI: Readonly<Record<MatrixRow, { readonly name: string; readonly chip:
   defer_all_js: { name: 'Load JavaScript deferred', chip: 'Defer JS' },
   minify_css: { name: 'Minify CSS files', chip: 'Minify CSS' },
   minify_js: { name: 'Minify JavaScript files', chip: 'Minify JS' },
+  minify_concatenate_js: { name: 'Combine JavaScript files', chip: 'Combine JS' },
   lazyload: { name: 'LazyLoad for images', chip: 'Lazyload Images' },
   lazyload_iframes: { name: 'LazyLoad for iframes/videos', chip: 'Lazyload Iframes' },
   lazyload_css_bg_img: {

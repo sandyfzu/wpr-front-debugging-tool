@@ -431,12 +431,14 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   if (lazyloadCssBgImg === null) return null;
   const selfHostedFonts = row('self_hosted_fonts', parsePresenceRow);
   if (selfHostedFonts === null) return null;
-  const imageDimensions = row('image_dimensions', parseImageDimensionsRow);
+  const imageDimensions = row('image_dimensions', parseDeclarationOnlyRow);
   if (imageDimensions === null) return null;
   const minifyCss = row('minify_css', parsePresenceRow);
   if (minifyCss === null) return null;
   const minifyJs = row('minify_js', parsePresenceRow);
   if (minifyJs === null) return null;
+  const combineJs = row('minify_concatenate_js', parseDeclarationOnlyRow);
+  if (combineJs === null) return null;
   const preloadLinks = row('preload_links', parsePresenceRow);
   if (preloadLinks === null) return null;
   const rocketCdn = row('rocket_cdn', parsePresenceRow);
@@ -468,6 +470,7 @@ export function parseWprDetections(input: unknown): WprDetections | null {
     image_dimensions: imageDimensions,
     minify_css: minifyCss,
     minify_js: minifyJs,
+    minify_concatenate_js: combineJs,
     preload_links: preloadLinks,
     rocket_cdn: rocketCdn,
     delay_js: delayJs,
@@ -857,12 +860,14 @@ function parseIframesRow(input: unknown): WprDetections['lazyload_iframes'] | nu
 }
 
 /**
- * Image-dimensions row: declaration-only, so the only deciding source is the
- * generator meta. A footprint source (or a declared presence without one) is
- * not engine output: standard `width`/`height` markup never attributes this
- * feature.
+ * A declaration-only row (image dimensions, Combine JavaScript files): the
+ * only deciding source is the generator meta. A footprint source (or a
+ * declared presence without one) is not engine output — neither standard
+ * `width`/`height` markup nor a digest-named bundle attributes its feature.
  */
-function parseImageDimensionsRow(input: unknown): WprDetections['image_dimensions'] | null {
+function parseDeclarationOnlyRow(
+  input: unknown
+): WprDetections['image_dimensions' | 'minify_concatenate_js'] | null {
   const parsed = parsePresenceRow(input);
   if (parsed === null || parsed.source === 'footprint') return null;
   if (parsed.present && parsed.source !== 'meta') return null;

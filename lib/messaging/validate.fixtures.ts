@@ -25,6 +25,7 @@ export function minimalDetections(): Record<string, unknown> {
     image_dimensions: { present: false },
     minify_css: { present: false },
     minify_js: { present: false },
+    minify_concatenate_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
     rocket_above_the_fold_optimization: { present: false, lcpComment: false },
@@ -91,6 +92,7 @@ export function validDetections(): Record<string, unknown> {
     image_dimensions: { present: false },
     minify_css: { present: false },
     minify_js: { present: false },
+    minify_concatenate_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
     rocket_above_the_fold_optimization: {

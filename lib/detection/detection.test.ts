@@ -675,6 +675,7 @@ describe('run-detection — propagation and timing', () => {
       'priority_elements_beacon',
       'minify_css',
       'minify_js',
+      'minify_concatenate_js',
       'preload_links',
       'rocket_cdn'
     ]);

@@ -99,3 +99,16 @@ export function recoverOriginalScript(url: string): MinifiedUrlRecovery {
       : 'unknown'
   };
 }
+
+/**
+ * Whether a served script URL has Combine JS's bundle shape (a bare digest
+ * file name under the minify cache). A shape only, never attribution: a
+ * caller must have the feature declared (the generator meta) before calling
+ * the script a WP Rocket bundle — any build tool can serve hash-named files.
+ *
+ * @param url Served script URL — absolute http(s); anything else answers false.
+ * @returns True only for the combined-bundle shape.
+ */
+export function isCombinedBundle(url: string): boolean {
+  return recoverOriginalScript(url).kind === 'combined';
+}

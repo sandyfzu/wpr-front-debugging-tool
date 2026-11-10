@@ -21,6 +21,7 @@ export function emptyDetections(): WprDetections {
     image_dimensions: { present: false },
     minify_css: { present: false },
     minify_js: { present: false },
+    minify_concatenate_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },

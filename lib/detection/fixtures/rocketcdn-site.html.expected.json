@@ -291,6 +291,10 @@
       "present": false,
       "source": "meta"
     },
+    "minify_concatenate_js": {
+      "present": false,
+      "source": "meta"
+    },
     "preload_links": {
       "present": false,
       "source": "meta"

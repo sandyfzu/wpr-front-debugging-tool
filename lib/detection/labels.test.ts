@@ -28,6 +28,7 @@ describe('the verified feature labels', () => {
       labelAddMissingImageDimensions: 'Add missing image dimensions',
       labelMinifyCss: 'Minify CSS files',
       labelMinifyJavascript: 'Minify JavaScript files',
+      labelCombineJavascript: 'Combine JavaScript files',
       labelPreloadLinks: 'Preload Links',
       labelCdn: 'Content Delivery Network',
       labelOptimizeCriticalImages: 'Optimize Critical Images',
@@ -49,13 +50,14 @@ describe('the verified feature labels', () => {
       labelAddMissingImageDimensions: FEATURE_LABELS[8],
       labelMinifyCss: FEATURE_LABELS[9],
       labelMinifyJavascript: FEATURE_LABELS[10],
-      labelPreloadLinks: FEATURE_LABELS[11],
-      labelCdn: FEATURE_LABELS[12],
-      labelOptimizeCriticalImages: FEATURE_LABELS[13],
-      labelAutomaticLazyRendering: FEATURE_LABELS[14],
-      labelPreloadFonts: FEATURE_LABELS[15],
-      labelPreconnectToExternalDomains: FEATURE_LABELS[16],
-      labelPriorityElementsBeacon: FEATURE_LABELS[17]
+      labelCombineJavascript: FEATURE_LABELS[11],
+      labelPreloadLinks: FEATURE_LABELS[12],
+      labelCdn: FEATURE_LABELS[13],
+      labelOptimizeCriticalImages: FEATURE_LABELS[14],
+      labelAutomaticLazyRendering: FEATURE_LABELS[15],
+      labelPreloadFonts: FEATURE_LABELS[16],
+      labelPreconnectToExternalDomains: FEATURE_LABELS[17],
+      labelPriorityElementsBeacon: FEATURE_LABELS[18]
     };
     expect(Object.keys(actual).sort()).toEqual(Object.keys(VERIFIED).sort());
     for (const key of Object.keys(VERIFIED) as Array<keyof typeof VERIFIED>) {

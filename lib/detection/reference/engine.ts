@@ -60,9 +60,10 @@
  *    (`minifyAttribute`).
  *
  * The port's contract additions (the cache-marker flag with its comment-only
- * white-label registry and strict display-domain timestamp, the defer count
- * and the two declaration-only rows) are mirrored here so the records stay
- * key-for-key comparable.
+ * white-label registry and strict display-domain timestamp, the defer count,
+ * the self-hosted fonts row and the declaration-only image-dimensions and
+ * Combine-JavaScript rows) are mirrored here so the records stay key-for-key
+ * comparable.
  *
  * Everything else follows the reference algorithm as written, including
  * quirks that matter (reverse lazyload scans, per-check re-queries of the
@@ -161,6 +162,7 @@ const CheckOptimizationFunctions: Record<keyof WprDetections, CheckOptimizationF
   priority_elements_beacon: checkPriorityElementsBeacon,
   minify_css: checkMinifyCSS,
   minify_js: checkMinifyJS,
+  minify_concatenate_js: checkCombineJS,
   preload_links: checkPreloadLinks,
   rocket_cdn: checkRocketCDN
 } as const;
@@ -421,6 +423,10 @@ function checkMinifyJS({
     return false;
   });
   return isPresent ? { present: true } : { present: false };
+}
+
+function checkCombineJS(): WprDetections['minify_concatenate_js'] {
+  return { present: false };
 }
 
 function checkPreloadLinks({

@@ -504,6 +504,7 @@ sourceTest.describe('source-build parity over one served fixture', () => {
         ).toEqual([
           'Server',
           'Known Platform',
+          'Combine JavaScript files',
           'Add missing image dimensions',
           'Self-host Google Fonts',
           'Automatic Lazy Rendering',

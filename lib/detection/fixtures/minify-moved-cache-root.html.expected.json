@@ -108,6 +108,9 @@
       "present": true,
       "source": "footprint"
     },
+    "minify_concatenate_js": {
+      "present": false
+    },
     "preload_links": {
       "present": false
     },

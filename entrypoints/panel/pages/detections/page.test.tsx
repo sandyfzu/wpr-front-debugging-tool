@@ -218,7 +218,7 @@ describe('DetectionsView', () => {
         el.querySelector('[data-fdt="status-badge"]')?.textContent === 'Active'
     ).length;
     expect(headline?.textContent).toBe(
-      `${activeOptimizations.toString()} of 16 optimizations active`
+      `${activeOptimizations.toString()} of 17 optimizations active`
     );
     expect(document.querySelector('[data-fdt-summary-fact="cache"]')?.textContent).toBe(
       'Cache generated 2023-11-14 22:13:20 UTC'
