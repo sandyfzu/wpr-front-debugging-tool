@@ -9,11 +9,18 @@
  * - the Minified filter lists exactly the minified scripts, Combined has none
  *   (Combine JS off: the meta does not declare it);
  * - the page never scrolls sideways from 320 to 1280 px.
+ *
+ * A Combine arm (Combine JavaScript files on, Delay JS off — WP Rocket forces
+ * Combine off under Delay) proves Combine apart from Minify on the real
+ * render: the meta declares Combine and refutes Minify JS, the bundle reads
+ * Combined, never Minified. The suite restores the settings it found (purged
+ * after, the hub page re-stored).
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
 import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
 import { openSitePage, SITE_URL } from '../helpers/site';
+import { readWprSettings, writeWprSettings, type WprSettings } from '../helpers/site-wpcli';
 
 /** The delay scenario, never cached (each load is WP Rocket's fresh output). */
 const PAGE = `${SITE_URL}/fdt/?fdt-delay=1&fdt-no-store=1`;
@@ -56,9 +63,30 @@ async function chipCount(panel: Page, id: string): Promise<string | null> {
     .textContent();
 }
 
+/** WP Rocket's combined bundle: `cache/min/<blog id>/<md5>.js` (named by content hash). */
+const COMBINED_BUNDLE = /\/cache\/min\/\d+\/[0-9a-f]{32}\.js(?:\?|$)/;
+
+/** The settings found before the suite (restored after). */
+let found: WprSettings | null = null;
+
+test.describe.configure({ mode: 'serial' });
+
 test.beforeAll(async ({ extension }) => {
   // Anonymous visitor: a site login from an earlier suite disables the optimizations.
   await extension.browserContext.clearCookies({ domain: new URL(SITE_URL).hostname });
+  found = await readWprSettings();
+});
+
+test.afterAll(async () => {
+  const snapshot = found;
+  if (snapshot === null) return;
+  await writeWprSettings(snapshot);
+  // Re-store the hub page the restore purged (later suites' cached legs read it).
+  const response = await fetch(`${SITE_URL}/fdt/`, {
+    headers: { 'User-Agent': 'fdt-chips-probe' }
+  });
+  await response.text();
+  if (response.status !== 200) throw new Error(`/fdt/ answered ${String(response.status)}`);
 });
 
 test('state chips and filters read WP Rocket’s real Delay, Defer and Minify JS output', async ({
@@ -124,6 +152,49 @@ test('state chips and filters read WP Rocket’s real Delay, Defer and Minify JS
         expect(box, `chip inside the page at ${String(width)}px`).toBeLessThanOrEqual(right + 0.5);
       }
     }
+  } finally {
+    await panel.close();
+    await site.page.close();
+  }
+});
+
+test('Combine JavaScript files: the bundle reads Combined, never Minified; the meta refutes Minify JS', async ({
+  extension
+}) => {
+  test.setTimeout(120_000);
+  if (found === null) throw new Error('the settings snapshot is missing');
+  await writeWprSettings({ ...found, delay_js: 0, minify_concatenate_js: 1 });
+  const site = await openSitePage(extension, PAGE);
+  const panel = await extension.browserContext.newPage();
+  try {
+    // Ground truth: WP Rocket served the fixture scripts as stamped bundles.
+    const bundles = await site.page.evaluate((pattern: string) => {
+      const shape = new RegExp(pattern);
+      return [...document.querySelectorAll('script[data-minify="1"]')]
+        .map((script) => script.getAttribute('src') ?? '')
+        .filter((src) => shape.test(src));
+    }, COMBINED_BUNDLE.source);
+    expect(bundles.length, 'WP Rocket combined the page scripts').toBeGreaterThan(0);
+
+    const served = await extension.sendToTab<Record<
+      string,
+      { present: boolean; source?: string }
+    > | null>(site.tabId, 'getWprDetections');
+    expect(served?.minify_concatenate_js).toEqual({ present: true, source: 'meta' });
+    expect(served?.minify_js).toEqual({ present: false, source: 'meta' });
+
+    await panel.setViewportSize({ width: 1280, height: 2400 });
+    await panel.addInitScript(devtoolsShim(site.tabId));
+    await panel.goto(`${await panelPageUrl(extension)}#/javascript`, { waitUntil: 'load' });
+    await expect(panel.getByRole('heading', { level: 1, name: 'JavaScript' })).toBeVisible();
+    const bundleName = new URL(bundles[0] ?? '', SITE_URL).pathname.split('/').pop() ?? '';
+    const row = rowWith(panel, bundleName);
+    await expect(row).toBeVisible();
+    const words = await stateWords(row);
+    expect(words).toContain('Combined');
+    expect(words).not.toContain('Minified');
+    expect(await chipCount(panel, 'combined')).toBe(String(bundles.length));
+    expect(await chipCount(panel, 'minified')).toBe('0');
   } finally {
     await panel.close();
     await site.page.close();

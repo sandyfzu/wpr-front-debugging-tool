@@ -5,7 +5,8 @@
  * preload reads "Unattributed" (never claimed), and WP Rocket's count is the
  * page's stamped hints. A second arm stores a DNS prefetch domain (WP Rocket
  * then declares the feature and core prints a plain hint for it): the hint
- * still reads unattributed and the page notes the proof limit. The suite
+ * still reads unattributed, the page notes the proof limit, and the payload
+ * declares DNS prefetch (meta) while Preconnect stays refuted. The suite
  * restores the settings it found (purged after, the hub page re-stored).
  */
 import type { Page } from '@playwright/test';
@@ -155,6 +156,14 @@ test.describe('Preloaded Resources over the docker site', () => {
       await expect(dnsRow.locator('[data-fdt="hint-kind"]')).toHaveText('dns-prefetch');
       await expect(dnsRow.locator('[data-fdt="state-chip"]')).toHaveText('Unattributed');
       await expect(panel.locator('[data-fdt="resource-note"]')).toHaveText([DNS_PREFETCH_LIMIT]);
+      // The declaration decides DNS prefetch, never Preconnect (refuted by the same meta).
+      const served = await extension.sendToTab<{
+        dns_prefetch: { present: boolean; domains: string[]; source?: string };
+        preconnect_external_domains: { present: boolean; source?: string };
+      } | null>(site.tabId, 'getWprDetections');
+      expect(served?.dns_prefetch).toMatchObject({ present: true, source: 'meta' });
+      expect(served?.dns_prefetch.domains).toContain(`http://${DNS_HOST}/`);
+      expect(served?.preconnect_external_domains).toMatchObject({ present: false, source: 'meta' });
     } finally {
       await panel.close();
       await site.page.close();
