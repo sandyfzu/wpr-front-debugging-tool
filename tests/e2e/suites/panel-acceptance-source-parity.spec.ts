@@ -513,6 +513,7 @@ sourceTest.describe('source-build parity over one served fixture', () => {
           'Combine JavaScript files',
           'Add missing image dimensions',
           'Self-host Google Fonts',
+          'Prefetch DNS Requests',
           'Automatic Lazy Rendering',
           'Preload fonts',
           'Preconnect to External Domains',

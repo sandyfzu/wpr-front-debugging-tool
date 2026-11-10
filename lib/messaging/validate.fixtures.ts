@@ -29,6 +29,7 @@ export function minimalDetections(): Record<string, unknown> {
     preload_links: { present: false },
     rocket_cdn: { present: false },
     mobile_cache: { present: false, variant: null },
+    dns_prefetch: { present: false, domains: [] },
     rocket_above_the_fold_optimization: { present: false, lcpComment: false },
     automatic_lazy_rendering: {
       present: false,
@@ -97,6 +98,7 @@ export function validDetections(): Record<string, unknown> {
     preload_links: { present: false },
     rocket_cdn: { present: false },
     mobile_cache: { present: true, variant: 'desktop', source: 'meta' },
+    dns_prefetch: { present: true, domains: ['https://fonts.googleapis.com/'], source: 'meta' },
     rocket_above_the_fold_optimization: {
       present: true,
       lcpComment: true,

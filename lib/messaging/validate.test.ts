@@ -474,7 +474,8 @@ describe('parseWprDetections', () => {
         if (
           (key === 'image_dimensions' ||
             key === 'minify_concatenate_js' ||
-            key === 'mobile_cache') &&
+            key === 'mobile_cache' ||
+            key === 'dns_prefetch') &&
           source === 'footprint'
         ) {
           expect(parsed, `${key}/${source}`).toBeNull();
@@ -739,7 +740,8 @@ describe('the optional truncation mark (additive, tolerant contract)', () => {
     [
       'preconnect_external_domains',
       { present: true, domains: ['https://cdn.example'], preconnectCount: 0 }
-    ]
+    ],
+    ['dns_prefetch', { present: true, domains: ['https://cdn.example/'], source: 'meta' }]
   ];
 
   const withRow = (key: string, row: Record<string, unknown>): Record<string, unknown> => ({
@@ -772,7 +774,8 @@ describe('the optional truncation mark (additive, tolerant contract)', () => {
     const cases: readonly (readonly [string, Record<string, unknown>])[] = [
       ['rocket_above_the_fold_optimization', { present: false, lcpComment: false }],
       ['auto_preload_fonts', { present: false, fonts: [] }],
-      ['preconnect_external_domains', { present: false, domains: [], preconnectCount: 0 }]
+      ['preconnect_external_domains', { present: false, domains: [], preconnectCount: 0 }],
+      ['dns_prefetch', { present: true, domains: [], source: 'meta' }]
     ];
     for (const [key, row] of cases) {
       expect(parseWprDetections(withRow(key, { ...row, truncated: true }))).toBeNull();
@@ -1019,6 +1022,17 @@ describe('sparse arrays: holes reject, count caps bound the work', () => {
         parseWprDetections(
           withRow('preconnect_external_domains', { present: false, domains: list })
         )
+    ],
+    [
+      'dns_prefetch.domains (declared)',
+      (list) =>
+        parseWprDetections(
+          withRow('dns_prefetch', { present: true, domains: list, source: 'meta' })
+        )
+    ],
+    [
+      'dns_prefetch.domains (undecided)',
+      (list) => parseWprDetections(withRow('dns_prefetch', { present: false, domains: list }))
     ],
     [
       'priority_elements_beacon.processed_extensions',

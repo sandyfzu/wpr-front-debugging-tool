@@ -173,8 +173,8 @@ function factsCell(item: StatusItem): string {
       return detail.version === null
         ? 'Version not available'
         : `Version ${codeSpan(detail.version, true)}`;
-    case 'mobile-cache':
-      return `${cellText(detail.rendered)}; ${cellText(detail.limit)}`;
+    case 'proof-limit':
+      return `${cellText(detail.text)}; ${cellText(detail.limit)}`;
     case 'preloaded-images':
     case undefined:
       return item.subtitle === undefined ? NONE : cellText(item.subtitle);

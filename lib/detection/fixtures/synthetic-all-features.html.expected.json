@@ -251,6 +251,10 @@
       "present": true,
       "variant": "desktop",
       "source": "meta"
+    },
+    "dns_prefetch": {
+      "present": false,
+      "domains": ["https://cdn.rocketcdn.me/", "https://stats.wp.com/"]
     }
   },
   "preloadedResources": {

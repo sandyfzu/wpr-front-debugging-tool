@@ -22,6 +22,7 @@
 
 import {
   FEATURE_META_LIMITS,
+  FEATURE_META_OMISSION_GUARDS,
   FEATURE_META_TOKENS,
   WPR_FEATURES_ATTRIBUTE,
   WPR_FEATURES_META_SELECTOR
@@ -118,6 +119,39 @@ export function featureMetaVerdict(
   return tokens.some((token) => meta.tokens.includes(token)) ? 'declared' : 'refuted';
 }
 
+/**
+ * Resolve one row against a parsed declaration, honouring the row's omission
+ * guard ({@link FEATURE_META_OMISSION_GUARDS}): a missing token while the
+ * guard row's token is declared decides nothing (`absent`), since the plugin
+ * omits the token on such renders even when the feature applies.
+ *
+ * @param meta The page's parsed declaration.
+ * @param row The detection row.
+ * @returns The row's verdict, as {@link featureMetaVerdict} with the guard applied.
+ */
+export function rowMetaVerdict(meta: FeatureMetaEvidence, row: FeatureMetaRow): MetaFeatureVerdict {
+  const verdict = featureMetaVerdict(meta, FEATURE_META_TOKENS[row]);
+  const guard = FEATURE_META_OMISSION_GUARDS[row];
+  if (verdict !== 'refuted' || guard === undefined) return verdict;
+  return featureMetaVerdict(meta, FEATURE_META_TOKENS[guard]) === 'declared' ? 'absent' : verdict;
+}
+
+/**
+ * Whether a completed pass left the row undecided through its omission guard
+ * (the guard row declared by the meta, the row itself not decided) — the
+ * presentation's read of {@link rowMetaVerdict}'s `absent`, so the why can
+ * name the omission instead of a missing declaration.
+ *
+ * @param detections The pass after the meta's authority.
+ * @param row The detection row.
+ */
+export function metaOmissionLeftOpen(detections: WprDetections, row: FeatureMetaRow): boolean {
+  const guard = FEATURE_META_OMISSION_GUARDS[row];
+  if (guard === undefined) return false;
+  const guardEntry = detections[guard];
+  return guardEntry.present && guardEntry.source === 'meta' && detections[row].source === undefined;
+}
+
 /** Re-export the data registry so feature-meta consumers keep one import path. */
 export { FEATURE_META_TOKENS };
 
@@ -161,7 +195,7 @@ export function applyFeatureMetaAuthority(
   if (meta.attributePresent) detections.wpr.present = true;
 
   for (const row of Object.keys(FEATURE_META_TOKENS) as FeatureMetaRow[]) {
-    const verdict = featureMetaVerdict(meta, FEATURE_META_TOKENS[row]);
+    const verdict = rowMetaVerdict(meta, row);
     const entry: { present: boolean; source?: 'meta' | 'footprint' } = detections[row];
     if (verdict === 'declared') {
       entry.present = true;

@@ -46,6 +46,7 @@ function zeroDetections(): WprDetections {
     preload_links: { present: false },
     rocket_cdn: { present: false },
     mobile_cache: { present: false, variant: null },
+    dns_prefetch: { present: false, domains: [] },
     rocket_above_the_fold_optimization: { present: false, lcpComment: false },
     automatic_lazy_rendering: {
       present: false,
@@ -474,6 +475,57 @@ describe('the strip reads the HUD registry (one feature list)', () => {
     expect(row?.chipState).toBe('ok');
     expect(row?.tooltip).toBe(
       "Separate cache files for mobile devices — applied on this page: rendered for mobile. Declared on this render; separate mobile files also need WP Rocket's mobile cache option, which the page doesn't show. Tablets count as mobile here but get the desktop file under WP Rocket's default tablet setting. Decided by WP Rocket's generator meta tag on this page."
+    );
+  });
+
+  it('a declared DNS prefetch row: an ok chip whose tooltip counts the hints and states the limit', () => {
+    const row = rows({
+      ...handled(),
+      dns_prefetch: { present: true, domains: ['https://a.example/'], source: 'meta' }
+    }).find((entry) => entry.id === 'dns_prefetch');
+    expect(row?.label).toBe('DNS prefetch');
+    expect(row?.chipState).toBe('ok');
+    expect(row?.count).toBe(1);
+    expect(row?.unit).toBe('domain');
+    expect(row?.tooltip).toBe(
+      "Prefetch DNS Requests — applied on this page: 1 domain hinted. WP Rocket declared DNS prefetch; the hosts may include, or be only, WordPress core's own hints and CDN hosts. Decided by WP Rocket's generator meta tag on this page."
+    );
+  });
+
+  it('an undecided DNS prefetch row: plain hints alone read the amber unknown chip', () => {
+    const row = rows({
+      ...handled(),
+      dns_prefetch: { present: false, domains: ['https://a.example/'] }
+    }).find((entry) => entry.id === 'dns_prefetch');
+    expect(row?.chipState).toBe('attention');
+    // Unattributed hints are no evidence for an unsure chip: no count beside it.
+    expect(row?.count).toBeNull();
+    expect(row?.unit).toBeNull();
+    expect(row?.tooltip).toBe(
+      'Prefetch DNS Requests — no generator meta declaration decided it, and a plain dns-prefetch hint does not name WP Rocket, so its state is unknown.'
+    );
+  });
+
+  it('a refuted DNS prefetch row shows no hint count beside its chip', () => {
+    const row = rows({
+      ...handled(),
+      dns_prefetch: { present: false, domains: ['https://a.example/'], source: 'meta' }
+    }).find((entry) => entry.id === 'dns_prefetch');
+    expect(row?.chipState).toBe('neutral');
+    expect(row?.count).toBeNull();
+    expect(row?.unit).toBeNull();
+  });
+
+  it('a DNS prefetch row the CDN omission left open reads unknown, naming the omission', () => {
+    const row = rows({
+      ...handled(),
+      rocket_cdn: { present: true, source: 'meta' },
+      dns_prefetch: { present: false, domains: ['https://cdn.example/'] }
+    }).find((entry) => entry.id === 'dns_prefetch');
+    expect(row?.chipState).toBe('attention');
+    expect(row?.count).toBeNull();
+    expect(row?.tooltip).toBe(
+      'Prefetch DNS Requests — with the CDN on, WP Rocket omits the declaration for a single domain, so its state is unknown.'
     );
   });
 

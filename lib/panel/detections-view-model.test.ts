@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { buildStatusItems, hostLayersTooltip, type StatusItem } from './detections-view-model';
 import { HOST_LAYER_ADD_ON_CAVEAT } from '../detection/host-layers';
 import type { FdtData, WprDetections } from '../wp-rocket/types';
-import { HUD_FEATURES, MOBILE_CACHE_LIMIT } from '../detection/hud';
+import { DNS_PREFETCH_LIMIT, HUD_FEATURES, MOBILE_CACHE_LIMIT } from '../detection/hud';
 
 /**
  * The record exactly as the payload validator rebuilds it (its literal
@@ -30,6 +30,7 @@ function fullDetections(overrides?: Partial<WprDetections>): WprDetections {
     preload_links: { present: false },
     rocket_cdn: { present: false },
     mobile_cache: { present: false, variant: null },
+    dns_prefetch: { present: false, domains: [] },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
     defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
     lazyload: { present: false, images: [] },
@@ -541,8 +542,8 @@ describe('buildStatusItems — the mobile cache card', () => {
       source: 'meta',
       subtitle: 'Rendered for mobile · beacon config: not mobile',
       detail: {
-        kind: 'mobile-cache',
-        rendered: 'Rendered for mobile · beacon config: not mobile',
+        kind: 'proof-limit',
+        text: 'Rendered for mobile · beacon config: not mobile',
         limit: MOBILE_CACHE_LIMIT
       }
     });
@@ -555,6 +556,59 @@ describe('buildStatusItems — the mobile cache card', () => {
       status: 'not-active',
       source: 'meta'
     });
+  });
+});
+
+describe('buildStatusItems — the DNS prefetch card', () => {
+  /** The DNS prefetch card over a page carrying the given row. */
+  const dnsCard = (row: WprDetections['dns_prefetch']) =>
+    buildStatusItems(makeData({ wprDetections: fullDetections({ dns_prefetch: row }) })).find(
+      (item) => item.id === 'dns_prefetch'
+    );
+
+  it('a declared row: the hints seen as subtitle, the limit as its detail', () => {
+    expect(
+      dnsCard({
+        present: true,
+        domains: ['https://a.example/', 'https://b.example/'],
+        source: 'meta'
+      })
+    ).toEqual({
+      id: 'dns_prefetch',
+      name: 'Prefetch DNS Requests',
+      status: 'active',
+      source: 'meta',
+      subtitle: '2 domains hinted',
+      detail: { kind: 'proof-limit', text: '2 domains hinted', limit: DNS_PREFETCH_LIMIT }
+    });
+  });
+
+  it('a refuted row lends its remnant hints no subtitle', () => {
+    expect(dnsCard({ present: false, domains: ['https://a.example/'], source: 'meta' })).toEqual({
+      id: 'dns_prefetch',
+      name: 'Prefetch DNS Requests',
+      status: 'not-active',
+      source: 'meta'
+    });
+  });
+
+  it('an undecided row on a WP Rocket page reads unknown with its why, hints alone asserting nothing', () => {
+    const item = buildStatusItems(
+      makeData({
+        wprDetections: fullDetections({
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: false,
+            version: null,
+            timeStamp: null
+          },
+          dns_prefetch: { present: false, domains: ['https://a.example/'] }
+        })
+      })
+    ).find((entry) => entry.id === 'dns_prefetch');
+    expect(item?.status).toBe('unknown');
+    expect(item?.subtitle).toBeUndefined();
   });
 });
 
@@ -679,6 +733,7 @@ describe('buildStatusItems — keying and coverage', () => {
       'image_dimensions',
       'self_hosted_fonts',
       'preload_links',
+      'dns_prefetch',
       'rocket_cdn',
       'rocket_above_the_fold_optimization',
       'automatic_lazy_rendering',

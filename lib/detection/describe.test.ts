@@ -37,6 +37,7 @@ function zeroDetections(): WprDetections {
     preload_links: { present: false },
     rocket_cdn: { present: false },
     mobile_cache: { present: false, variant: null },
+    dns_prefetch: { present: false, domains: [] },
     rocket_above_the_fold_optimization: { present: false, lcpComment: false },
     automatic_lazy_rendering: {
       present: false,
@@ -441,6 +442,7 @@ describe('describeDetections over the real engine (fixture corpus)', () => {
     'Minify JavaScript files',
     'Combine JavaScript files',
     'Preload Links',
+    'Prefetch DNS Requests',
     'Content Delivery Network',
     'Separate cache files for mobile devices',
     'Optimize Critical Images',

@@ -1,0 +1,116 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": true,
+      "cacheMarkerFound": false,
+      "cached": false,
+      "version": "3.24",
+      "timeStamp": null
+    },
+    "remove_unused_css": {
+      "present": false,
+      "source": "meta"
+    },
+    "async_css": {
+      "present": false,
+      "criticalStyle": false,
+      "source": "meta"
+    },
+    "delay_js": {
+      "present": false,
+      "scripts": [],
+      "version": null,
+      "delayedScripts": 0,
+      "source": "meta"
+    },
+    "defer_all_js": {
+      "present": false,
+      "scripts": [],
+      "deferredScripts": 0,
+      "source": "meta"
+    },
+    "lazyload": {
+      "present": false,
+      "images": [],
+      "source": "meta"
+    },
+    "lazyload_iframes": {
+      "present": false,
+      "replaceImage": false,
+      "source": "meta"
+    },
+    "lazyload_css_bg_img": {
+      "present": false,
+      "source": "meta"
+    },
+    "self_hosted_fonts": {
+      "present": false,
+      "source": "meta"
+    },
+    "image_dimensions": {
+      "present": false,
+      "source": "meta"
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": false,
+      "lcpComment": false,
+      "source": "meta"
+    },
+    "automatic_lazy_rendering": {
+      "present": false,
+      "lazyRenderElements": 0,
+      "inlineCssPresent": false,
+      "locationHashes": 0,
+      "source": "meta"
+    },
+    "auto_preload_fonts": {
+      "present": false,
+      "fonts": [],
+      "source": "meta"
+    },
+    "preconnect_external_domains": {
+      "present": false,
+      "domains": ["https://attributed.example/", "https://attributed-cors.example/"],
+      "preconnectCount": 1,
+      "source": "meta"
+    },
+    "priority_elements_beacon": {
+      "present": false,
+      "status": null,
+      "isMobile": null
+    },
+    "minify_css": {
+      "present": false,
+      "source": "meta"
+    },
+    "minify_js": {
+      "present": false,
+      "source": "meta"
+    },
+    "minify_concatenate_js": {
+      "present": false,
+      "source": "meta"
+    },
+    "preload_links": {
+      "present": false,
+      "source": "meta"
+    },
+    "rocket_cdn": {
+      "present": false,
+      "source": "meta"
+    },
+    "mobile_cache": {
+      "present": false,
+      "variant": null,
+      "source": "meta"
+    },
+    "dns_prefetch": {
+      "present": true,
+      "domains": ["https://a.example/", "https://b.example/", "https://cdn.example.com/"],
+      "source": "meta"
+    }
+  },
+  "preloadedResources": {
+    "present": false
+  }
+}

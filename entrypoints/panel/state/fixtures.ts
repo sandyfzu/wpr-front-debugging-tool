@@ -24,6 +24,7 @@ const EMPTY_DETECTIONS: WprDetections = {
   preload_links: { present: false },
   rocket_cdn: { present: false },
   mobile_cache: { present: false, variant: null },
+  dns_prefetch: { present: false, domains: [] },
   delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
   defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
   lazyload: { present: false, images: [] },

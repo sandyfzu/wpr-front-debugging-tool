@@ -20,6 +20,7 @@ import {
   detectCombineJs,
   detectDeferAllJs,
   detectDelayJs,
+  detectDnsPrefetch,
   detectImageDimensions,
   detectLazyload,
   detectLazyloadCssBgImg,
@@ -34,7 +35,7 @@ import {
   detectSelfHostedFonts
 } from './detect-optimizations';
 import { applyBuilderFacts } from './builder-fact';
-import { FEATURE_META_TOKENS, applyFeatureMetaAuthority, featureMetaVerdict } from './feature-meta';
+import { applyFeatureMetaAuthority, rowMetaVerdict } from './feature-meta';
 import { MINIFY_FOOTPRINT_ROWS, hasMinifyFootprint } from './minify-footprint';
 import { applySimulationFacts } from './simulation-fact';
 import type { SimulatedFeatureId } from '../wp-rocket-simulation/spec';
@@ -121,7 +122,8 @@ export function runChecks(
     minify_concatenate_js: detectCombineJs(),
     preload_links: detectPreloadLinks(page),
     rocket_cdn: detectRocketCdn(page),
-    mobile_cache: detectMobileCache(page)
+    mobile_cache: detectMobileCache(page),
+    dns_prefetch: detectDnsPrefetch(page)
   };
   applySimulationFacts(detections, page.simulationMarker, verified, page.featureMeta);
   applyFeatureMetaAuthority(detections, page.featureMeta);
@@ -188,7 +190,7 @@ export function applyMinifyAttributeGuard(detections: WprDetections, page: Parse
   for (const row of MINIFY_FOOTPRINT_ROWS) {
     const entry = detections[row];
     if (entry.present) continue;
-    if (featureMetaVerdict(page.featureMeta, FEATURE_META_TOKENS[row]) !== 'absent') continue;
+    if (rowMetaVerdict(page.featureMeta, row) !== 'absent') continue;
     if (!hasMinifyFootprint(page, row, 'attribute')) continue;
     entry.present = true;
     entry.source = 'footprint';

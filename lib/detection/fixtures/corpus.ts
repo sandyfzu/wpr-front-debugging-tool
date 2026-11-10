@@ -46,6 +46,13 @@ export const FIXTURES = [
   // with a phone and a desktop user agent (the meta's device token decides).
   'mobile-cache-mobile.html',
   'mobile-cache-desktop.html',
+  // Real plugin pass: one stored DNS prefetch domain (the meta decides; core
+  // prints the plain hint).
+  'dns-prefetch-declared.html',
+  // Crafted DNS prefetch pages: core's plain hints with no meta (they never
+  // name WP Rocket), and a declaring meta over hostile/edge-case hints.
+  'dns-prefetch-hint-only.html',
+  'dns-prefetch-hostile.html',
   // Real plugin pass: a `nowprocket` render (footprints without the meta).
   'bypass-render.html',
   // Source-derived Load CSS asynchronously page: the async-swapped link arm

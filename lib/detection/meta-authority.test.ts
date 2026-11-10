@@ -29,7 +29,7 @@ const RUCSS = '<style id="wpr-usedcss">.c{}</style>';
 interface RegistryRowCase {
   readonly row: FeatureMetaRow;
   readonly token: string;
-  /** Absent for declaration-only rows (image dimensions, Combine JS, mobile cache). */
+  /** Absent for declaration-only rows (image dimensions, Combine JS, mobile cache, DNS prefetch). */
   readonly footprint?: string;
 }
 
@@ -120,7 +120,9 @@ const REGISTRY_ROWS: readonly RegistryRowCase[] = [
   },
   // One row, two device tokens: either declares it.
   { row: 'mobile_cache', token: 'wpr_mobile' },
-  { row: 'mobile_cache', token: 'wpr_desktop' }
+  { row: 'mobile_cache', token: 'wpr_desktop' },
+  // Declaration-only: a plain dns-prefetch hint names no plugin.
+  { row: 'dns_prefetch', token: 'wpr_dns_prefetch' }
 ];
 
 /** The registry rows whose footprint the table can positively detect. */
@@ -135,7 +137,8 @@ describe('meta authority: per-row verdict and source', () => {
   it.each(FOOTPRINT_ROWS)(
     '$row: an undeclared token refutes the row despite its footprint',
     ({ row, footprint }) => {
-      const detections = runDetection(page(meta(['wpr_dns_prefetch']), footprint)).detections;
+      // A real token no row maps (WebP caching): the declaration is usable yet names none of them.
+      const detections = runDetection(page(meta(['wpr_cache_webp']), footprint)).detections;
       expect(detections[row]).toMatchObject({ present: false, source: 'meta' });
     }
   );

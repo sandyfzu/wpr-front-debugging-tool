@@ -281,6 +281,27 @@ export interface MobileCacheDetection {
 }
 
 /**
+ * Prefetch DNS Requests, decided by the generator meta only: the plugin's
+ * hints are plain core `dns-prefetch` links (it adds its domains to
+ * WordPress's resource hints), which core also prints for every external
+ * enqueued host — so no hint names WP Rocket, and an undeclared page reads
+ * `present: false` with no `source`.
+ */
+export interface DnsPrefetchDetection extends TruncationMark {
+  present: boolean;
+  /**
+   * The page's plain `dns-prefetch` hint hrefs (resolved, http(s) only, never
+   * a blank href, unique, first-occurrence order) — corroboration, never proof: they may
+   * come from WordPress core, the CDN's CNAMEs or any plugin. Hints carrying
+   * Preconnect to External Domains' attribution belong to that row. Observed
+   * markup, which can be empty under a meta declaration.
+   */
+  domains: string[];
+  /** The evidence class that decided the verdict, when one did (only ever the meta). */
+  source?: FeatureEvidenceSource;
+}
+
+/**
  * What the Exclusion Builder's rewrite did to one feature on the displayed
  * document, read from the marker the rewrite left in it (never inferred):
  * turned off feature-wide (`off: 'feature'`), turned off for this page by
@@ -478,6 +499,7 @@ export interface WprDetections {
     source?: FeatureEvidenceSource;
   };
   mobile_cache: MobileCacheDetection;
+  dns_prefetch: DnsPrefetchDetection;
   rocket_above_the_fold_optimization: OptimizeCriticalImagesDetection;
   automatic_lazy_rendering: AutomaticLazyRenderingDetection;
   auto_preload_fonts: AutoPreloadFontsDetection;

@@ -438,8 +438,23 @@ export const FEATURE_META_TOKENS: Readonly<Record<FeatureMetaRow, readonly strin
   minify_concatenate_js: ['wpr_minify_concatenate_js'],
   preload_links: ['wpr_preload_links'],
   rocket_cdn: ['wpr_cdn'],
-  mobile_cache: [MOBILE_CACHE_VARIANT_TOKENS.mobile, MOBILE_CACHE_VARIANT_TOKENS.desktop]
+  mobile_cache: [MOBILE_CACHE_VARIANT_TOKENS.mobile, MOBILE_CACHE_VARIANT_TOKENS.desktop],
+  // Option-derived: the domain list (stored domains + the `rocket_dns_prefetch`
+  // filter, which appends the CDN CNAMEs) is non-empty, and either the CDN
+  // option is off or that whole list has more than one entry.
+  dns_prefetch: ['wpr_dns_prefetch']
 };
+
+/**
+ * Rows whose missing token is no refutation while another row's token is
+ * declared: the plugin omits the row's token on such renders even though the
+ * feature may still apply, so the declaration decides nothing for it there.
+ * DNS prefetch: with the CDN on, a one-entry domain list goes undeclared
+ * while its hint is still printed (`wpr_cdn` is the render's CDN evidence).
+ */
+export const FEATURE_META_OMISSION_GUARDS: Readonly<
+  Partial<Record<FeatureMetaRow, FeatureMetaRow>>
+> = { dns_prefetch: 'rocket_cdn' };
 
 /** WP Rocket's name as it formats the generator content (`WP Rocket`, `WP-Rocket`…). */
 export const WPR_NAME_PATTERN = /wp\s*-?\s*rocket/i;

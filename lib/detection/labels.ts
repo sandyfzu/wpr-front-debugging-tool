@@ -52,6 +52,11 @@ export const LABEL_COMBINE_JAVASCRIPT = 'Combine JavaScript files';
 /** Settings section title (`Page.php`) and support-data name (`Support/Data.php`). */
 export const LABEL_PRELOAD_LINKS = 'Preload Links';
 /**
+ * The removed settings field's own string (`dns_prefetch`, hidden since 3.19;
+ * still in the plugin's translation catalogs): no settings field shows it in 3.24.
+ */
+export const LABEL_DNS_PREFETCH = 'Prefetch DNS Requests';
+/**
  * Settings field `Enable Content Delivery Network` (`Page.php`, `cdn`) minus its
  * verb: `wpr_cdn` decides the row and every CDN set in WP Rocket emits it, so
  * the name must not single out RocketCDN.
@@ -131,6 +136,7 @@ export const FEATURE_LABELS = [
   LABEL_MINIFY_JAVASCRIPT,
   LABEL_COMBINE_JAVASCRIPT,
   LABEL_PRELOAD_LINKS,
+  LABEL_DNS_PREFETCH,
   LABEL_CDN,
   LABEL_MOBILE_CACHE,
   LABEL_OPTIMIZE_CRITICAL_IMAGES,

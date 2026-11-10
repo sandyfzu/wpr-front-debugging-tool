@@ -835,6 +835,10 @@
     "mobile_cache": {
       "present": false,
       "variant": null
+    },
+    "dns_prefetch": {
+      "present": false,
+      "domains": ["http://static.klaviyo.com/", "http://www.dwin1.com/"]
     }
   },
   "preloadedResources": {

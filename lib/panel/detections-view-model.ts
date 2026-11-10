@@ -28,6 +28,8 @@ import {
 import {
   builderModifierCopy,
   HUD_FEATURES,
+  DNS_PREFETCH_LIMIT,
+  dnsPrefetchHintText,
   MOBILE_CACHE_LIMIT,
   mobileCacheRenderText,
   simulationModifierCopy,
@@ -75,8 +77,8 @@ export type StatusItemId = 'server' | 'known-platform' | 'host-layers' | 'cached
  * the captured host layers, the cache
  * stamp (the stamp only when it is a representable instant — a hostile
  * page-crafted digit run stays out of downstream math), a version string,
- * a preloaded-image count, and the mobile cache render's device with its
- * proof limit.
+ * a preloaded-image count, and a declaration-only fact with its proof
+ * limit (the mobile cache render's device, the DNS prefetch hints seen).
  */
 export type StatusItemDetail =
   | { readonly kind: 'server'; readonly value: string }
@@ -89,7 +91,31 @@ export type StatusItemDetail =
     }
   | { readonly kind: 'version'; readonly version: string | null }
   | { readonly kind: 'preloaded-images'; readonly count: number }
-  | { readonly kind: 'mobile-cache'; readonly rendered: string; readonly limit: string };
+  | { readonly kind: 'proof-limit'; readonly text: string; readonly limit: string };
+
+/**
+ * The declaration-only rows whose active card states a page fact under its
+ * proof limit (the subtitle, with the limit as its tooltip/report detail).
+ */
+const PROOF_LIMIT_CARDS: Readonly<
+  Record<
+    'mobile_cache' | 'dns_prefetch',
+    { readonly text: (detections: WprDetections) => string; readonly limit: string }
+  >
+> = {
+  mobile_cache: {
+    text: (detections) =>
+      mobileCacheRenderText(
+        detections.mobile_cache.variant,
+        detections.priority_elements_beacon.isMobile
+      ),
+    limit: MOBILE_CACHE_LIMIT
+  },
+  dns_prefetch: {
+    text: (detections) => dnsPrefetchHintText(detections.dns_prefetch),
+    limit: DNS_PREFETCH_LIMIT
+  }
+};
 
 /** One status card: name, verdict, subtitle copy and its richer detail. */
 export interface StatusItem {
@@ -546,23 +572,21 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
         );
         continue;
       }
-      case 'mobile_cache': {
+      case 'mobile_cache':
+      case 'dns_prefetch': {
         const facts = readFacts(row);
-        // Only a declared row names a device; the limit rides as its detail.
+        // Only a declared row states its fact; the limit rides as its detail.
         if (facts.status !== 'active') {
           items.push({ id: row, name: cardName(row), ...facts });
           continue;
         }
-        const rendered = mobileCacheRenderText(
-          detections.mobile_cache.variant,
-          detections.priority_elements_beacon.isMobile
-        );
+        const text = PROOF_LIMIT_CARDS[row].text(detections);
         items.push({
           id: row,
           name: cardName(row),
           ...facts,
-          subtitle: rendered,
-          detail: { kind: 'mobile-cache', rendered, limit: MOBILE_CACHE_LIMIT }
+          subtitle: text,
+          detail: { kind: 'proof-limit', text, limit: PROOF_LIMIT_CARDS[row].limit }
         });
         continue;
       }

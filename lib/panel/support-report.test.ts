@@ -71,6 +71,12 @@ function fullData(): FdtData {
       priority_elements_beacon: { present: true, status: { lrc: true }, isMobile: false },
       // Declared mobile while the beacon config is not mobile: shown, not resolved.
       mobile_cache: { present: true, variant: 'mobile', source: 'meta' },
+      // Declared, with two plain hints observed (corroboration, under the limit).
+      dns_prefetch: {
+        present: true,
+        domains: ['https://fonts.googleapis.com/', 'https://cdn.example.com/'],
+        source: 'meta'
+      },
       lazyload_iframes: { present: true, replaceImage: true },
       rocket_above_the_fold_optimization: {
         present: true,
@@ -93,7 +99,7 @@ const FULL_GOLDEN = [
   '- **WordPress version:** `6.8.1`',
   '- **Platform:** WP Engine (matched by `X-Powered-By`)',
   '- **Server:** `nginx`',
-  '- **Optimizations:** 6 of 17 active',
+  '- **Optimizations:** 7 of 18 active',
   '',
   '### Detections',
   '',
@@ -116,6 +122,7 @@ const FULL_GOLDEN = [
   '| Add missing image dimensions | Active | Generator meta | — |',
   '| Self-host Google Fonts | Unknown | — | No generator meta declaration decided it and no self-hosted font link was found; fonts self-hosted through other markup are not detected, so its state is unknown. |',
   '| Preload Links | Not active | — | — |',
+  "| Prefetch DNS Requests | Active | Generator meta | 2 domains hinted; WP Rocket declared DNS prefetch; the hosts may include, or be only, WordPress core's own hints and CDN hosts. |",
   '| Content Delivery Network | Not active | — | — |',
   '| Optimize Critical Images | Active | — | Preloaded images detected: 2 |',
   '| Automatic Lazy Rendering | Collecting | — | Enabled, not yet applied on this page. |',
@@ -151,7 +158,7 @@ const ABSENT_GOLDEN = [
   '- **Extension version:** Not available',
   '- **WP Rocket:** Not detected',
   '- **WordPress version:** Not declared by the page',
-  '- **Optimizations:** 0 of 17 active',
+  '- **Optimizations:** 0 of 18 active',
   '',
   '### Detections',
   '',
@@ -170,6 +177,7 @@ const ABSENT_GOLDEN = [
   '| Add missing image dimensions | Not active | — | — |',
   '| Self-host Google Fonts | Not active | — | — |',
   '| Preload Links | Not active | — | — |',
+  '| Prefetch DNS Requests | Not active | — | — |',
   '| Content Delivery Network | Not active | — | — |',
   '| Optimize Critical Images | Not active | — | — |',
   '| Automatic Lazy Rendering | Not active | — | — |',

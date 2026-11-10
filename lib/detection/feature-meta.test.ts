@@ -6,10 +6,17 @@
  * map to a row yet.
  */
 import { describe, expect, it } from 'vitest';
-import { FEATURE_META_TOKENS, featureMetaVerdict, featureRowForMetaToken } from './feature-meta';
+import {
+  FEATURE_META_TOKENS,
+  featureMetaVerdict,
+  featureRowForMetaToken,
+  metaOmissionLeftOpen,
+  rowMetaVerdict
+} from './feature-meta';
+import { runDetection } from './run-detection';
 import { parsePage } from './parse-page';
 import type { FeatureMetaEvidence } from './feature-meta';
-import { WPR_FEATURES_ATTRIBUTE } from '../wp-rocket/constants';
+import { FEATURE_META_OMISSION_GUARDS, WPR_FEATURES_ATTRIBUTE } from '../wp-rocket/constants';
 
 /** Parse a snippet the way the detection pass does. */
 function read(html: string): FeatureMetaEvidence {
@@ -191,6 +198,58 @@ describe('featureMetaVerdict', () => {
   });
 });
 
+describe('rowMetaVerdict (the omission guard)', () => {
+  const verdict = (features: string): string =>
+    rowMetaVerdict(parsePage(metaHtml(features)).featureMeta, 'dns_prefetch');
+
+  it('guards DNS prefetch by the CDN row only', () => {
+    expect(FEATURE_META_OMISSION_GUARDS).toEqual({ dns_prefetch: 'rocket_cdn' });
+  });
+
+  it('turns a refutation into absent while the guard row is declared', () => {
+    expect(verdict('wpr_cdn')).toBe('absent');
+    expect(verdict('wpr_delay_js wpr_cdn')).toBe('absent');
+  });
+
+  it('keeps a declaration and a refutation without the guard', () => {
+    expect(verdict('wpr_cdn wpr_dns_prefetch')).toBe('declared');
+    expect(verdict('wpr_delay_js')).toBe('refuted');
+    expect(verdict('')).toBe('refuted');
+  });
+
+  it('answers absent on a meta that decides nothing', () => {
+    expect(rowMetaVerdict(parsePage('<p>none</p>').featureMeta, 'dns_prefetch')).toBe('absent');
+    const degraded: FeatureMetaEvidence = { attributePresent: true, tokens: [], degraded: true };
+    expect(rowMetaVerdict(degraded, 'dns_prefetch')).toBe('absent');
+  });
+
+  it('matches featureMetaVerdict on every unguarded row', () => {
+    const meta = parsePage(metaHtml('wpr_cdn wpr_delay_js')).featureMeta;
+    for (const row of Object.keys(FEATURE_META_TOKENS) as (keyof typeof FEATURE_META_TOKENS)[]) {
+      if (row in FEATURE_META_OMISSION_GUARDS) continue;
+      expect(rowMetaVerdict(meta, row)).toBe(featureMetaVerdict(meta, FEATURE_META_TOKENS[row]));
+    }
+  });
+});
+
+describe('metaOmissionLeftOpen', () => {
+  const open = (html: string): boolean =>
+    metaOmissionLeftOpen(runDetection(html).detections, 'dns_prefetch');
+
+  it('is true only when the meta declares the guard and leaves the row undecided', () => {
+    expect(open(metaHtml('wpr_cdn'))).toBe(true);
+    expect(open(metaHtml('wpr_cdn wpr_dns_prefetch'))).toBe(false);
+    expect(open(metaHtml('wpr_delay_js'))).toBe(false);
+    expect(open('<p>none</p>')).toBe(false);
+  });
+
+  it('is false for a row with no guard', () => {
+    expect(metaOmissionLeftOpen(runDetection(metaHtml('wpr_cdn')).detections, 'delay_js')).toBe(
+      false
+    );
+  });
+});
+
 describe('FEATURE_META_TOKENS registry', () => {
   // The independent witness: each row and the exact tokens the plugin's own
   // emitter declares for it (the emitters' add_meta_comment argument prefixed
@@ -215,7 +274,9 @@ describe('FEATURE_META_TOKENS registry', () => {
     preload_links: ['wpr_preload_links'],
     rocket_cdn: ['wpr_cdn'],
     // Meta.php: the device variant the request was served, one per render.
-    mobile_cache: ['wpr_mobile', 'wpr_desktop']
+    mobile_cache: ['wpr_mobile', 'wpr_desktop'],
+    // Meta.php: option-derived, when DNS prefetch domains exist.
+    dns_prefetch: ['wpr_dns_prefetch']
   };
 
   it('maps every feature row to its exact emitter token', () => {
@@ -233,8 +294,11 @@ describe('FEATURE_META_TOKENS registry', () => {
     expect(featureRowForMetaToken('wpr_desktop')).toBe('mobile_cache');
   });
 
+  it('maps the DNS prefetch token to its own row (never to Preconnect to External Domains)', () => {
+    expect(featureRowForMetaToken('wpr_dns_prefetch')).toBe('dns_prefetch');
+  });
+
   it('maps no row to the tokens whose rows are not carried yet', () => {
-    expect(featureRowForMetaToken('wpr_dns_prefetch')).toBeNull();
     expect(featureRowForMetaToken('wpr_cache_webp')).toBeNull();
     expect(featureRowForMetaToken('wpr_nonexistent')).toBeNull();
   });

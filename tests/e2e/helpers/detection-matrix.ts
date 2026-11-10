@@ -100,7 +100,8 @@ export type MatrixRow =
   | 'self_hosted_fonts'
   | 'preload_links'
   | 'rocket_cdn'
-  | 'mobile_cache';
+  | 'mobile_cache'
+  | 'dns_prefetch';
 
 /** One round's full row expectation. */
 export type RowTable = Readonly<Record<MatrixRow, RowExpectation>>;
@@ -169,7 +170,9 @@ const BASELINE_META_ROWS: RowTable = {
   preload_links: 'Not active (Meta)',
   rocket_cdn: 'Not active (Meta)',
   // The device token (`wpr_desktop`: the browser tier's desktop user agent).
-  mobile_cache: 'Active (Meta)'
+  mobile_cache: 'Active (Meta)',
+  // The site stores no DNS prefetch domain and its CDN is off: no token.
+  dns_prefetch: 'Not active (Meta)'
 };
 
 /** The baseline render with its meta suppressed: footprints alone decide. */
@@ -189,7 +192,9 @@ const BASELINE_FOOTPRINT_ROWS: RowTable = {
   preload_links: 'Not active',
   rocket_cdn: 'Not active',
   // Declaration-only: no page footprint proves the cache split.
-  mobile_cache: 'Unknown'
+  mobile_cache: 'Unknown',
+  // Declaration-only: a plain dns-prefetch hint never names WP Rocket.
+  dns_prefetch: 'Unknown'
 };
 
 /** The bypassed render (`nowprocket`): no meta; Delay skips, Defer/Minify/LazyLoad stay. */
@@ -216,7 +221,8 @@ const ALL_REFUTED_ROWS: RowTable = {
   self_hosted_fonts: 'Not active (Meta)',
   preload_links: 'Not active (Meta)',
   rocket_cdn: 'Not active (Meta)',
-  mobile_cache: 'Active (Meta)'
+  mobile_cache: 'Active (Meta)',
+  dns_prefetch: 'Not active (Meta)'
 };
 
 /** No meta, no footprint: honest Not active, Unknown where absence is unprovable. */
@@ -235,7 +241,8 @@ const NOTHING_ROWS: RowTable = {
   self_hosted_fonts: 'Unknown',
   preload_links: 'Not active',
   rocket_cdn: 'Not active',
-  mobile_cache: 'Unknown'
+  mobile_cache: 'Unknown',
+  dns_prefetch: 'Unknown'
 };
 
 /** The scripted rounds, grouped by combination (each group runs under its combo). */

@@ -171,6 +171,10 @@
       "present": true,
       "variant": "desktop",
       "source": "meta"
+    },
+    "dns_prefetch": {
+      "present": false,
+      "domains": []
     }
   },
   "preloadedResources": {
