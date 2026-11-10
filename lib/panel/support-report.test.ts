@@ -62,7 +62,7 @@ function fullData(): FdtData {
         version: '3.20.1',
         timeStamp: 1791342253
       },
-      async_css: { present: true, source: 'footprint' },
+      async_css: { present: true, criticalStyle: false, source: 'footprint' },
       delay_js: { present: true, scripts: [], version: '2.0', delayedScripts: 3, source: 'meta' },
       lazyload: { present: true, images: [], source: 'footprint' },
       // Declared by the meta: the honest-unknown copy must not appear.

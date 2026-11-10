@@ -58,6 +58,13 @@
  *    tag, or any present row but `wpr`/`defer_all_js`, the minify rows by
  *    their URL arm only). Every script record carries the stamp
  *    (`minifyAttribute`).
+ * 5. Load CSS asynchronously: a link carrying `data-rocket-async="style"`
+ *    (exact, any `rel`) decides the row beside the fallback script, and the
+ *    row records whether `style#rocket-critical-css` is on the page
+ *    (`criticalStyle`, a fact only). Stylesheet links (minify CSS, both arms)
+ *    also include the async-swapped preloads (`rel="preload"` +
+ *    `as="style"` + the stamp). Links and styles inside `<noscript>` never
+ *    count — a live capture serializes them as text.
  *
  * The port's contract additions (the cache-marker flag with its comment-only
  * white-label registry and strict display-domain timestamp, the defer count,
@@ -80,7 +87,10 @@ import {
   BEACON_STATUS_KEYS,
   CACHE_COMMENT_MARKERS,
   CACHE_DEBUG_MARKER,
+  ASYNC_CSS_ATTRIBUTE,
+  ASYNC_CSS_ATTRIBUTE_VALUE,
   CPCSS_MARK,
+  CRITICAL_CSS_STYLE_ID,
   DATA_LAZY_SRC,
   DATA_LAZY_SRCSET,
   DATA_ROCKET_STATUS,
@@ -235,12 +245,55 @@ function checkRUCSS({
   return { present: false };
 }
 
-function checkCPCSS({ pageScripts }: CheckOptimizationFunctionPayload): WprDetections['async_css'] {
-  const present = pageScripts.some((script) => {
+function checkCPCSS({
+  HTMLDocument,
+  pageScripts,
+  pageLinkElements
+}: CheckOptimizationFunctionPayload): WprDetections['async_css'] {
+  let present = pageScripts.some((script) => {
     if (!script.getAttribute('src')) return script.textContent?.includes(CPCSS_MARK);
     return false;
   });
-  return { present };
+  // Deviation 5: the async-swapped link alone decides too.
+  if (!present) {
+    for (const link of pageLinkElements) {
+      if (link.getAttribute(ASYNC_CSS_ATTRIBUTE) !== ASYNC_CSS_ATTRIBUTE_VALUE) continue;
+      if (inNoscriptFallback(link)) continue;
+      present = true;
+      break;
+    }
+  }
+  let criticalStyle = false;
+  for (const style of Array.from(HTMLDocument.getElementsByTagName('style'))) {
+    if (style.id === CRITICAL_CSS_STYLE_ID && !inNoscriptFallback(style)) {
+      criticalStyle = true;
+      break;
+    }
+  }
+  return { present, criticalStyle };
+}
+
+/** Deviation 5: whether an element is part of a `<noscript>` fallback. */
+function inNoscriptFallback(element: Element): boolean {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    if (node.localName === 'noscript') return true;
+  }
+  return false;
+}
+
+/**
+ * Deviation 5: a stylesheet link — `rel="stylesheet"`, or an async-swapped
+ * one still preloading (`rel="preload"`, `as="style"`, the async stamp) —
+ * outside any `<noscript>` fallback.
+ */
+function isReferenceStylesheet(link: HTMLLinkElement): boolean {
+  if (inNoscriptFallback(link)) return false;
+  if (link.rel === 'stylesheet') return true;
+  return (
+    link.rel === 'preload' &&
+    link.getAttribute('as') === 'style' &&
+    link.getAttribute(ASYNC_CSS_ATTRIBUTE) === ASYNC_CSS_ATTRIBUTE_VALUE
+  );
 }
 
 function checkDelayJS({
@@ -401,7 +454,7 @@ function checkMinifyCSS({
   pageLinkElements
 }: CheckOptimizationFunctionPayload): WprDetections['minify_css'] {
   const isPresent = pageLinkElements.some((link) => {
-    if (link.rel === 'stylesheet') {
+    if (isReferenceStylesheet(link)) {
       if (link.href?.match(MINIFY_CSS_URL_PATTERN)) {
         return true;
       }
@@ -953,7 +1006,7 @@ function applyReferenceMinifyAttribute(
     !wprDetections.minify_css.present &&
     referenceMetaVerdict(meta, FEATURE_META_TOKENS.minify_css) === 'absent' &&
     pageLinkElements.some(
-      (link) => link.rel === 'stylesheet' && link.getAttribute('href') && stamped(link)
+      (link) => isReferenceStylesheet(link) && link.getAttribute('href') && stamped(link)
     )
   ) {
     wprDetections.minify_css.present = true;

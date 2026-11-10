@@ -354,6 +354,13 @@ export interface WprDetections {
     };
   async_css: {
     present: boolean;
+    /**
+     * The critical-path style (`style#rocket-critical-css`) was in the
+     * capture. A fact beside the verdict, never part of it: WP Rocket's
+     * fallback script removes the style on `load`, so a capture taken after
+     * `load` (late injection) honestly reads `false`.
+     */
+    criticalStyle: boolean;
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
   };

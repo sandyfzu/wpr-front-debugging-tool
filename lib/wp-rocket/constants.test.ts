@@ -19,6 +19,10 @@ import {
   CACHE_TIMESTAMP_PATTERN,
   CONTEXT_MENU_IDS,
   CPCSS_MARK,
+  ASYNC_CSS_ATTRIBUTE,
+  ASYNC_CSS_ATTRIBUTE_VALUE,
+  CRITICAL_CSS_STYLE_ID,
+  CRITICAL_CSS_STYLE_SELECTOR,
   delayJSScriptSelector,
   DATA_LAZY_SRC,
   DATA_LAZY_SRCSET,
@@ -142,6 +146,10 @@ describe('other feature footprints', () => {
   it('pins the reserved ids, markers and anchors', () => {
     expect(RUCSS_STYLE_SELECTOR).toBe('style#wpr-usedcss');
     expect(CPCSS_MARK).toBe('wprRemoveCPCSS');
+    expect(ASYNC_CSS_ATTRIBUTE).toBe('data-rocket-async');
+    expect(ASYNC_CSS_ATTRIBUTE_VALUE).toBe('style');
+    expect(CRITICAL_CSS_STYLE_ID).toBe('rocket-critical-css');
+    expect(CRITICAL_CSS_STYLE_SELECTOR).toBe('style[id="rocket-critical-css"]');
     expect(PRELOAD_LINKS_SCRIPT_ID).toBe('rocket-preload-links-js-extra');
     expect(ROCKET_CDN_DOMAIN).toBe('.rocketcdn.me');
     expect(LAZYLOAD_BG_CONTAINER_ID).toBe('wpr-lazyload-bg-container');

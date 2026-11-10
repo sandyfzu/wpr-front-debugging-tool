@@ -13,6 +13,7 @@
     },
     "async_css": {
       "present": true,
+      "criticalStyle": false,
       "source": "meta"
     },
     "delay_js": {

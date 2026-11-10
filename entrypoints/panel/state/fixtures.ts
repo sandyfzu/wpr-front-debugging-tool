@@ -14,7 +14,7 @@ import {
 const EMPTY_DETECTIONS: WprDetections = {
   wpr: { present: false, cacheMarkerFound: false, cached: false, version: null, timeStamp: null },
   remove_unused_css: { present: false },
-  async_css: { present: false },
+  async_css: { present: false, criticalStyle: false },
   lazyload_css_bg_img: { present: false },
   self_hosted_fonts: { present: false },
   image_dimensions: { present: false },

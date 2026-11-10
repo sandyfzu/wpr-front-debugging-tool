@@ -195,6 +195,30 @@ export const RUCSS_STYLE_SELECTOR = `style#${RUCSS_USED_CSS_ID}`;
 export const CPCSS_MARK = 'wprRemoveCPCSS';
 
 /**
+ * Load CSS asynchronously stamps each stylesheet link it swaps to a preload
+ * (`rel="preload" as="style"`, flipped back to `stylesheet` on load) with
+ * this attribute; the link's `onerror` removes it, so a failed load leaves
+ * no stamp.
+ */
+export const ASYNC_CSS_ATTRIBUTE = 'data-rocket-async';
+/** The one value WP Rocket writes for {@link ASYNC_CSS_ATTRIBUTE}; any other value never counts. */
+export const ASYNC_CSS_ATTRIBUTE_VALUE = 'style';
+
+/**
+ * The inline critical-path style Load CSS asynchronously prints in the head.
+ * Its fallback script removes the element on `load` once the swapped
+ * stylesheets have loaded, so only a capture taken before `load` sees it.
+ */
+export const CRITICAL_CSS_STYLE_ID = 'rocket-critical-css';
+
+/**
+ * The critical-path style element, id matched exactly: an attribute
+ * selector stays case-sensitive in quirks mode (a doctype-less capture),
+ * where `#id` would also match another case WP Rocket never writes.
+ */
+export const CRITICAL_CSS_STYLE_SELECTOR = `style[id="${CRITICAL_CSS_STYLE_ID}"]`;
+
+/**
  * The served minify-cache directory shape — `cache/min/<site-id>/` — the atom
  * every minified-URL pattern composes, so the footprint cannot drift between
  * the detection patterns and the exclusion-path recovery helper.

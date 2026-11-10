@@ -425,7 +425,7 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   };
   const removeUnusedCss = row('remove_unused_css', parsePresenceRow);
   if (removeUnusedCss === null) return null;
-  const asyncCss = row('async_css', parsePresenceRow);
+  const asyncCss = row('async_css', parseAsyncCssRow);
   if (asyncCss === null) return null;
   const lazyloadCssBgImg = row('lazyload_css_bg_img', parsePresenceRow);
   if (lazyloadCssBgImg === null) return null;
@@ -639,6 +639,24 @@ function parsePresenceRow(
   };
   if (source !== undefined) parsed.source = source;
   return parsed;
+}
+
+/**
+ * Load CSS asynchronously row: the presence row plus the `criticalStyle`
+ * fact. Additive field: a producer that predates it never looked for the
+ * style, so absent reads as `false`; any other non-boolean (`null` too)
+ * rejects.
+ */
+function parseAsyncCssRow(input: unknown): WprDetections['async_css'] | null {
+  if (!isRecord(input)) return reject();
+  const { criticalStyle: rawCriticalStyle, ...presenceRow } = input;
+  const criticalStyle = rawCriticalStyle === undefined ? false : rawCriticalStyle;
+  if (typeof criticalStyle !== 'boolean') return reject('criticalStyle');
+  const parsed = parsePresenceRow(presenceRow);
+  if (parsed === null) return reject();
+  const row: WprDetections['async_css'] = { present: parsed.present, criticalStyle };
+  if (parsed.source !== undefined) row.source = parsed.source;
+  return row;
 }
 
 /** Delay JS row: script list plus presence/version/count bookkeeping. */

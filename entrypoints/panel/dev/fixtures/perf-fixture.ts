@@ -185,7 +185,7 @@ export function generatePerfFixture(seed = 6_003): FdtData {
       timeStamp: 1_760_000_000
     },
     remove_unused_css: { present: true },
-    async_css: { present: false },
+    async_css: { present: false, criticalStyle: false },
     lazyload_css_bg_img: { present: true },
     self_hosted_fonts: { present: false },
     image_dimensions: { present: false },

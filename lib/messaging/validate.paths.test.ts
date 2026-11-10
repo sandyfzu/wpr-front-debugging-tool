@@ -266,6 +266,33 @@ describe('parseWprDetections — rejection arms', () => {
     }
   });
 
+  it('reads the critical-style fact tolerantly: absent ⇒ false, booleans kept, anything else rejects', () => {
+    const payload = validDetections();
+    const parse = (row: Record<string, unknown>) =>
+      parseWprDetections({ ...payload, async_css: row })?.async_css;
+    // An older producer never sent the field.
+    expect(parse({ present: true })).toEqual({ present: true, criticalStyle: false });
+    expect(parse({ present: false, criticalStyle: true })).toEqual({
+      present: false,
+      criticalStyle: true
+    });
+    expect(parse({ present: true, criticalStyle: true, source: 'meta' })).toEqual({
+      present: true,
+      criticalStyle: true,
+      source: 'meta'
+    });
+    for (const hostile of ['true', 1, null, {}]) {
+      expect(
+        parse({ present: true, criticalStyle: hostile }),
+        JSON.stringify(hostile)
+      ).toBeUndefined();
+    }
+    // The presence row's own shape still holds around the new field.
+    expect(parse({ present: 'yes', criticalStyle: false })).toBeUndefined();
+    expect(parse({ present: true, criticalStyle: false, extra: 1 })).toBeUndefined();
+    expect(parse({ present: true, criticalStyle: false, source: 'guess' })).toBeUndefined();
+  });
+
   it('rejects iframes rows with wrong-typed fields', () => {
     const payload = validDetections();
     expect(
