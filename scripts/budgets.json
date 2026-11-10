@@ -243,6 +243,25 @@
     "required": true
   },
   {
+    "surface": "Stylesheets page (panel chunk, loaded on first visit)",
+    "globs": ["chunks/stylesheets-*.js"],
+    "maxKb": {
+      "raw": 11.1,
+      "gzip": 4.0
+    },
+    "required": true
+  },
+  {
+    "surface": "Stylesheets page (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["chunks/stylesheets-*.js"],
+    "maxKb": {
+      "raw": 11.1,
+      "gzip": 4.0
+    },
+    "required": true
+  },
+  {
     "surface": "JavaScript Runtime states section (panel chunk, loaded on first show)",
     "globs": ["chunks/runtime-states-*.js"],
     "maxKb": {

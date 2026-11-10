@@ -20,7 +20,7 @@ import {
 import { RUCSS_FETCH_ASK_DEADLINE_MS } from '../../../lib/rucss-tester/deadlines';
 import { createRandomId } from '../../../utils/random-id';
 import { createRucssTestExecutor, type RucssTestMode } from './executor';
-import { collectPageStyles } from './style-inventory';
+import { collectPageStyles } from '../style-inventory/style-inventory';
 
 const log = createLogger('rucss-test');
 

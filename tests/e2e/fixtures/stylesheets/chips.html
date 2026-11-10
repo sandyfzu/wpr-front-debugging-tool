@@ -1,0 +1,141 @@
+<!doctype html>
+<!--
+  Stylesheets page fixture, source-derived (WP Rocket 3.24, not a live
+  capture). Each tag is what the plugin prints:
+  - `style#rocket-critical-css` after `</title>` and the two async-swapped
+    links (`CriticalCSSSubscriber::async_css`, :698-760; one already minified),
+    with their `<noscript>` fallbacks; the inline script is the plugin's
+    `cpcss-removal.js` (logic unchanged, reformatted), which removes the critical style on `load`
+    once the async sheets have loaded — so only the DOMContentLoaded capture
+    sees it;
+  - a Self-host Google Fonts link (`Media/Fonts/Frontend/Controller.php:228`);
+  - `style#wpr-usedcss` (`RUCSS/Controller/UsedCSS.php:404`);
+  - the two live LazyLoad CSS backgrounds styles and the `<noscript>` one
+    (`Media/Lazyload/CSS/Front/TagGenerator.php:31,38`).
+  No generator meta: the async link proves WP Rocket by propagation, the
+  minify-cache URL decides Minify CSS.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Stylesheets fixture</title>
+    <style id="rocket-critical-css">
+      body {
+        margin: 0;
+        font-family: system-ui;
+      }
+      h1 {
+        font-size: 2rem;
+      }
+    </style>
+    <link
+      rel="preload"
+      href="/stylesheets/assets/block-library.css?ver=6.8.3"
+      data-rocket-async="style"
+      as="style"
+      onload="
+        this.onload = null;
+        this.rel = 'stylesheet';
+      "
+      onerror="this.removeAttribute('data-rocket-async')"
+      media="all"
+    />
+    <link
+      data-minify="1"
+      rel="preload"
+      href="/stylesheets/wp-content/cache/min/1/wp-content/themes/twentytwentyfive/style.css?ver=1791299187"
+      data-rocket-async="style"
+      as="style"
+      onload="
+        this.onload = null;
+        this.rel = 'stylesheet';
+      "
+      onerror="this.removeAttribute('data-rocket-async')"
+      media="all"
+    />
+    <link
+      rel="stylesheet"
+      id="theme-print-css"
+      href="/stylesheets/assets/print.css?ver=1.0"
+      media="print"
+    />
+    <link
+      rel="stylesheet"
+      href="/stylesheets/wp-content/cache/fonts/1/google-fonts/css/0/1/2/012fixture.css"
+      data-wpr-hosted-gf-parameters="family=Inter:wght@400;700&amp;display=swap"
+    />
+    <style id="wpr-usedcss">
+      h1 {
+        color: #123;
+      }
+      p {
+        margin: 0 0 1rem;
+      }
+    </style>
+    <style id="wpr-lazyload-bg-container"></style>
+    <style id="wpr-lazyload-bg-exclusion">
+      .hero {
+        background-image: url(/hero.jpg);
+      }
+    </style>
+    <noscript>
+      <style id="wpr-lazyload-bg-nostyle">
+        .lazy {
+          background-image: url(/lazy.jpg);
+        }
+      </style>
+    </noscript>
+    <script>
+      function wprRemoveCPCSS() {
+        let preload_stylesheets = document.querySelectorAll(
+          'link[data-rocket-async="style"][rel="preload"]'
+        );
+        if (preload_stylesheets && preload_stylesheets.length > 0) {
+          for (
+            let stylesheet_index = 0;
+            stylesheet_index < preload_stylesheets.length;
+            stylesheet_index++
+          ) {
+            let media = preload_stylesheets[stylesheet_index].getAttribute('media') || 'all';
+            if (window.matchMedia(media).matches) {
+              setTimeout(wprRemoveCPCSS, 200);
+              return;
+            }
+          }
+        }
+
+        const elem = document.getElementById('rocket-critical-css');
+        if (elem && 'remove' in elem) {
+          elem.remove();
+        }
+      }
+
+      if (window.addEventListener) {
+        window.addEventListener('load', wprRemoveCPCSS);
+      } else if (window.attachEvent) {
+        window.attachEvent('onload', wprRemoveCPCSS);
+      }
+    </script>
+  </head>
+  <body>
+    <h1>The styles the Stylesheets page reads</h1>
+    <p>An inline style of the page's own follows; the fallbacks below are never listed.</p>
+    <style id="page-own-inline-css" class="theme-extra">
+      .plain {
+        color: #333;
+      }
+    </style>
+    <noscript
+      ><link
+        rel="stylesheet"
+        id="wp-block-library-css"
+        href="/stylesheets/assets/block-library.css?ver=6.8.3"
+        media="all" /><link
+        data-minify="1"
+        rel="stylesheet"
+        id="theme-css"
+        href="/stylesheets/wp-content/cache/min/1/wp-content/themes/twentytwentyfive/style.css?ver=1791299187"
+        media="all"
+    /></noscript>
+  </body>
+</html>

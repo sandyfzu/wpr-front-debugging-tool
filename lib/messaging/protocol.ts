@@ -67,6 +67,7 @@ import type { ExclusionOverlayOpenOutcome } from './exclusion-panel';
 import type { SimulationMarkerQuery, SimulationMarkerVerdict } from './exclusion-simulation';
 import type { TabRelayReply, TabRelayRequest } from './tab-relay';
 import type { PageStylesReply } from './page-styles';
+import type { PageStylesheetsReply } from './page-stylesheets';
 import type {
   RucssApplyReply,
   RucssApplyRequest,
@@ -279,4 +280,11 @@ export interface ProtocolMap {
    * styles as they are now (the RUCSS tester's inventory). Read-only.
    */
   listPageStyles(): PageStylesReply;
+  /**
+   * Panel → tab (top frame, `frameId: 0`; relayable): list the page's
+   * styles as they are now, every stylesheet link counted (async-swapped
+   * preloads included) with its WP Rocket stamps — the Stylesheets page's
+   * inventory. Read-only.
+   */
+  listPageStylesheets(): PageStylesheetsReply;
 }

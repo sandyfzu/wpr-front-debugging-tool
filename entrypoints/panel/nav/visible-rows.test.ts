@@ -48,6 +48,7 @@ function groupOf(route: RailRowBox['route']): string {
     case 'detections':
       return 'Overview';
     case 'javascript':
+    case 'stylesheets':
     case 'lazyload':
     case 'preloaded-resources':
     case 'headers-cookies':

@@ -1,7 +1,9 @@
 /**
- * The resource-list pages' shared view model — the JavaScript, Lazyload and
- * Preloaded Resources pages are one filter/search pattern over three row
- * shapes. Everything here is pure and data-driven: a page's filter chips,
+ * The resource-list pages' shared view model — the JavaScript, Stylesheets,
+ * Lazyload and Preloaded Resources pages are one filter/search pattern over
+ * four row shapes (the Stylesheets page's rows live in `./stylesheet-rows`,
+ * imported by its lazily loaded page only, so the panel's start never pays
+ * for them). Everything here is pure and data-driven: a page's filter chips,
  * predicates and searched field are one definition table, so adding a page
  * (or a P14 "Runtime states" share) is one row/table, never a new branch in
  * the page.
@@ -89,16 +91,17 @@ export type JsFilterId =
   | 'external';
 
 /**
- * A filter chip over one script state: its label and predicate are the
- * state's own, so a filter selects exactly the rows showing that chip.
+ * A filter chip over one row state: its label and predicate are the state's
+ * own, so a filter selects exactly the rows showing that chip.
  *
- * @param id The state (also the chip id).
+ * @param state The state (its id is also the chip id).
  */
-function stateFilter(
-  id: Extract<JsFilterId, JsStateId>
-): ResourceFilterRow<JsScriptResource, JsFilterId> {
-  const state = jsScriptState(id);
-  return { id, label: state.label, predicate: state.holds };
+export function stateFilter<Row, Id extends string>(state: {
+  readonly id: Id;
+  readonly label: string;
+  readonly holds: (row: Row) => boolean;
+}): ResourceFilterRow<Row, Id> {
+  return { id: state.id, label: state.label, predicate: state.holds };
 }
 
 /**
@@ -125,13 +128,13 @@ function negatedFilter(
 export const JS_PAGE_RESOURCES: ResourcePageDefinition<JsScriptResource, JsFilterId> = {
   filters: [
     { id: 'all', label: 'Show all', predicate: () => true },
-    stateFilter('delayed'),
+    stateFilter(jsScriptState('delayed')),
     negatedFilter('non-delayed', 'Non-delayed', 'delayed'),
-    stateFilter('deferred'),
+    stateFilter(jsScriptState('deferred')),
     negatedFilter('non-deferred', 'Non-deferred', 'deferred'),
-    stateFilter('minified'),
-    stateFilter('combined'),
-    stateFilter('excluded'),
+    stateFilter(jsScriptState('minified')),
+    stateFilter(jsScriptState('combined')),
+    stateFilter(jsScriptState('excluded')),
     { id: 'inline', label: 'Inline', predicate: (row) => row.type === 'inline' },
     { id: 'external', label: 'External', predicate: (row) => row.type === 'external' }
   ],
