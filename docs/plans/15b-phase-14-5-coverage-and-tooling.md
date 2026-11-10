@@ -2,7 +2,7 @@
 
 ## TLDR
 
-One phase owns **D1–D7/T1–T9**, M1–M4 and all corrections below; original audit proposals are not separate execution plans. **Owner verdicts decided 2026-11-09** ([record](#owner-verdicts-2026-11-09-before-p145a-ran)): BUILD D1–D6, T2–T5; DROP D7, T1, T6–T9; M1/M2 decided. P14.5A still rechecks the source evidence, then slices. Last phase [P14.5.1](#p1451--wp-rocket-attribution-on-multi-chip-rows-design) designs WP Rocket attribution on multi-chip rows. Depends:P11–P14; chosen order P14→P14.5→P14.6→P7→P5J→P15. No parallel implementation phase in its slot. Installed stack; no new permission/dependency expected unless decision explicitly changes scope. Exception: [P14.5D0](#p145d0--served-script-url-on-delayed-scripts-pre-release-fix-outside-the-gate) (owner 2026-10-28) runs outside the gate and the slot; plan: before P21I.
+One phase owns **D1–D7/T1–T9**, M1–M4 and all corrections below; original audit proposals are not separate execution plans. **Owner verdicts decided 2026-11-09** ([record](#owner-verdicts-2026-11-09-before-p145a-ran)): BUILD D1–D6, T2–T5; DROP D7, T1, T6–T9; M1/M2 decided. Order: [P14.5A](#gate-first-p145a) gate (source recheck, then slicing) → [P14.5B](#p145b--detection-slices-d-items) D items → [P14.5C](#p145c--tool-slices-t-items) T items (D never depends on T) → [P14.5.1](#p1451--integrationacceptance) integration/acceptance → last phase [P14.5.2](#p1452--wp-rocket-attribution-on-multi-chip-rows-design) designs WP Rocket attribution on multi-chip rows. Depends:P11–P14; chosen order P14→P14.5→P14.6→P7→P5J→P15. No parallel implementation phase in its slot. Installed stack; no new permission/dependency expected unless decision explicitly changes scope. Exception: [P14.5D0](#p145d0--served-script-url-on-delayed-scripts-pre-release-fix-outside-the-gate) (owner 2026-10-28) runs outside the gate and the slot; plan: before P21I.
 
 ## P14.5D0 — Served script URL on delayed scripts (pre-release fix, outside the gate)
 
@@ -31,7 +31,7 @@ Depends:P11–P14. Parallel:—. Goal: current evidence/BUILD-DROP-DEFER before 
 - [ ] Verify the T2 chip set against the 3.24 source: which states each JS/CSS row can prove (e.g. whether Combine CSS still exists). Only provable states get a chip.
 - [ ] Verify the M2 footprint per bypass-surviving feature (Minify CSS/JS, Defer JS, LazyLoad, RUCSS, others the source shows unguarded by `rocket_bypass()`), and how a WP Rocket-added `defer` is told apart from a site's own.
 
-DoD: current-source/label evidence, each decision, placement/count/dependency reconciliation recorded. Before code, expand approved items into **small independently testable/reviewable slices** using the groups below, not one dozens-file batch.
+DoD: current-source/label evidence, each decision, placement/count/dependency reconciliation recorded. Before code, expand approved items into **small independently testable/reviewable slices** using the groups below (D → P14.5B.n, T → P14.5C.n, each with its depends/parallel lines), not one dozens-file batch.
 
 ### Owner verdicts (2026-11-09, before P14.5A ran)
 
@@ -45,7 +45,7 @@ P14.5A still rechecks source and records its evidence; it does not reopen these 
   - A new Stylesheets page has the same layout and filters.
   - There is no separate Assets page, so the JavaScript page is never duplicated.
   - Rows with several chips use short one-word chips, most important first, at most 3 visible, then a "+N" chip. Filters cover every chip.
-  - How "by WP Rocket" is shown at a glance is out of T2: see [P14.5.1](#p1451--wp-rocket-attribution-on-multi-chip-rows-design).
+  - How "by WP Rocket" is shown at a glance is out of T2: see [P14.5.2](#p1452--wp-rocket-attribution-on-multi-chip-rows-design).
 - **T5 shape:** a "Beacon instructions on this page" card at the top of the Beacon Tester page.
   - Collapsed by default to a one-line summary of features on/off plus device.
   - Expanded, it shows three groups: Features, Elements checked, Exclusions (each list with its count).
@@ -74,9 +74,9 @@ Source inventory: `inc/Engine/Admin/Settings/Page.php`, views/settings, Support/
 
 Meta provenance: generator-map `wpr_preload_links`, `wpr_host_fonts_locally`, conditional `wpr_dns_prefetch`, device `wpr_mobile/wpr_desktop`; CommentTrait prefixes minify_css/minify_js/minify_concatenate_js/defer_js/delay_js/remove_unused_css/async_css/cdn/lazyload_images/iframes/css_bg_img, plus family/image dimensions. Verify final emitted **wpr_** tokens, not raw emitter argument mistaken as attribute value. No emoji/Combine-font/WebP/admin token.
 
-## Detection slices (after gate)
+## P14.5B — Detection slices (D items)
 
-Each approved D item can be a small slice; depends:A+P11; parallel other D cores only with disjoint shared-contract edits coordinated. Each ships registry/guard/check/fixture+independent reference lockstep, native labels and all consumers, then gates. No silent weaker marker/drop.
+Each approved D item can be a small slice; depends:P14.5A+P11; parallel other D cores only with disjoint shared-contract edits coordinated. Each ships registry/guard/check/fixture+independent reference lockstep, native labels and all consumers, then gates. No silent weaker marker/drop.
 
 - **D1 mobile_cache:** separate-mobile-cache active+served variant mobile/desktop from **wpr_mobile/wpr_desktop** only (`Support/Meta.php`, conditional do_caching_mobile_files). Beacon is_mobile is context, never proof; absent markers→not detected, not disabled guess. Typed `{present,variant:'mobile'|'desktop'|null,deviceContext}`; absence/unknown context handled honestly at design gate.
 - **D2 dns_prefetch:** hidden dns_prefetch/rocket_dns_prefetch→wp_resource_hints (`front/dns-prefetch.php`,functions/options). Meta emitted domains exist AND(CDN off OR>1domain). Plain dns-prefetch corroborates, **cannot assert WP Rocket alone**. Present meta+no observed link valid domains[]. Remove old P11 weak-preconnect mapping; attributed prefetch/preconnect belongs separate Priority feature.
@@ -88,9 +88,9 @@ Each approved D item can be a small slice; depends:A+P11; parallel other D cores
 
 DoD per slice: positive/negative/malformed/capped fixtures, correct source/unknown, reference parity, UI bar where touched, measured build/budgets. P11 doc pointer stays; corrections execute here, not retroactive scope expansion.
 
-## Tool slices (after gate)
+## P14.5C — Tool slices (T items)
 
-Each approved T item gets its own implementation/verification slice; depends:A/owning P6/P12/P13/P14/D data. Parallel only disjoint page/core ownership; final integration serial. Pure cores+tests, no speculative shared framework.
+Each approved T item gets its own implementation/verification slice; depends:P14.5A/owning P6/P12/P13/P14, plus the P14.5B slice whose D data it reads (e.g. T2's Combined chip needs D3's discriminator). Parallel only disjoint page/core ownership; final integration (P14.5.1) serial. Pure cores+tests, no speculative shared framework.
 
 - **T1 — DROPPED (owner 2026-11-09).** ~~This page ± cache: current exact URL vs plugin bypass nowprocket (`API/bypass.php`, since3.7), pure parsed-doc diff/golden grouped by feature: only with cache/removed by cache/renamed assets/CDN. Emoji/Combine-font attribution needs both copies, never absence-only. Existing host permissions, page-context same-origin fetch only when safe/allowed; background fallback fixed-target validated, explicit failure. Placement resolved at gate, not nonexistent P7 page. Highest-value probe, opt-in.~~
 - **T2 JS chips + Stylesheets page** (shape: [verdict](#owner-verdicts-2026-11-09-before-p145a-ran); no Assets page). Two slices: (1) missing chips + filters on the JavaScript page; (2) a new Stylesheets page (inline + external CSS) on the same `resource-list` layout, chips and filters, as a `lazyPage` route with its own `required` budget rows (both builds). Chips only for provable states (P14.5A check). "Excluded" means the FDT's own exclusions (shown today); WP Rocket's site exclusion settings are never inferred from the page. Keep the existing Lazyload page. Pure row-to-chips cores with tests; virtualization and search as on the JavaScript page.
@@ -126,18 +126,18 @@ Observed on the docker site (3.23.5.1, [P11.1 receipt](./12-phase-11-detection-c
 - **M4 live hosts.** The matrix simulates SiteGround/Cloudflare at the edge, with no third-party host. The integration bullet's real-host evidence stays open.
 - **M5 — RESOLVED (owner decision 2026-10-21: option (a), bypass worded as intent).** A `nowprocket` URL is not proof of "not cached": the plugin still stores and serves the copy when the URL also carries a site-listed cached query string (`curl` twice `/fdt/?fdt-delay=<unique>&nowprocket=1` → `Debug: cached@…` + a file under `cache/wp-rocket/…/fdt/`; `/fdt/?nowprocket=1&zz=<unique>` never stored), and a downstream-stripped footer then hid the stamp behind a false **Not cached**. The extension cannot read `cache_query_strings`. Implemented in `lib/detection/cache-context.ts`: state `not-cached` → `bypass-requested` (in-process only; the boundary carries the unchanged `bypassAttested` flag), chip **Bypass requested**, report `Cache bypass requested (nowprocket; no WP Rocket signature; cache state not proven)`, tooltip says the state is not proven and why; the host-marker arm's qualifier `WP Rocket cache bypassed` → `cache bypass requested`. Tone stays neutral (intent, not a fault). Rejected: (b) demote to `not-detected` + note; (c) keep the verdict for `nowprocket`-only URLs (a site listing `nowprocket` itself stays a residual). Receipt: [P11.1](./12-phase-11-detection-coverage.md#p111--site-matrix--shipped-2026-10-20).
 
-## Integration/acceptance
+## P14.5.1 — Integration/acceptance
 
-Depends:all approved slices. Parallel:—.
+Depends:P14.5B–C (all approved slices). Parallel:—.
 
 - [ ] Detection fixtures mobile/desktop/bypass (M2: comment + footprint ⇒ applied + warning; comment alone ⇒ not counted)/DNS/combined/minify (D4 guard: attribute alone on a non-WP Rocket page ⇒ not counted)/async; all guard/reference/cross-consumer tests. JS/CSS chip, header-layer, beacon-instructions and M1-wording cores.
 - [ ] Real matrix: both served device copies; DNS not preconnect; Combine distinct minify; `?nowprocket` render (Minify/Defer/LazyLoad warned, Delay not applied); real Cloudflare/Sucuri layer (M4, open: needs a real host); white-label no-meta fallback. Explicit authorized-service vs local-simulated evidence.
 - [ ] Every actual registry row in Detections/strip/report, no duplicate table; BUILD/DROP/DEFER evidence for every item, current raw/gzip table/Stylesheets page rows, UI bar §D/common gates. Record actual count, never claim old19→27.
 - [ ] Update index/master delivered note and AGENTS for actual structure/dependency/permission changes. No per-item implementation implied by audit approval alone.
 
-## P14.5.1 — WP Rocket attribution on multi-chip rows (design)
+## P14.5.2 — WP Rocket attribution on multi-chip rows (design)
 
-Owner 2026-11-09. This is the last P14.5 phase. It decides the design first; code only after the owner approves it. Depends: P14.5 integration (T2 shipped). Parallel: —. Effort S (design) + S–M (implementation) · difficulty medium (UX).
+Owner 2026-11-09. This is the last P14.5 phase. It decides the design first; code only after the owner approves it. Depends: P14.5.1 (T2 shipped). Parallel: —. Effort S (design) + S–M (implementation) · difficulty medium (UX).
 
 Goal: on the JavaScript and Stylesheets rows, whatever WP Rocket did must be visible at first sight, even when a row carries several states. Attribution means telling apart what WP Rocket did, what the FDT simulated, what the FDT excluded, and a plain page state.
 
