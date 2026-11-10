@@ -2,7 +2,7 @@
 
 ## TLDR
 
-One phase owns **D1–D7/T1–T9** and all corrections below; original audit proposals are not separate execution plans. Owner approved this grouping2026-10-07, **not unconditional implementation without the decision gate**. Depends:P11–P14; chosen order P14→P14.5→P14.6→P7→P5J→P15. No parallel implementation phase in its slot. Installed stack; no new permission/dependency expected unless decision explicitly changes scope. Exception: [P14.5D0](#p145d0--served-script-url-on-delayed-scripts-pre-release-fix-outside-the-gate) (owner 2026-10-28) runs outside the gate and the slot; plan: before P21I.
+One phase owns **D1–D7/T1–T9**, M1–M4 and all corrections below; original audit proposals are not separate execution plans. **Owner verdicts decided 2026-11-09** ([record](#owner-verdicts-2026-11-09-before-p145a-ran)): BUILD D1–D6, T2–T5; DROP D7, T1, T6–T9; M1/M2 decided. P14.5A still rechecks the source evidence, then slices. Last phase [P14.5.1](#p1451--wp-rocket-attribution-on-multi-chip-rows-design) designs WP Rocket attribution on multi-chip rows. Depends:P11–P14; chosen order P14→P14.5→P14.6→P7→P5J→P15. No parallel implementation phase in its slot. Installed stack; no new permission/dependency expected unless decision explicitly changes scope. Exception: [P14.5D0](#p145d0--served-script-url-on-delayed-scripts-pre-release-fix-outside-the-gate) (owner 2026-10-28) runs outside the gate and the slot; plan: before P21I.
 
 ## P14.5D0 — Served script URL on delayed scripts (pre-release fix, outside the gate)
 
@@ -25,11 +25,41 @@ DoD: gates green; isolated budget row receipted; P21I reuses the helper.
 Depends:P11–P14. Parallel:—. Goal: current evidence/BUILD-DROP-DEFER before code.
 
 - [ ] Recheck current WP Rocket source/release against audit anchors below, correct drift **here**; actual installed settings/KB spelling for each label.
-- [ ] For every item record BUILD/DROP/DEFER+one-sentence reason. Defaults D1–D7/T1–T7 BUILD, T8 DEFER, T9 DROP; no verdict prefilled as executed work.
+- [x] For every item record BUILD/DROP/DEFER+one-sentence reason: owner verdicts below (2026-11-09). If the source recheck contradicts a BUILD premise, stop and report to the owner; never silently drop or reshape it.
 - [ ] Recount actual registry, not old **19→27** claim:3 proposed new rows+4 upgrades do not add8. Completion measures actual rows/all consumers, not a false arithmetic target.
-- [ ] Resolve T1 placement: original claimed “P7 SBS page” does **not exist** (P7 Diagnoser; optional P17 panel home). Use current SBS seam or explicitly approve a local surface; don't make P17 required silently. T7 expiry must tolerate absent rebuilt Diagnoser until deferredP7; revisit its field when plugin arrives.
+- [x] ~~Resolve T1 placement; T7 expiry dependency~~ — moot: T1 and T7 dropped (2026-11-09).
+- [ ] Verify the T2 chip set against the 3.24 source: which states each JS/CSS row can prove (e.g. whether Combine CSS still exists). Only provable states get a chip.
+- [ ] Verify the M2 footprint per bypass-surviving feature (Minify CSS/JS, Defer JS, LazyLoad, RUCSS, others the source shows unguarded by `rocket_bypass()`), and how a WP Rocket-added `defer` is told apart from a site's own.
 
 DoD: current-source/label evidence, each decision, placement/count/dependency reconciliation recorded. Before code, expand approved items into **small independently testable/reviewable slices** using the groups below, not one dozens-file batch.
+
+### Owner verdicts (2026-11-09, before P14.5A ran)
+
+P14.5A still rechecks source and records its evidence; it does not reopen these verdicts.
+
+- **BUILD:** D1, D2, D3, D4, D5, D6, T2, T3, T4, T5.
+- **DROP:** D7, T1, T6, T7, T8, T9.
+- **D4 rule:** `data-minify="1"` (WP Rocket 3.24: `Minify/CSS/Minify.php:198`, `Minify/JS/Minify.php:266`, `Minify/JS/Combine.php:130`) counts only when WP Rocket is already proven on the page by other evidence. No other plugin was found using the attribute, but that is not proof none does. The generator meta still decides when present. The attribute matters on no-meta pages, where the `cache/min/<n>/` URL misses a site-moved `WP_ROCKET_CACHE_ROOT_URL` (`wp-rocket.php:72`).
+- **T2 shape:** JS and CSS only (inline and external).
+  - Missing chips are added to the existing JavaScript page: Minified, Combined, CDN, Excluded.
+  - A new Stylesheets page has the same layout and filters.
+  - There is no separate Assets page, so the JavaScript page is never duplicated.
+  - Rows with several chips use short one-word chips, most important first, at most 3 visible, then a "+N" chip. Filters cover every chip.
+  - How "by WP Rocket" is shown at a glance is out of T2: see [P14.5.1](#p1451--wp-rocket-attribution-on-multi-chip-rows-design).
+- **T5 shape:** a "Beacon instructions on this page" card at the top of the Beacon Tester page.
+  - Collapsed by default to a one-line summary of features on/off plus device.
+  - Expanded, it shows three groups: Features, Elements checked, Exclusions (each list with its count).
+  - "Show raw" opens the JSON in the shared code block, with copy.
+  - With no instructions on the page it shows one calm line.
+  - It follows the inspected page: it updates on reload or navigation, with a "no longer on the page" state like the RUCSS Tester's.
+  - It reads the already-parsed `parseBeaconConfig` result only: no second decoder, and no change to the test form or results.
+- **M1:** option (a), per-row exception wording for a meta-declared row with no candidates on the page.
+- **M2 evidence (2026-11-09, local site, WP Rocket 3.24, never-stored renders of `/fdt/`):** `?nowprocket` skips Delay JS and the generator meta, but Defer JS, Minify JS and LazyLoad images still run; their `<!-- wpr_<feature> -->` comments stay after `</html>`. They are not leftovers: with `?fdt-delay=1&nowprocket=1&fdt-no-store=1` the served HTML still carries the three fixture scripts as `cache/min/1/…` with `data-minify="1"`. Those scripts are enqueued without a defer strategy, yet they still have `defer`, and the 3 `data-lazy-src` images are still lazyloaded. Only Delay JS's `rocketlazyloadscript` and the meta are gone. In the 3.24 source, `rocket_bypass()` is checked by Delay JS, the meta, LCP/above-the-fold, LazyLoad, CDN and others, but not by Minify, Defer JS or RUCSS. **Verdict (owner 2026-11-09):** on a bypass render (`nowprocket` in the URL, no generator meta), a feature is counted as applied **only when its comment and its own page footprint are both present**. Examples of footprints: `cache/min/` or `data-minify="1"` for Minify, a WP Rocket-added `defer` for Defer, `data-lazy-src` for LazyLoad.
+  - A counted feature carries a **warning**: WP Rocket applied it although `?nowprocket` was requested, which is not expected. The warning shows on the row, the strip and the support report, with one declaring site for its copy (working label "Applied despite ?nowprocket"; the tooltip says WP Rocket is not expected to optimize a bypassed page; final words chosen by the implementer and reported).
+  - A comment with no footprint is not counted: no verdict, no warning.
+  - A footprint with no comment keeps today's footprint verdict, plus the same warning on a bypass render.
+- **T1 drop consequences:** the integration matrix's "busy-page emoji/Combine-font/CDN diff" and "golden diff" lines lapse.
+- **D7 drop consequences:** the "font style" fixture lapses, and T2's "Hosted font" chip covers `<link>`-loaded fonts only.
 
 ## Audit evidence (2026-10-07, WP Rocket develop3.23.5.1)
 
@@ -51,10 +81,10 @@ Each approved D item can be a small slice; depends:A+P11; parallel other D cores
 - **D1 mobile_cache:** separate-mobile-cache active+served variant mobile/desktop from **wpr_mobile/wpr_desktop** only (`Support/Meta.php`, conditional do_caching_mobile_files). Beacon is_mobile is context, never proof; absent markers→not detected, not disabled guess. Typed `{present,variant:'mobile'|'desktop'|null,deviceContext}`; absence/unknown context handled honestly at design gate.
 - **D2 dns_prefetch:** hidden dns_prefetch/rocket_dns_prefetch→wp_resource_hints (`front/dns-prefetch.php`,functions/options). Meta emitted domains exist AND(CDN off OR>1domain). Plain dns-prefetch corroborates, **cannot assert WP Rocket alone**. Present meta+no observed link valid domains[]. Remove old P11 weak-preconnect mapping; attributed prefetch/preconnect belongs separate Priority feature.
 - **D3 minify_concatenate_js:** add **wpr_minify_concatenate_js** (`Minify/JS/Combine.php:135`); combined script before body/cache-min/data-minify(:129) cannot distinguish plain minify by URL, so meta discriminator required. This feature wasn't removed; original plan premise wrong.
-- **D4 minify:** primary data-minify=1 on stylesheet/script, cache/min/<n> URL weaker fallback (`Minify/CSS/Minify.php:197`,JS/Minify:265,Combine:129).
+- **D4 minify:** `data-minify="1"` on stylesheet/script, beside the `cache/min/<n>/` URL (`Minify/CSS/Minify.php:198`, `JS/Minify.php:266`, `Combine.php:130`). The attribute counts only when WP Rocket is already proven on the page ([verdict](#owner-verdicts-2026-11-09-before-p145a-ran)); the meta decides when present.
 - **D5 async CSS:** add link[data-rocket-async=style] onload swap beside inline wprRemoveCPCSS (`CriticalPath/CriticalCSSSubscriber.php:618,749`), wpr_async_css confirmed.
 - **D6 original script type:** retain data-rocket-type on delayed records+JS real-type detail (`DelayJS/HTML.php:249`).
-- **D7 fonts:** attributed **style** plus link (`Media/Fonts/Frontend/Controller.php:227,322`); cache/fonts/<blog-id>/… not literal1 (`Fonts/Filesystem.php:32`).
+- **D7 — DROPPED (owner 2026-11-09).** ~~fonts: attributed **style** plus link (`Media/Fonts/Frontend/Controller.php:227,322`); cache/fonts/<blog-id>/… not literal1 (`Fonts/Filesystem.php:32`).~~
 
 DoD per slice: positive/negative/malformed/capped fixtures, correct source/unknown, reference parity, UI bar where touched, measured build/budgets. P11 doc pointer stays; corrections execute here, not retroactive scope expansion.
 
@@ -62,27 +92,27 @@ DoD per slice: positive/negative/malformed/capped fixtures, correct source/unkno
 
 Each approved T item gets its own implementation/verification slice; depends:A/owning P6/P12/P13/P14/D data. Parallel only disjoint page/core ownership; final integration serial. Pure cores+tests, no speculative shared framework.
 
-- **T1 This page ± cache:** current exact URL vs plugin bypass nowprocket (`API/bypass.php`, since3.7), pure parsed-doc diff/golden grouped by feature: only with cache/removed by cache/renamed assets/CDN. Emoji/Combine-font attribution needs both copies, never absence-only. Existing host permissions, page-context same-origin fetch only when safe/allowed; background fallback fixed-target validated, explicit failure. Placement resolved at gate, not nonexistent P7 page. Highest-value probe, opt-in.
-- **T2 Assets:** new registry page, one CSS/JS resource with observed Minified/Combined/Deferred/Delayed/Excluded/Lazyloaded/CDN/Preloaded/Hosted-font chips. Preserve existing JS/Lazyload pages; no unproven attribution of site-exclusion configuration. Shared inventory pass over already classified assets, pure matrix, filter/search/virtualization; dedicated budget row without double-counting/evading whole build.
+- **T1 — DROPPED (owner 2026-11-09).** ~~This page ± cache: current exact URL vs plugin bypass nowprocket (`API/bypass.php`, since3.7), pure parsed-doc diff/golden grouped by feature: only with cache/removed by cache/renamed assets/CDN. Emoji/Combine-font attribution needs both copies, never absence-only. Existing host permissions, page-context same-origin fetch only when safe/allowed; background fallback fixed-target validated, explicit failure. Placement resolved at gate, not nonexistent P7 page. Highest-value probe, opt-in.~~
+- **T2 JS chips + Stylesheets page** (shape: [verdict](#owner-verdicts-2026-11-09-before-p145a-ran); no Assets page). Two slices: (1) missing chips + filters on the JavaScript page; (2) a new Stylesheets page (inline + external CSS) on the same `resource-list` layout, chips and filters, as a `lazyPage` route with its own `required` budget rows (both builds). Chips only for provable states (P14.5A check). "Excluded" means the FDT's own exclusions (shown today); WP Rocket's site exclusion settings are never inferred from the page. Keep the existing Lazyload page. Pure row-to-chips cores with tests; virtualization and search as on the JavaScript page.
 - **T3 Hosting/cache layers:** extend existing header registry for verified SiteGround/`sg-f-cache`, LiteSpeed,Cloudflare cf-ray/cache-status (`HIT`/`STALE`/`REVALIDATED`/`UPDATING` served; `EXPIRED`/`MISS`/`DYNAMIC`/`BYPASS`/`NONE`/`UNKNOWN` not),Sucuri,Varnish,x-cache/age and the generic `x-proxy-cache` host/proxy layer (never labeled SiteGround). Verify each real marker before row; no new capture, absence no card, layer-not-add-on wording.
 - **T4 Warm-up inventory:** Preloaded page adds grouped rel/type preloads/preconnect/DNS hints+instruction context, existing filter/summary. Keep generic hints vs WP Rocket-attributed distinctions.
-- **T5 Instruction sheet:** whole bounded parsed rocket_beacon_data read-only JSON in P14 page (status/selectors/exclusions/mobile); reuse P1.1 parser, never eval/second decoder.
-- **T6 RUCSS sizes:** P13 results original vs shaken per stylesheet/total,≈saving% pure math; verify original byte data is genuinely available before showing numbers—style listing alone isn't bytes. No fabricated size/per-file attribution.
-- **T7 Cache age/expiry:** reuse existing age formatting (P6 already shows age); add only missing evidence. Optional expiry from actual Diagnoser cache_lifespan when available afterP7, absent is honest, no mandatory blocked dependency introduced.
-- **T8 DEFERRED snapshot:** background phone-UA **snapshot**, distinct from shipped P16 live overlay simulation. Historical permission-cost rationale predates DNR already added; decision remains defer until support demand/new review, not automatic approval because permission now exists.
-- **T9 DROPPED speculation viewer:** no WP Rocket3.23.5.1 emitter; not missing work. Reproposal needs new source evidence.
+- **T5 Beacon instructions card** (shape: [verdict](#owner-verdicts-2026-11-09-before-p145a-ran)): the whole bounded, parsed `rocket_beacon_data` (status, selectors, exclusions, mobile), read-only on the Beacon Tester page. Reuse `parseBeaconConfig`; never eval or a second decoder.
+- **T6 — DROPPED (owner 2026-11-09).** ~~RUCSS sizes: P13 results original vs shaken per stylesheet/total,≈saving% pure math; verify original byte data is genuinely available before showing numbers—style listing alone isn't bytes. No fabricated size/per-file attribution.~~
+- **T7 — DROPPED (owner 2026-11-09).** ~~Cache age/expiry: reuse existing age formatting (P6 already shows age); add only missing evidence. Optional expiry from actual Diagnoser cache_lifespan when available afterP7, absent is honest, no mandatory blocked dependency introduced.~~
+- **T8 — DROPPED (owner 2026-11-09; was DEFERRED).** ~~snapshot: background phone-UA **snapshot**, distinct from shipped P16 live overlay simulation. Historical permission-cost rationale predates DNR already added; decision remains defer until support demand/new review, not automatic approval because permission now exists.~~
+- **T9 — DROPPED (owner 2026-11-09).** speculation viewer: no WP Rocket3.23.5.1 emitter; not missing work. Reproposal needs new source evidence.
 
 ## Inputs from the P11.1 site matrix (2026-10-20, recorded, not executed)
 
 Observed on the docker site (3.23.5.1, [P11.1 receipt](./12-phase-11-detection-coverage.md#p111--site-matrix--shipped-2026-10-20)); each gets its BUILD/DROP/DEFER at the gate.
 
-- **M1 declared-without-candidates rows.** Two tokens are declared on a page that has no candidates for them:
+- **M1 — DECIDED (owner 2026-11-09: per-row exception wording; [verdict](#owner-verdicts-2026-11-09-before-p145a-ran)).** Declared-without-candidates rows. Two tokens are declared on a page that has no candidates for them:
   - `wpr_minify_js` on a page with no minified asset — P11B's recorded minify exception.
   - `wpr_lazyload_iframes` on a page with no iframe — newly observed.
 
   The HUD's meta-declared "applied on this page" line overclaims for such rows. Decide one fix: per-row exception wording, or a "declared on this render" line for meta-only evidence. Re-check `wpr_lazyload_css_bg_img` and the other CommentTrait emitters for the same shape (D-item wording; registry rows unchanged).
 
-- **M2 bypass-render feature comments.** On `nowprocket` renders, the plugin leaves its `<!-- wpr_<feature> -->` comments after `</html>`: the meta step returns early on bypass, and the comments step does not. These comments are a plugin-attributed declaration on a tag-absent page. Decide whether they count as evidence (and which `source`), or stay ignored (fallback footprints decide today).
+- **M2 — DECIDED (owner 2026-11-09: count + warn only when really applied; [verdict](#owner-verdicts-2026-11-09-before-p145a-ran)).** Bypass-render feature comments. On `nowprocket` renders, the plugin leaves its `<!-- wpr_<feature> -->` comments after `</html>`: the meta step returns early on bypass, and the comments step does not. These comments are a plugin-attributed declaration on a tag-absent page. Decide whether they count as evidence (and which `source`), or stay ignored (fallback footprints decide today).
 - **M3 → T3 header registry.** These headers are not yet consistent across the panel:
 
   | Header            | Headers-page hint | Headers-page group | Cache verdict              |
@@ -100,7 +130,19 @@ Observed on the docker site (3.23.5.1, [P11.1 receipt](./12-phase-11-detection-c
 
 Depends:all approved slices. Parallel:—.
 
-- [ ] Detection fixtures mobile/desktop/bypass/DNS/combined/minify/async/font style; all guard/reference/cross-consumer tests. Golden diff/assets/header negatives/config/size/age cores.
-- [ ] Real matrix: both served device copies; DNS not preconnect; Combine distinct minify; busy-page emoji/Combine-font/CDN diff; real Cloudflare/Sucuri layer; white-label no-meta fallback. Explicit authorized-service vs local-simulated evidence.
-- [ ] Every actual registry row in Detections/strip/report, no duplicate table; BUILD/DROP/DEFER evidence for every item, current raw/gzip table/Assets row, UI bar §D/common gates. Record actual count, never claim old19→27.
+- [ ] Detection fixtures mobile/desktop/bypass (M2: comment + footprint ⇒ applied + warning; comment alone ⇒ not counted)/DNS/combined/minify (D4 guard: attribute alone on a non-WP Rocket page ⇒ not counted)/async; all guard/reference/cross-consumer tests. JS/CSS chip, header-layer, beacon-instructions and M1-wording cores.
+- [ ] Real matrix: both served device copies; DNS not preconnect; Combine distinct minify; `?nowprocket` render (Minify/Defer/LazyLoad warned, Delay not applied); real Cloudflare/Sucuri layer (M4, open: needs a real host); white-label no-meta fallback. Explicit authorized-service vs local-simulated evidence.
+- [ ] Every actual registry row in Detections/strip/report, no duplicate table; BUILD/DROP/DEFER evidence for every item, current raw/gzip table/Stylesheets page rows, UI bar §D/common gates. Record actual count, never claim old19→27.
 - [ ] Update index/master delivered note and AGENTS for actual structure/dependency/permission changes. No per-item implementation implied by audit approval alone.
+
+## P14.5.1 — WP Rocket attribution on multi-chip rows (design)
+
+Owner 2026-11-09. This is the last P14.5 phase. It decides the design first; code only after the owner approves it. Depends: P14.5 integration (T2 shipped). Parallel: —. Effort S (design) + S–M (implementation) · difficulty medium (UX).
+
+Goal: on the JavaScript and Stylesheets rows, whatever WP Rocket did must be visible at first sight, even when a row carries several states. Attribution means telling apart what WP Rocket did, what the FDT simulated, what the FDT excluded, and a plain page state.
+
+- [ ] Inventory every chip both pages can show, and the real combinations a row reaches (measure them on the corpus and the docker site, not guessed).
+- [ ] Propose 2–3 designs as mock-ups at the 320 px and widest panel widths, in both themes. Options include a WP Rocket mark or group on the row, attribution as chip styling, or a split "WP Rocket / page" area. Each mock-up states its trade-offs against `docs/ui-ux-bar.md`.
+- [ ] Owner picks one. Then implement it as its own slice, with tests and a UI bar §D receipt. Filters keep matching every state.
+
+DoD: the owner-approved design is shipped on both pages; WP Rocket-attributed states are distinguishable without hover; no row overflows at 320 px.

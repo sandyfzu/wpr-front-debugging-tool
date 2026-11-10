@@ -123,7 +123,7 @@ P15 evidence/disposition ledger must include:
 - Meta precedence/source/cache context/native feature coverage:P11/P14.5; persisted tool-free strip:P12; safe-fetch RUCSS TEST MODE:P13; beacon/LCP/live scripts/current-visit CWV:P14.
 - `nowprocket` page-scoped context-menu entry:P20.
 
-Non-goals retained:i18n until public-distribution need, in-PSI split page (two tabs instead), commands-API shortcuts (menus suffice — superseded only for the on-page palette by P19 G-2, owner2026-10-20), differential KC sync (full hourly simpler). T8 phone snapshot deferred/T9 speculation viewer dropped inP14.5. Shipped overlay simulation does not approve snapshot or optional panel home.
+Non-goals retained:i18n until public-distribution need, in-PSI split page (two tabs instead), commands-API shortcuts (menus suffice — superseded only for the on-page palette by P19 G-2, owner2026-10-20), differential KC sync (full hourly simpler). T1 ±cache diff, T6 RUCSS sizes, T7 cache expiry, T8 phone snapshot, T9 speculation viewer dropped in P14.5 (owner 2026-11-09). Shipped overlay simulation does not approve snapshot or optional panel home.
 
 ## 9. Second-baseline acceptance
 
