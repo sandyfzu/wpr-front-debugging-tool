@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>JavaScript chip sources fixture</title>
+    <meta
+      name="generator"
+      content="WP Rocket 3.24"
+      data-wpr-features="wpr_delay_js wpr_defer_js wpr_minify_js wpr_desktop"
+    />
+  </head>
+  <body>
+    <h1>One chip per source</h1>
+    <p>
+      No runtime: every delayed tag stays as served. A script WP Rocket delayed, deferred and
+      minified; one the FDT kept out of Delay JS; one deferred by the page's own attribute, with a
+      URL long enough to wrap at 320 px.
+    </p>
+    <script
+      type="rocketlazyloadscript"
+      data-rocket-src="/wp-content/cache/min/1/wp-content/themes/storefront/assets/js/navigation.min.js"
+      data-rocket-defer
+      defer
+      id="wp-rocket-states"
+    ></script>
+    <script
+      src="/exclusion/lib/deferred-two.js"
+      data-wpr-fdt-excluded="delay_js"
+      id="excluded-state"
+    ></script>
+    <script
+      src="/exclusion/lib/deferred-one.js?ver=6.0.1&amp;a-long-query-string-that-cannot-fit-at-the-narrowest-panel-width=1"
+      defer
+      id="page-defer"
+    ></script>
+  </body>
+</html>

@@ -299,13 +299,12 @@ describe('JavaScriptView — rows', () => {
     const row = rows()[1] as HTMLElement;
     expect(row.dataset.fdtScriptType).toBe('external');
     expect(row.textContent).toContain('External');
-    // Negative states are no chips any more; the WP Rocket mark stays visible.
+    // Negative states are no chips any more; WP Rocket's defer shows by its source look.
     expect(row.textContent).not.toContain('Not delayed');
-    const deferred = row.querySelector('[data-fdt-state="deferred"]');
-    expect(deferred?.textContent).toBe('Deferred (WP Rocket)');
-    expect(deferred?.querySelector('[data-fdt="state-chip-mark"]')?.textContent).toBe(
-      '(WP Rocket)'
-    );
+    const deferred = row.querySelector<HTMLElement>('[data-fdt-state="deferred"]');
+    expect(deferred?.textContent).toBe('Deferred');
+    expect(deferred?.dataset.fdtSource).toBe('wp-rocket');
+    expect(deferred?.querySelector('svg')?.classList.contains('lucide-rocket')).toBe(true);
     const link = within(row).getByRole('link');
     expect(link.getAttribute('href')).toBe('https://example.test/cart.js');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
@@ -434,6 +433,13 @@ describe('JavaScriptView — state chips', () => {
     return [...row.querySelectorAll('[data-fdt="state-chip"]')].map((chip) => chip.textContent);
   }
 
+  /** The sources of one row's visible chips, in order. */
+  function stateSources(row: HTMLElement): (string | undefined)[] {
+    return [...row.querySelectorAll<HTMLElement>('[data-fdt="state-chip"]')].map(
+      (chip) => chip.dataset.fdtSource
+    );
+  }
+
   const meta = (present: boolean) => ({ present, source: 'meta' as const });
 
   it('reads Combined only on a meta-declared Combine JS page, else Minified (no meta)', () => {
@@ -471,19 +477,61 @@ describe('JavaScriptView — state chips', () => {
     ];
     renderView(factsData(list, { minify_js: meta(true) }));
     const row = rows()[0] as HTMLElement;
-    expect(stateWords(row)).toEqual(['Delayed', 'Deferred (WP Rocket)', 'Minified']);
+    expect(stateWords(row)).toEqual(['Delayed', 'Deferred', 'Minified']);
+    expect(stateSources(row)).toEqual(['wp-rocket', 'wp-rocket', 'wp-rocket']);
     expect(row.querySelector('[data-fdt="state-chip-overflow"]')).toBeNull();
     const detail = row.querySelector('[data-fdt="script-original-type"]');
     expect(detail?.textContent).toBe('type: module');
     expect(chip('minified').querySelector('[data-fdt-filter-count]')?.textContent).toBe('1');
   });
 
-  it('marks a verified simulation’s defer as Simulated', () => {
-    const list = [makeDelayScript({ delayed: false, deferred: true, deferredByWPR: true })];
+  it('attributes a verified simulation’s defer and delay to the simulation, re-deriving on change', () => {
+    const list = [makeDelayScript({ delayed: true, deferred: true, deferredByWPR: true })];
     const data = dataWith(list);
-    const deferAll = { ...data.wprDetections.defer_all_js, simulation: 'simulated' as const };
-    renderView(factsData(list, { defer_all_js: deferAll }));
-    expect(stateWords(rows()[0] as HTMLElement)).toEqual(['Deferred (Simulated)']);
+    const simulated = 'simulated' as const;
+    const { setData } = renderView(
+      factsData(list, {
+        defer_all_js: { ...data.wprDetections.defer_all_js, simulation: simulated }
+      })
+    );
+    expect(stateWords(rows()[0] as HTMLElement)).toEqual(['Delayed', 'Deferred']);
+    expect(stateSources(rows()[0] as HTMLElement)).toEqual(['wp-rocket', 'simulated']);
+    // Delay JS simulated too: Delayed is the simulation's (dashed + flask), never WP Rocket's.
+    setData(
+      factsData(list, {
+        delay_js: { ...data.wprDetections.delay_js, simulation: simulated },
+        defer_all_js: { ...data.wprDetections.defer_all_js, simulation: simulated }
+      })
+    );
+    const row = rows()[0] as HTMLElement;
+    expect(stateSources(row)).toEqual(['simulated', 'simulated']);
+    expect(row.querySelector('[data-fdt-state="delayed"] svg')?.classList).toContain(
+      'lucide-flask-conical'
+    );
+    // An unverified marker proves nothing: the footprints stay WP Rocket's, flagged on hover.
+    setData(
+      factsData(list, {
+        delay_js: { ...data.wprDetections.delay_js, simulation: 'unverified' },
+        defer_all_js: { ...data.wprDetections.defer_all_js, simulation: 'unverified' }
+      })
+    );
+    const flagged = rows()[0] as HTMLElement;
+    expect(stateSources(flagged)).toEqual(['wp-rocket', 'wp-rocket']);
+    expect(
+      [...flagged.querySelectorAll('[data-fdt="state-chip"] [title]')].map((chip) =>
+        chip.getAttribute('title')
+      )
+    ).toEqual([
+      'Delayed by WP Rocket (Delay JavaScript execution) (simulation not verified)',
+      'Deferred by WP Rocket (Load JavaScript deferred) (simulation not verified)'
+    ]);
+  });
+
+  it('shows the source legend once, above the rows', () => {
+    renderView();
+    const legends = document.querySelectorAll('[data-fdt="state-source-legend"]');
+    expect(legends).toHaveLength(1);
+    expect(legends[0]?.textContent).toBe('WP RocketSimulated by FDTExcluded by FDTPage');
   });
 
   it('the Excluded filter lists the rows FDT kept out of a feature', () => {

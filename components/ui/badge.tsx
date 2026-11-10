@@ -9,13 +9,23 @@ import type { StatusKind } from './status-badge';
 import { STATUS_SOFT_CLASSES, STATUS_TEXT_CLASSES } from './status-badge';
 import { cn } from '../../utils/cn';
 
-/** Visual treatment of the chip: soft fill or outlined ghost. */
-export type BadgeVariant = 'soft' | 'outline';
+/** Visual treatment of the chip: soft fill, outlined ghost, or dashed ghost. */
+export type BadgeVariant = 'soft' | 'outline' | 'dashed';
+
+/**
+ * Background/border classes per variant. `dashed` draws its border in the
+ * kind's own text color (`border-current`): a ghost that still reads as its
+ * kind, set apart from a solid outline by the dash, never by color alone.
+ */
+const VARIANT_CLASSES: Record<Exclude<BadgeVariant, 'soft'>, string> = {
+  outline: 'border border-line-2',
+  dashed: 'border border-dashed border-current'
+};
 
 export interface BadgeProps {
   /** Which status vocabulary colors to borrow (default `neutral`). */
   kind?: StatusKind;
-  /** `soft` = token fill + token text; `outline` = neutral border + token text. */
+  /** `soft` = token fill + token text; `outline` = neutral border + token text; `dashed` = dashed border + text, both the kind's color. */
   variant?: BadgeVariant;
   /** Extra classes, merged last so callers win. */
   class?: string;
@@ -46,7 +56,9 @@ export function Badge(props: BadgeProps): JSX.Element {
       title={props.title}
       class={cn(
         'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs',
-        props.variant === 'outline' ? 'border border-line-2' : STATUS_SOFT_CLASSES[kind()],
+        props.variant === undefined || props.variant === 'soft'
+          ? STATUS_SOFT_CLASSES[kind()]
+          : VARIANT_CLASSES[props.variant],
         STATUS_TEXT_CLASSES[kind()],
         props.class
       )}

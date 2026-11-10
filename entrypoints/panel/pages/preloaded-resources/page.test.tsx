@@ -60,7 +60,7 @@ function rowChips(): string[][] {
     .getAllByRole('listitem')
     .map((item) => [
       item.querySelector('[data-fdt="hint-kind"]')?.parentElement?.textContent ?? '',
-      item.querySelector('[data-fdt="state-chip"]')?.textContent ?? ''
+      item.querySelector('[data-fdt="hint-attribution"]')?.textContent ?? ''
     ]);
 }
 
@@ -174,7 +174,7 @@ describe('PreloadedResourcesPage', () => {
       'not detected'
     );
     expect(rowChips()).toEqual([['modulepreload', 'Unattributed']]);
-    expect(root.querySelector('[data-fdt="state-chip-mark"]')).toBeNull();
+    expect(root.querySelector('[data-fdt="hint-attribution-mark"]')).toBeNull();
   });
 
   it('reads a capture without the inventory as its WP Rocket preloads, and says so', () => {

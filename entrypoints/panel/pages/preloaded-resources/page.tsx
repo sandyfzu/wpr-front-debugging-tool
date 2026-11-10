@@ -12,6 +12,7 @@ import type { JSX } from 'solid-js';
 import { createMemo, Show } from 'solid-js';
 import Zap from 'lucide-solid/icons/zap';
 import { Badge } from '../../../../components/ui/badge';
+import { StatusBadge } from '../../../../components/ui/status-badge';
 import { EmptyState } from '../../../../components/ui/empty-state';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { HINT_NOUN } from '../../../../lib/detection/count-nouns';
@@ -27,9 +28,9 @@ import { useFdtData } from '../../state/use-fdt-data';
 import { ResourceListPage } from '../resource-list/resource-list';
 import { ResourceLink } from '../resource-list/resource-link';
 import { urlClipped } from '../resource-list/resource-list-view';
-import { StateChips } from '../resource-list/state-chip-list';
 import {
-  attributionChips,
+  attributionChip,
+  type AttributionChip,
   hintKindChip,
   missingUrlLabel,
   PRELOADED_ROW_ESTIMATE,
@@ -125,6 +126,32 @@ export function PreloadedResourcesPage(props: PreloadedResourcesPageProps): JSX.
 }
 
 /**
+ * A row's attribution chip: the label, then its proven feature in
+ * parentheses; non-interactive, its detail in a plain `title`.
+ *
+ * @param props.chip The chip.
+ */
+function AttributionBadge(props: { chip: AttributionChip }): JSX.Element {
+  return (
+    <span data-fdt="hint-attribution" data-fdt-attribution={props.chip.id} class="contents">
+      <StatusBadge kind={props.chip.kind} title={props.chip.title} class="whitespace-nowrap">
+        {props.chip.label}
+        <Show when={props.chip.mark}>
+          {(mark) => (
+            <>
+              {' '}
+              <span data-fdt="hint-attribution-mark" class="font-normal">
+                ({mark()})
+              </span>
+            </>
+          )}
+        </Show>
+      </StatusBadge>
+    </span>
+  );
+}
+
+/**
  * One hint: the kind chip (`rel`, plus a preload's `as` type), name and
  * copy, the attribution chip, the full URL beneath.
  *
@@ -145,7 +172,7 @@ function PreloadedRow(props: { row: PreloadedResource; clipped: boolean }): JSX.
           <Show when={kind().as}>{(as) => <span class="text-fg-muted"> · {as()}</span>}</Show>
         </Badge>
       }
-      state={<StateChips chips={attributionChips(props.row.attribution)} />}
+      state={<AttributionBadge chip={attributionChip(props.row.attribution)} />}
     />
   );
 }

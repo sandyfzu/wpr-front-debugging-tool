@@ -4,7 +4,6 @@
  * never in the renderer), row identity across refreshes, the seed heights,
  * the summary and cut lines, and which of its states the page is in.
  */
-import type { StatusKind } from '../../../../components/ui/status-badge';
 import type { AskMiss } from '../../../../lib/messaging/bounded-ask';
 import type { PageStylesheetsReply } from '../../../../lib/messaging/page-stylesheets';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
@@ -17,43 +16,49 @@ import {
 import { formatCount } from '../../../../utils/format-count';
 import type { AskRunState } from '../ask-run';
 import { splitStateChips, type StateChip, type StateChipSplit } from '../resource-list/state-chips';
+import type { StateSource } from '../resource-list/state-sources';
 
 /** The rows' noun. */
 export const STYLE_NOUN = { one: 'style', other: 'styles' } as const;
 
-/** A chip's look and hover text beside its state's label. */
+/** The sources a style row's chips can show: WP Rocket only (the page's legend). */
+export const CSS_CHIP_SOURCES = ['wp-rocket'] as const satisfies readonly StateSource[];
+
+/** A chip's source and hover text beside its state's label. */
 interface ChipDisplay {
-  readonly kind: StatusKind;
+  readonly source: (typeof CSS_CHIP_SOURCES)[number];
   readonly title: string;
 }
 
 /**
- * Per state: its tone and what it says on hover — the feature that did it,
- * by its plugin-settings name. Every state is WP Rocket's work, so one tone.
+ * Per state: its source and what it says on hover — the feature that did
+ * it, by its plugin-settings name. Every state is read off WP Rocket's own
+ * footprint (ids, attributes, cache paths), and no FDT simulation or
+ * exclusion touches stylesheets, so every source is WP Rocket.
  */
 const CSS_CHIP_DISPLAY: Readonly<Record<CssStateId, ChipDisplay>> = {
   critical: {
-    kind: 'info',
+    source: 'wp-rocket',
     title: `Critical-path CSS printed by WP Rocket (${getRealOptionName('async_css')})`
   },
   rucss: {
-    kind: 'info',
+    source: 'wp-rocket',
     title: `The used CSS WP Rocket kept (${getRealOptionName('remove_unused_css')})`
   },
   'lazy-bg': {
-    kind: 'info',
+    source: 'wp-rocket',
     title: `Printed by WP Rocket for ${getRealOptionName('lazyload_css_bg_img')}`
   },
   async: {
-    kind: 'info',
+    source: 'wp-rocket',
     title: `Loaded without blocking rendering by WP Rocket (${getRealOptionName('async_css')})`
   },
   minified: {
-    kind: 'info',
+    source: 'wp-rocket',
     title: `Minified by WP Rocket (${getRealOptionName('minify_css')})`
   },
   font: {
-    kind: 'info',
+    source: 'wp-rocket',
     title: `Google Fonts stylesheet served from the site by WP Rocket (${getRealOptionName('host_fonts_locally')})`
   }
 };

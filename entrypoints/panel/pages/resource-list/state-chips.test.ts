@@ -7,12 +7,13 @@ import {
   splitStateChips,
   type StateChip
 } from './state-chips';
+import type { StateSource } from './state-sources';
 
 /** Chips named `a`, `b`, … in order. */
 function chips(count: number): StateChip[] {
   return Array.from({ length: count }, (_, index) => {
     const name = String.fromCharCode(97 + index);
-    return { id: name, label: name.toUpperCase(), kind: 'info' };
+    return { id: name, label: name.toUpperCase(), source: 'page' };
   });
 }
 
@@ -36,14 +37,33 @@ describe('splitStateChips', () => {
   it('4 chips ⇒ 3 + "+1"', () => {
     const split = splitStateChips(chips(4));
     expect(split.visible.map((chip) => chip.id)).toEqual(['a', 'b', 'c']);
-    expect(split.overflow).toEqual({ label: '+1', title: 'Also: D' });
+    expect(split.overflow).toEqual({ label: '+1', title: 'Also: D (page)', hidesWpRocket: false });
   });
 
-  it('6 chips ⇒ 3 + "+3", the title listing the hidden ones in order with their marks', () => {
-    const row = chips(6).map((chip) => (chip.id === 'e' ? { ...chip, mark: 'WP Rocket' } : chip));
+  it('6 chips ⇒ 3 + "+3", the title listing the hidden ones in order with their sources', () => {
+    const sources: StateSource[] = ['page', 'page', 'page', 'simulated', 'wp-rocket', 'excluded'];
+    const row = chips(6).map((chip, index) => ({ ...chip, source: sources[index] ?? 'page' }));
     const split = splitStateChips(row);
     expect(split.visible.map((chip) => chip.id)).toEqual(['a', 'b', 'c']);
-    expect(split.overflow).toEqual({ label: '+3', title: 'Also: D, E (WP Rocket), F' });
+    expect(split.overflow).toEqual({
+      label: '+3',
+      title: 'Also: D (FDT simulation), E (WP Rocket), F (FDT exclusion)',
+      hidesWpRocket: true
+    });
+  });
+
+  it('the "+N" chip carries the rocket only when it hides a WP Rocket chip', () => {
+    const withSources = (sources: readonly StateSource[]): StateChip[] =>
+      chips(sources.length).map((chip, index) => ({ ...chip, source: sources[index] ?? 'page' }));
+    // WP Rocket chips all visible: nothing of WP Rocket's hides.
+    expect(
+      splitStateChips(withSources(['wp-rocket', 'wp-rocket', 'wp-rocket', 'simulated'])).overflow
+        ?.hidesWpRocket
+    ).toBe(false);
+    expect(
+      splitStateChips(withSources(['excluded', 'page', 'simulated', 'page', 'wp-rocket'])).overflow
+        ?.hidesWpRocket
+    ).toBe(true);
   });
 
   it('honors a custom cap', () => {
@@ -58,10 +78,12 @@ describe('splitStateChips', () => {
 });
 
 describe('chipPhrase', () => {
-  it('is the label, then the mark in parentheses', () => {
-    expect(chipPhrase({ id: 'd', label: 'Deferred', kind: 'info' })).toBe('Deferred');
-    expect(chipPhrase({ id: 'd', label: 'Deferred', kind: 'info', mark: 'Simulated' })).toBe(
-      'Deferred (Simulated)'
-    );
+  it.each([
+    ['wp-rocket', 'Deferred (WP Rocket)'],
+    ['simulated', 'Deferred (FDT simulation)'],
+    ['excluded', 'Deferred (FDT exclusion)'],
+    ['page', 'Deferred (page)']
+  ] as const)('is the label, then the %s source in parentheses', (source, phrase) => {
+    expect(chipPhrase({ id: 'd', label: 'Deferred', source })).toBe(phrase);
   });
 });

@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { JsScriptResource } from '../../../../lib/panel/resources-view-model';
+import type { ScriptSimulation } from '../../../../lib/panel/script-states';
 import { JS_PAGE_RESOURCES } from '../../../../lib/panel/resources-view-model';
 import { formatCount } from '../../../../utils/format-count';
 import { buildRowView } from './script-identity';
@@ -29,7 +30,9 @@ import {
   originalTypeDetail,
   sameScript,
   scriptChipSplit,
-  scriptStateChips
+  scriptStateChips,
+  UNVERIFIED_SIMULATION_SUFFIX,
+  JS_CHIP_SOURCES
 } from './script-view';
 
 /** A classified script with overrides. */
@@ -57,39 +60,41 @@ describe('delaySummaryBadge', () => {
   });
 });
 
-/** The chips' visible words, in order (label plus its mark). */
-function words(row: JsScriptResource, deferSimulated = false): string[] {
-  return scriptStateChips(row, deferSimulated).map((chip) =>
-    chip.mark === undefined ? chip.label : `${chip.label} (${chip.mark})`
-  );
+/** Delay JS and Defer JS both run by a verified simulation. */
+const BOTH_SIMULATED: ScriptSimulation = { delay: 'simulated', defer: 'simulated' };
+
+/** The chips in order, each as `label/source`. */
+function words(row: JsScriptResource, simulation?: ScriptSimulation): string[] {
+  return scriptStateChips(row, simulation).map((chip) => `${chip.label}/${chip.source}`);
 }
 
 describe('scriptStateChips', () => {
   it.each([
     [{}, []],
     [{ type: 'inline' as const }, []],
-    [{ delayed: true }, ['Delayed']],
-    [{ deferred: true }, ['Deferred']],
-    [{ deferredByWPR: true, deferred: true }, ['Deferred (WP Rocket)']],
+    [{ delayed: true }, ['Delayed/wp-rocket']],
+    // The page's own defer.
+    [{ deferred: true }, ['Deferred/page']],
+    [{ deferredByWPR: true, deferred: true }, ['Deferred/wp-rocket']],
     // The stamp alone still reads WP Rocket's defer.
-    [{ deferredByWPR: true }, ['Deferred (WP Rocket)']],
-    [{ minified: true }, ['Minified']],
-    [{ combined: true }, ['Combined']],
-    [{ fdtExcluded: 'delay_js' }, ['Excluded']],
-    [{ fdtExcluded: 'defer_all_js' }, ['Excluded']],
+    [{ deferredByWPR: true }, ['Deferred/wp-rocket']],
+    [{ minified: true }, ['Minified/wp-rocket']],
+    [{ combined: true }, ['Combined/wp-rocket']],
+    [{ fdtExcluded: 'delay_js' }, ['Excluded/excluded']],
+    [{ fdtExcluded: 'defer_all_js' }, ['Excluded/excluded']],
     // A marker naming a feature that applied anyway is no exclusion.
-    [{ fdtExcluded: 'delay_js', delayed: true }, ['Delayed']],
-    [{ fdtExcluded: 'defer_all_js', deferred: true }, ['Deferred']],
+    [{ fdtExcluded: 'delay_js', delayed: true }, ['Delayed/wp-rocket']],
+    [{ fdtExcluded: 'defer_all_js', deferred: true }, ['Deferred/page']],
     // An inline script cannot be deferred: no Deferred chip, no defer exclusion.
     [{ type: 'inline' as const, deferred: true, fdtExcluded: 'defer_all_js' }, []],
     // Most important first: the exclusion, then Delay JS, Defer JS, the file states.
     [
       { fdtExcluded: 'defer_all_js', delayed: true, minified: true },
-      ['Excluded', 'Delayed', 'Minified']
+      ['Excluded/excluded', 'Delayed/wp-rocket', 'Minified/wp-rocket']
     ],
     [
       { delayed: true, deferred: true, deferredByWPR: true, combined: true },
-      ['Delayed', 'Deferred (WP Rocket)', 'Combined']
+      ['Delayed/wp-rocket', 'Deferred/wp-rocket', 'Combined/wp-rocket']
     ]
   ] as const)('%j → %j', (overrides, expected) => {
     expect(words(script(overrides))).toEqual(expected);
@@ -103,16 +108,20 @@ describe('scriptStateChips', () => {
     expect(labels.join(' ')).not.toMatch(/Not /);
   });
 
-  it('marks the Deferred chip per who deferred: WP Rocket, a verified simulation, the page', () => {
+  it('attributes Deferred per who deferred: WP Rocket, a verified simulation, the page', () => {
     const stamped = script({ deferredByWPR: true, deferred: true });
-    expect(words(stamped, true)).toEqual(['Deferred (Simulated)']);
-    expect(words(stamped, false)).toEqual(['Deferred (WP Rocket)']);
-    // The page's own defer carries no mark, simulation or not.
-    expect(words(script({ deferred: true }), true)).toEqual(['Deferred']);
+    expect(words(stamped, { delay: null, defer: 'simulated' })).toEqual(['Deferred/simulated']);
+    expect(words(stamped, { delay: 'simulated', defer: null })).toEqual(['Deferred/wp-rocket']);
+    // The page's own defer stays the page's, simulation or not.
+    expect(words(script({ deferred: true }), BOTH_SIMULATED)).toEqual(['Deferred/page']);
     const [own] = scriptStateChips(script({ deferred: true }));
-    expect(own).toMatchObject({ kind: 'info', title: "The page's own defer attribute" });
-    expect(own?.mark).toBeUndefined();
-    expect(scriptStateChips(stamped, true)[0]?.title).toBe(
+    expect(own).toEqual({
+      id: 'deferred',
+      label: 'Deferred',
+      source: 'page',
+      title: "The page's own defer attribute"
+    });
+    expect(scriptStateChips(stamped, BOTH_SIMULATED)[0]?.title).toBe(
       "Deferred by the FDT's Load JavaScript deferred simulation"
     );
     expect(scriptStateChips(stamped)[0]?.title).toBe(
@@ -120,11 +129,52 @@ describe('scriptStateChips', () => {
     );
   });
 
+  it('attributes Delayed to a verified Delay JS simulation, else to WP Rocket', () => {
+    const delayed = script({ delayed: true });
+    expect(words(delayed, { delay: 'simulated', defer: null })).toEqual(['Delayed/simulated']);
+    // Only the Delay JS fact moves Delayed.
+    expect(words(delayed, { delay: null, defer: 'simulated' })).toEqual(['Delayed/wp-rocket']);
+    expect(scriptStateChips(delayed, BOTH_SIMULATED)[0]?.title).toBe(
+      "Delayed by the FDT's Delay JavaScript execution simulation"
+    );
+    expect(scriptStateChips(delayed)[0]?.title).toBe(
+      'Delayed by WP Rocket (Delay JavaScript execution)'
+    );
+  });
+
+  it("keeps an unverified marker's states WP Rocket's, flagged on hover", () => {
+    const row = script({ delayed: true, deferred: true, deferredByWPR: true });
+    const chips = scriptStateChips(row, { delay: 'unverified', defer: 'unverified' });
+    expect(chips.map((chip) => [chip.source, chip.title])).toEqual([
+      ['wp-rocket', 'Delayed by WP Rocket (Delay JavaScript execution) (simulation not verified)'],
+      ['wp-rocket', 'Deferred by WP Rocket (Load JavaScript deferred) (simulation not verified)']
+    ]);
+    // Each flag follows its own feature's fact only.
+    const [delayed, deferred] = scriptStateChips(row, { delay: 'unverified', defer: null });
+    expect(delayed?.title?.endsWith(UNVERIFIED_SIMULATION_SUFFIX)).toBe(true);
+    expect(deferred?.title).toBe('Deferred by WP Rocket (Load JavaScript deferred)');
+    // The page's own defer is never flagged.
+    expect(
+      scriptStateChips(script({ deferred: true }), { delay: null, defer: 'unverified' })[0]?.title
+    ).toBe("The page's own defer attribute");
+  });
+
+  it('declares all four sources for the legend', () => {
+    expect(JS_CHIP_SOURCES).toEqual(['wp-rocket', 'simulated', 'excluded', 'page']);
+  });
+
+  it('never moves the exclusion or the file states under a simulation', () => {
+    expect(
+      words(script({ fdtExcluded: 'defer_all_js', delayed: true, minified: true }), BOTH_SIMULATED)
+    ).toEqual(['Excluded/excluded', 'Delayed/simulated', 'Minified/wp-rocket']);
+    expect(words(script({ combined: true }), BOTH_SIMULATED)).toEqual(['Combined/wp-rocket']);
+  });
+
   it('names the excluded features in the Excluded chip’s title', () => {
     const chip = (fdtExcluded: string, delayed = false) =>
       scriptStateChips(script({ fdtExcluded, delayed }))[0];
     expect(chip('delay_js')).toMatchObject({
-      kind: 'warn',
+      source: 'excluded',
       title: 'Excluded by FDT from Delay JavaScript execution'
     });
     expect(chip('defer_all_js')?.title).toBe('Excluded by FDT from Load JavaScript deferred');
@@ -139,17 +189,19 @@ describe('scriptStateChips', () => {
 
   it('titles the file states with their feature names', () => {
     expect(scriptStateChips(script({ minified: true }))[0]).toMatchObject({
-      kind: 'info',
+      source: 'wp-rocket',
       title: 'Minified by WP Rocket (Minify JavaScript files)'
     });
     expect(scriptStateChips(script({ combined: true }))[0]).toMatchObject({
-      kind: 'info',
+      source: 'wp-rocket',
       title: 'Bundle built by WP Rocket (Combine JavaScript files)'
     });
+    // Delayed now names its source and feature on hover too (it had no title).
     expect(scriptStateChips(script({ delayed: true }))[0]).toEqual({
       id: 'delayed',
       label: 'Delayed',
-      kind: 'info'
+      source: 'wp-rocket',
+      title: 'Delayed by WP Rocket (Delay JavaScript execution)'
     });
   });
 });
@@ -172,7 +224,11 @@ describe('scriptChipSplit', () => {
       script({ fdtExcluded: 'defer_all_js', delayed: true, minified: true, combined: true })
     );
     expect(split.visible.map((chip) => chip.id)).toEqual(['excluded', 'delayed', 'combined']);
-    expect(split.overflow).toEqual({ label: '+1', title: 'Also: Minified' });
+    expect(split.overflow).toEqual({
+      label: '+1',
+      title: 'Also: Minified (WP Rocket)',
+      hidesWpRocket: true
+    });
   });
 });
 

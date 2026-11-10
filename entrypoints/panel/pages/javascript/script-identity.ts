@@ -5,6 +5,7 @@
  */
 import type { JsScriptResource } from '../../../../lib/panel/resources-view-model';
 import { reconcileList } from '../../../../lib/panel/list-behavior';
+import { NO_SCRIPT_SIMULATION, type ScriptSimulation } from '../../../../lib/panel/script-states';
 import {
   inlineCode,
   originalTypeDetail,
@@ -81,20 +82,20 @@ export function domIdOf(key: string): string {
  * @param row The classified script.
  * @param key The row's key.
  * @param capture How much inline text was captured.
- * @param deferSimulated A verified simulation ran Defer JS on the page.
+ * @param simulation The features a verified simulation ran on the page.
  */
 export function buildRowView(
   row: JsScriptResource,
   key: string,
   capture: ContentCapture = 'complete',
-  deferSimulated = false
+  simulation: ScriptSimulation = NO_SCRIPT_SIMULATION
 ): ScriptRowView {
   return {
     key,
     domId: domIdOf(key),
     row,
     capture,
-    chips: scriptChipSplit(row, deferSimulated),
+    chips: scriptChipSplit(row, simulation),
     typeDetail: originalTypeDetail(row),
     code: row.type === 'inline' ? inlineCode(row.content) : null
   };
@@ -109,15 +110,15 @@ export function buildRowView(
  * @param previous The views of the previous pass (`[]` on the first).
  * @param rows The fresh classified rows, in document order.
  * @param captures Each row's capture state, by position (missing: complete).
- * @param deferSimulated A verified simulation ran Defer JS on the page (the
- *   caller passes `[]` as `previous` when it changes: every chip re-derives).
+ * @param simulation The features a verified simulation ran on the page (the
+ *   caller passes `[]` as `previous` when they change: every chip re-derives).
  * @returns The new views (`previous` itself when nothing changed).
  */
 export function reconcileRowViews(
   previous: readonly ScriptRowView[],
   rows: readonly JsScriptResource[],
   captures: readonly ContentCapture[] = [],
-  deferSimulated = false
+  simulation: ScriptSimulation = NO_SCRIPT_SIMULATION
 ): readonly ScriptRowView[] {
   const keys = scriptKeys(rows);
   /**
@@ -138,6 +139,6 @@ export function reconcileRowViews(
     (_row, index) => keyAt(index),
     (prior, row, index) =>
       prior.capture === (captures[index] ?? 'complete') && sameScript(prior.row, row),
-    (row, index) => buildRowView(row, keyAt(index), captures[index] ?? 'complete', deferSimulated)
+    (row, index) => buildRowView(row, keyAt(index), captures[index] ?? 'complete', simulation)
   );
 }

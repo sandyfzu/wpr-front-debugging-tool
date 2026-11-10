@@ -35,6 +35,20 @@ describe('Badge', () => {
     expect(outlined?.className).toContain('text-status-error');
   });
 
+  it("draws the dashed ghost in the kind's own color, without a fill", () => {
+    render(() => (
+      <Badge kind="info" variant="dashed">
+        simulated
+      </Badge>
+    ));
+    const dashed = screen.getByText('simulated').closest('span[data-fdt]');
+    expect(dashed?.className).toContain('border-dashed');
+    expect(dashed?.className).toContain('border-current');
+    expect(dashed?.className).toContain('text-status-info');
+    expect(dashed?.className).not.toContain('bg-status-info-soft');
+    expect(dashed?.className).not.toContain('border-line-2');
+  });
+
   it('merges caller classes last', () => {
     render(() => <Badge class="ms-1">edge</Badge>);
     expect(screen.getByText('edge').closest('span[data-fdt]')?.className).toContain('ms-1');

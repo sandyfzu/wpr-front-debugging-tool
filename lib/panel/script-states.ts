@@ -11,14 +11,16 @@
  * Rocket: the minify stamp counts only on a page whose Minify JS verdict
  * holds and where WP Rocket is proven, and a combined bundle's digest file
  * name only where the generator meta declares Combine JS — any build tool can
- * write either. The Deferred state's WP Rocket mark still reads the defer
- * stamp alone, as the row badge always has.
+ * write either. The Deferred state's WP Rocket attribution still reads the
+ * defer stamp alone, as the row badge always has. A third input, the page's
+ * simulation facts, decides only who produced a Delayed or stamped Deferred
+ * state (WP Rocket or a verified FDT simulation), never whether it holds.
  */
 
 import { minifyFootprint } from '../detection/minify-footprint';
 import { MINIFY_ATTRIBUTE_VALUE } from '../wp-rocket/constants';
 import { isCombinedBundle } from '../wp-rocket/minify-url-recovery';
-import type { DelayedScriptRecord, WprDetections } from '../wp-rocket/types';
+import type { DelayedScriptRecord, SimulationFact, WprDetections } from '../wp-rocket/types';
 import type { JsScriptResource } from './resources-view-model';
 import { PLACEHOLDER_BASE_URL } from '../../utils/urls';
 
@@ -68,6 +70,48 @@ export function sameScriptPageFacts(a: ScriptPageFacts, b: ScriptPageFacts): boo
     a.wprProven === b.wprProven &&
     a.combineDeclared === b.combineDeclared
   );
+}
+
+/**
+ * The page's simulation facts for the two script features whose states a
+ * simulation can produce, as the detection rows read them: `simulated` — the
+ * feature's footprints are the extension's work (the background vouched for
+ * the marker and the generator meta does not declare the feature);
+ * `unverified` — a marker nobody vouched for, so the footprints stay WP
+ * Rocket's as the detection verdict reads them, only flagged; `null` — no
+ * marker names the feature.
+ */
+export interface ScriptSimulation {
+  /** Delay JS: decides who produced every Delayed state. */
+  readonly delay: SimulationFact | null;
+  /** Defer JS: decides who produced every defer stamp. */
+  readonly defer: SimulationFact | null;
+}
+
+/** No marker: every WP Rocket footprint is WP Rocket's. */
+export const NO_SCRIPT_SIMULATION: ScriptSimulation = { delay: null, defer: null };
+
+/**
+ * Read the simulation facts off the detection record.
+ *
+ * @param detections The page's detection record.
+ * @returns Each feature's simulation fact, `null` when none.
+ */
+export function scriptSimulation(detections: WprDetections): ScriptSimulation {
+  return {
+    delay: detections.delay_js.simulation ?? null,
+    defer: detections.defer_all_js.simulation ?? null
+  };
+}
+
+/**
+ * Whether two simulation fact sets agree (an unchanged set keeps every row view).
+ *
+ * @param a One fact set.
+ * @param b The other.
+ */
+export function sameScriptSimulation(a: ScriptSimulation, b: ScriptSimulation): boolean {
+  return a.delay === b.delay && a.defer === b.defer;
 }
 
 /**

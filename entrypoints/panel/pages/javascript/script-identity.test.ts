@@ -97,11 +97,16 @@ describe('buildRowView', () => {
     expect(delayed.chips.visible.map((chip) => chip.label)).toEqual(['Delayed']);
   });
 
-  it('words a stamped defer as the simulation’s when a verified simulation ran Defer JS', () => {
+  it('attributes a stamped defer to the simulation when a verified simulation ran Defer JS', () => {
     const stamped = script({ deferredByWPR: true, deferred: true });
-    expect(buildRowView(stamped, 'e', 'complete', true).chips.visible[0]?.mark).toBe('Simulated');
-    expect(reconcileRowViews([], [stamped], [], true)[0]?.chips.visible[0]?.mark).toBe('Simulated');
-    expect(buildRowView(stamped, 'e').chips.visible[0]?.mark).toBe('WP Rocket');
+    const simulated = { delay: null, defer: 'simulated' } as const;
+    expect(buildRowView(stamped, 'e', 'complete', simulated).chips.visible[0]?.source).toBe(
+      'simulated'
+    );
+    expect(reconcileRowViews([], [stamped], [], simulated)[0]?.chips.visible[0]?.source).toBe(
+      'simulated'
+    );
+    expect(buildRowView(stamped, 'e').chips.visible[0]?.source).toBe('wp-rocket');
   });
 });
 

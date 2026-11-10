@@ -12,13 +12,16 @@ import { buildScriptRows, type JsScriptResource } from './resources-view-model';
 import {
   JS_SCRIPT_STATES,
   NO_SCRIPT_PAGE_FACTS,
+  NO_SCRIPT_SIMULATION,
   fdtExclusions,
   isScriptDeferred,
   jsScriptState,
   resolvedScriptUrl,
   sameScriptPageFacts,
+  sameScriptSimulation,
   scriptMinifyState,
   scriptPageFacts,
+  scriptSimulation,
   type ScriptPageFacts
 } from './script-states';
 
@@ -111,6 +114,44 @@ describe('scriptPageFacts', () => {
     for (const key of ['minifyJs', 'wprProven', 'combineDeclared'] as const) {
       expect(sameScriptPageFacts(ALL, { ...ALL, [key]: false })).toBe(false);
     }
+  });
+});
+
+describe('scriptSimulation', () => {
+  /** A record shape with just the two rows the facts read. */
+  const detections = (
+    delay: WprDetections['delay_js']['simulation'],
+    defer: WprDetections['defer_all_js']['simulation']
+  ): WprDetections =>
+    ({
+      delay_js: delay === undefined ? {} : { simulation: delay },
+      defer_all_js: defer === undefined ? {} : { simulation: defer }
+    }) as unknown as WprDetections;
+
+  it("reads each feature's fact as the detection row states it", () => {
+    expect(scriptSimulation(detections('simulated', undefined))).toEqual({
+      delay: 'simulated',
+      defer: null
+    });
+    expect(scriptSimulation(detections(undefined, 'simulated'))).toEqual({
+      delay: null,
+      defer: 'simulated'
+    });
+    expect(scriptSimulation(detections(undefined, undefined))).toEqual(NO_SCRIPT_SIMULATION);
+  });
+
+  it('keeps an unverified marker apart from a verified one', () => {
+    expect(scriptSimulation(detections('unverified', 'simulated'))).toEqual({
+      delay: 'unverified',
+      defer: 'simulated'
+    });
+  });
+
+  it('compares fact sets field by field', () => {
+    const both = { delay: 'simulated', defer: 'simulated' } as const;
+    expect(sameScriptSimulation(both, { ...both })).toBe(true);
+    expect(sameScriptSimulation(both, { ...both, delay: 'unverified' })).toBe(false);
+    expect(sameScriptSimulation(both, { ...both, defer: null })).toBe(false);
   });
 });
 
