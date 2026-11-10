@@ -29,6 +29,7 @@ import type {
   PageCookies,
   PageHeader,
   PageHeaders,
+  PageTargetsField,
   PanelSearchAction,
   PreloadedResources,
   RucssTestModeFact,
@@ -427,15 +428,15 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   if (removeUnusedCss === null) return null;
   const asyncCss = row('async_css', parseAsyncCssRow);
   if (asyncCss === null) return null;
-  const lazyloadCssBgImg = row('lazyload_css_bg_img', parsePresenceRow);
+  const lazyloadCssBgImg = row('lazyload_css_bg_img', parseTargetsPresenceRow);
   if (lazyloadCssBgImg === null) return null;
-  const selfHostedFonts = row('self_hosted_fonts', parsePresenceRow);
+  const selfHostedFonts = row('self_hosted_fonts', parseTargetsPresenceRow);
   if (selfHostedFonts === null) return null;
   const imageDimensions = row('image_dimensions', parseDeclarationOnlyRow);
   if (imageDimensions === null) return null;
-  const minifyCss = row('minify_css', parsePresenceRow);
+  const minifyCss = row('minify_css', parseTargetsPresenceRow);
   if (minifyCss === null) return null;
-  const minifyJs = row('minify_js', parsePresenceRow);
+  const minifyJs = row('minify_js', parseTargetsPresenceRow);
   if (minifyJs === null) return null;
   const combineJs = row('minify_concatenate_js', parseDeclarationOnlyRow);
   if (combineJs === null) return null;
@@ -447,9 +448,9 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   if (delayJs === null) return null;
   const deferAllJs = row('defer_all_js', parseDeferRow);
   if (deferAllJs === null) return null;
-  const lazyload = row('lazyload', parseLazyloadRow);
+  const lazyload = row('lazyload', withTargets(parseLazyloadRow));
   if (lazyload === null) return null;
-  const lazyloadIframes = row('lazyload_iframes', parseIframesRow);
+  const lazyloadIframes = row('lazyload_iframes', withTargets(parseIframesRow));
   if (lazyloadIframes === null) return null;
   const aboveTheFold = row('rocket_above_the_fold_optimization', parseOptimizeCriticalImagesRow);
   if (aboveTheFold === null) return null;
@@ -874,6 +875,32 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
     ...simulationOf(simulation)
   };
 }
+
+/**
+ * A targets row's parser ({@link PageTargetsField}) around its base parser:
+ * `targets` is absent (an undeclared row, or a payload predating the field)
+ * or a boolean on a meta-declared row — the engine stamps it nowhere else.
+ *
+ * @param parse The row's parser without the field.
+ * @returns The parser with the field.
+ */
+function withTargets<T extends { present: boolean; source?: FeatureEvidenceSource }>(
+  parse: (input: unknown) => T | null
+): (input: unknown) => (T & PageTargetsField) | null {
+  return (input) => {
+    if (!isRecord(input)) return reject();
+    const { targets, ...row } = input;
+    const parsed = parse(row);
+    if (parsed === null || targets === undefined) return parsed;
+    if (typeof targets !== 'boolean' || !parsed.present || parsed.source !== 'meta') {
+      return reject('targets');
+    }
+    return { ...parsed, targets };
+  };
+}
+
+/** A `{ present }` row that may carry `targets` (Minify CSS/JS, fonts, CSS backgrounds). */
+const parseTargetsPresenceRow = withTargets(parsePresenceRow);
 
 /** Iframes row: presence plus the youtube-replacement script marker. */
 function parseIframesRow(input: unknown): WprDetections['lazyload_iframes'] | null {

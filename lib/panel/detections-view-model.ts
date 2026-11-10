@@ -129,6 +129,12 @@ export interface StatusItem {
   /** The sentence explaining an unsure verdict (`collecting` / `unknown`). */
   readonly why?: string;
   /**
+   * The declared-only sentence (the shared HUD copy): WP Rocket's meta
+   * declared the feature, but the page holds nothing it acted on — beside an
+   * active verdict only.
+   */
+  readonly declaredOnly?: string;
+  /**
    * The Exclusion Builder's effect on this feature in this tab — a modifier
    * on top of `status` (the served verdict), present only when the page
    * states one.
@@ -221,7 +227,7 @@ function featureFacts(
   report: PageAnalysisReport,
   detections: WprDetections,
   bypassRender: boolean
-): Pick<StatusItem, 'status' | 'source' | 'why' | FeatureModifierField> {
+): Pick<StatusItem, 'status' | 'source' | 'why' | 'declaredOnly' | FeatureModifierField> {
   const feature = hudFeatureOf(row);
   if (feature === undefined) {
     // A row outside the registry (a future row): its presence is the answer.
@@ -232,6 +238,9 @@ function featureFacts(
     status: CARD_STATUS[reading.verdict],
     ...(reading.source === null ? {} : { source: reading.source }),
     ...(reading.why === null ? {} : { why: capitalize(reading.why) }),
+    ...(reading.declaredOnly === undefined
+      ? {}
+      : { declaredOnly: capitalize(reading.declaredOnly) }),
     ...(reading.builder === undefined ? {} : builderFacts(feature, reading.builder)),
     ...(reading.simulation === undefined ? {} : simulationFacts(reading.simulation)),
     ...bypassFacts(detections[feature.row], bypassRender)
@@ -538,7 +547,10 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
       }
       case 'lazyload_iframes': {
         const facts = readFacts(row);
-        const replaceImage = detections.lazyload_iframes.replaceImage;
+        // The replacement script ships with the option: on a declared-only
+        // card it names nothing the page holds.
+        const replaceImage =
+          detections.lazyload_iframes.replaceImage && facts.declaredOnly === undefined;
         items.push(
           replaceImage
             ? {
@@ -576,7 +588,8 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
       case 'dns_prefetch': {
         const facts = readFacts(row);
         // Only a declared row states its fact; the limit rides as its detail.
-        if (facts.status !== 'active') {
+        // A declared-only row has no fact to state: its sentence says so.
+        if (facts.status !== 'active' || facts.declaredOnly !== undefined) {
           items.push({ id: row, name: cardName(row), ...facts });
           continue;
         }

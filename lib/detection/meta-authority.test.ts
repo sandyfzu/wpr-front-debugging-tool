@@ -205,8 +205,9 @@ describe('meta authority: per-row verdict and source', () => {
 describe('meta authority: the declared rows whose evidence is inventory', () => {
   it('minify declares the stage even when nothing was rewritten (documented exception)', () => {
     const result = runDetection(page(meta(['wpr_minify_css', 'wpr_minify_js'])));
-    expect(result.detections.minify_css).toEqual({ present: true, source: 'meta' });
-    expect(result.detections.minify_js).toEqual({ present: true, source: 'meta' });
+    // Declared with nothing minified: the page-targets fact says so.
+    expect(result.detections.minify_css).toEqual({ present: true, source: 'meta', targets: false });
+    expect(result.detections.minify_js).toEqual({ present: true, source: 'meta', targets: false });
   });
 
   it('Priority Elements rows accept a declaration with no observed markup', () => {

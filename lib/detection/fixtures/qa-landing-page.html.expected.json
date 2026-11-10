@@ -182,11 +182,13 @@
     },
     "minify_css": {
       "present": true,
-      "source": "meta"
+      "source": "meta",
+      "targets": false
     },
     "minify_js": {
       "present": true,
-      "source": "meta"
+      "source": "meta",
+      "targets": false
     },
     "minify_concatenate_js": {
       "present": false,

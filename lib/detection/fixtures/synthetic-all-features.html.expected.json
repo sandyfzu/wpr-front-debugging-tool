@@ -179,16 +179,19 @@
           "excludedReasonsFound": ["data-src", "data-skip-lazy", "skip-lazy"]
         }
       ],
-      "source": "meta"
+      "source": "meta",
+      "targets": true
     },
     "lazyload_iframes": {
       "present": true,
       "replaceImage": true,
-      "source": "meta"
+      "source": "meta",
+      "targets": true
     },
     "lazyload_css_bg_img": {
       "present": true,
-      "source": "meta"
+      "source": "meta",
+      "targets": false
     },
     "self_hosted_fonts": {
       "present": true,
@@ -233,7 +236,8 @@
     },
     "minify_js": {
       "present": true,
-      "source": "meta"
+      "source": "meta",
+      "targets": true
     },
     "minify_concatenate_js": {
       "present": false,

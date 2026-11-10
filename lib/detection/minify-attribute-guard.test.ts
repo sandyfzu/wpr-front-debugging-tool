@@ -137,8 +137,9 @@ describe('the minify attribute guard (both engines)', () => {
 describe('the minify attribute guard under the generator meta (both engines)', () => {
   it('declared: the meta decides (meta source)', () => {
     const d = detect(page(meta('wpr_minify_css wpr_minify_js') + MOVED_ASSETS));
-    expect(d.minify_css).toEqual({ present: true, source: 'meta' });
-    expect(d.minify_js).toEqual({ present: true, source: 'meta' });
+    // The stamp alone names a minified tag once the meta declared the row.
+    expect(d.minify_css).toEqual({ present: true, source: 'meta', targets: true });
+    expect(d.minify_js).toEqual({ present: true, source: 'meta', targets: true });
   });
 
   it('refuted: the meta wins over the attribute, proof notwithstanding', () => {

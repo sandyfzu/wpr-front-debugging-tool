@@ -394,12 +394,21 @@ export function detectLazyloadCssBgImg(page: ParsedPage): WprDetections['lazyloa
  * nothing (any plugin can host a font).
  */
 export function detectSelfHostedFonts(page: ParsedPage): WprDetections['self_hosted_fonts'] {
-  const present = page.links.some(
+  return { present: hasSelfHostedFontLink(page) };
+}
+
+/**
+ * Whether the page carries a self-hosted font link (the attributed link or
+ * the font cache path) — the row's footprint and, once declared, its target.
+ *
+ * @param page The parsed page.
+ */
+export function hasSelfHostedFontLink(page: ParsedPage): boolean {
+  return page.links.some(
     (link) =>
       link.hasAttribute(SELF_HOSTED_FONTS_ATTRIBUTE) ||
       link.href.includes(SELF_HOSTED_FONTS_CACHE_PATH)
   );
-  return { present };
 }
 
 /**

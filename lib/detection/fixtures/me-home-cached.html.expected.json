@@ -694,7 +694,8 @@
     "lazyload_iframes": {
       "present": true,
       "replaceImage": true,
-      "source": "meta"
+      "source": "meta",
+      "targets": false
     },
     "lazyload_css_bg_img": {
       "present": false,
@@ -754,7 +755,8 @@
     },
     "minify_js": {
       "present": true,
-      "source": "meta"
+      "source": "meta",
+      "targets": true
     },
     "minify_concatenate_js": {
       "present": false,

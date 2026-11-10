@@ -48,8 +48,13 @@ import {
   KNOWN_PLATFORMS,
   LAZYLOAD_BG_CONTAINER_ID,
   LAZYLOAD_BG_EXCLUSION_ID,
+  LAZYLOAD_BG_PAIRS_PATTERN,
   LAZYLOAD_EXCLUSIONS_LIST,
   LAZYLOAD_IFRAME_OPTIONS_PATTERN,
+  LAZYLOAD_IFRAME_TARGETS_SELECTOR,
+  LAZYLOAD_IMAGE_TARGETS_SELECTOR,
+  NATIVE_LAZY_IMAGE_CANDIDATE_SELECTOR,
+  NATIVE_LAZY_LOADING_VALUE,
   LAZYLOAD_IMG_OPTIONS_PATTERN,
   LAZYLOAD_SCRIPT_PATTERN,
   LAZYLOAD_YOUTUBE_PATTERN,
@@ -158,6 +163,25 @@ describe('other feature footprints', () => {
     expect(GENERATOR_META_SELECTOR).toBe('meta[name="generator"]');
     expect(WPR_FEATURES_ATTRIBUTE).toBe('data-wpr-features');
     expect(WPR_FEATURES_META_SELECTOR).toBe('meta[name="generator"][data-wpr-features]');
+  });
+
+  it('pins the page-target vocabulary (lazy iframes/videos, mapped backgrounds)', () => {
+    expect(LAZYLOAD_IFRAME_TARGETS_SELECTOR).toBe('iframe[data-lazy-src], .rll-youtube-player');
+    expect(LAZYLOAD_IMAGE_TARGETS_SELECTOR).toBe(
+      'img[data-lazy-src], img[data-lazy-srcset], picture source[data-lazy-srcset], ' +
+        '.rocket-lazyload[data-bg]'
+    );
+    expect([NATIVE_LAZY_IMAGE_CANDIDATE_SELECTOR, NATIVE_LAZY_LOADING_VALUE]).toEqual([
+      'img[loading]',
+      'lazy'
+    ]);
+    // WP Rocket's own mapping script: an empty mapping is `[]`.
+    expect(LAZYLOAD_BG_PAIRS_PATTERN.test('const rocket_pairs = [{"selector":".a"}];')).toBe(true);
+    expect(LAZYLOAD_BG_PAIRS_PATTERN.test('const rocket_pairs=[\n{"a":1}]')).toBe(true);
+    expect(LAZYLOAD_BG_PAIRS_PATTERN.test('const rocket_pairs = [];')).toBe(false);
+    expect(LAZYLOAD_BG_PAIRS_PATTERN.test('const rocket_pairs = [ ];')).toBe(false);
+    expect(LAZYLOAD_BG_PAIRS_PATTERN.test('const my_rocket_pairs = [{"a":1}];')).toBe(false);
+    expect(LAZYLOAD_BG_PAIRS_PATTERN.test('const rocket_excluded_pairs = [{"a":1}];')).toBe(false);
   });
 
   it('pins the Priority Elements vocabulary', () => {

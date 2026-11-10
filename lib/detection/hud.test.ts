@@ -134,6 +134,19 @@ describe('the HUD registry shape', () => {
     }
   });
 
+  it('a page-targets reader rides exactly the engine rows carrying the fact, each with copy', () => {
+    const reading = HUD_FEATURES.filter((entry) => entry.targets !== undefined);
+    expect(reading.map((entry) => entry.row)).toEqual([
+      'minify_css',
+      'minify_js',
+      'lazyload',
+      'lazyload_iframes',
+      'lazyload_css_bg_img',
+      'self_hosted_fonts'
+    ]);
+    for (const entry of reading) expect(entry.declaredWithout, entry.row).toBeDefined();
+  });
+
   it('only the rows whose footprint cannot prove absence declare undecided copy', () => {
     const undecided = HUD_FEATURES.filter((entry) => entry.undecided !== null).map(
       (entry) => entry.row

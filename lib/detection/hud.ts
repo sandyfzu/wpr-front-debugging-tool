@@ -25,7 +25,7 @@ import type {
   SimulationFact,
   WprDetections
 } from '../wp-rocket/types';
-import type { FeatureState, PageAnalysisReport } from './describe';
+import type { FeatureState, PageAnalysisReport, PageTargets } from './describe';
 import { metaOmissionLeftOpen } from './feature-meta';
 import type { FeatureLabel, LABEL_PRIORITY_ELEMENTS_BEACON } from './labels';
 import { countLabel, countNoun, formatCount, type CountNoun } from '../../utils/format-count';
@@ -91,8 +91,9 @@ export interface HudFeature {
   /** The count's noun (both count forms) when the engine measures one, else null. */
   readonly unit: CountNoun | null;
   /**
-   * The feature's evidence count from the report, when `unit` is set; the
-   * function returns null where the count is no evidence for the verdict.
+   * The row's own footprint count from the report (set exactly when `unit`
+   * is); the function returns null where the count is no evidence for the
+   * verdict.
    */
   readonly count: ((report: PageAnalysisReport) => number | null) | null;
   /**
@@ -114,12 +115,38 @@ export interface HudFeature {
    * page" line ship no per-row key in the size-capped on-page bundle.
    */
   readonly appliedLine?: (detections: WprDetections) => string;
+  /**
+   * The row's page targets from the report, for a row whose count cannot
+   * show them (`targets` in the engine): the declared-only line then fires
+   * only on `false` — never on `null` (unknown) nor `true`. Optional for
+   * the on-page bundle's size.
+   */
+  readonly targets?: (report: PageAnalysisReport) => PageTargets;
+  /**
+   * What the page lacks when WP Rocket declares the feature with nothing to
+   * act on (lower-case start) — set only on the rows whose token the plugin
+   * writes without a rewrite. A meta-declared reading with no page targets
+   * ({@link HudFeature.targets}), else whose count is 0 or that has no count
+   * at all, then reads the declared-only line ("declared on this render,
+   * but …") instead of "applied on this page". Optional for the on-page
+   * bundle's size.
+   */
+  readonly declaredWithout?: string;
+  /**
+   * The neutral declared line's note, in place of {@link declaredWithout}
+   * for a row whose page can never hold per-element proof ("declared on
+   * this render; …" — no fault implied). Optional for the bundle's size.
+   */
+  readonly declaredNote?: string;
 }
 
 /** The undecided copy's shared lead: what left the row without a verdict. */
 const UNDECIDED_LEAD = 'no generator meta declaration decided it';
 /** The undecided copy's shared conclusion. */
 const UNDECIDED_TAIL = ', so its state is unknown.';
+
+/** Self-host Google Fonts' missing footprint, in its undecided and declared-only lines. */
+const NO_FONT_LINK = 'no self-hosted font link was found';
 
 /**
  * An undecided row's why: no meta decided it, then why the page cannot.
@@ -152,7 +179,8 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'file-optimization',
     unit: SCRIPT_NOUN,
     count: (report) => report[LABEL_DELAY_JAVASCRIPT_EXECUTION]['delayed scripts'],
-    undecided: null
+    undecided: null,
+    declaredWithout: 'no script on this page is delayed'
   },
   {
     row: 'defer_all_js',
@@ -161,7 +189,8 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'file-optimization',
     unit: SCRIPT_NOUN,
     count: (report) => report[LABEL_LOAD_JAVASCRIPT_DEFERRED]['deferred scripts'],
-    undecided: null
+    undecided: null,
+    declaredWithout: 'no external script on this page is deferred by WP Rocket'
   },
   {
     row: 'async_css',
@@ -179,7 +208,9 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'file-optimization',
     unit: null,
     count: null,
-    undecided: null
+    targets: (report) => report[LABEL_MINIFY_CSS]['page targets'],
+    undecided: null,
+    declaredWithout: 'no stylesheet on this page is minified'
   },
   {
     row: 'minify_js',
@@ -188,7 +219,9 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'file-optimization',
     unit: null,
     count: null,
-    undecided: null
+    targets: (report) => report[LABEL_MINIFY_JAVASCRIPT]['page targets'],
+    undecided: null,
+    declaredWithout: 'no script on this page is minified'
   },
   {
     row: 'minify_concatenate_js',
@@ -207,7 +240,10 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'media',
     unit: IMAGE_NOUN,
     count: (report) => report[LABEL_IMAGE_LAZYLOAD]['lazy-loaded images'],
-    undecided: null
+    // The count reads images only: backgrounds and native lazy images hide in it.
+    targets: (report) => report[LABEL_IMAGE_LAZYLOAD]['page targets'],
+    undecided: null,
+    declaredWithout: 'no image on this page is lazy-loaded'
   },
   {
     row: 'lazyload_iframes',
@@ -216,7 +252,9 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'media',
     unit: null,
     count: null,
-    undecided: null
+    targets: (report) => report[LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD]['page targets'],
+    undecided: null,
+    declaredWithout: 'no iframe or video on this page is lazy-loaded'
   },
   {
     row: 'lazyload_css_bg_img',
@@ -225,7 +263,9 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'media',
     unit: null,
     count: null,
-    undecided: null
+    targets: (report) => report[LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD]['page targets'],
+    undecided: null,
+    declaredWithout: 'no CSS background image on this page is lazy-loaded'
   },
   {
     row: 'image_dimensions',
@@ -244,9 +284,11 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'media',
     unit: null,
     count: null,
+    targets: (report) => report[LABEL_SELF_HOST_GOOGLE_FONTS]['page targets'],
     // The footprint check reads the attributed link and the fonts cache path
     // only; fonts self-hosted through other markup leave no proof of absence.
-    undecided: `${UNDECIDED_LEAD} and no self-hosted font link was found; fonts self-hosted through other markup are not detected${UNDECIDED_TAIL}`
+    undecided: `${UNDECIDED_LEAD} and ${NO_FONT_LINK}; fonts self-hosted through other markup are not detected${UNDECIDED_TAIL}`,
+    declaredWithout: `${NO_FONT_LINK} on this page`
   },
   {
     row: 'preload_links',
@@ -255,7 +297,9 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'preload',
     unit: null,
     count: null,
-    undecided: null
+    undecided: null,
+    // No per-page target: the runtime prefetches on hover or touch.
+    declaredNote: 'it prefetches links on hover or touch, so the page holds no per-link proof'
   },
   {
     row: 'dns_prefetch',
@@ -272,7 +316,8 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     undecided: undecidedWhy('a plain dns-prefetch hint does not name WP Rocket'),
     omittedWhy: `with the CDN on, WP Rocket omits the declaration for a single domain${UNDECIDED_TAIL}`,
     appliedLine: (detections) =>
-      `applied on this page: ${dnsPrefetchHintText(detections.dns_prefetch)}. ${DNS_PREFETCH_LIMIT}`
+      `applied on this page: ${dnsPrefetchHintText(detections.dns_prefetch)}. ${DNS_PREFETCH_LIMIT}`,
+    declaredWithout: 'no dns-prefetch hint on this page names another host'
   },
   {
     row: 'rocket_cdn',
@@ -290,7 +335,8 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'features',
     unit: IMAGE_NOUN,
     count: (report) => report[LABEL_OPTIMIZE_CRITICAL_IMAGES]['preloaded images'],
-    undecided: null
+    undecided: null,
+    declaredWithout: 'no critical image on this page is preloaded'
   },
   {
     row: 'automatic_lazy_rendering',
@@ -308,7 +354,8 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'features',
     unit: FONT_NOUN,
     count: (report) => report[LABEL_PRELOAD_FONTS]['preloaded fonts'],
-    undecided: null
+    undecided: null,
+    declaredWithout: 'no font on this page is preloaded'
   },
   {
     row: 'preconnect_external_domains',
@@ -317,7 +364,8 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     group: 'features',
     unit: DOMAIN_NOUN,
     count: (report) => report[LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS]['domains hinted'],
-    undecided: null
+    undecided: null,
+    declaredWithout: 'no external domain on this page is preconnected'
   },
   {
     row: 'mobile_cache',
@@ -390,6 +438,13 @@ export interface HudReading {
    * on an applied verdict of a row that has one.
    */
   readonly appliedLine?: string;
+  /**
+   * The declared-only line ({@link declaredOnlyLine}): WP Rocket's meta
+   * declared the feature, but the page holds nothing it acted on (or, for a
+   * row that never leaves per-element proof, the neutral declared line).
+   * Replaces the applied line; the verdict stays applied.
+   */
+  readonly declaredOnly?: string;
   /**
    * The Exclusion Builder's effect on this feature in this tab (the marker
    * the rewrite left in the displayed document) — a modifier on top of the
@@ -465,23 +520,60 @@ export function readHudFeature(
     simulation !== 'simulated';
   const verdict: HudVerdict = unknown ? 'unknown' : state;
   const builder = builderFactOf(detections, feature.row);
+  const count = feature.count === null ? null : feature.count(report);
+  // A builder fact explains its own emptied counts: no declared-only line then.
+  const declaredOnly =
+    verdict === 'applied' && source === 'meta' && builder === null
+      ? declaredOnlyLine(feature, report, count)
+      : null;
   const appliedLine =
-    verdict === 'applied' && feature.appliedLine !== undefined
+    verdict === 'applied' && declaredOnly === null && feature.appliedLine !== undefined
       ? feature.appliedLine(detections)
       : null;
   return {
     verdict,
-    count: feature.count === null ? null : feature.count(report),
+    count,
     source,
     why: unknown
       ? undecidedWhyOf(feature, detections)
       : verdict === 'collecting'
         ? COLLECTING_WHY
         : null,
+    ...(declaredOnly === null ? {} : { declaredOnly }),
     ...(appliedLine === null ? {} : { appliedLine }),
     ...(builder === null ? {} : { builder }),
     ...(simulation === null ? {} : { simulation })
   };
+}
+
+/**
+ * A meta-declared row's declared-only line, when the page holds nothing the
+ * feature acted on: its page targets are false where it reads them, else
+ * its count is 0 or it has no count concept at all. Unknown targets or a
+ * count the row could not read (null) never claim emptiness.
+ *
+ * @param feature The HUD row.
+ * @param report The page-analysis report.
+ * @param count The reading's count.
+ * @returns e.g. "declared on this render, but no script on this page is delayed.", or null.
+ */
+function declaredOnlyLine(
+  feature: HudFeature,
+  report: PageAnalysisReport,
+  count: number | null
+): string | null {
+  const tail =
+    feature.declaredWithout === undefined
+      ? feature.declaredNote === undefined
+        ? undefined
+        : `; ${feature.declaredNote}`
+      : `, but ${feature.declaredWithout}`;
+  if (tail === undefined) return null;
+  const empty =
+    feature.targets === undefined
+      ? feature.count === null || count === 0
+      : feature.targets(report) === false;
+  return empty ? `declared on this render${tail}.` : null;
 }
 
 /**
@@ -549,6 +641,7 @@ export function hudStateLine(feature: HudFeature, reading: HudReading): string {
 function servedStateLine(feature: HudFeature, reading: HudReading): string {
   switch (reading.verdict) {
     case 'applied':
+      if (reading.declaredOnly !== undefined) return reading.declaredOnly;
       if (reading.appliedLine !== undefined) return reading.appliedLine;
       return reading.count !== null && feature.unit !== null
         ? `applied on this page: ${counted(reading.count, feature.unit)}.`

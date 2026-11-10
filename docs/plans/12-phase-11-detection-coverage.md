@@ -174,7 +174,7 @@ Depends:C/P4.1/P4.2; parallel fullP12 implementation. Size:M–L.
 - Declared without candidates:
   - `wpr_minify_js` on `/fdt/`, which has no minified asset (the recorded minify exception).
   - `wpr_lazyload_iframes` on a page with no iframe — a newly observed exception.
-  - Either way, the HUD's "applied on this page" overclaims. This is P14.5 M1.
+  - Either way, the HUD's "applied on this page" overclaimed. Resolved by [P14.5B.7](./15b-phase-14-5-coverage-and-tooling.md#p145b7--m1-declared-without-candidates-wording) (2026-11-10): such rows read "declared on this render, but …".
 - A `nowprocket` URL that also carries a cached query flag is stored and later served as a stamped copy. The port reads Cached, because the stamp outranks the URL's bypass parameter — correct (A8). With the stamp stripped downstream the port read Not cached on that stored copy; since M5 (2026-10-21) it reads Bypass requested, cache state not proven.
 - Bypass renders keep `<!-- wpr_* -->` per-feature comments after `</html>`, because the meta step returns early on bypass. This is P14.5 M2.
 - Minify keys regenerate whenever a minify option toggles, so they are not byte-restorable.
