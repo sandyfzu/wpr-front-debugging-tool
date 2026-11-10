@@ -6,6 +6,7 @@
  *
  * State matrix (the shell owns loading, fetch errors and render crashes —
  * this body renders on `ready`/`refreshing`):
+ * - the beacon instructions card on top (its own states: `./instructions-card`);
  * - the run card (idle / running / finished outcome with its recoveries)
  *   above three tabs: Settings and one results tab per feature;
  * - Settings: loading → skeleton in the form's place, Run held; unreadable →
@@ -35,10 +36,17 @@ import type { VirtualizerFactory } from '../../../../components/ui/virtual-list'
 import type { BeaconOutcomeView } from '../../../../lib/beacon-test/outcome-view';
 import type { FeatureList } from '../../../../lib/beacon-test/results';
 import { formatCount } from '../../../../utils/format-count';
+import type { DataState } from '../../state/fdt-state-machine';
 import { useFdtData } from '../../state/use-fdt-data';
 import { PageFrame } from '../page-frame';
 import { inspectedReloadAction } from '../reload-inspected';
 import { BeaconForm, beaconFieldId } from './form';
+import {
+  createInstructionsTracker,
+  InstructionsCard,
+  type InstructionsTracker
+} from './instructions-card';
+import { instructionsSourceOf } from './instructions-view';
 import { realBeaconTesterDeps } from './real-deps';
 import { AboveTheFoldResults, LazyRenderResults } from './results';
 import { BeaconRunPanel } from './run-panel';
@@ -68,6 +76,8 @@ export interface BeaconTesterHandle {
   readonly session: BeaconTesterSession;
   readonly tab: Accessor<BeaconTesterTab>;
   readonly setTab: Setter<BeaconTesterTab>;
+  /** The instructions card's state, following the page payload. */
+  readonly instructions: InstructionsTracker;
 }
 
 /** The panel-lifetime handle (created on the page's first mount). */
@@ -78,11 +88,16 @@ let sharedHandle: BeaconTesterHandle | null = null;
  * long as the panel document).
  *
  * @param create Builds the session.
+ * @param pageState The shell's data state (the instructions card follows its payload).
  */
-export function createBeaconTesterHandle(create: () => BeaconTesterSession): BeaconTesterHandle {
+export function createBeaconTesterHandle(
+  create: () => BeaconTesterSession,
+  pageState: Accessor<DataState>
+): BeaconTesterHandle {
   return createRoot(() => {
     const [tab, setTab] = createSignal<BeaconTesterTab>('settings');
-    return { session: create(), tab, setTab };
+    const instructions = createInstructionsTracker(() => instructionsSourceOf(pageState()));
+    return { session: create(), tab, setTab, instructions };
   });
 }
 
@@ -135,8 +150,9 @@ export function BeaconTesterPage(props: BeaconTesterPageProps = {}): JSX.Element
   // The handle is chosen once per mount.
   const handle =
     props.handle ??
-    (sharedHandle ??= createBeaconTesterHandle(() =>
-      createBeaconTesterSession(realBeaconTesterDeps({ state: store.state }))
+    (sharedHandle ??= createBeaconTesterHandle(
+      () => createBeaconTesterSession(realBeaconTesterDeps({ state: store.state })),
+      store.state
     ));
   const session = handle.session;
   // Read once: the context cannot change.
@@ -197,6 +213,7 @@ export function BeaconTesterPage(props: BeaconTesterPageProps = {}): JSX.Element
         subtitle={BEACON_TESTER_SUBTITLE}
         fill
       >
+        <InstructionsCard tracker={handle.instructions} />
         <BeaconRunPanel session={view} actions={{ reloadPage, reviewSettings }} />
         <Tabs
           items={[

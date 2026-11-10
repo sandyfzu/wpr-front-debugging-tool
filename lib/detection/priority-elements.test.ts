@@ -330,6 +330,77 @@ describe('parseBeaconConfig', () => {
     ).toBeNull();
   });
 
+  it('reads a list with holes (PHP array_filter keys) as its values in key order', () => {
+    // `wp_json_encode` writes a filtered list whose keys are no longer 0..n-1 as an object.
+    const parsed = parseBeaconConfig(
+      page(
+        configScript(
+          { preconnect_external_domain: true },
+          {
+            preconnect_external_domain_elements: { '0': 'link', '2': 'iframe' },
+            processed_extensions: { '10': 'woff', '2': 'woff2' },
+            external_font_exclusions: {}
+          }
+        )
+      )
+    );
+    expect(parsed?.preconnect_external_domain_elements).toEqual(['link', 'iframe']);
+    // Numeric order, not text order ("10" sorts after "2").
+    expect(parsed?.processed_extensions).toEqual(['woff2', 'woff']);
+    expect(parsed?.external_font_exclusions).toEqual([]);
+  });
+
+  it('a list object with any other key, a bad item or over the count cap still degrades', () => {
+    for (const list of [
+      { '0': 'link', a: 'script' },
+      { '-1': 'link' },
+      { '01': 'link' },
+      { '1.5': 'link' },
+      { '1234567890123456': 'link' },
+      { '0': 'link', '1': 5 },
+      { '0': '' },
+      { '0': ['nested'] },
+      Object.fromEntries(
+        Array.from({ length: BEACON_CONFIG_LIMITS.lists.count + 1 }, (_, index) => [
+          String(index * 2),
+          'x'
+        ])
+      )
+    ]) {
+      expect(
+        parseBeaconConfig(page(configScript({}, { preload_fonts_exclusions: list }))),
+        JSON.stringify(list).slice(0, 60)
+      ).toBeNull();
+    }
+  });
+
+  it('a literal `__proto__` key degrades the config (never a hidden prototype)', () => {
+    for (const list of ["{__proto__: {'0': 'x'}}", "{__proto__: {'0': 'x'}, '1': 'a'}"]) {
+      expect(
+        parseBeaconConfig(
+          page(
+            `<script>var rocket_beacon_data = {status: {}, processed_extensions: ${list}};</script>`
+          )
+        ),
+        list
+      ).toBeNull();
+    }
+    expect(
+      parseBeaconConfig(
+        page('<script>var rocket_beacon_data = {__proto__: {status: {}}};</script>')
+      )
+    ).toBeNull();
+  });
+
+  it('a list with holes in the literal shape reads the same', () => {
+    const parsed = parseBeaconConfig(
+      page(
+        "<script>var rocket_beacon_data = {status: {}, preconnect_external_domain_elements: {'0': 'link', '2': 'iframe'}};</script>"
+      )
+    );
+    expect(parsed?.preconnect_external_domain_elements).toEqual(['link', 'iframe']);
+  });
+
   it('a config script whose text merely mentions the variable elsewhere does not match', () => {
     // The pattern is anchored to the assignment; other mentions stay inert.
     const parsed = page('<script>if (window.rocket_beacon_data) { init(); }</script>');

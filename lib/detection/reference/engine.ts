@@ -638,9 +638,23 @@ function isReferenceBoundedPrimitive(value: any): boolean {
 }
 
 function parseReferenceStringList(value: any): string[] | null {
-  if (!Array.isArray(value) || value.length > BEACON_CONFIG_LIMITS.lists.count) return null;
+  let entries: any[];
+  if (Array.isArray(value)) {
+    entries = value;
+  } else if (value !== null && typeof value === 'object') {
+    // PHP's encoding of a list with holes: integer keys, read in numeric order.
+    const indexed: Array<[number, any]> = [];
+    for (const key of Object.keys(value)) {
+      if (!/^(?:0|[1-9]\d{0,14})$/.test(key)) return null;
+      indexed.push([Number(key), value[key]]);
+    }
+    entries = indexed.sort((left, right) => left[0] - right[0]).map((pair) => pair[1]);
+  } else {
+    return null;
+  }
+  if (entries.length > BEACON_CONFIG_LIMITS.lists.count) return null;
   const list: string[] = [];
-  for (const item of value) {
+  for (const item of entries) {
     if (
       typeof item !== 'string' ||
       item.length < 1 ||
@@ -713,6 +727,8 @@ function parseReferenceJsLiteral(text: string): unknown {
       skipWs();
       if (text.charAt(pos) !== ':') fail('expected :');
       pos += 1;
+      // A prototype-setting key is hostile input, never a value.
+      if (key === '__proto__') throw new Error('reference literal: __proto__ key');
       object[key] = parseValue(depth);
       skipWs();
       if (text.charAt(pos) === ',') {
