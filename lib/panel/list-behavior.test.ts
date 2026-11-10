@@ -84,8 +84,14 @@ describe('shared chip rules', () => {
     ]);
     expect(PRELOADED_PAGE_RESOURCES.filters.map(({ label }) => label)).toEqual([
       'Show all',
+      'WP Rocket',
+      'Unattributed',
+      'Preload',
       'Images',
-      'Fonts'
+      'Fonts',
+      'Module preload',
+      'Preconnect',
+      'DNS prefetch'
     ]);
   });
   it('uses declaration order, not a hardcoded all id, for recovery', () => {

@@ -222,12 +222,13 @@ function parityFixture(): { headers: Record<string, string>; body: string } {
   const preloads = [
     ...Array.from(
       { length: PRELOAD_IMAGE_COUNT },
-      (_, i) => `<link data-rocket-preload as="image" href="/parity/pre-img-${String(i + 1)}.jpg">`
+      (_, i) =>
+        `<link rel="preload" data-rocket-preload as="image" href="/parity/pre-img-${String(i + 1)}.jpg">`
     ),
     ...Array.from(
       { length: PRELOAD_FONT_COUNT },
       (_, i) =>
-        `<link data-rocket-preload as="font" href="/parity/pre-font-${String(i + 1)}.woff2">`
+        `<link rel="preload" data-rocket-preload as="font" href="/parity/pre-font-${String(i + 1)}.woff2">`
     )
   ];
   return {
@@ -641,10 +642,10 @@ sourceTest.describe('source-build parity over one served fixture', () => {
           portPreloadedPage.locator('[data-fdt-filter-chip="fonts"] [data-fdt-filter-count]')
         ).toHaveText(PRELOAD_FONT_COUNT.toString());
         // The feature label delta: the source names the lazyload feature on
-        // this page; the port names the preload-hints feature.
+        // this page; the port's badge says whether any hint is WP Rocket's.
         await expect(round.sourcePanel.locator('div.bg-gray-800.p-3')).toContainText('Lazyload');
         await expect(portPreloadedPage.locator('[data-fdt="resource-summary"]')).toContainText(
-          'Preload hints'
+          'WP Rocket hints'
         );
       } finally {
         await round.cleanup();

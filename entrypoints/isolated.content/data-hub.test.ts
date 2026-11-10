@@ -40,12 +40,20 @@ describe('processSerializedPage', () => {
     // Rows are in the published record shape.
     expect(result.detections.delay_js.scripts.length).toBeGreaterThan(0);
     expect(result.detections.rocket_cdn).toEqual({ present: false, source: 'meta' });
-    expect(result.preloadedResources).toEqual({
+    expect(result.preloadedResources).toMatchObject({
       present: true,
       resources: [
         { href: 'https://wp-rocket.me/wp-content/uploads/2022/02/Img.svg', type: 'image' }
       ]
     });
+    // The whole report — its hint inventory included — is the reviewed snapshot's.
+    expect(result.preloadedResources).toEqual(
+      (
+        JSON.parse(
+          readFileSync(join(FIXTURE_DIR, 'me-home-cached.html.expected.json'), 'utf8')
+        ) as { preloadedResources: unknown }
+      ).preloadedResources
+    );
     // A page without a diagnoser print leaves both slots null.
     expect(result.diagnoserData).toEqual({ noRocketData: null, rocketData: null });
   });

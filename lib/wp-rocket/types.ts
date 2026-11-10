@@ -543,7 +543,29 @@ export interface WprDetections {
  */
 export type FeatureMetaRow = Exclude<keyof WprDetections, 'wpr' | 'priority_elements_beacon'>;
 
-/** WP Rocket-preloaded resources collected for the panel page. */
+/** A resource hint's kind: one `rel` token the hint inventory lists. */
+export type ResourceHintRel = 'preload' | 'modulepreload' | 'preconnect' | 'dns-prefetch';
+
+/**
+ * Which WP Rocket attribution stamp a hint carries, by attribute:
+ * `data-rocket-preload`, `data-rocket-async="style"` (Load CSS
+ * asynchronously's swapped stylesheet), `data-rocket-preconnect`,
+ * `data-rocket-prefetch` (Preconnect to External Domains' two variants).
+ */
+export type ResourceHintMark = 'preload' | 'async' | 'preconnect' | 'prefetch';
+
+/** One resource hint on the page: a `<link>` yields one per listed `rel` token. */
+export interface ResourceHint {
+  rel: ResourceHintRel;
+  /** Resolved href; '' when the attribute is missing or blank (a srcset-only preload). */
+  href: string;
+  /** The `as` attribute, trimmed and lower-cased ('' when absent). */
+  as: string;
+  /** WP Rocket's stamp, only on the `rel` its emitter writes; absent on a plain hint. */
+  mark?: ResourceHintMark;
+}
+
+/** WP Rocket-preloaded resources and the page's resource hints, for the panel page. */
 export interface PreloadedResources extends TruncationMark {
   present: boolean;
   resources?: Array<{
@@ -552,6 +574,14 @@ export interface PreloadedResources extends TruncationMark {
     /** `as` property value ('' when the attribute is absent). */
     type: string;
   }>;
+  /**
+   * Every resource hint outside `<noscript>`, document order (one row per
+   * hint, duplicates kept). Additive: a payload captured before it existed
+   * omits it; the engine always writes it.
+   */
+  hints?: ResourceHint[];
+  /** Present (always `true`) only when the producer cut {@link hints} to its caps. */
+  hintsTruncated?: true;
 }
 
 /**

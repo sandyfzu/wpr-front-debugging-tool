@@ -21,11 +21,12 @@ import Stethoscope from 'lucide-solid/icons/stethoscope';
 import TestTubeDiagonal from 'lucide-solid/icons/test-tube-diagonal';
 import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
-import { IMAGE_NOUN } from '../../lib/detection/count-nouns';
+import { HINT_NOUN, IMAGE_NOUN } from '../../lib/detection/count-nouns';
 import { runtimeOnPage } from '../../lib/detection/simulation-fact';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
 import { listCapped, countLabel } from '../../lib/panel/list-behavior';
+import { reportHints, reportHintsTruncated } from '../../lib/panel/resources-view-model';
 import { formatCount } from '../../utils/format-count';
 
 /** Journey groups, in the order the nav renders them. */
@@ -163,26 +164,18 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     icon: Zap,
     group: 'Inspect',
     liveState: (data) => {
-      // The feature may be present without a collected inventory (unknown) —
-      // say nothing rather than a number that is not known.
-      if (data === null || !data.preloadedResources.present) return null;
-      const resources = data.preloadedResources.resources;
-      if (resources === undefined) return null;
-      return {
-        text:
-          resources.length > 0
-            ? countLabel(
-                resources.length,
-                { one: 'link', other: 'links' },
-                listCapped(
-                  data.preloadedResources.truncated,
-                  resources.length,
-                  PAYLOAD_LIMITS.preloaded.count
-                )
-              )
-            : 'None',
-        tone: resources.length > 0 ? 'info' : 'neutral'
-      };
+      // No data, no hint or no collected list (unknown): say nothing rather
+      // than a number that is not known.
+      if (data === null) return null;
+      const report = data.preloadedResources;
+      const count = reportHints(report).length;
+      if (count === 0) return null;
+      const partial = listCapped(
+        reportHintsTruncated(report),
+        count,
+        PAYLOAD_LIMITS.preloaded.count
+      );
+      return { text: countLabel(count, HINT_NOUN, partial), tone: 'info' };
     }
   },
   { id: 'headers-cookies', label: 'Headers & Cookies', icon: ScrollText, group: 'Inspect' },

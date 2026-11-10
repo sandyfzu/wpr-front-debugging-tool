@@ -748,7 +748,10 @@ describe('detectOptimizeCriticalImages / detectPreloadedResources', () => {
         { href: 'https://s.com/hero.webp', type: 'image' },
         { href: 'https://s.com/logo.png', type: 'image' },
         { href: 'https://s.com/app.js', type: 'script' }
-      ]
+      ],
+      // No `rel` token, so no hint: the marker alone lists the resource only
+      // (every WP Rocket emitter writes `rel="preload"` beside it).
+      hints: []
     });
   });
 
@@ -813,7 +816,7 @@ describe('run-detection — propagation and timing', () => {
       'dns_prefetch'
     ]);
     expect(result.elapsedMs).toBeGreaterThanOrEqual(0);
-    expect(result.preloadedResources).toEqual({ present: false });
+    expect(result.preloadedResources).toEqual({ present: false, hints: [] });
   });
 
   it('rejects non-string input loud and early', () => {

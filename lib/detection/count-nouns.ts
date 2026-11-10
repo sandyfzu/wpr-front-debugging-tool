@@ -19,3 +19,6 @@ export const FONT_NOUN: CountNoun = { one: 'font', other: 'fonts' };
 
 /** Hinted domains (Preconnect to External Domains). */
 export const DOMAIN_NOUN: CountNoun = { one: 'domain', other: 'domains' };
+
+/** Resource hints (the Preloaded Resources page's rows and badge). */
+export const HINT_NOUN: CountNoun = { one: 'hint', other: 'hints' };

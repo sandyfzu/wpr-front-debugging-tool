@@ -127,6 +127,38 @@
         "href": "",
         "type": "image"
       }
+    ],
+    "hints": [
+      {
+        "rel": "preload",
+        "href": "https://example.com/wp-content/uploads/hero.jpg",
+        "as": "image",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://example.com/wp-content/uploads/hero.avif",
+        "as": "image",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "",
+        "as": "image",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://example.com/wp-content/uploads/source-1.avif",
+        "as": "image",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "",
+        "as": "image",
+        "mark": "preload"
+      }
     ]
   }
 }

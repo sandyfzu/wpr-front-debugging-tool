@@ -170,7 +170,7 @@ function perfInventoryHtml(): string {
             ? `<script type="rocketlazyloadscript" data-rocket-src="${row.url}"${row.deferred ? ' data-rocket-defer' : ''}></script>`
             : `<script type="application/x-fdt-inert" src="${row.url}"></script>`;
     return `${script}<img data-lazy-src="${row.url}" alt="Inventory row ${rowToken(index)}">
-      <link data-rocket-preload as="${row.preloadAs}" href="${row.url}">`;
+      <link rel="preload" data-rocket-preload as="${row.preloadAs}" href="${row.url}">`;
   });
   return `<!doctype html><html lang="en"><head><title>Large-list perf fixture</title></head>
     <body><h1>Large-list perf fixture</h1>${markup.join('')}</body></html>`;

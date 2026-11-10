@@ -14,8 +14,12 @@ import {
   buildScriptRows,
   filterAndSearch,
   filterCounts,
-  type JsFilterId
+  reportHints,
+  reportHintsTruncated,
+  type JsFilterId,
+  type PreloadedFilterId
 } from './resources-view-model';
+import { emptyDetections } from './support-report.fixtures';
 import type { PreloadedResources, WprDetections } from '../wp-rocket/types';
 
 /** Build delay-JS rows straight from record-shaped scripts. */
@@ -144,19 +148,94 @@ describe('buildLazyloadRows', () => {
 });
 
 describe('buildPreloadedRows', () => {
-  it('maps the hint rows; a report without a list maps to zero rows', () => {
+  const none = emptyDetections();
+
+  it('reads the hint inventory: WP Rocket first, then by kind, preloads by type, ids = capture order', () => {
+    const report: PreloadedResources = {
+      present: true,
+      resources: [{ href: '/hero.webp', type: 'image' }],
+      hints: [
+        { rel: 'dns-prefetch', href: 'https://dns.example/', as: '' },
+        { rel: 'preload', href: '/x.woff2', as: 'font', mark: 'preload' },
+        { rel: 'preconnect', href: 'https://ped.example/', as: '', mark: 'preconnect' },
+        { rel: 'preload', href: '/hero.webp', as: 'image', mark: 'preload' },
+        { rel: 'modulepreload', href: '/m.js', as: '' },
+        { rel: 'preload', href: '/plain.css', as: 'style' },
+        { rel: 'preload', href: '/plain.json', as: 'json' },
+        { rel: 'preload', href: '/untyped', as: '' },
+        { rel: 'preload', href: '/plain.png', as: 'image' }
+      ]
+    };
+    const rows = buildPreloadedRows(report, none);
+    expect(rows.map((row) => [row.id, row.rel, row.as, row.attribution.by])).toEqual([
+      [3, 'preload', 'image', 'wp-rocket'],
+      [1, 'preload', 'font', 'wp-rocket'],
+      [2, 'preconnect', '', 'wp-rocket'],
+      [8, 'preload', 'image', 'page'],
+      [5, 'preload', 'style', 'page'],
+      [6, 'preload', 'json', 'page'],
+      [7, 'preload', '', 'page'],
+      [4, 'modulepreload', '', 'page'],
+      [0, 'dns-prefetch', '', 'page']
+    ]);
+  });
+
+  it('keeps one row per hint, in capture order among equal ranks (duplicates kept)', () => {
+    const hint = { rel: 'preload' as const, href: '/same.webp', as: 'image' };
+    const rows = buildPreloadedRows({ present: false, hints: [hint, hint, hint] }, none);
+    expect(rows.map((row) => row.id)).toEqual([0, 1, 2]);
+  });
+
+  it('names the proven feature on a row (attribution is the hint module own)', () => {
+    const detections = emptyDetections();
+    detections.rocket_above_the_fold_optimization.present = true;
+    const [row] = buildPreloadedRows(
+      {
+        present: true,
+        resources: [],
+        hints: [{ rel: 'preload', href: '/a', as: 'image', mark: 'preload' }]
+      },
+      detections
+    );
+    expect(row?.attribution).toEqual({
+      by: 'wp-rocket',
+      mark: 'preload',
+      feature: 'Optimize Critical Images'
+    });
+  });
+
+  it('reads a capture without the inventory as its stamped preloads, type normalized', () => {
     const report: PreloadedResources = {
       present: true,
       resources: [
-        { href: '/hero.webp', type: 'image' },
+        { href: '/hero.webp', type: ' IMAGE ' },
         { href: '/fonts/x.woff2', type: 'font' }
       ]
     };
-    expect(buildPreloadedRows(report)).toEqual([
-      { id: 0, type: 'image', href: '/hero.webp' },
-      { id: 1, type: 'font', href: '/fonts/x.woff2' }
+    expect(reportHints(report)).toEqual([
+      { rel: 'preload', href: '/hero.webp', as: 'image', mark: 'preload' },
+      { rel: 'preload', href: '/fonts/x.woff2', as: 'font', mark: 'preload' }
     ]);
-    expect(buildPreloadedRows({ present: true })).toEqual([]);
+    expect(buildPreloadedRows(report, none).map((row) => row.href)).toEqual([
+      '/hero.webp',
+      '/fonts/x.woff2'
+    ]);
+    expect(buildPreloadedRows({ present: true }, none)).toEqual([]);
+    expect(buildPreloadedRows({ present: false }, none)).toEqual([]);
+  });
+
+  it('reads each list by its own cut mark', () => {
+    expect(reportHintsTruncated({ present: true, resources: [], truncated: true })).toBe(true);
+    expect(
+      reportHintsTruncated({ present: true, resources: [], truncated: true, hints: [] })
+    ).toBeUndefined();
+    expect(
+      reportHintsTruncated({
+        present: false,
+        hints: [{ rel: 'preconnect', href: 'https://a/', as: '' }],
+        hintsTruncated: true
+      })
+    ).toBe(true);
   });
 });
 
@@ -196,22 +275,47 @@ describe('the page definitions — chips and predicates', () => {
     expect(filterAndSearch(rows, LAZYLOAD_PAGE_RESOURCES, 'all', '/b.jpg')).toEqual([rows[1]]);
   });
 
-  it('the Preloaded pattern class image/font is case-insensitive per the as hint', () => {
-    const rows = buildPreloadedRows({
-      present: true,
-      resources: [
-        { href: '/a.webp', type: 'image' },
-        { href: '/b.webp', type: 'IMAGE' },
-        { href: '/c.woff2', type: 'font' },
-        { href: '/d.png', type: '' }
-      ]
-    });
-    const images = filterAndSearch(rows, PRELOADED_PAGE_RESOURCES, 'images', '');
-    expect(images.map((row) => row.href)).toEqual(['/a.webp', '/b.webp']);
-    const fonts = filterAndSearch(rows, PRELOADED_PAGE_RESOURCES, 'fonts', '');
-    expect(fonts.map((row) => row.href)).toEqual(['/c.woff2']);
-    const all = filterAndSearch(rows, PRELOADED_PAGE_RESOURCES, 'all', '');
-    expect(all).toHaveLength(4);
+  it('the Preloaded pattern: attribution, kinds, preload images/fonts (preload kind only)', () => {
+    expect(PRELOADED_PAGE_RESOURCES.filters.map((filter) => [filter.id, filter.label])).toEqual([
+      ['all', 'Show all'],
+      ['wp-rocket', 'WP Rocket'],
+      ['unattributed', 'Unattributed'],
+      ['preload', 'Preload'],
+      ['images', 'Images'],
+      ['fonts', 'Fonts'],
+      ['modulepreload', 'Module preload'],
+      ['preconnect', 'Preconnect'],
+      ['dns-prefetch', 'DNS prefetch']
+    ]);
+    const rows = buildPreloadedRows(
+      {
+        present: true,
+        resources: [],
+        hints: [
+          { rel: 'preload', href: '/a.webp', as: 'image', mark: 'preload' },
+          { rel: 'preload', href: '/b.webp', as: 'image' },
+          { rel: 'preload', href: '/c.woff2', as: 'font' },
+          { rel: 'preload', href: '/d.png', as: '' },
+          { rel: 'modulepreload', href: '/e.js', as: 'image' },
+          { rel: 'preconnect', href: 'https://f/', as: 'font', mark: 'preconnect' },
+          { rel: 'dns-prefetch', href: 'https://g/', as: '', mark: 'prefetch' },
+          { rel: 'dns-prefetch', href: 'https://h/', as: '' }
+        ]
+      },
+      emptyDetections()
+    );
+    const hrefs = (id: PreloadedFilterId): string[] =>
+      filterAndSearch(rows, PRELOADED_PAGE_RESOURCES, id, '').map((row) => row.href);
+    expect(hrefs('images')).toEqual(['/a.webp', '/b.webp']);
+    expect(hrefs('fonts')).toEqual(['/c.woff2']);
+    expect(hrefs('preload')).toEqual(['/a.webp', '/b.webp', '/c.woff2', '/d.png']);
+    expect(hrefs('modulepreload')).toEqual(['/e.js']);
+    expect(hrefs('preconnect')).toEqual(['https://f/']);
+    expect(hrefs('dns-prefetch')).toEqual(['https://g/', 'https://h/']);
+    expect(hrefs('wp-rocket')).toEqual(['/a.webp', 'https://f/', 'https://g/']);
+    expect(hrefs('unattributed')).toEqual(['/b.webp', '/c.woff2', '/d.png', '/e.js', 'https://h/']);
+    expect(hrefs('all')).toHaveLength(8);
+    expect(filterAndSearch(rows, PRELOADED_PAGE_RESOURCES, 'all', 'WEBP')).toHaveLength(2);
   });
 });
 
@@ -294,19 +398,30 @@ describe('filterCounts — one pass, every chip', () => {
     });
   });
 
-  it('the preloaded counts read Images/Fonts + the total', () => {
-    const rows = buildPreloadedRows({
-      present: true,
-      resources: [
-        { href: '/a.webp', type: 'image' },
-        { href: '/b.woff2', type: 'font' },
-        { href: '/c.png', type: '' }
-      ]
-    });
+  it('the preloaded counts read every chip in one pass', () => {
+    const rows = buildPreloadedRows(
+      {
+        present: true,
+        resources: [],
+        hints: [
+          { rel: 'preload', href: '/a.webp', as: 'image', mark: 'preload' },
+          { rel: 'preload', href: '/b.woff2', as: 'font' },
+          { rel: 'preload', href: '/c.png', as: '' },
+          { rel: 'dns-prefetch', href: 'https://d/', as: '' }
+        ]
+      },
+      emptyDetections()
+    );
     expect(filterCounts(rows, PRELOADED_PAGE_RESOURCES)).toEqual({
-      all: 3,
+      all: 4,
+      'wp-rocket': 1,
+      unattributed: 3,
+      preload: 3,
       images: 1,
-      fonts: 1
+      fonts: 1,
+      modulepreload: 0,
+      preconnect: 0,
+      'dns-prefetch': 1
     });
   });
 });

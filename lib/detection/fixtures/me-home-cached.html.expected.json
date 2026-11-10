@@ -792,6 +792,99 @@
         "href": "https://wp-rocket.me/wp-content/uploads/2022/02/Img.svg",
         "type": "image"
       }
+    ],
+    "hints": [
+      {
+        "rel": "preload",
+        "href": "https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/wp-rocket.svg",
+        "as": "image"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://static.olark.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://www.googletagmanager.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://sst.wp-rocket.me/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://app.termly.io/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://googleads.g.doubleclick.net/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://static-tracking.klaviyo.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://static.klaviyo.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://widget.trustpilot.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://www.dwin1.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://lantern.roeyecdn.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preload",
+        "href": "https://wp-rocket.me/wp-content/uploads/2022/02/Img.svg",
+        "as": "image",
+        "mark": "preload"
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "http://static.klaviyo.com/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "http://www.dwin1.com/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "http://widget.trustpilot.com/",
+        "as": ""
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://dev.visualwebsiteoptimizer.com/",
+        "as": ""
+      }
     ]
   }
 }

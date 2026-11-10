@@ -90,6 +90,17 @@
  *    right after the declaration's authority, only on a row it declared —
  *    and never on Minify CSS or the fonts row while Remove Unused CSS is
  *    present (it strips their links).
+ * 10. The preloaded-resources report also lists every resource hint
+ *     (`hints`): per `<link>` outside `<noscript>`, one row per kind among
+ *     `preload`/`modulepreload`/`preconnect`/`dns-prefetch` its `rel` lists
+ *     (ASCII case-insensitive; the `data-rocket-preload` marker adds no kind —
+ *     every emitter writes `rel="preload"` beside it), document order,
+ *     duplicates kept; `href` resolved ('' when blank), `as` trimmed and
+ *     lower-cased, and WP Rocket's stamp (`mark`) only on the `rel` its
+ *     emitter writes. Test-runner quirk: happy-dom's `relList` also trims
+ *     non-ASCII whitespace (e.g. NBSP), so an NBSP-padded `rel` differs from
+ *     the port here; real browsers split on ASCII whitespace only, as the
+ *     port does.
  *
  * The port's contract additions (the cache-marker flag with its comment-only
  * white-label registry and strict display-domain timestamp, the defer count,
@@ -153,6 +164,8 @@ import {
   OPTIMIZE_CRITICAL_IMAGES_COMMENT,
   PRELOAD_LINKS_CONFIG_MARK,
   PRELOAD_LINKS_SCRIPT_ID,
+  RESOURCE_HINT_MARKS,
+  RESOURCE_HINT_RELS,
   ROCKET_CDN_DOMAIN,
   ROCKET_PREFETCH_ATTRIBUTE,
   ROCKET_PRECONNECT_ATTRIBUTE,
@@ -172,6 +185,7 @@ import type {
   BeaconFeatureStatus,
   FeatureMetaRow,
   PreloadedResources,
+  ResourceHint,
   WprDetections
 } from '../../wp-rocket/types';
 
@@ -985,14 +999,41 @@ export function checkPreloadedResources(HTMLDocument: Document): PreloadedResour
   const preloadedResourcesLinks = HTMLDocument.querySelectorAll<HTMLLinkElement>(
     `link[${WPR_PRELOAD_ATTRIBUTE}]`
   );
+  const hints = collectReferenceHints(HTMLDocument);
   if (preloadedResourcesLinks.length === 0) {
-    return { present: false };
+    return { present: false, hints };
   }
   const resourcesURLs = Array.from(preloadedResourcesLinks).map((link) => ({
     href: link.href,
     type: link.as ?? ''
   }));
-  return { present: true, resources: resourcesURLs };
+  return { present: true, resources: resourcesURLs, hints };
+}
+
+/** Deviation 10: the page's resource hints, one row per listed kind per link. */
+function collectReferenceHints(HTMLDocument: Document): ResourceHint[] {
+  const out: ResourceHint[] = [];
+  HTMLDocument.querySelectorAll<HTMLLinkElement>('link').forEach((link) => {
+    const declared = new Set(Array.from(link.relList, (token) => token.toLowerCase()));
+    const kinds = RESOURCE_HINT_RELS.filter((kind) => declared.has(kind));
+    if (!kinds.length || inNoscriptFallback(link)) return;
+    const rawHref = link.getAttribute('href');
+    const href = rawHref && rawHref.trim() ? link.href : '';
+    const as = link.getAttribute('as')?.trim().toLowerCase() ?? '';
+    for (const rel of kinds) {
+      const hint: ResourceHint = { rel, href, as };
+      for (const stamp of RESOURCE_HINT_MARKS) {
+        if (stamp.rel !== rel) continue;
+        const value = link.getAttribute(stamp.attribute);
+        if (value !== null && (stamp.value === undefined || stamp.value === value)) {
+          hint.mark = stamp.mark;
+          break;
+        }
+      }
+      out.push(hint);
+    }
+  });
+  return out;
 }
 
 export default CheckOptimizationFunctions;

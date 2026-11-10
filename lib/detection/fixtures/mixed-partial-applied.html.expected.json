@@ -132,6 +132,14 @@
         "href": "https://example.com/wp-content/uploads/hero.jpg",
         "type": "image"
       }
+    ],
+    "hints": [
+      {
+        "rel": "preload",
+        "href": "https://example.com/wp-content/uploads/hero.jpg",
+        "as": "image",
+        "mark": "preload"
+      }
     ]
   }
 }

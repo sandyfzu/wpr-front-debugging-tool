@@ -26,7 +26,7 @@ function inventoryPage(): string {
         : '';
     return `<script type="rocketlazyloadscript" data-rocket-src="${url}" ${footprint}></script>
       <img data-lazy-src="${url}" alt="Fixture ${String(index)}">
-      <link data-rocket-preload as="image" href="${url}">`;
+      <link rel="preload" data-rocket-preload as="image" href="${url}">`;
   });
   return `<!doctype html><html lang="en"><head><title>Count and title fixture</title></head>
     <body><h1>Count and title fixture</h1>${rows.join('')}</body></html>`;

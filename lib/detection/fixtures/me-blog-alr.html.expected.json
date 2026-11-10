@@ -627,6 +627,94 @@
         "href": "https://wp-rocket.me/wp-content/uploads/fly-images/9713411/How-GruffyGoat-Keeps-Hundreds-of-WordPress-Sites-Fast-with-WP-Rocket-388x198-c.png",
         "type": "image"
       }
+    ],
+    "hints": [
+      {
+        "rel": "preload",
+        "href": "https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/wp-rocket.svg",
+        "as": "image"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://sst.wp-rocket.me/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://app.termly.io/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://static-tracking.klaviyo.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://static.klaviyo.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://www.dwin1.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://lantern.roeyecdn.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preload",
+        "href": "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v20-latin-regular.woff2",
+        "as": "font",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v20-latin-700.woff2",
+        "as": "font",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v51-latin-600.woff2",
+        "as": "font",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/Gotham-Medium.woff2",
+        "as": "font",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://wp-rocket.me/wp-content/uploads/fly-images/9713411/How-GruffyGoat-Keeps-Hundreds-of-WordPress-Sites-Fast-with-WP-Rocket-388x198-c.png",
+        "as": "image",
+        "mark": "preload"
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "http://static.klaviyo.com/",
+        "as": ""
+      },
+      {
+        "rel": "dns-prefetch",
+        "href": "http://www.dwin1.com/",
+        "as": ""
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://dev.visualwebsiteoptimizer.com/",
+        "as": ""
+      }
     ]
   }
 }

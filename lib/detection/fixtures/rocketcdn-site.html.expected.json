@@ -334,6 +334,44 @@
         "href": "https://rocketcdn.me/wp-content/themes/v1/assets/images/logo/dark-background.svg",
         "type": "image"
       }
+    ],
+    "hints": [
+      {
+        "rel": "preconnect",
+        "href": "https://www.googletagmanager.com/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preconnect",
+        "href": "https://app.termly.io/",
+        "as": "",
+        "mark": "preconnect"
+      },
+      {
+        "rel": "preload",
+        "href": "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/ubuntu-v15-latin-700.woff2",
+        "as": "font",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/fira-sans-v11-latin-regular.woff2",
+        "as": "font",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/fira-sans-v11-latin-500.woff2",
+        "as": "font",
+        "mark": "preload"
+      },
+      {
+        "rel": "preload",
+        "href": "https://rocketcdn.me/wp-content/themes/v1/assets/images/logo/dark-background.svg",
+        "as": "image",
+        "mark": "preload"
+      }
     ]
   }
 }
