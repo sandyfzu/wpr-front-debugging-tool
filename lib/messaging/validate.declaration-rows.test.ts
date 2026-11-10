@@ -41,6 +41,91 @@ describe('the new declaration-only rows', () => {
   });
 });
 
+describe('the page targets field', () => {
+  const ROWS = ['minify_css', 'minify_js', 'self_hosted_fonts', 'lazyload_css_bg_img'];
+  /** One row through the whole-payload parser. */
+  const parse = (row: string, value: Record<string, unknown>): unknown =>
+    (
+      parseWprDetections({ ...minimalDetections(), [row]: value }) as Record<string, unknown> | null
+    )?.[row];
+
+  it('keeps a boolean on a meta-declared row, absent reads as absent', () => {
+    for (const row of ROWS) {
+      for (const targets of [true, false]) {
+        expect(parse(row, { present: true, source: 'meta', targets }), row).toEqual({
+          present: true,
+          source: 'meta',
+          targets
+        });
+      }
+      expect(parse(row, { present: true, source: 'meta' }), row).toEqual({
+        present: true,
+        source: 'meta'
+      });
+    }
+    expect(
+      parse('lazyload_iframes', {
+        present: true,
+        replaceImage: true,
+        source: 'meta',
+        targets: false
+      })
+    ).toEqual({ present: true, replaceImage: true, source: 'meta', targets: false });
+  });
+
+  it('rejects it off a meta-declared row, or not a boolean', () => {
+    for (const row of ROWS) {
+      for (const value of [
+        { present: true, source: 'footprint', targets: true },
+        { present: true, targets: true },
+        { present: false, source: 'meta', targets: false },
+        { present: true, source: 'meta', targets: 1 },
+        { present: true, source: 'meta', targets: null },
+        { present: true, source: 'meta', targets: true, extra: 1 }
+      ]) {
+        expect(parse(row, value), `${row} ${JSON.stringify(value)}`).toBeUndefined();
+      }
+    }
+    expect(
+      parse('lazyload_iframes', {
+        present: false,
+        replaceImage: false,
+        source: 'meta',
+        targets: false
+      })
+    ).toBeUndefined();
+  });
+
+  it('image lazyload carries it beside its image list, under the same rule', () => {
+    const images = [
+      { src: 'https://a.example/1.jpg', lazyloadDetected: false, excludedReasonsFound: [] }
+    ];
+    expect(parse('lazyload', { present: true, images, source: 'meta', targets: true })).toEqual({
+      present: true,
+      images,
+      source: 'meta',
+      targets: true
+    });
+    for (const value of [
+      { present: true, images, source: 'footprint', targets: false },
+      { present: false, images, source: 'meta', targets: false },
+      { present: true, images, source: 'meta', targets: 'yes' }
+    ]) {
+      expect(parse('lazyload', value), JSON.stringify(value)).toBeUndefined();
+    }
+  });
+
+  it('no other row accepts it', () => {
+    for (const row of ['image_dimensions', 'preload_links', 'rocket_cdn', 'remove_unused_css']) {
+      expect(parse(row, { present: true, source: 'meta', targets: true }), row).toBeUndefined();
+    }
+  });
+
+  it('a non-record targets row is rejected', () => {
+    expect(parse('minify_css', null as unknown as Record<string, unknown>)).toBeUndefined();
+  });
+});
+
 describe('the cache marker invariant', () => {
   const baseWpr = {
     present: true,

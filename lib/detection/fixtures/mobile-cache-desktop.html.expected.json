@@ -147,7 +147,8 @@
           "excludedReasonsFound": []
         }
       ],
-      "source": "meta"
+      "source": "meta",
+      "targets": true
     },
     "lazyload_iframes": {
       "present": false,
@@ -213,7 +214,8 @@
     },
     "minify_js": {
       "present": true,
-      "source": "meta"
+      "source": "meta",
+      "targets": false
     },
     "minify_concatenate_js": {
       "present": false,

@@ -252,6 +252,34 @@ export interface PriorityElementsBeaconDetection {
 export type FeatureEvidenceSource = 'meta' | 'footprint';
 
 /**
+ * The rows WP Rocket can declare in its generator meta while the page holds
+ * nothing the feature acted on, and whose own record cannot say so: a bare
+ * boolean verdict (the meta step overwrites `present`), or, for image
+ * lazyload, an image list blind to what else the option lazy-loads.
+ */
+export type PageTargetsRow =
+  | 'minify_css'
+  | 'minify_js'
+  | 'self_hosted_fonts'
+  | 'lazyload'
+  | 'lazyload_iframes'
+  | 'lazyload_css_bg_img';
+
+/** The additive targets field of a {@link PageTargetsRow}. */
+export interface PageTargetsField {
+  /**
+   * Whether the page holds what the declared feature acts on (a minified
+   * file, a self-hosted font link, a lazy image, picture source, background
+   * or native-lazy image — the last may be the page's own, so `true` proves
+   * nothing there —, a lazy iframe or video, a mapped background image). Set
+   * only on a meta-declared row; absent otherwise, and where the page can no
+   * longer show them (Remove Unused CSS strips the stylesheet and self-hosted
+   * font links).
+   */
+  targets?: boolean;
+}
+
+/**
  * The device a separate-mobile-cache render was generated for, by WP Rocket's
  * own mobile detection of the generating request (tablets count as mobile).
  */
@@ -424,26 +452,27 @@ export interface WprDetections {
   };
   lazyload: TruncationMark &
     BuilderFactField &
-    SimulationFactField & {
+    SimulationFactField &
+    PageTargetsField & {
       present: boolean;
       /** One record per <img> element, document order. */
       images: LazyloadImageRecord[];
       /** The evidence class that decided the verdict, when one did. */
       source?: FeatureEvidenceSource;
     };
-  lazyload_iframes: {
+  lazyload_iframes: PageTargetsField & {
     present: boolean;
     /** The iframe-to-preview-image replacement script is present too. */
     replaceImage: boolean;
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
   };
-  lazyload_css_bg_img: {
+  lazyload_css_bg_img: PageTargetsField & {
     present: boolean;
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
   };
-  self_hosted_fonts: {
+  self_hosted_fonts: PageTargetsField & {
     present: boolean;
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
@@ -457,7 +486,7 @@ export interface WprDetections {
      */
     source?: FeatureEvidenceSource;
   };
-  minify_css: {
+  minify_css: PageTargetsField & {
     /**
      * The feature verdict. A meta declaration means the minify stage ran, not
      * necessarily that any stylesheet was rewritten on this render (the
@@ -467,7 +496,7 @@ export interface WprDetections {
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
   };
-  minify_js: {
+  minify_js: PageTargetsField & {
     /**
      * The feature verdict. A meta declaration means the minify stage ran, not
      * necessarily that any script was rewritten on this render (the plugin

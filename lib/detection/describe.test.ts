@@ -77,6 +77,34 @@ describe('describeDetections', () => {
     });
   });
 
+  it("carries the declared rows' page targets, null where the row has none", () => {
+    const page = zeroDetections();
+    page.minify_css = { present: true, source: 'meta', targets: false };
+    page.minify_js = { present: true, source: 'meta', targets: true };
+    page.lazyload_iframes = { present: true, replaceImage: false, source: 'meta', targets: false };
+    page.self_hosted_fonts = { present: true, source: 'footprint' };
+    page.lazyload = { present: true, images: [], source: 'meta', targets: true };
+    const report = describeDetections(page);
+    // Image lazyload's targets ride beside its image count, never into it.
+    expect(report['LazyLoad for images']).toEqual({
+      state: 'applied',
+      'lazy-loaded images': 0,
+      'page targets': true
+    });
+    expect(report['Minify CSS files']).toEqual({ state: 'applied', 'page targets': false });
+    expect(report['Minify JavaScript files']).toEqual({ state: 'applied', 'page targets': true });
+    expect(report['LazyLoad for iframes/videos']).toEqual({
+      state: 'applied',
+      'YouTube preview image replacement': false,
+      'page targets': false
+    });
+    expect(report['Self-host Google Fonts']).toEqual({ state: 'applied', 'page targets': null });
+    expect(report['LazyLoad CSS backgrounds']).toEqual({
+      state: 'not applied',
+      'page targets': null
+    });
+  });
+
   it('reads the explicit cache state instead of inventing one from absence', () => {
     const page = zeroDetections();
     page.wpr = {
@@ -144,7 +172,11 @@ describe('describeDetections', () => {
       state: 'applied',
       'deferred scripts': 3
     });
-    expect(report['LazyLoad for images']).toEqual({ state: 'applied', 'lazy-loaded images': 2 });
+    expect(report['LazyLoad for images']).toEqual({
+      state: 'applied',
+      'lazy-loaded images': 2,
+      'page targets': null
+    });
     expect(report['Content Delivery Network']).toEqual({ state: 'applied' });
   });
 

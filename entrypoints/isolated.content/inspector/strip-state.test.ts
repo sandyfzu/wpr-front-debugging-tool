@@ -529,6 +529,41 @@ describe('the strip reads the HUD registry (one feature list)', () => {
     );
   });
 
+  it('a declared row with nothing on the page: an ok chip whose tooltip says so', () => {
+    const at = rows({
+      ...handled(),
+      delay_js: { present: true, scripts: [], version: null, delayedScripts: 0, source: 'meta' },
+      lazyload_iframes: { present: true, replaceImage: false, source: 'meta', targets: false },
+      dns_prefetch: { present: true, domains: [], source: 'meta' }
+    });
+    const delay = at.find((entry) => entry.id === 'delay_js');
+    expect(delay?.chipState).toBe('ok');
+    expect(delay?.count).toBe(0);
+    expect(delay?.tooltip).toBe(
+      "Delay JavaScript execution — declared on this render, but no script on this page is delayed. Decided by WP Rocket's generator meta tag on this page."
+    );
+    const iframes = at.find((entry) => entry.id === 'lazyload_iframes');
+    expect(iframes?.chipState).toBe('ok');
+    // A unit-less row shows no figure beside the chip.
+    expect([iframes?.count, iframes?.unit]).toEqual([null, null]);
+    expect(iframes?.tooltip).toBe(
+      "LazyLoad for iframes/videos — declared on this render, but no iframe or video on this page is lazy-loaded. Decided by WP Rocket's generator meta tag on this page."
+    );
+    expect(at.find((entry) => entry.id === 'dns_prefetch')?.tooltip).toBe(
+      "Prefetch DNS Requests — declared on this render, but no dns-prefetch hint on this page names another host. Decided by WP Rocket's generator meta tag on this page."
+    );
+  });
+
+  it('a declared row with targets keeps the applied line', () => {
+    const row = rows({
+      ...handled(),
+      lazyload_iframes: { present: true, replaceImage: false, source: 'meta', targets: true }
+    }).find((entry) => entry.id === 'lazyload_iframes');
+    expect(row?.tooltip).toBe(
+      "LazyLoad for iframes/videos — applied on this page. Decided by WP Rocket's generator meta tag on this page."
+    );
+  });
+
   it('collecting and undecided-unknown rows read the amber attention chip with their why', () => {
     const all = rows(handled());
     const alr = all.find((row) => row.id === 'automatic_lazy_rendering');

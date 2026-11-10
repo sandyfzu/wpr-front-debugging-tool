@@ -137,7 +137,8 @@
           "excludedReasonsFound": []
         }
       ],
-      "source": "meta"
+      "source": "meta",
+      "targets": true
     },
     "lazyload_iframes": {
       "present": false,

@@ -55,7 +55,8 @@ describe('Combine JavaScript files: meta only (both engines)', () => {
   it('a meta without the token refutes it, even beside the bundle', () => {
     const d = detect(page(meta('wpr_minify_js'), BUNDLE));
     expect(d.minify_concatenate_js).toEqual({ present: false, source: 'meta' });
-    expect(d.minify_js).toEqual({ present: true, source: 'meta' });
+    // The bundle is a minify-cache URL: the declared row's page target.
+    expect(d.minify_js).toEqual({ present: true, source: 'meta', targets: true });
   });
 
   it('the bundle never decides it, even where WP Rocket is proven', () => {

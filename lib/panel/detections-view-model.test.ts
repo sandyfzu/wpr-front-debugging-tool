@@ -520,6 +520,27 @@ describe('buildStatusItems — per-feature subtitles', () => {
     );
     expect(withoutScript.find((item) => item.id === 'lazyload_iframes')?.subtitle).toBeUndefined();
   });
+
+  it('a declared-only iframes card drops the replace-preview subtitle (the script ships with the option)', () => {
+    /** The iframes card of a meta-declared row with the given page targets. */
+    const card = (targets: boolean) =>
+      buildStatusItems(
+        makeData({
+          wprDetections: fullDetections({
+            lazyload_iframes: { present: true, replaceImage: true, source: 'meta', targets }
+          })
+        })
+      ).find((item) => item.id === 'lazyload_iframes');
+    const declaredOnly = card(false);
+    expect(declaredOnly).toMatchObject({
+      status: 'active',
+      declaredOnly: 'Declared on this render, but no iframe or video on this page is lazy-loaded.'
+    });
+    expect(declaredOnly?.subtitle).toBeUndefined();
+    const withTargets = card(true);
+    expect(withTargets?.subtitle).toBe('Replace iframe with preview image');
+    expect(withTargets?.declaredOnly).toBeUndefined();
+  });
 });
 
 describe('buildStatusItems — the mobile cache card', () => {
@@ -609,6 +630,58 @@ describe('buildStatusItems — the DNS prefetch card', () => {
     ).find((entry) => entry.id === 'dns_prefetch');
     expect(item?.status).toBe('unknown');
     expect(item?.subtitle).toBeUndefined();
+  });
+});
+
+describe('buildStatusItems — the declared-only sentence', () => {
+  /** One card over a page carrying the given rows. */
+  const card = (id: string, overrides: Partial<WprDetections>) =>
+    buildStatusItems(makeData({ wprDetections: fullDetections(overrides) })).find(
+      (item) => item.id === id
+    );
+
+  it('a declared row with nothing on the page: active, meta, the capitalized sentence', () => {
+    expect(
+      card('lazyload_iframes', {
+        lazyload_iframes: { present: true, replaceImage: false, source: 'meta', targets: false }
+      })
+    ).toEqual({
+      id: 'lazyload_iframes',
+      name: 'LazyLoad for iframes/videos',
+      status: 'active',
+      source: 'meta',
+      declaredOnly: 'Declared on this render, but no iframe or video on this page is lazy-loaded.'
+    });
+  });
+
+  it('a declared row with targets, and a footprint row, carry no sentence', () => {
+    expect(
+      card('minify_js', { minify_js: { present: true, source: 'meta', targets: true } })
+    ).not.toHaveProperty('declaredOnly');
+    expect(
+      card('delay_js', {
+        delay_js: {
+          present: true,
+          scripts: [],
+          version: null,
+          delayedScripts: 0,
+          source: 'footprint'
+        }
+      })
+    ).not.toHaveProperty('declaredOnly');
+  });
+
+  it('DNS prefetch declared with no hint: the sentence replaces the hints subtitle and limit', () => {
+    expect(
+      card('dns_prefetch', { dns_prefetch: { present: true, domains: [], source: 'meta' } })
+    ).toEqual({
+      id: 'dns_prefetch',
+      name: 'Prefetch DNS Requests',
+      status: 'active',
+      source: 'meta',
+      declaredOnly:
+        'Declared on this render, but no dns-prefetch hint on this page names another host.'
+    });
   });
 });
 

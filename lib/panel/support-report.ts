@@ -116,9 +116,9 @@ function cellText(value: string): string {
 
 /**
  * The "Details" cell of one card: its facts ({@link factsCell}), then the
- * unsure verdict's why, then the "applied despite the bypass" warning, then
- * the simulation modifier, then the Exclusion Builder's in-tab modifier —
- * each when the card carries it. The Status cell stays the served verdict; the
+ * declared-only sentence, then the unsure verdict's why, then the "applied
+ * despite the bypass" warning, then the simulation modifier, then the
+ * Exclusion Builder's in-tab modifier — each when the card carries it. The Status cell stays the served verdict; the
  * modifier here also explains a fact the rewrite emptied (Delay JS's
  * library version goes with its controller).
  *
@@ -128,7 +128,13 @@ function cellText(value: string): string {
 function detailsCell(item: StatusItem): string {
   const facts = factsCell(item);
   // The facts are already cell markdown; the notes are our own copy.
-  const notes = [item.why, item.bypassWarning?.sentence, item.simulationSentence, item.modifier]
+  const notes = [
+    item.declaredOnly,
+    item.why,
+    item.bypassWarning?.sentence,
+    item.simulationSentence,
+    item.modifier
+  ]
     .filter((note): note is string => note !== undefined)
     .map(cellText);
   const parts = facts === NONE ? notes : [facts, ...notes];

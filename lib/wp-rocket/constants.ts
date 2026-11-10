@@ -153,6 +153,33 @@ export const LAZYLOAD_IMG_OPTIONS_PATTERN = new RegExp(
 export const LAZYLOAD_IFRAME_OPTIONS_PATTERN = new RegExp(
   `${escapeRegex(LAZYLOAD_OPTIONS_ASSIGNMENT)}(.*)${escapeRegex(LAZYLOAD_IFRAME_SELECTOR)}`
 );
+/**
+ * The elements LazyLoad for iframes/videos leaves on a page where it acted:
+ * a lazy iframe, or the YouTube preview placeholder that replaced one.
+ */
+export const LAZYLOAD_IFRAME_TARGETS_SELECTOR = `${LAZYLOAD_IFRAME_SELECTOR}, .rll-youtube-player`;
+/**
+ * The elements LazyLoad for images rewrote: a lazy image, a lazy
+ * `<picture>` source, or an inline-style background it moved to `data-bg`
+ * (the same option).
+ */
+export const LAZYLOAD_IMAGE_TARGETS_SELECTOR = [
+  LAZYLOAD_IMG_SELECTOR,
+  `img[${DATA_LAZY_SRCSET}]`,
+  `picture source[${DATA_LAZY_SRCSET}]`,
+  '.rocket-lazyload[data-bg]'
+].join(', ');
+/**
+ * The images that may be natively lazy: what LazyLoad for images writes
+ * under its native-lazyload filter (`loading="lazy"`), but also a page's own
+ * markup — so one only withholds "nothing lazy-loaded", never proves the
+ * feature. The value is an enumerated keyword (any case), so it is compared
+ * in code against {@link NATIVE_LAZY_LOADING_VALUE}, never in the selector:
+ * the test DOM ignores the selector's case-insensitive flag.
+ */
+export const NATIVE_LAZY_IMAGE_CANDIDATE_SELECTOR = 'img[loading]';
+/** The `loading` keyword of a natively lazy image (lower case). */
+export const NATIVE_LAZY_LOADING_VALUE = 'lazy';
 /** YouTube thumbnail replacement helper (iframe preview images). */
 export const LAZYLOAD_YOUTUBE_PATTERN =
   /function lazyLoadThumb\((.*)function lazyLoadYoutubeIframe\(\)/;
@@ -274,6 +301,14 @@ export const ROCKET_CDN_DOMAIN = '.rocketcdn.me';
 /** Lazyload for CSS background images: the reserved container elements. */
 export const LAZYLOAD_BG_CONTAINER_ID = 'wpr-lazyload-bg-container';
 export const LAZYLOAD_BG_EXCLUSION_ID = 'wpr-lazyload-bg-exclusion';
+
+/**
+ * Lazyload for CSS background images: the inline mapping of the images it
+ * lazy-loads, non-empty (`const rocket_pairs = [{…}]`). The container styles
+ * are written even when the mapping is `[]`, so only a mapped entry shows
+ * the feature acted.
+ */
+export const LAZYLOAD_BG_PAIRS_PATTERN = /\brocket_pairs\s*=\s*\[\s*[^\s\]]/;
 
 /**
  * Automatic Lazy Rendering: attribute stamping the elements the feature

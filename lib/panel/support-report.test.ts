@@ -581,6 +581,26 @@ describe('buildSupportReport — the HUD registry feeds the detections table', (
     );
   });
 
+  it('states a declared-only row in its Details cell; with targets the cell stays empty', () => {
+    const report = lines(
+      makeReportData({
+        wprDetections: {
+          ...emptyDetections(),
+          minify_css: { present: true, source: 'meta', targets: false },
+          minify_js: { present: true, source: 'meta', targets: true },
+          dns_prefetch: { present: true, domains: [], source: 'meta' }
+        }
+      })
+    );
+    expect(report).toContain(
+      '| Minify CSS files | Active | Generator meta | Declared on this render, but no stylesheet on this page is minified. |'
+    );
+    expect(report).toContain('| Minify JavaScript files | Active | Generator meta | — |');
+    expect(report).toContain(
+      '| Prefetch DNS Requests | Active | Generator meta | Declared on this render, but no dns-prefetch hint on this page names another host. |'
+    );
+  });
+
   it('names the hosting cache layer beside a signature without the debug stamp', () => {
     const report = lines(
       makeReportData({

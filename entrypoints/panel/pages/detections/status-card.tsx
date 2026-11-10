@@ -10,8 +10,9 @@
  * A feature card adds its evidence line under the name: the source chip
  * (`Meta` / `Footprint`, its meaning spelled out for assistive tech and in
  * the native title) and, for an unsure verdict (collecting / unknown), the
- * amber why sentence — visible text, never hover-only — and, when the
- * Exclusion Builder changed the feature in this tab, its modifier: an
+ * amber why sentence — visible text, never hover-only — or, for a feature
+ * declared with nothing on the page to act on, the declared-only sentence —
+ * and, when the Exclusion Builder changed the feature in this tab, its modifier: an
  * at-a-glance badge (icon + short text) plus the full sentence as a visible
  * line, spoken once; likewise when the extension simulated the feature in
  * this tab (or the page's simulation marker went unverified), and the
@@ -297,8 +298,9 @@ function CardEvidence(props: { item: StatusItem }): JSX.Element {
   const source = () =>
     props.item.source === undefined ? undefined : SOURCE_COPY[props.item.source];
   return (
-    // No bypass-warning arm: a warned card is always footprint-decided, so
-    // its source chip already opens the line.
+    // No bypass-warning or declared-only arm: a warned card is always
+    // footprint-decided and a declared-only one meta-decided, so its source
+    // chip already opens the line.
     <Show
       when={
         source() !== undefined ||
@@ -320,6 +322,14 @@ function CardEvidence(props: { item: StatusItem }): JSX.Element {
                 <span class="sr-only">: {copy().tooltip}</span>
               </span>
             </Badge>
+          )}
+        </Show>
+        <Show when={props.item.declaredOnly}>
+          {(sentence) => (
+            <p data-fdt-card-declared-line class="min-w-0 text-fg-secondary">
+              <span class="sr-only">, </span>
+              {sentence()}
+            </p>
           )}
         </Show>
         <BypassWarning item={props.item} />

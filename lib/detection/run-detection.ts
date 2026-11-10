@@ -37,6 +37,7 @@ import {
 import { applyBuilderFacts } from './builder-fact';
 import { applyFeatureMetaAuthority, rowMetaVerdict } from './feature-meta';
 import { MINIFY_FOOTPRINT_ROWS, hasMinifyFootprint } from './minify-footprint';
+import { applyPageTargets } from './page-targets';
 import { applySimulationFacts } from './simulation-fact';
 import type { SimulatedFeatureId } from '../wp-rocket-simulation/spec';
 import {
@@ -78,7 +79,8 @@ export function runDetection(html: string): DetectionResult {
  * Run every check once over an already-parsed page, then the simulation
  * facts (a verified simulated row is not served; an unverified marker only
  * annotates), then the generator declaration's authority (it rewrites
- * mapped rows and stamps `source`), then the minify attribute guard, then
+ * mapped rows and stamps `source`) with the declared boolean rows' page
+ * targets (`targets`), then the minify attribute guard, then
  * the Exclusion Builder's facts (the additive `builder` field).
  * Single-sourced so the bench and the orchestrator can never drift apart —
  * and both callers' presence
@@ -127,6 +129,8 @@ export function runChecks(
   };
   applySimulationFacts(detections, page.simulationMarker, verified, page.featureMeta);
   applyFeatureMetaAuthority(detections, page.featureMeta);
+  // A declared boolean row's page fact, read while the meta's verdict is fresh.
+  applyPageTargets(detections, page);
   // After the meta (it decides when present), before propagation (which then
   // counts the attribute-decided rows like any footprint).
   applyMinifyAttributeGuard(detections, page);

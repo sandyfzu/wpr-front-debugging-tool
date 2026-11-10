@@ -79,6 +79,17 @@
  *    hints carrying Preconnect to External Domains' attribution. With the
  *    CDN declared (`wpr_cdn`), a missing `wpr_dns_prefetch` decides nothing:
  *    the plugin omits it for a one-entry list while printing the hint.
+ * 9. Page targets (`targets`) on six meta-declared rows: Minify CSS/JS — a
+ *    minified tag by either arm (cache URL or the stamp); Self-host Google
+ *    Fonts — its footprint link; LazyLoad for images — a lazy image or
+ *    picture source, a `data-bg` background or a native-lazy image
+ *    (`loading` compared trimmed, any case); LazyLoad for iframes/videos — a
+ *    lazy iframe or a YouTube preview placeholder (never the options blob);
+ *    the image and iframe targets never inside `<noscript>`; LazyLoad CSS backgrounds — a
+ *    non-empty `rocket_pairs` mapping (never the container styles). Stamped
+ *    right after the declaration's authority, only on a row it declared —
+ *    and never on Minify CSS or the fonts row while Remove Unused CSS is
+ *    present (it strips their links).
  *
  * The port's contract additions (the cache-marker flag with its comment-only
  * white-label registry and strict display-domain timestamp, the defer count,
@@ -122,8 +133,13 @@ import {
   GENERATOR_META_SELECTOR,
   LAZYLOAD_BG_CONTAINER_ID,
   LAZYLOAD_BG_EXCLUSION_ID,
+  LAZYLOAD_BG_PAIRS_PATTERN,
   LAZYLOAD_EXCLUSIONS_LIST,
   LAZYLOAD_IFRAME_OPTIONS_PATTERN,
+  LAZYLOAD_IFRAME_TARGETS_SELECTOR,
+  LAZYLOAD_IMAGE_TARGETS_SELECTOR,
+  NATIVE_LAZY_IMAGE_CANDIDATE_SELECTOR,
+  NATIVE_LAZY_LOADING_VALUE,
   LAZYLOAD_IMG_OPTIONS_PATTERN,
   LAZYLOAD_SCRIPT_PATTERN,
   LAZYLOAD_YOUTUBE_PATTERN,
@@ -1049,6 +1065,69 @@ function applyReferenceMeta(wprDetections: WprDetections, meta: ReferenceFeature
   }
 }
 
+/** The exact minify stamp (deviation 4). */
+function referenceStamped(element: Element): boolean {
+  return element.getAttribute(MINIFY_ATTRIBUTE) === MINIFY_ATTRIBUTE_VALUE;
+}
+
+/** Deviation 9: the page targets of the rows the declaration decided present. */
+function applyReferenceTargets(
+  wprDetections: WprDetections,
+  { HTMLDocument, pageScripts, pageLinkElements }: CheckOptimizationFunctionPayload
+): void {
+  const declared = (row: keyof WprDetections): boolean =>
+    wprDetections[row].present && (wprDetections[row] as any).source === 'meta';
+  const linksKept = !wprDetections.remove_unused_css.present;
+  const outside = (selector: string): Element[] =>
+    Array.from(HTMLDocument.querySelectorAll(selector)).filter(
+      (element) => !inNoscriptFallback(element)
+    );
+  if (declared('lazyload')) {
+    wprDetections.lazyload.targets =
+      outside(LAZYLOAD_IMAGE_TARGETS_SELECTOR).length > 0 ||
+      outside(NATIVE_LAZY_IMAGE_CANDIDATE_SELECTOR).some(
+        (image) =>
+          (image.getAttribute('loading') ?? '').trim().toLowerCase() === NATIVE_LAZY_LOADING_VALUE
+      );
+  }
+  if (declared('lazyload_iframes')) {
+    wprDetections.lazyload_iframes.targets = outside(LAZYLOAD_IFRAME_TARGETS_SELECTOR).length > 0;
+  }
+  if (declared('lazyload_css_bg_img')) {
+    let mapped = false;
+    for (const script of pageScripts) {
+      if (script.textContent?.match(LAZYLOAD_BG_PAIRS_PATTERN)) {
+        mapped = true;
+        break;
+      }
+    }
+    wprDetections.lazyload_css_bg_img.targets = mapped;
+  }
+  if (linksKept && declared('self_hosted_fonts')) {
+    wprDetections.self_hosted_fonts.targets = checkSelfHostedFonts({
+      HTMLDocument,
+      pageHTML: '',
+      pageScripts,
+      pageLinkElements
+    }).present;
+  }
+  if (linksKept && declared('minify_css')) {
+    wprDetections.minify_css.targets = pageLinkElements.some(
+      (link) =>
+        isReferenceStylesheet(link) &&
+        (Boolean(link.href?.match(MINIFIED_CSS_URL)) ||
+          (Boolean(link.getAttribute('href')) && referenceStamped(link)))
+    );
+  }
+  if (declared('minify_js')) {
+    wprDetections.minify_js.targets = pageScripts.some(
+      (script) =>
+        Boolean(rawServedSrc(script)) &&
+        (Boolean(resolvedServedSrc(script).match(MINIFIED_JS_URL)) || referenceStamped(script))
+    );
+  }
+}
+
 /**
  * Deviation 4: the minify attribute, counted only on a page already proven
  * to be WP Rocket's (proof read once, before either minify row changes).
@@ -1069,13 +1148,11 @@ function applyReferenceMinifyAttribute(
     }
   }
   if (!proven) return;
-  const stamped = (element: Element): boolean =>
-    element.getAttribute(MINIFY_ATTRIBUTE) === MINIFY_ATTRIBUTE_VALUE;
   if (
     !wprDetections.minify_css.present &&
     referenceMetaVerdict(meta, FEATURE_META_TOKENS.minify_css) === 'absent' &&
     pageLinkElements.some(
-      (link) => isReferenceStylesheet(link) && link.getAttribute('href') && stamped(link)
+      (link) => isReferenceStylesheet(link) && link.getAttribute('href') && referenceStamped(link)
     )
   ) {
     wprDetections.minify_css.present = true;
@@ -1084,7 +1161,7 @@ function applyReferenceMinifyAttribute(
   if (
     !wprDetections.minify_js.present &&
     referenceMetaVerdict(meta, FEATURE_META_TOKENS.minify_js) === 'absent' &&
-    pageScripts.some((script) => rawServedSrc(script) && stamped(script))
+    pageScripts.some((script) => rawServedSrc(script) && referenceStamped(script))
   ) {
     wprDetections.minify_js.present = true;
     wprDetections.minify_js.source = 'footprint';
@@ -1112,6 +1189,12 @@ export function runReferenceDetection(pageHTML: string): {
   }
   const meta = parseReferenceFeatureMeta(HTMLDocument);
   applyReferenceMeta(wprDetections as WprDetections, meta);
+  applyReferenceTargets(wprDetections as WprDetections, {
+    pageHTML,
+    HTMLDocument,
+    pageScripts,
+    pageLinkElements
+  });
   applyReferenceMinifyAttribute(wprDetections as WprDetections, meta, {
     pageHTML,
     HTMLDocument,

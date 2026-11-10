@@ -79,16 +79,21 @@ export interface PageAnalysisReport {
   };
   [LABEL_LOAD_JAVASCRIPT_DEFERRED]: { state: FeatureState; 'deferred scripts': number };
   [LABEL_LOAD_CSS_ASYNCHRONOUSLY]: { state: FeatureState };
-  [LABEL_IMAGE_LAZYLOAD]: { state: FeatureState; 'lazy-loaded images': number };
+  [LABEL_IMAGE_LAZYLOAD]: {
+    state: FeatureState;
+    'lazy-loaded images': number;
+    'page targets': PageTargets;
+  };
   [LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD]: {
     state: FeatureState;
     'YouTube preview image replacement': boolean;
+    'page targets': PageTargets;
   };
-  [LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD]: { state: FeatureState };
-  [LABEL_SELF_HOST_GOOGLE_FONTS]: { state: FeatureState };
+  [LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD]: { state: FeatureState; 'page targets': PageTargets };
+  [LABEL_SELF_HOST_GOOGLE_FONTS]: { state: FeatureState; 'page targets': PageTargets };
   [LABEL_ADD_MISSING_IMAGE_DIMENSIONS]: { state: FeatureState };
-  [LABEL_MINIFY_CSS]: { state: FeatureState };
-  [LABEL_MINIFY_JAVASCRIPT]: { state: FeatureState };
+  [LABEL_MINIFY_CSS]: { state: FeatureState; 'page targets': PageTargets };
+  [LABEL_MINIFY_JAVASCRIPT]: { state: FeatureState; 'page targets': PageTargets };
   [LABEL_COMBINE_JAVASCRIPT]: { state: FeatureState };
   [LABEL_PRELOAD_LINKS]: { state: FeatureState };
   /** The plain hints observed (corroboration only: core and the CDN hint hosts too). */
@@ -111,6 +116,13 @@ export interface PageAnalysisReport {
     'enabled features': string[];
   };
 }
+
+/**
+ * Whether a meta-declared row's page holds what the feature acts on
+ * (`targets`); null when the row carries no such fact (not declared, or
+ * targets Remove Unused CSS removed).
+ */
+export type PageTargets = boolean | null;
 
 /** The state of a plain markup-evidence optimization: the evidence is the answer. */
 function simpleState(present: boolean): FeatureState {
@@ -220,21 +232,33 @@ export function describeDetections(
       // Only the images actually lazy-loaded: an image the plugin (or the
       // Exclusion Builder) left eager is not evidence of the feature.
       'lazy-loaded images': detections.lazyload.images.filter((image) => image.lazyloadDetected)
-        .length
+        .length,
+      'page targets': detections.lazyload.targets ?? null
     },
     [LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD]: {
       state: simpleState(detections.lazyload_iframes.present),
-      'YouTube preview image replacement': detections.lazyload_iframes.replaceImage
+      'YouTube preview image replacement': detections.lazyload_iframes.replaceImage,
+      'page targets': detections.lazyload_iframes.targets ?? null
     },
     [LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD]: {
-      state: simpleState(detections.lazyload_css_bg_img.present)
+      state: simpleState(detections.lazyload_css_bg_img.present),
+      'page targets': detections.lazyload_css_bg_img.targets ?? null
     },
-    [LABEL_SELF_HOST_GOOGLE_FONTS]: { state: simpleState(detections.self_hosted_fonts.present) },
+    [LABEL_SELF_HOST_GOOGLE_FONTS]: {
+      state: simpleState(detections.self_hosted_fonts.present),
+      'page targets': detections.self_hosted_fonts.targets ?? null
+    },
     [LABEL_ADD_MISSING_IMAGE_DIMENSIONS]: {
       state: simpleState(detections.image_dimensions.present)
     },
-    [LABEL_MINIFY_CSS]: { state: simpleState(detections.minify_css.present) },
-    [LABEL_MINIFY_JAVASCRIPT]: { state: simpleState(detections.minify_js.present) },
+    [LABEL_MINIFY_CSS]: {
+      state: simpleState(detections.minify_css.present),
+      'page targets': detections.minify_css.targets ?? null
+    },
+    [LABEL_MINIFY_JAVASCRIPT]: {
+      state: simpleState(detections.minify_js.present),
+      'page targets': detections.minify_js.targets ?? null
+    },
     [LABEL_COMBINE_JAVASCRIPT]: { state: simpleState(detections.minify_concatenate_js.present) },
     [LABEL_PRELOAD_LINKS]: { state: simpleState(detections.preload_links.present) },
     [LABEL_DNS_PREFETCH]: {
