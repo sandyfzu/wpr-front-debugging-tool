@@ -84,13 +84,15 @@ const DERIVED_CARD_IDS: ReadonlySet<StatusItemId> = new Set([
 
 /**
  * Detection rows that are not optimizations a site owner turns on: the
- * plugin's own presence row and the Priority Elements measurement beacon
- * (it collects data for the optimizations; counting it would inflate
- * "N of M active" with a signal, not a feature).
+ * plugin's own presence row, the Priority Elements measurement beacon (it
+ * collects data for the optimizations; counting it would inflate "N of M
+ * active" with a signal, not a feature) and the mobile cache split (a cache
+ * layout setting, not an optimization of the page).
  */
 const NON_OPTIMIZATION_ROWS: ReadonlySet<DetectionRow> = new Set([
   'wpr',
-  'priority_elements_beacon'
+  'priority_elements_beacon',
+  'mobile_cache'
 ]);
 
 /**

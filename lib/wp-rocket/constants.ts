@@ -404,32 +404,45 @@ export const FEATURE_META_LIMITS = {
 } as const;
 
 /**
- * The row↔token registry: each detection row and the exact token the plugin
- * declares for it. Verified against the plugin's emitters (each feature's
- * `add_meta_comment` argument prefixed with `wpr_`, plus the option-driven
- * tokens the meta builder appends itself). Tokens the plugin emits for rows
- * this port does not carry yet are deliberately absent — mapping them to
- * nothing would invite a wrong fallback.
+ * The device tokens the meta builder appends while separate mobile cache
+ * files are on: the device WP Rocket's mobile detection found for the request
+ * that generated the render (tablets count as mobile, while the cache file
+ * name follows a separate tablet setting), never both on a genuine render.
  */
-export const FEATURE_META_TOKENS: Readonly<Record<FeatureMetaRow, string>> = {
-  remove_unused_css: 'wpr_remove_unused_css',
-  async_css: 'wpr_async_css',
-  delay_js: 'wpr_delay_js',
-  defer_all_js: 'wpr_defer_js',
-  lazyload: 'wpr_lazyload_images',
-  lazyload_iframes: 'wpr_lazyload_iframes',
-  lazyload_css_bg_img: 'wpr_lazyload_css_bg_img',
-  self_hosted_fonts: 'wpr_host_fonts_locally',
-  image_dimensions: 'wpr_image_dimensions',
-  rocket_above_the_fold_optimization: 'wpr_oci',
-  automatic_lazy_rendering: 'wpr_automatic_lazy_rendering',
-  auto_preload_fonts: 'wpr_auto_preload_fonts',
-  preconnect_external_domains: 'wpr_preconnect_external_domains',
-  minify_css: 'wpr_minify_css',
-  minify_js: 'wpr_minify_js',
-  minify_concatenate_js: 'wpr_minify_concatenate_js',
-  preload_links: 'wpr_preload_links',
-  rocket_cdn: 'wpr_cdn'
+export const MOBILE_CACHE_VARIANT_TOKENS = {
+  mobile: 'wpr_mobile',
+  desktop: 'wpr_desktop'
+} as const;
+
+/**
+ * The row↔token registry: each detection row and the exact tokens the plugin
+ * declares for it (any listed token declares the row; one token for every row
+ * but the mobile cache, whose two device variants share it). Verified against
+ * the plugin's emitters (each feature's `add_meta_comment` argument prefixed
+ * with `wpr_`, plus the option-driven tokens the meta builder appends
+ * itself). Tokens the plugin emits for rows this port does not carry yet are
+ * deliberately absent — mapping them to nothing would invite a wrong fallback.
+ */
+export const FEATURE_META_TOKENS: Readonly<Record<FeatureMetaRow, readonly string[]>> = {
+  remove_unused_css: ['wpr_remove_unused_css'],
+  async_css: ['wpr_async_css'],
+  delay_js: ['wpr_delay_js'],
+  defer_all_js: ['wpr_defer_js'],
+  lazyload: ['wpr_lazyload_images'],
+  lazyload_iframes: ['wpr_lazyload_iframes'],
+  lazyload_css_bg_img: ['wpr_lazyload_css_bg_img'],
+  self_hosted_fonts: ['wpr_host_fonts_locally'],
+  image_dimensions: ['wpr_image_dimensions'],
+  rocket_above_the_fold_optimization: ['wpr_oci'],
+  automatic_lazy_rendering: ['wpr_automatic_lazy_rendering'],
+  auto_preload_fonts: ['wpr_auto_preload_fonts'],
+  preconnect_external_domains: ['wpr_preconnect_external_domains'],
+  minify_css: ['wpr_minify_css'],
+  minify_js: ['wpr_minify_js'],
+  minify_concatenate_js: ['wpr_minify_concatenate_js'],
+  preload_links: ['wpr_preload_links'],
+  rocket_cdn: ['wpr_cdn'],
+  mobile_cache: [MOBILE_CACHE_VARIANT_TOKENS.mobile, MOBILE_CACHE_VARIANT_TOKENS.desktop]
 };
 
 /** WP Rocket's name as it formats the generator content (`WP Rocket`, `WP-Rocket`…). */

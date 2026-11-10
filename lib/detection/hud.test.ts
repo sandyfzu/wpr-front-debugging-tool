@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { FEATURE_META_TOKENS } from '../wp-rocket/constants';
-import type { FeatureMetaRow, WprDetections } from '../wp-rocket/types';
+import type { FeatureMetaRow, MobileCacheDetection, WprDetections } from '../wp-rocket/types';
 import { describeDetections } from './describe';
 import {
   COLLECTING_WHY,
@@ -16,6 +16,8 @@ import {
   hudFeatureOf,
   hudGroupedFeatures,
   hudStateLine,
+  MOBILE_CACHE_LIMIT,
+  mobileCacheRenderText,
   readHudFeature,
   SOURCE_COPY,
   SOURCE_REPORT_TEXT,
@@ -37,6 +39,7 @@ function zero(): WprDetections {
     minify_concatenate_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
+    mobile_cache: { present: false, variant: null },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
     defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
     lazyload: { present: false, images: [] },
@@ -107,6 +110,8 @@ describe('the HUD registry shape', () => {
       self_hosted_fonts: 'Self-host Google Fonts',
       preload_links: 'Preload Links',
       rocket_cdn: 'CDN',
+      // The KB article's name for the option (no settings field in 3.24).
+      mobile_cache: 'Mobile cache',
       rocket_above_the_fold_optimization: 'Critical Images',
       automatic_lazy_rendering: 'Automatic Lazy Rendering',
       auto_preload_fonts: 'Preload Fonts',
@@ -130,7 +135,12 @@ describe('the HUD registry shape', () => {
     const undecided = HUD_FEATURES.filter((entry) => entry.undecided !== null).map(
       (entry) => entry.row
     );
-    expect(undecided).toEqual(['minify_concatenate_js', 'image_dimensions', 'self_hosted_fonts']);
+    expect(undecided).toEqual([
+      'minify_concatenate_js',
+      'image_dimensions',
+      'self_hosted_fonts',
+      'mobile_cache'
+    ]);
   });
 
   it('non-feature rows have no HUD row', () => {
@@ -287,6 +297,75 @@ describe('hudStateLine', () => {
     expect(hudStateLine(dims, { verdict: 'unknown', count: null, source: null, why: null })).toBe(
       dims.undecided
     );
+  });
+});
+
+describe('the mobile cache row', () => {
+  /** A declared mobile cache row. */
+  const declared = (variant: MobileCacheDetection['variant']): MobileCacheDetection => ({
+    present: true,
+    variant,
+    source: 'meta'
+  });
+
+  it.each([
+    ['mobile', null, 'Rendered for mobile'],
+    ['desktop', null, 'Rendered for desktop'],
+    ['mobile', true, 'Rendered for mobile'],
+    ['desktop', false, 'Rendered for desktop'],
+    ['mobile', false, 'Rendered for mobile · beacon config: not mobile'],
+    ['desktop', true, 'Rendered for desktop · beacon config: mobile'],
+    [null, null, 'Both devices declared'],
+    [null, true, 'Both devices declared · beacon config: mobile'],
+    [null, false, 'Both devices declared · beacon config: not mobile']
+  ] as const)('device %s with beacon is_mobile %s reads "%s"', (variant, isMobile, text) => {
+    expect(mobileCacheRenderText(variant, isMobile)).toBe(text);
+  });
+
+  it('the proof limit names the tablet caveat', () => {
+    expect(MOBILE_CACHE_LIMIT).toContain(
+      "Tablets count as mobile here but get the desktop file under WP Rocket's default tablet setting."
+    );
+  });
+
+  it('an applied row carries its own line: the render device (beacon read off its row), then the limit', () => {
+    const detections = handled();
+    detections.mobile_cache = declared('desktop');
+    detections.priority_elements_beacon = {
+      ...detections.priority_elements_beacon,
+      isMobile: true
+    };
+    const reading = read('mobile_cache', detections);
+    expect(reading).toEqual({
+      verdict: 'applied',
+      count: null,
+      source: 'meta',
+      why: null,
+      appliedLine: `applied on this page: rendered for desktop · beacon config: mobile. ${MOBILE_CACHE_LIMIT}`
+    });
+    expect(hudStateLine(feature('mobile_cache'), reading)).toBe(reading.appliedLine);
+  });
+
+  it('a refuted or undecided row carries no applied line', () => {
+    const refuted = handled();
+    refuted.mobile_cache = { present: false, variant: null, source: 'meta' };
+    expect(read('mobile_cache', refuted)).toEqual({
+      verdict: 'not applied',
+      count: null,
+      source: 'meta',
+      why: null
+    });
+    expect(read('mobile_cache', handled())).toMatchObject({
+      verdict: 'unknown',
+      why: feature('mobile_cache').undecided
+    });
+  });
+
+  it('every other row keeps the generic applied line (no appliedLine)', () => {
+    const rows = HUD_FEATURES.filter((entry) => entry.appliedLine !== undefined).map(
+      (entry) => entry.row
+    );
+    expect(rows).toEqual(['mobile_cache']);
   });
 });
 

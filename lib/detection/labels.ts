@@ -57,6 +57,11 @@ export const LABEL_PRELOAD_LINKS = 'Preload Links';
  * the name must not single out RocketCDN.
  */
 export const LABEL_CDN = 'Content Delivery Network';
+/**
+ * The option's own string (`ThirdParty/Plugins/CDN/Cloudflare.php`,
+ * `do_caching_mobile_files`): no settings field shows it in 3.24.
+ */
+export const LABEL_MOBILE_CACHE = 'Separate cache files for mobile devices';
 
 /**
  * The settings field that groups Remove Unused CSS and Load CSS
@@ -127,6 +132,7 @@ export const FEATURE_LABELS = [
   LABEL_COMBINE_JAVASCRIPT,
   LABEL_PRELOAD_LINKS,
   LABEL_CDN,
+  LABEL_MOBILE_CACHE,
   LABEL_OPTIMIZE_CRITICAL_IMAGES,
   LABEL_AUTOMATIC_LAZY_RENDERING,
   LABEL_PRELOAD_FONTS,

@@ -767,6 +767,11 @@
     "rocket_cdn": {
       "present": false,
       "source": "meta"
+    },
+    "mobile_cache": {
+      "present": true,
+      "variant": "desktop",
+      "source": "meta"
     }
   },
   "preloadedResources": {

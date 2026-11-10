@@ -26,6 +26,7 @@ import {
   detectLazyloadIframes,
   detectMinifyCss,
   detectMinifyJs,
+  detectMobileCache,
   detectPreloadLinks,
   detectPreloadedResources,
   detectRemoveUnusedCss,
@@ -119,7 +120,8 @@ export function runChecks(
     minify_js: detectMinifyJs(page),
     minify_concatenate_js: detectCombineJs(),
     preload_links: detectPreloadLinks(page),
-    rocket_cdn: detectRocketCdn(page)
+    rocket_cdn: detectRocketCdn(page),
+    mobile_cache: detectMobileCache(page)
   };
   applySimulationFacts(detections, page.simulationMarker, verified, page.featureMeta);
   applyFeatureMetaAuthority(detections, page.featureMeta);

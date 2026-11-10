@@ -31,6 +31,7 @@ describe('the verified feature labels', () => {
       labelCombineJavascript: 'Combine JavaScript files',
       labelPreloadLinks: 'Preload Links',
       labelCdn: 'Content Delivery Network',
+      labelMobileCache: 'Separate cache files for mobile devices',
       labelOptimizeCriticalImages: 'Optimize Critical Images',
       labelAutomaticLazyRendering: 'Automatic Lazy Rendering',
       labelPreloadFonts: 'Preload fonts',
@@ -53,11 +54,12 @@ describe('the verified feature labels', () => {
       labelCombineJavascript: FEATURE_LABELS[11],
       labelPreloadLinks: FEATURE_LABELS[12],
       labelCdn: FEATURE_LABELS[13],
-      labelOptimizeCriticalImages: FEATURE_LABELS[14],
-      labelAutomaticLazyRendering: FEATURE_LABELS[15],
-      labelPreloadFonts: FEATURE_LABELS[16],
-      labelPreconnectToExternalDomains: FEATURE_LABELS[17],
-      labelPriorityElementsBeacon: FEATURE_LABELS[18]
+      labelMobileCache: FEATURE_LABELS[14],
+      labelOptimizeCriticalImages: FEATURE_LABELS[15],
+      labelAutomaticLazyRendering: FEATURE_LABELS[16],
+      labelPreloadFonts: FEATURE_LABELS[17],
+      labelPreconnectToExternalDomains: FEATURE_LABELS[18],
+      labelPriorityElementsBeacon: FEATURE_LABELS[19]
     };
     expect(Object.keys(actual).sort()).toEqual(Object.keys(VERIFIED).sort());
     for (const key of Object.keys(VERIFIED) as Array<keyof typeof VERIFIED>) {

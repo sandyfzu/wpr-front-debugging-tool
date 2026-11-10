@@ -158,9 +158,19 @@ describe('detection-matrix fixture contracts', () => {
   it('reads a live render off the baseline by its declared features', () => {
     const meta = (tokens: string) =>
       `<meta name="generator" content="WP Rocket 3.23.5.1" data-wpr-features="${tokens}" />`;
-    const t = FEATURE_META_TOKENS;
+    // Each row's tokens as the drift lines name them ('/'-joined when a row has several).
+    const t = Object.fromEntries(
+      Object.entries(FEATURE_META_TOKENS).map(([row, tokens]) => [row, tokens.join('/')])
+    ) as Record<keyof typeof FEATURE_META_TOKENS, string>;
     const baseline = [t.delay_js, t.defer_all_js, t.minify_js, t.lazyload, 'wpr_desktop'];
     expect(baselineMetaDrift(meta(baseline.join(' ')))).toEqual([]);
+    // Either device token declares the mobile cache row; neither is drift.
+    expect(
+      baselineMetaDrift(meta(baseline.join(' ').replace('wpr_desktop', 'wpr_mobile')))
+    ).toEqual([]);
+    expect(baselineMetaDrift(meta(baseline.slice(0, 4).join(' ')))).toEqual([
+      'wpr_mobile/wpr_desktop missing'
+    ]);
     // all-off: only the device token is left.
     expect(baselineMetaDrift(meta('wpr_desktop'))).toEqual(
       [t.delay_js, t.defer_all_js, t.minify_js, t.lazyload].map((token) => `${token} missing`)

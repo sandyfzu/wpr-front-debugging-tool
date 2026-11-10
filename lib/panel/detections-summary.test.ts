@@ -142,7 +142,7 @@ describe('summarizeDetections', () => {
     ).toMatchObject({ server: null, platform: null });
   });
 
-  it('counts optimization cards only: never derived cards, the plugin row or the beacon', () => {
+  it('counts optimization cards only: never derived cards, the plugin row, the beacon or the mobile cache', () => {
     const items = buildStatusItems(
       data(
         {
@@ -156,6 +156,7 @@ describe('summarizeDetections', () => {
     const optimizationCards = items.filter((item) => isOptimizationCard(item.id));
     expect(optimizationCards.map((item) => item.id)).not.toContain('wpr');
     expect(optimizationCards.map((item) => item.id)).not.toContain('priority_elements_beacon');
+    expect(optimizationCards.map((item) => item.id)).not.toContain('mobile_cache');
     expect(summarizeDetections(items).optimizations).toEqual({
       active: 1,
       total: optimizationCards.length,
@@ -163,8 +164,8 @@ describe('summarizeDetections', () => {
       simulated: 0,
       unverified: 0
     });
-    // Every remaining row of the record is an optimization (17 of the 20 rows:
-    // async_css rides the CSS card, plus the plugin and beacon rows).
+    // Every remaining row of the record is an optimization (17 of the 21 rows:
+    // async_css rides the CSS card, plus the plugin, beacon and mobile cache rows).
     expect(optimizationCards).toHaveLength(17);
   });
 
@@ -178,6 +179,18 @@ describe('summarizeDetections', () => {
     expect(items.some((item) => item.id === 'host-layers')).toBe(true);
     expect(isOptimizationCard('host-layers')).toBe(false);
     expect(summarizeDetections(items).optimizations.total).toBe(17);
+  });
+
+  it('never counts the mobile cache card (a cache layout setting), even when active', () => {
+    const items = buildStatusItems(
+      data({
+        minify_css: { present: true },
+        mobile_cache: { present: true, variant: 'mobile', source: 'meta' }
+      })
+    );
+    expect(items.find((item) => item.id === 'mobile_cache')?.status).toBe('active');
+    expect(isOptimizationCard('mobile_cache')).toBe(false);
+    expect(summarizeDetections(items).optimizations).toMatchObject({ active: 1, total: 17 });
   });
 
   it('agrees with the cards for every card it states (strip ↔ card consistency)', () => {

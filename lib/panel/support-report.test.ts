@@ -69,6 +69,8 @@ function fullData(): FdtData {
       image_dimensions: { present: true, source: 'meta' },
       // An enabled family feature not yet applied reads "collecting".
       priority_elements_beacon: { present: true, status: { lrc: true }, isMobile: false },
+      // Declared mobile while the beacon config is not mobile: shown, not resolved.
+      mobile_cache: { present: true, variant: 'mobile', source: 'meta' },
       lazyload_iframes: { present: true, replaceImage: true },
       rocket_above_the_fold_optimization: {
         present: true,
@@ -119,6 +121,7 @@ const FULL_GOLDEN = [
   '| Automatic Lazy Rendering | Collecting | — | Enabled, not yet applied on this page. |',
   '| Preload fonts | Not active | — | — |',
   '| Preconnect to External Domains | Not active | — | — |',
+  "| Separate cache files for mobile devices | Active | Generator meta | Rendered for mobile · beacon config: not mobile; Declared on this render; separate mobile files also need WP Rocket's mobile cache option, which the page doesn't show. Tablets count as mobile here but get the desktop file under WP Rocket's default tablet setting. |",
   '| Priority Elements beacon | Active | — | — |',
   '',
   '### Response headers (7)',
@@ -172,6 +175,7 @@ const ABSENT_GOLDEN = [
   '| Automatic Lazy Rendering | Not active | — | — |',
   '| Preload fonts | Not active | — | — |',
   '| Preconnect to External Domains | Not active | — | — |',
+  '| Separate cache files for mobile devices | Not active | — | — |',
   '| Priority Elements beacon | Not active | — | — |',
   '',
   '### Response headers',

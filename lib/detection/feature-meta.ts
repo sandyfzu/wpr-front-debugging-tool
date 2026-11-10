@@ -101,17 +101,21 @@ export function parseFeatureMeta(document: Document): FeatureMetaEvidence {
 export type MetaFeatureVerdict = 'declared' | 'refuted' | 'absent';
 
 /**
- * Resolve one feature token against a parsed declaration.
+ * Resolve one row's tokens against a parsed declaration.
  *
  * @param meta The page's parsed declaration.
- * @param token The exact meta token a row maps to (see {@link FEATURE_META_TOKENS}).
- * @returns `declared` when the token is listed, `refuted` when the
- *   declaration is authoritative without it, `absent` when the meta
+ * @param tokens The exact meta tokens a row maps to (see {@link FEATURE_META_TOKENS});
+ *   any one listed declares the row.
+ * @returns `declared` when any token is listed, `refuted` when the
+ *   declaration is authoritative without them, `absent` when the meta
  *   decides nothing.
  */
-export function featureMetaVerdict(meta: FeatureMetaEvidence, token: string): MetaFeatureVerdict {
+export function featureMetaVerdict(
+  meta: FeatureMetaEvidence,
+  tokens: readonly string[]
+): MetaFeatureVerdict {
   if (!meta.attributePresent || meta.degraded === true) return 'absent';
-  return meta.tokens.includes(token) ? 'declared' : 'refuted';
+  return tokens.some((token) => meta.tokens.includes(token)) ? 'declared' : 'refuted';
 }
 
 /** Re-export the data registry so feature-meta consumers keep one import path. */
@@ -126,8 +130,8 @@ export { FEATURE_META_TOKENS };
  * @param token The exact meta token.
  */
 export function featureRowForMetaToken(token: string): FeatureMetaRow | null {
-  const row = (Object.keys(FEATURE_META_TOKENS) as FeatureMetaRow[]).find(
-    (candidate) => FEATURE_META_TOKENS[candidate] === token
+  const row = (Object.keys(FEATURE_META_TOKENS) as FeatureMetaRow[]).find((candidate) =>
+    FEATURE_META_TOKENS[candidate].includes(token)
   );
   return row ?? null;
 }

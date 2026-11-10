@@ -42,6 +42,10 @@ export const FIXTURES = [
   // same page without its meta (the digest bundle alone decides nothing).
   'combine-js.html',
   'combine-js-no-meta.html',
+  // Real plugin pass: separate mobile cache files on, the same page requested
+  // with a phone and a desktop user agent (the meta's device token decides).
+  'mobile-cache-mobile.html',
+  'mobile-cache-desktop.html',
   // Real plugin pass: a `nowprocket` render (footprints without the meta).
   'bypass-render.html',
   // Source-derived Load CSS asynchronously page: the async-swapped link arm

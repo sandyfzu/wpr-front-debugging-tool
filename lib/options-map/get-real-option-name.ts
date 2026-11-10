@@ -20,6 +20,7 @@ import {
   LABEL_LOAD_JAVASCRIPT_DEFERRED,
   LABEL_MINIFY_CSS,
   LABEL_MINIFY_JAVASCRIPT,
+  LABEL_MOBILE_CACHE,
   LABEL_OPTIMIZE_CRITICAL_IMAGES,
   LABEL_PRELOAD_FONTS,
   LABEL_PRELOAD_LINKS,
@@ -49,6 +50,7 @@ export const FEATURE_OPTION_LABELS: Readonly<Record<string, string>> = {
   preload_links: LABEL_PRELOAD_LINKS,
   rocket_above_the_fold_optimization: LABEL_OPTIMIZE_CRITICAL_IMAGES,
   rocket_cdn: LABEL_CDN,
+  do_caching_mobile_files: LABEL_MOBILE_CACHE,
   wpr: LABEL_WP_ROCKET
 };
 

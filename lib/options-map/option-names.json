@@ -3,7 +3,6 @@
   "cache_reject_ua": "Never Cache User Agent(s)",
   "cache_reject_cookies": "Never Cache Cookies",
   "cache_mobile": "Enable caching for mobile devices",
-  "do_caching_mobile_files": "Separate cache files for mobile devices",
   "manual_preload": "Preload",
   "preload_excluded_uri": "Preload excluded URLs",
   "cache_logged_user": "User Cache",

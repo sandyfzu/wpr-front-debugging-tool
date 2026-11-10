@@ -14,6 +14,7 @@
 import type {
   DelayedScriptRecord,
   LazyloadImageRecord,
+  MobileCacheVariant,
   PreloadedResources,
   WprDetections
 } from '../wp-rocket/types';
@@ -36,6 +37,7 @@ import {
   LAZYLOAD_IMG_OPTIONS_PATTERN,
   LAZYLOAD_SCRIPT_PATTERN,
   LAZYLOAD_YOUTUBE_PATTERN,
+  MOBILE_CACHE_VARIANT_TOKENS,
   PRELOAD_LINKS_CONFIG_MARK,
   PRELOAD_LINKS_SCRIPT_ID,
   ROCKET_CDN_DOMAIN,
@@ -46,6 +48,7 @@ import {
   WPR_PRELOAD_ATTRIBUTE,
   isDelayJSType
 } from '../wp-rocket/constants';
+import type { FeatureMetaEvidence } from './feature-meta';
 import type { ParsedPage } from './parse-page';
 import { carriesMinifyAttribute, hasMinifyFootprint } from './minify-footprint';
 import { servedScriptSrc, servedScriptSrcAttribute } from './served-script-src';
@@ -298,6 +301,32 @@ export function detectRocketCdn(page: ParsedPage): WprDetections['rocket_cdn'] {
       link.href.includes(ROCKET_CDN_DOMAIN)
   );
   return { present };
+}
+
+/**
+ * Separate cache files for mobile devices: declaration-only — the plugin's
+ * device token follows the option, never page markup, so the verdict comes
+ * from the generator meta's authority pass (`present` starts false here).
+ * The variant is the declared device token.
+ *
+ * @param page The parsed page (its feature declaration).
+ */
+export function detectMobileCache(page: ParsedPage): WprDetections['mobile_cache'] {
+  return { present: false, variant: mobileCacheVariant(page.featureMeta) };
+}
+
+/**
+ * The device a declaration names: exactly one device token. Both
+ * tokens (never a genuine render) or neither name none; a degraded
+ * declaration carries no tokens, so it names none either.
+ *
+ * @param meta The page's parsed declaration.
+ */
+export function mobileCacheVariant(meta: FeatureMetaEvidence): MobileCacheVariant | null {
+  const mobile = meta.tokens.includes(MOBILE_CACHE_VARIANT_TOKENS.mobile);
+  const desktop = meta.tokens.includes(MOBILE_CACHE_VARIANT_TOKENS.desktop);
+  if (mobile === desktop) return null;
+  return mobile ? 'mobile' : 'desktop';
 }
 
 /**

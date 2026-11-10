@@ -194,6 +194,10 @@
     },
     "rocket_cdn": {
       "present": false
+    },
+    "mobile_cache": {
+      "present": false,
+      "variant": null
     }
   },
   "preloadedResources": {

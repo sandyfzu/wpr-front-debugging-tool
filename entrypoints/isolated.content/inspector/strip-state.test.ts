@@ -45,6 +45,7 @@ function zeroDetections(): WprDetections {
     minify_concatenate_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
+    mobile_cache: { present: false, variant: null },
     rocket_above_the_fold_optimization: { present: false, lcpComment: false },
     automatic_lazy_rendering: {
       present: false,
@@ -461,6 +462,18 @@ describe('the strip reads the HUD registry (one feature list)', () => {
     expect(delay?.label).toBe('Delay JS');
     expect(delay?.tooltip).toBe(
       "Delay JavaScript execution — applied on this page: 2 scripts. Decided by WP Rocket's generator meta tag on this page."
+    );
+  });
+
+  it('a declared mobile cache row: an ok chip whose tooltip names the render device and the limit', () => {
+    const row = rows({
+      ...handled(),
+      mobile_cache: { present: true, variant: 'mobile', source: 'meta' }
+    }).find((entry) => entry.id === 'mobile_cache');
+    expect(row?.label).toBe('Mobile cache');
+    expect(row?.chipState).toBe('ok');
+    expect(row?.tooltip).toBe(
+      "Separate cache files for mobile devices — applied on this page: rendered for mobile. Declared on this render; separate mobile files also need WP Rocket's mobile cache option, which the page doesn't show. Tablets count as mobile here but get the desktop file under WP Rocket's default tablet setting. Decided by WP Rocket's generator meta tag on this page."
     );
   });
 
