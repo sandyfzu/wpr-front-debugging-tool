@@ -42,6 +42,8 @@ export const FIXTURES = [
   // same page without its meta (the digest bundle alone decides nothing).
   'combine-js.html',
   'combine-js-no-meta.html',
+  // Real plugin pass: a `nowprocket` render (footprints without the meta).
+  'bypass-render.html',
   // Crafted Priority-Elements states: pending (beacon + config), applied,
   // collecting, mixed, and the adversarial markup/degrade cases.
   'priority-elements-pending.html',

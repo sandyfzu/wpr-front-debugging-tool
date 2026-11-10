@@ -526,8 +526,10 @@
   font: 500 10px/1 var(--font-mono);
   white-space: nowrap;
 }
-/* An unverified simulation marker is a caution, not information. */
-.ins-mod[data-fdt-strip-modifier='unverified'] {
+/* An unverified simulation marker and a feature applied despite the bypass
+ * request are cautions, not information. */
+.ins-mod[data-fdt-strip-modifier='unverified'],
+.ins-mod[data-fdt-strip-modifier='bypass-applied'] {
   background: var(--status-warn-soft);
   color: var(--status-warn);
 }

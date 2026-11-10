@@ -28,6 +28,10 @@
  *   capture absent, the older-payload form). Everything after the seam —
  *   the boundary validator, the store, the pages — is shipped code; the
  *   capture path itself did not produce these two responses in this run.
+ * - **Bypass-render fixture** — a no-meta page with Minify JS, Defer JS and
+ *   LazyLoad footprints: loaded with `?nowprocket` its three cards and
+ *   strip rows carry the "applied despite ?nowprocket" warning over an
+ *   unchanged Active verdict; loaded without it, neither surface warns.
  */
 import type { Page } from '@playwright/test';
 import type { ExtensionDriver } from '../helpers/extension';
@@ -39,6 +43,8 @@ import {
   panelPageUrl
 } from '../helpers/panel-data';
 import { runPanelAxe } from '../helpers/audit';
+import { STRIP_HOST } from '../helpers/strip-pill';
+import { BYPASS_APPLIED_COPY } from '../../../lib/detection/bypass-applied';
 import packageInfo from '../../../package.json' with { type: 'json' };
 import { parseFdtData } from '../../../lib/messaging/validate';
 import type { FdtData } from '../../../lib/wp-rocket/types';
@@ -55,6 +61,12 @@ import {
 
 /** The cache-evidence fixture (its response carries the verdict shapes). */
 const CACHE_EVIDENCE_PATH = '/__e2e/cache-evidence';
+
+/** The bypass-render fixture (footprints of the features a bypass does not stop). */
+const BYPASS_RENDER_PATH = '/pipeline/bypass-footprints.html';
+
+/** The rows the bypass-render fixture's footprints decide (card ids, render order). */
+const BYPASS_WARNED_ROWS = ['defer_all_js', 'minify_js', 'lazyload'];
 
 /** The planted-secret fixture (its response carries the withheld rows). */
 const SECRET_HEADERS_PATH = '/__e2e/secret-headers';
@@ -469,6 +481,92 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
       await fixture.page.close();
     }
   });
+
+  for (const bypass of [true, false]) {
+    test(`bypass render ${bypass ? 'with' : 'without'} ?nowprocket: the warning on cards and strip ${bypass ? 'shows' : 'stays off'}`, async ({
+      extension
+    }) => {
+      const { panel, fixture } = await openPanelForFixture(
+        extension,
+        `${BYPASS_RENDER_PATH}${bypass ? '?nowprocket=1' : ''}`,
+        { bootHash: '#/detections' }
+      );
+      try {
+        const served = await readServedPayload(extension, fixture);
+        expect(served.bypassAttested === true).toBe(bypass);
+        const expected = bypass ? BYPASS_WARNED_ROWS : [];
+        // The pure model over the served payload names the warned cards...
+        expect(
+          buildStatusItems(served)
+            .filter((item) => item.bypassWarning !== undefined)
+            .map((item) => item.id)
+        ).toEqual(expected);
+
+        // ...and the rendered cards agree: badge + visible sentence, verdict Active.
+        const detections = panel.locator('[data-fdt-page="detections"]');
+        await expect(
+          detections.getByRole('heading', { level: 1, name: 'Detections' })
+        ).toBeVisible();
+        for (const id of BYPASS_WARNED_ROWS) {
+          await expect(panel.locator(`[data-fdt-card-id="${id}"]`)).toContainText(
+            STATUS_LABELS.active
+          );
+        }
+        const warnedCards = panel.locator('[data-fdt-card-bypass-warning]');
+        await expect(warnedCards).toHaveCount(expected.length);
+        if (bypass) {
+          const card = panel.locator('[data-fdt-card-id="minify_js"]');
+          await expect(card.locator('[data-fdt-card-bypass-warning]')).toHaveText(
+            BYPASS_APPLIED_COPY.chip
+          );
+          // The line leads with a spoken-only separator, hence contains.
+          await expect(card.locator('[data-fdt-card-bypass-line]')).toContainText(
+            BYPASS_APPLIED_COPY.sentence
+          );
+        }
+
+        // The on-page strip: open the card, count the warned rows.
+        const pill = fixture.page.locator(`${STRIP_HOST} .ins-pill`);
+        await expect(pill).toContainText('WPR');
+        await pill.focus();
+        await fixture.page.keyboard.press('Enter');
+        await expect(fixture.page.locator(`${STRIP_HOST} .ins-row`).first()).toBeVisible();
+        const warnedRows = fixture.page.locator(
+          `${STRIP_HOST} [data-fdt-strip-modifier="bypass-applied"]`
+        );
+        await expect(warnedRows).toHaveCount(expected.length);
+        if (bypass) {
+          await expect(warnedRows.first()).toHaveText(BYPASS_APPLIED_COPY.chip);
+          await expect(
+            fixture.page.locator(`${STRIP_HOST} [data-fdt-strip-modifier-line]`).first()
+          ).toContainText(BYPASS_APPLIED_COPY.sentence);
+        }
+
+        // D-1: the warned cards and rows never scroll sideways, 320 px up.
+        for (const width of [320, 480, 768, 1280]) {
+          await panel.setViewportSize({ width, height: 800 });
+          await fixture.page.setViewportSize({ width, height: 640 });
+          const panelOverflow = await panel
+            .locator('[data-fdt="panel-content"]')
+            .evaluate((region) => region.scrollWidth - region.clientWidth);
+          expect(panelOverflow, `${String(width)} px: panel content`).toBe(0);
+          const stripOverflow = await fixture.page.evaluate((host: string) => {
+            const body = document.querySelector(host)?.shadowRoot?.querySelector('.ins-card-body');
+            if (body === null || body === undefined) throw new Error('the strip card is missing');
+            const viewport = document.documentElement;
+            return {
+              body: body.scrollWidth - body.clientWidth,
+              page: viewport.scrollWidth - viewport.clientWidth
+            };
+          }, STRIP_HOST);
+          expect(stripOverflow, `${String(width)} px: strip card`).toEqual({ body: 0, page: 0 });
+        }
+      } finally {
+        await panel.close();
+        await fixture.page.close();
+      }
+    });
+  }
 });
 
 /**

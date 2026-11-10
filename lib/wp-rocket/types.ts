@@ -505,6 +505,13 @@ export interface FdtData {
    */
   bypassAttested?: true;
   /**
+   * The page carries WP Rocket's generator meta (`data-wpr-features`),
+   * readable or degraded. Additive and present only as `true`: WP Rocket
+   * never prints it on a bypass render, so with `bypassAttested` it tells a
+   * bypassed render from a normal one served on a bypass URL.
+   */
+  wprGeneratorMeta?: true;
+  /**
    * The WordPress core version the page's generator meta declared. Additive
    * and present only when declared (within the version cap): absence means
    * undeclared or over-cap, never a version.

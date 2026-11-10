@@ -4,7 +4,7 @@
  * keep the base payload genuine.
  */
 import { describe, expect, it } from 'vitest';
-import { parseFdtData, parseWprDetections } from './validate';
+import { parseFdtData, parseFdtDataExplained, parseWprDetections } from './validate';
 import { minimalDetections, validFdt, validDetections } from './validate.fixtures';
 
 describe('the new declaration-only rows', () => {
@@ -206,6 +206,27 @@ describe('the bypass mark', () => {
     expect(parseFdtData({ ...validFdt(), bypassAttested: undefined })).toEqual(
       parseFdtData(validFdt())
     );
+  });
+});
+
+describe('the generator meta mark', () => {
+  it('is additive and only ever true', () => {
+    expect(parseFdtData({ ...validFdt(), wprGeneratorMeta: true })).toMatchObject({
+      wprGeneratorMeta: true
+    });
+    expect(parseFdtData({ ...validFdt(), wprGeneratorMeta: false })).toBeNull();
+    expect(parseFdtData({ ...validFdt(), wprGeneratorMeta: 1 })).toBeNull();
+    expect(parseFdtData(validFdt())?.wprGeneratorMeta).toBeUndefined();
+    expect(parseFdtData({ ...validFdt(), wprGeneratorMeta: undefined })).toEqual(
+      parseFdtData(validFdt())
+    );
+  });
+
+  it('names its field on rejection', () => {
+    expect(parseFdtDataExplained({ ...validFdt(), wprGeneratorMeta: 'yes' })).toEqual({
+      ok: false,
+      path: 'wprGeneratorMeta'
+    });
   });
 });
 

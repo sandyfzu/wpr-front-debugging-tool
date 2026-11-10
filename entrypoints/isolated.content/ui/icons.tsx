@@ -40,6 +40,16 @@ export interface IconEllipse {
 /** Shared: close (lucide `x`) — every report widget's card dismissal. */
 export const CLOSE_ICON_PATHS = ['M18 6 6 18', 'm6 6 12 12'] as const;
 
+/**
+ * Shared: the alert triangle (lucide `triangle-alert`) — the Known Conflicts
+ * marker and the detection strip's "applied despite the bypass" warning.
+ */
+export const ALERT_ICON_PATHS = [
+  'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3',
+  'M12 9v4',
+  'M12 17h.01'
+] as const;
+
 /** Props of the shared stroke-icon component. */
 export interface StrokeIconProps {
   /** Stroke path data, viewBox 24. */

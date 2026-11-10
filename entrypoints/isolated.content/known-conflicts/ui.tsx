@@ -21,14 +21,8 @@ import type { JSX, JSXElement } from 'solid-js';
 import { For, Show } from 'solid-js';
 import type { KnownConflict } from '../../../lib/storage/known-conflicts';
 import { emptyStateVisible, loadingCopyVisible, markerMood } from './scan-state';
-import {
-  ALERT_ICON_PATHS,
-  CLEAR_ICON_CIRCLE,
-  CLEAR_ICON_PATHS,
-  COLLAPSE_ICON_PATHS,
-  OPEN_ICON_PATHS
-} from './icons';
-import { StrokeIcon, CLOSE_ICON_PATHS } from '../ui/icons';
+import { CLEAR_ICON_CIRCLE, CLEAR_ICON_PATHS, COLLAPSE_ICON_PATHS, OPEN_ICON_PATHS } from './icons';
+import { StrokeIcon, ALERT_ICON_PATHS, CLOSE_ICON_PATHS } from '../ui/icons';
 import { TOOL_EYEBROW } from '../ui/copies';
 
 /** What the scanner found and where it is, minus behavior. */
