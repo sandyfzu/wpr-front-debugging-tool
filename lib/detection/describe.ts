@@ -44,7 +44,7 @@ import {
   LABEL_PRELOAD_LINKS,
   LABEL_PRIORITY_ELEMENTS_BEACON,
   LABEL_REMOVE_UNUSED_CSS,
-  LABEL_ROCKETCDN,
+  LABEL_CDN,
   LABEL_SELF_HOST_GOOGLE_FONTS,
   LABEL_WP_ROCKET
 } from './labels';
@@ -86,7 +86,7 @@ export interface PageAnalysisReport {
   [LABEL_MINIFY_CSS]: { state: FeatureState };
   [LABEL_MINIFY_JAVASCRIPT]: { state: FeatureState };
   [LABEL_PRELOAD_LINKS]: { state: FeatureState };
-  [LABEL_ROCKETCDN]: { state: FeatureState };
+  [LABEL_CDN]: { state: FeatureState };
   [LABEL_OPTIMIZE_CRITICAL_IMAGES]: { state: FeatureState; 'preloaded images': number };
   [LABEL_AUTOMATIC_LAZY_RENDERING]: {
     state: FeatureState;
@@ -235,7 +235,7 @@ export function describeDetections(
     [LABEL_MINIFY_CSS]: { state: simpleState(detections.minify_css.present) },
     [LABEL_MINIFY_JAVASCRIPT]: { state: simpleState(detections.minify_js.present) },
     [LABEL_PRELOAD_LINKS]: { state: simpleState(detections.preload_links.present) },
-    [LABEL_ROCKETCDN]: { state: simpleState(detections.rocket_cdn.present) },
+    [LABEL_CDN]: { state: simpleState(detections.rocket_cdn.present) },
     [LABEL_OPTIMIZE_CRITICAL_IMAGES]: {
       state: familyState(
         'atf',

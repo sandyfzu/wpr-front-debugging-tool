@@ -44,8 +44,12 @@ export const LABEL_MINIFY_CSS = 'Minify CSS files';
 export const LABEL_MINIFY_JAVASCRIPT = 'Minify JavaScript files';
 /** Settings section title (`Page.php`) and support-data name (`Support/Data.php`). */
 export const LABEL_PRELOAD_LINKS = 'Preload Links';
-/** Product name (`CDN/Render/Controller.php`, settings tab). */
-export const LABEL_ROCKETCDN = 'RocketCDN';
+/**
+ * Settings field `Enable Content Delivery Network` (`Page.php`, `cdn`) minus its
+ * verb: `wpr_cdn` decides the row and every CDN set in WP Rocket emits it, so
+ * the name must not single out RocketCDN.
+ */
+export const LABEL_CDN = 'Content Delivery Network';
 
 /**
  * The settings field that groups Remove Unused CSS and Load CSS
@@ -59,7 +63,7 @@ export const LABEL_OPTIMIZE_CSS_DELIVERY = 'Optimize CSS delivery';
 export const LABEL_OPTIMIZE_CRITICAL_IMAGES = 'Optimize Critical Images';
 /** Support-data name (`Support/Data.php`; no settings field). */
 export const LABEL_AUTOMATIC_LAZY_RENDERING = 'Automatic Lazy Rendering';
-/** Settings field (`Page.php`, `auto_preload_fonts`, Media › Fonts). */
+/** Settings field (`Page.php`, `auto_preload_fonts`, Image & Media › Fonts). */
 export const LABEL_PRELOAD_FONTS = 'Preload fonts';
 /**
  * Admin-bar notice (`PerformanceHints/Admin/AdminBar.php`) — the plugin's only
@@ -101,7 +105,7 @@ export const FEATURE_LABELS = [
   LABEL_MINIFY_CSS,
   LABEL_MINIFY_JAVASCRIPT,
   LABEL_PRELOAD_LINKS,
-  LABEL_ROCKETCDN,
+  LABEL_CDN,
   LABEL_OPTIMIZE_CRITICAL_IMAGES,
   LABEL_AUTOMATIC_LAZY_RENDERING,
   LABEL_PRELOAD_FONTS,

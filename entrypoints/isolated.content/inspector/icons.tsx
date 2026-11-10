@@ -30,7 +30,7 @@ export const CACHE_GROUP_ICON: StripIconGlyph = {
   ellipse: { cx: 12, cy: 5, rx: 9, ry: 3 }
 };
 
-/** File Optimization group glyph (lucide `file-sliders`). */
+/** JavaScript & CSS group glyph (lucide `file-sliders`). */
 export const FILE_OPTIMIZATION_GROUP_ICON: StripIconGlyph = {
   paths: [
     'M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z',

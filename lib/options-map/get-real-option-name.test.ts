@@ -36,7 +36,7 @@ describe('option name maps', () => {
 
   it('resolves known ids and falls back to the raw id otherwise', () => {
     expect(getRealOptionName('delay_js')).toBe('Delay JavaScript execution');
-    expect(getRealOptionName('rocket_cdn')).toBe('RocketCDN');
+    expect(getRealOptionName('rocket_cdn')).toBe('Content Delivery Network');
     expect(getRealOptionName('not_an_option_at_all')).toBe('not_an_option_at_all');
   });
 

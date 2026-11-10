@@ -121,19 +121,19 @@ const FAMILY_ROWS: Array<{
  * the card's row labels and the group headers exactly.
  */
 const EXPECTED_ROWS: Array<{ label: string; group: string }> = [
-  { label: 'Remove Unused CSS', group: 'File Optimization' },
-  { label: 'Delay JS', group: 'File Optimization' },
-  { label: 'Defer JS', group: 'File Optimization' },
-  { label: 'Load CSS asynchronously', group: 'File Optimization' },
-  { label: 'Minify CSS', group: 'File Optimization' },
-  { label: 'Minify JS', group: 'File Optimization' },
-  { label: 'Lazyload Images', group: 'Media' },
-  { label: 'Lazyload Iframes', group: 'Media' },
-  { label: 'Lazyload CSS Background Images', group: 'Media' },
-  { label: 'Image Dimensions', group: 'Media' },
-  { label: 'Self-host Google Fonts', group: 'Media' },
+  { label: 'Remove Unused CSS', group: 'JavaScript & CSS' },
+  { label: 'Delay JS', group: 'JavaScript & CSS' },
+  { label: 'Defer JS', group: 'JavaScript & CSS' },
+  { label: 'Load CSS asynchronously', group: 'JavaScript & CSS' },
+  { label: 'Minify CSS', group: 'JavaScript & CSS' },
+  { label: 'Minify JS', group: 'JavaScript & CSS' },
+  { label: 'Lazyload Images', group: 'Image & Media' },
+  { label: 'Lazyload Iframes', group: 'Image & Media' },
+  { label: 'Lazyload CSS Background Images', group: 'Image & Media' },
+  { label: 'Image Dimensions', group: 'Image & Media' },
+  { label: 'Self-host Google Fonts', group: 'Image & Media' },
   { label: 'Preload Links', group: 'Preload' },
-  { label: 'RocketCDN', group: 'CDN' },
+  { label: 'CDN', group: 'Content Delivery' },
   ...FAMILY_ROWS.map((row) => ({ label: row.label, group: 'Features' }))
 ];
 
@@ -208,7 +208,7 @@ function expectedChip(detections: SiteDetections, label: string): string {
       'Minify CSS': detections.minify_css.present,
       'Minify JS': detections.minify_js.present,
       'Preload Links': detections.preload_links.present,
-      RocketCDN: detections.rocket_cdn.present
+      CDN: detections.rocket_cdn.present
     };
     const present = presentByLabel[label];
     if (present === undefined) throw new Error(`the suite has no expected state for ${label}`);
@@ -809,7 +809,13 @@ siteTest.describe('site detection widget', () => {
         );
 
         // Group headers render in the study's order, every row present once.
-        const groups = ['File Optimization', 'Media', 'Preload', 'CDN', 'Features'];
+        const groups = [
+          'JavaScript & CSS',
+          'Image & Media',
+          'Preload',
+          'Content Delivery',
+          'Features'
+        ];
         for (const group of groups) {
           expect(read.groups, `the "${group}" group header renders`).toContain(group);
         }

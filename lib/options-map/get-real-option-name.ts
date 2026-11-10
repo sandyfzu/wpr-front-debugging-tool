@@ -23,7 +23,7 @@ import {
   LABEL_PRELOAD_FONTS,
   LABEL_PRELOAD_LINKS,
   LABEL_REMOVE_UNUSED_CSS,
-  LABEL_ROCKETCDN,
+  LABEL_CDN,
   LABEL_SELF_HOST_GOOGLE_FONTS,
   LABEL_WP_ROCKET
 } from '../detection/labels';
@@ -46,7 +46,7 @@ export const FEATURE_OPTION_LABELS: Readonly<Record<string, string>> = {
   auto_preload_fonts: LABEL_PRELOAD_FONTS,
   preload_links: LABEL_PRELOAD_LINKS,
   rocket_above_the_fold_optimization: LABEL_OPTIMIZE_CRITICAL_IMAGES,
-  rocket_cdn: LABEL_ROCKETCDN,
+  rocket_cdn: LABEL_CDN,
   wpr: LABEL_WP_ROCKET
 };
 
