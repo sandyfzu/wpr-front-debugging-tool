@@ -29,6 +29,7 @@ import {
   DATA_SRC,
   DELAY_JS_CONTROLLER,
   DELAY_JS_SRC,
+  DELAY_TYPE_ATTRIBUTE,
   DELAY_JS_TYPE_CURRENT,
   DELAY_JS_TYPE_OLD,
   DELAY_JS_VERSION_PATTERN,
@@ -395,6 +396,7 @@ describe('platforms and ids', () => {
   it('single-sources the url patterns and search action ids', () => {
     expect(URL_PATTERNS).toEqual(['https://*/*', 'http://*/*']);
     expect(DELAY_JS_SRC).toBe('data-rocket-src');
+    expect(DELAY_TYPE_ATTRIBUTE).toBe('data-rocket-type');
     expect(FDT_EXCLUDED_RESOURCE).toBe('data-wpr-fdt-excluded');
     expect(WPR_DEFER_ATTRIBUTE).toBe('data-rocket-defer');
     expect(MINIFY_ATTRIBUTE).toBe('data-minify');

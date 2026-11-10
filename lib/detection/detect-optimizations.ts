@@ -27,6 +27,7 @@ import {
   DELAY_JS_CONTROLLER,
   DELAY_JS_SRC,
   DELAY_JS_VERSION_PATTERN,
+  DELAY_TYPE_ATTRIBUTE,
   FDT_EXCLUDED_RESOURCE,
   LAZYLOAD_BG_CONTAINER_ID,
   LAZYLOAD_BG_EXCLUSION_ID,
@@ -107,9 +108,11 @@ export function detectDelayJs(page: ParsedPage): WprDetections['delay_js'] {
     // evidence even when the controller itself was inlined/rewritten away.
     if (script.hasAttribute(DATA_ROCKET_STATUS)) delayJs.present = true;
     // Field insertion order matches the reference record exactly (delayed,
-    // inline, then src/content, then defer markers, the exclusion marker and
-    // the minify stamp) so serialized payloads compare key-for-key.
+    // inline, then src/content, then defer markers, the exclusion marker, the
+    // minify stamp and the original type) so serialized payloads compare
+    // key-for-key.
     const delayed = isDelayJSType(script.getAttribute('type'));
+    const originalType = delayed ? delayedOriginalType(script) : null;
     const srcSource = delayed ? script.getAttribute(DELAY_JS_SRC) : script.getAttribute('src');
     const record: DelayedScriptRecord = {
       delayed,
@@ -118,7 +121,8 @@ export function detectDelayJs(page: ParsedPage): WprDetections['delay_js'] {
       deferred: script.hasAttribute('defer'),
       deferredByWPR: script.hasAttribute(WPR_DEFER_ATTRIBUTE),
       fdtExcluded: script.getAttribute(FDT_EXCLUDED_RESOURCE),
-      minifyAttribute: carriesMinifyAttribute(script)
+      minifyAttribute: carriesMinifyAttribute(script),
+      ...(originalType === null ? {} : { originalType })
     };
     if (delayed) {
       delayJs.present = true;
@@ -127,6 +131,19 @@ export function detectDelayJs(page: ParsedPage): WprDetections['delay_js'] {
     delayJs.scripts.push(record);
   }
   return delayJs;
+}
+
+/**
+ * A delayed script's original `type` as the Delay JS runtime will restore
+ * it: the parked attribute's value when non-empty (the runtime's own
+ * truthiness test — whitespace counts), else `null` (it runs as classic).
+ *
+ * @param script A script whose served `type` is a Delay JS type.
+ * @returns The original type, or `null` when none was parked.
+ */
+export function delayedOriginalType(script: Element): string | null {
+  const value = script.getAttribute(DELAY_TYPE_ATTRIBUTE);
+  return value === null || value === '' ? null : value;
 }
 
 /**

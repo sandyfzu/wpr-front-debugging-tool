@@ -14,6 +14,7 @@ import {
   parsePreloadedResources,
   parseWprDetections
 } from './validate';
+import { PAYLOAD_LIMITS } from './payload-bounds';
 import { validDetections, validFdtPayload } from './validate.fixtures';
 
 describe('parseErrorWords — rejection arms', () => {
@@ -264,6 +265,29 @@ describe('parseWprDetections — rejection arms', () => {
     for (const hostile of ['1', 1, null, {}]) {
       expect(parse({ minifyAttribute: hostile })).toBeUndefined();
     }
+  });
+
+  it('reads the original type tolerantly: absent stays absent, a bounded type on a delayed record is kept', () => {
+    const payload = validDetections();
+    const delayRow = payload.delay_js as Record<string, unknown>;
+    const base = { inline: false, deferred: false, deferredByWPR: false, fdtExcluded: null };
+    const parse = (record: Record<string, unknown>) =>
+      parseWprDetections({
+        ...payload,
+        delay_js: { ...delayRow, scripts: [{ ...base, delayed: true, ...record }] }
+      })?.delay_js.scripts[0];
+    // An older producer never sent the field.
+    expect(parse({})).not.toHaveProperty('originalType');
+    expect(parse({ originalType: 'module' })?.originalType).toBe('module');
+    expect(parse({ originalType: ' ' })?.originalType).toBe(' ');
+    const atCap = 'x'.repeat(PAYLOAD_LIMITS.delayScripts.originalType);
+    expect(parse({ originalType: atCap })?.originalType).toBe(atCap);
+    // Engines omit an empty value and drop an over-cap one: either is forged.
+    for (const hostile of ['', `${atCap}x`, null, 7, {}, ['module']]) {
+      expect(parse({ originalType: hostile })).toBeUndefined();
+    }
+    // Only a still-delayed script parks its type.
+    expect(parse({ delayed: false, originalType: 'module' })).toBeUndefined();
   });
 
   it('reads the critical-style fact tolerantly: absent ⇒ false, booleans kept, anything else rejects', () => {

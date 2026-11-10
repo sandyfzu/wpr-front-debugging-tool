@@ -5,7 +5,12 @@
  * `?ver` and `#` escapes applied — the PCRE translator owns those
  * semantics; this module rebuilds the subject and runs the rows.
  */
-import { DELAY_JS_SRC, DELAY_JS_TYPES, isDelayJSType } from '../wp-rocket/constants';
+import {
+  DELAY_JS_SRC,
+  DELAY_JS_TYPES,
+  DELAY_TYPE_ATTRIBUTE,
+  isDelayJSType
+} from '../wp-rocket/constants';
 import { delayAttributeRewrite } from './delay-js-rewrite';
 import { matchAllRows, throwIfBlocking } from './errors';
 import { parseTagAt } from './html-scan';
@@ -28,9 +33,6 @@ import { existenceSource, runtimeParse, toByteString } from './pcre/translate';
 import { MASK_ID_SENTINEL } from './delay-js-mask';
 import { pcreFeatureProblems } from './validate';
 import { escapeRegex } from '../../utils/regex';
-
-/** Where a delayed script parks its original `type` value. */
-export const DELAY_TYPE_ATTRIBUTE = 'data-rocket-type';
 
 /**
  * WP Rocket's in-place renames of a delayed script's attributes, served →

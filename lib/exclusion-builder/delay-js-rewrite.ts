@@ -10,6 +10,7 @@
  * onto an ASCII one). Every delimiter is ASCII, so reading decoded text
  * gives the same matches as PCRE reading its UTF-8 bytes.
  */
+import { DELAY_JS_SRC, DELAY_TYPE_ATTRIBUTE } from '../wp-rocket/constants';
 import { PCRE_SPACE_CHARS } from './pcre/byte-set';
 import { phpTrim } from './php/trim';
 
@@ -71,8 +72,8 @@ export function delayAttributeRewrite(attributes: string): string | null {
     if (type !== '' && type !== '0' && !DELAY_JS_ALLOWED_TYPES.includes(type)) return null;
   }
   const renamed = attributes
-    .replace(TYPE_RENAME, 'data-rocket-type=$1$2$1')
+    .replace(TYPE_RENAME, `${DELAY_TYPE_ATTRIBUTE}=$1$2$1`)
     .replace(VALUELESS_TYPE, '')
-    .replace(SRC_RENAME, 'data-rocket-src=$1$2$1');
+    .replace(SRC_RENAME, `${DELAY_JS_SRC}=$1$2$1`);
   return phpTrim(renamed);
 }

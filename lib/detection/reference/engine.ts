@@ -65,6 +65,9 @@
  *    also include the async-swapped preloads (`rel="preload"` +
  *    `as="style"` + the stamp). Links and styles inside `<noscript>` never
  *    count — a live capture serializes them as text.
+ * 6. Every delayed script record carries its parked original type
+ *    (`originalType`, from `data-rocket-type`) when that value is non-empty;
+ *    undelayed records never do.
  *
  * The port's contract additions (the cache-marker flag with its comment-only
  * white-label registry and strict display-domain timestamp, the defer count,
@@ -99,6 +102,7 @@ import {
   DELAY_JS_SRC,
   DELAY_JS_TYPE_OLD,
   DELAY_JS_VERSION_PATTERN,
+  DELAY_TYPE_ATTRIBUTE,
   FEATURE_COMMENT_PATTERN,
   FEATURE_META_LIMITS,
   FEATURE_META_TOKENS,
@@ -343,6 +347,9 @@ function checkDelayJS({
     s.deferredByWPR = script.hasAttribute(WPR_DEFER_ATTRIBUTE);
     s.fdtExcluded = script.getAttribute(FDT_EXCLUDED_RESOURCE);
     s.minifyAttribute = script.getAttribute(MINIFY_ATTRIBUTE) === MINIFY_ATTRIBUTE_VALUE;
+    if (s.delayed && script.getAttribute(DELAY_TYPE_ATTRIBUTE)) {
+      s.originalType = script.getAttribute(DELAY_TYPE_ATTRIBUTE);
+    }
     delayjs.scripts?.push(s);
   }
   return delayjs;

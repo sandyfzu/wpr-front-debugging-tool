@@ -18,7 +18,7 @@
  */
 import { scanTags, type ScannedTag } from '../exclusion-builder/html-scan';
 import { applyPatches } from '../exclusion-builder/tag-edit';
-import { DELAY_TYPE_ATTRIBUTE } from '../exclusion-builder/delay-js-match';
+import { DELAY_TYPE_ATTRIBUTE } from '../wp-rocket/constants';
 
 /** The script type naming speculation rules (HTML: compared ASCII-case-insensitively, trimmed). */
 const SPECULATION_RULES_TYPE = 'speculationrules';
