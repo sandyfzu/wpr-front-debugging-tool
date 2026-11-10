@@ -48,7 +48,7 @@ import {
   type BuilderBadgeKind
 } from '../../../../lib/detection/hud';
 import { STATUS_LABELS } from '../../../../lib/panel/detections-summary';
-import type { StatusItem } from '../../../../lib/panel/detections-view-model';
+import { hostLayersTooltip, type StatusItem } from '../../../../lib/panel/detections-view-model';
 import type { SimulationFact } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
 import { navRoute, type RouteId } from '../../routes';
@@ -369,7 +369,7 @@ function SubtitleText(props: { item: StatusItem; text: string }): JSX.Element {
 }
 
 /**
- * The subtitle line of a static card: plain text, or — for the two cards
+ * The subtitle line of a static card: plain text, or — for the cards
  * whose detail is otherwise hidden — the tooltip trigger carrying it.
  *
  * @param props.item The card.
@@ -389,6 +389,11 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
   const platform = () => {
     const current = detail();
     return current?.kind === 'platform' ? current : undefined;
+  };
+  /** The captured host layers when this card carries them. */
+  const hostLayers = () => {
+    const current = detail();
+    return current?.kind === 'host-layers' ? current : undefined;
   };
   return (
     <Switch
@@ -419,6 +424,15 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
               class={TOOLTIP_SUBTITLE}
             >
               {match().name}
+            </Tooltip>
+          </div>
+        )}
+      </Match>
+      <Match when={hostLayers()}>
+        {(found) => (
+          <div data-fdt-card-subtitle class={UNDER_NAME}>
+            <Tooltip content={hostLayersTooltip(found().layers)} class={TOOLTIP_SUBTITLE}>
+              {props.item.subtitle}
             </Tooltip>
           </div>
         )}

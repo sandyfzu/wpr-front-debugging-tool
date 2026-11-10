@@ -35,6 +35,13 @@ import {
   type HudVerdict
 } from '../detection/hud';
 import { LABEL_OPTIMIZE_CSS_DELIVERY, LABEL_PRIORITY_ELEMENTS_BEACON } from '../detection/labels';
+import {
+  capturedHostLayers,
+  HOST_LAYER_ADD_ON_CAVEAT,
+  HOST_LAYER_READING_TEXT,
+  type CapturedHostLayer
+} from '../detection/host-layers';
+import { countNoun } from '../../utils/format-count';
 import { KNOWN_PLATFORMS } from '../wp-rocket/constants';
 import type {
   BuilderFact,
@@ -57,12 +64,13 @@ export type StatusKind = 'active' | 'collecting' | 'unknown' | 'not-active';
 /** One detection row of the record, named by its own id (the card key). */
 export type DetectionRow = keyof WprDetections;
 
-/** The card list's key vocabulary: three derived cards + every detection row. */
-export type StatusItemId = 'server' | 'known-platform' | 'cached' | DetectionRow;
+/** The card list's key vocabulary: four derived cards + every detection row. */
+export type StatusItemId = 'server' | 'known-platform' | 'host-layers' | 'cached' | DetectionRow;
 
 /**
  * The richer subtitle data the redesigned cards render beyond the one-line
  * copy: the server value, the platform + the header that named it, the cache
+ * the captured host layers, the cache
  * stamp (the stamp only when it is a representable instant — a hostile
  * page-crafted digit run stays out of downstream math), a version string,
  * and a preloaded-image count.
@@ -70,6 +78,7 @@ export type StatusItemId = 'server' | 'known-platform' | 'cached' | DetectionRow
 export type StatusItemDetail =
   | { readonly kind: 'server'; readonly value: string }
   | { readonly kind: 'platform'; readonly name: string; readonly header: string }
+  | { readonly kind: 'host-layers'; readonly layers: readonly CapturedHostLayer[] }
   | {
       readonly kind: 'cached-at';
       readonly seconds: number | null;
@@ -310,14 +319,60 @@ function resolvePlatform(headers: readonly PageHeader[]): PlatformMatch | null {
 }
 
 /**
+ * The Host layers card, or null when the capture names no host layer (an
+ * absent layer is never a negative, so it gets no card).
+ *
+ * @param headers The captured response headers.
+ * @returns The card: each layer with its state in the subtitle, the layers in the detail.
+ */
+function hostLayersItem(headers: readonly PageHeader[]): StatusItem | null {
+  const layers = capturedHostLayers(headers);
+  if (layers.length === 0) return null;
+  return {
+    id: 'host-layers',
+    name: 'Host layers',
+    status: 'active',
+    subtitle: layers.map(hostLayerText).join(' · '),
+    detail: { kind: 'host-layers', layers }
+  };
+}
+
+/**
+ * One captured layer as words: its label and state.
+ *
+ * @param layer The captured layer.
+ * @returns E.g. "Cloudflare: cache hit".
+ */
+export function hostLayerText(layer: CapturedHostLayer): string {
+  return `${layer.label}: ${HOST_LAYER_READING_TEXT[layer.reading]}`;
+}
+
+/** The tooltip's header noun in its count forms. */
+const RESPONSE_HEADER_NOUN = { one: 'response header', other: 'response headers' } as const;
+
+/**
+ * The Host layers card's tooltip: the headers that named the layers (the
+ * noun agreeing with their count, as the Known Platform card's singular
+ * line does) and the add-on caveat.
+ *
+ * @param layers The captured layers (never empty: no layer, no card).
+ * @returns E.g. "Identified by the cf-cache-status, cf-ray response headers. …".
+ */
+export function hostLayersTooltip(layers: readonly CapturedHostLayer[]): string {
+  const headers = layers.flatMap((layer) => layer.headers);
+  return `Identified by the ${headers.join(', ')} ${countNoun(headers.length, RESPONSE_HEADER_NOUN)}. ${HOST_LAYER_ADD_ON_CAVEAT}`;
+}
+
+/**
  * Build the status cards for one loaded data state.
  *
  * Structure (in render order):
  * 1. **Headers-derived cards exist only when headers were captured**
- *    (`pageHeaders` null ⇒ both omitted silently) — the `Server` card's
+ *    (`pageHeaders` null ⇒ all omitted silently) — the `Server` card's
  *    verdict follows the captured value (a value-less row is no value), and
  *    the `Known Platform` card exists only when a known platform's headers
- *    matched.
+ *    matched, and the `Host layers` card only when a host-layer header was
+ *    captured.
  * 2. The `wpr` card, then one card per feature in HUD order (verdict,
  *    source chip and unsure-state why from the HUD reading), then every
  *    other row (the beacon, any future row) — except `async_css`, whose state is carried
@@ -368,6 +423,8 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
         detail: { kind: 'platform', name: platform.name, header: platform.header }
       });
     }
+    const hostLayers = hostLayersItem(data.pageHeaders);
+    if (hostLayers !== null) items.push(hostLayers);
   }
 
   for (const row of detectionRows(detections)) {

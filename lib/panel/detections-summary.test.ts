@@ -168,6 +168,18 @@ describe('summarizeDetections', () => {
     expect(optimizationCards).toHaveLength(17);
   });
 
+  it('never counts the Host layers card as an optimization', () => {
+    const items = buildStatusItems(
+      data(
+        { minify_css: { present: true } },
+        { pageHeaders: [{ name: 'sg-f-cache', value: 'HIT' }] }
+      )
+    );
+    expect(items.some((item) => item.id === 'host-layers')).toBe(true);
+    expect(isOptimizationCard('host-layers')).toBe(false);
+    expect(summarizeDetections(items).optimizations.total).toBe(17);
+  });
+
   it('agrees with the cards for every card it states (strip ↔ card consistency)', () => {
     const items = buildStatusItems(
       data(

@@ -99,6 +99,7 @@ const FULL_GOLDEN = [
   '| --- | --- | --- | --- |',
   '| Server | Active | — | `nginx` |',
   '| Known Platform | Active | — | WP Engine (matched by `X-Powered-By`) |',
+  "| Host layers | Active | — | Cloudflare: cache hit (`cf-cache-status`); A host layer is the host's own service: these headers do not show whether WP Rocket's Cloudflare, Sucuri or Varnish add-on is enabled. |",
   '| WP Rocket | Active | — | Version `3.20.1` |',
   '| Cached | Active | — | Generated 2026-10-07 03:04:13 UTC |',
   '| Load CSS asynchronously | Active | Page footprint | Optimize CSS delivery |',
@@ -588,7 +589,7 @@ describe('buildSupportReport — the HUD registry feeds the detections table', (
       '- **Page cache:** Plugin fingerprint found, cache not proven for this visit'
     );
     expect(report).toContain(
-      "- **Hosting cache layer:** SiteGround cache-layer marker captured (that layer served this response, so this visit may not have reached WP Rocket's cache)"
+      "- **Hosting cache layer:** SiteGround cache-layer marker captured (that layer reports a cache hit, so this visit may not have reached WP Rocket's cache)"
     );
   });
 
@@ -620,9 +621,12 @@ describe('buildSupportReport — the HUD registry feeds the detections table', (
         }
       })
     );
-    expect(possibly.filter((line) => line.includes('Cloudflare'))).toEqual([
-      '- **Page cache:** Possibly cached (Cloudflare cache-layer marker; no WP Rocket signature)'
-    ]);
+    // The summary names the layer once; the Host layers card row states it
+    // as a separate (cards-table) fact.
+    expect(possibly.filter((line) => line.startsWith('- ') && line.includes('Cloudflare'))).toEqual(
+      ['- **Page cache:** Possibly cached (Cloudflare cache-layer marker; no WP Rocket signature)']
+    );
+    expect(possibly.filter((line) => line.startsWith('| Host layers |'))).toHaveLength(1);
   });
 
   it('a collecting family row states its why once — no beacon subtitle beside it', () => {

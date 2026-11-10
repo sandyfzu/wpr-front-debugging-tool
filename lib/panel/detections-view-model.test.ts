@@ -6,7 +6,8 @@
  * magic ids — every card answers with its detection row or a derived id).
  */
 import { describe, expect, it } from 'vitest';
-import { buildStatusItems, type StatusItem } from './detections-view-model';
+import { buildStatusItems, hostLayersTooltip, type StatusItem } from './detections-view-model';
+import { HOST_LAYER_ADD_ON_CAVEAT } from '../detection/host-layers';
 import type { FdtData, WprDetections } from '../wp-rocket/types';
 import { HUD_FEATURES } from '../detection/hud';
 
@@ -115,6 +116,93 @@ describe('buildStatusItems — the headers-derived cards', () => {
     const items = buildStatusItems(makeData());
     expect(items.some((item) => item.id === 'server')).toBe(false);
     expect(items.some((item) => item.id === 'known-platform')).toBe(false);
+  });
+});
+
+describe('buildStatusItems — the Host layers card', () => {
+  it('lists every captured layer with its state, after the platform card', () => {
+    const items = buildStatusItems(
+      makeData({
+        pageHeaders: [
+          { name: 'X-Powered-By', value: 'WP Engine/8.0' },
+          { name: 'cf-ray', value: 'abc-SJC' },
+          { name: 'cf-cache-status', value: 'HIT' },
+          { name: 'x-proxy-cache', value: 'MISS' },
+          { name: 'x-sucuri-id', value: '14018' }
+        ]
+      })
+    );
+    expect(items.map((item) => item.id).slice(0, 3)).toEqual([
+      'server',
+      'known-platform',
+      'host-layers'
+    ]);
+    expect(items[2]).toEqual({
+      id: 'host-layers',
+      name: 'Host layers',
+      status: 'active',
+      subtitle: 'Cloudflare: cache hit · Sucuri: present · Host proxy cache: no cache hit',
+      detail: {
+        kind: 'host-layers',
+        layers: [
+          {
+            id: 'cloudflare',
+            label: 'Cloudflare',
+            reading: 'served',
+            headers: ['cf-cache-status', 'cf-ray']
+          },
+          { id: 'sucuri', label: 'Sucuri', reading: 'present', headers: ['x-sucuri-id'] },
+          {
+            id: 'host-proxy',
+            label: 'Host proxy cache',
+            reading: 'not-served',
+            headers: ['x-proxy-cache']
+          }
+        ]
+      }
+    });
+  });
+
+  it('follows the Server card when no platform matched', () => {
+    const items = buildStatusItems(
+      makeData({ pageHeaders: [{ name: 'X-Varnish', value: '7 3' }] })
+    );
+    expectCard(items, 1, { id: 'host-layers', subtitle: 'Varnish: cache hit' });
+  });
+
+  it('absence is no card: no marker captured, or nothing captured', () => {
+    for (const pageHeaders of [null, [], [{ name: 'x-cache', value: 'HIT' }]]) {
+      expect(
+        buildStatusItems(makeData({ pageHeaders })).some((item) => item.id === 'host-layers'),
+        JSON.stringify(pageHeaders)
+      ).toBe(false);
+    }
+  });
+});
+
+describe('hostLayersTooltip', () => {
+  it('names one header in the singular', () => {
+    expect(
+      hostLayersTooltip([
+        { id: 'varnish', label: 'Varnish', reading: 'served', headers: ['X-Varnish'] }
+      ])
+    ).toBe(`Identified by the X-Varnish response header. ${HOST_LAYER_ADD_ON_CAVEAT}`);
+  });
+
+  it('names several headers, across layers, in the plural', () => {
+    expect(
+      hostLayersTooltip([
+        {
+          id: 'cloudflare',
+          label: 'Cloudflare',
+          reading: 'served',
+          headers: ['cf-cache-status', 'cf-ray']
+        },
+        { id: 'siteground', label: 'SiteGround', reading: 'served', headers: ['sg-f-cache'] }
+      ])
+    ).toBe(
+      `Identified by the cf-cache-status, cf-ray, sg-f-cache response headers. ${HOST_LAYER_ADD_ON_CAVEAT}`
+    );
   });
 });
 

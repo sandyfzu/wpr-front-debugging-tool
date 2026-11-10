@@ -1,7 +1,7 @@
 /**
  * The Detections page: frame + heading, the card grid in view-model order
  * with link vs static forms (only mapped ids are anchors; static cards take
- * no tab stop and carry no lift), the status vocabulary, the two tooltip
+ * no tab stop and carry no lift), the status vocabulary, the tooltip
  * subtitles, the summary strip's agreement with the cards, the absence of a
  * duplicate header inventory, `Copy report`, refresh stability (cards keep
  * their DOM and focus), and the
@@ -197,6 +197,36 @@ describe('DetectionsView', () => {
     const platformTrigger = card('known-platform').querySelector('[data-fdt="tooltip-trigger"]');
     expect(platformTrigger?.textContent).toBe('Kinsta');
     expect(card('lazyload_iframes').querySelector('[data-fdt-card-subtitle]')).toBeNull();
+  });
+
+  it('renders the Host layers subtitle as a tooltip trigger naming the headers and the add-on caveat', async () => {
+    const base = richData().pageHeaders ?? [];
+    render(() => (
+      <DetectionsView
+        data={richData({
+          pageHeaders: [
+            ...base,
+            { name: 'cf-cache-status', value: 'DYNAMIC' },
+            { name: 'CF-RAY', value: 'abc-SJC' }
+          ]
+        })}
+        now={NOW}
+      />
+    ));
+    const trigger = card('host-layers').querySelector<HTMLElement>('[data-fdt="tooltip-trigger"]');
+    expect(trigger?.textContent).toBe('Cloudflare: no cache hit');
+    // Static card: the trigger is the card's only focus stop.
+    expect(card('host-layers').tagName).toBe('DIV');
+    if (trigger === null) throw new Error('no tooltip trigger');
+    fireEvent.focus(trigger);
+    const content = (await screen.findByRole('tooltip')).textContent;
+    expect(content).toContain('Identified by the cf-cache-status, CF-RAY response headers.');
+    expect(content).toContain("WP Rocket's Cloudflare, Sucuri or Varnish add-on");
+  });
+
+  it('shows no Host layers card when no host-layer header was captured', () => {
+    render(() => <DetectionsView data={richData()} now={NOW} />);
+    expect(document.querySelector('[data-fdt-card-id="host-layers"]')).toBeNull();
   });
 
   it('ages the cached subtitle as the clock advances', () => {

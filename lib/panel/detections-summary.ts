@@ -75,7 +75,12 @@ export interface DetectionsSummary {
 }
 
 /** The cards derived from headers or the cache stamp — facts about serving, not detection rows. */
-const DERIVED_CARD_IDS: ReadonlySet<StatusItemId> = new Set(['server', 'known-platform', 'cached']);
+const DERIVED_CARD_IDS: ReadonlySet<StatusItemId> = new Set([
+  'server',
+  'known-platform',
+  'host-layers',
+  'cached'
+]);
 
 /**
  * Detection rows that are not optimizations a site owner turns on: the

@@ -9,7 +9,7 @@
  *   stamp — the plugin handled the render, but this visit's cache state is
  *   not proven;
  * - `possibly-cached`: no signature, but a verified hosting cache-layer
- *   marker was captured (the page may be served from that layer); a captured
+ *   marker (the `host-layers` vocabulary) was captured (the page may be served from that layer); a captured
  *   bypass request is carried alongside it (it addresses WP Rocket's own
  *   cache only);
  * - `not-detected`: no signature and no host marker that served the response.
@@ -31,6 +31,8 @@
 import type { FdtData, PageHeaderCapture, PageHeaders, WprDetections } from '../wp-rocket/types';
 import { CACHE_BYPASS_QUERY_PARAM } from '../wp-rocket/constants';
 import { formatCacheTimestamp, isRepresentableCacheStamp } from './cache-time';
+import { scanServedLayer } from './host-layers';
+import { capitalize } from '../../utils/text';
 
 /** The report line for a page WP Rocket did not handle: no cache question exists. */
 export const CACHE_NOT_APPLICABLE_REPORT = 'Not applicable (WP Rocket not detected)';
@@ -63,83 +65,6 @@ export type CacheState =
   | { readonly kind: 'bypass-requested' };
 
 /**
- * A verified hosting cache-layer marker. Only exact headers with a known
- * meaning are listed: the capture's absence of a row is not evidence, and a
- * generic word match across the header blob (a page can send it in any value)
- * would be the fake marker this vocabulary exists to avoid.
- */
-interface CacheLayerMarker {
-  /** Lowercase header name. */
-  readonly header: string;
-  /** The layer's display name. */
-  readonly evidence: string;
-  /** Whether this row's value indicates the layer served the response. */
-  readonly served: (value: string) => boolean;
-}
-
-/** A value is a serve only when the exact status (trimmed, case-folded) says so. */
-function isStatus(...statuses: readonly string[]): (value: string) => boolean {
-  return (value) => statuses.includes(value.trim().toUpperCase());
-}
-
-/**
- * The verified markers this port reports. SiteGround's file cache emits
- * `sg-f-cache: HIT`; `MISS`/`BYPASS` are non-serves. Cloudflare's served set
- * is HIT/STALE/REVALIDATED/UPDATING — `EXPIRED` is served from the origin,
- * and MISS/DYNAMIC/BYPASS/NONE/UNKNOWN are not cache serves. The generic
- * `x-proxy-cache` header is a host/proxy layer, not a vendor marker, and is
- * outside this registry.
- */
-const CACHE_LAYER_MARKERS: readonly CacheLayerMarker[] = [
-  {
-    header: 'sg-f-cache',
-    evidence: 'SiteGround',
-    served: isStatus('HIT')
-  },
-  {
-    header: 'cf-cache-status',
-    evidence: 'Cloudflare',
-    served: isStatus('HIT', 'STALE', 'REVALIDATED', 'UPDATING')
-  }
-];
-
-/** What a known cache-layer header said: served, withheld, or nothing usable. */
-type CacheLayerScan =
-  | { readonly kind: 'served'; readonly evidence: string }
-  | { readonly kind: 'withheld' }
-  | { readonly kind: 'none' };
-
-/**
- * The hosting layer whose captured marker proves a cache likely served the
- * page, if any. Later duplicate rows (the last hop) win, matching the
- * capture's general header-intake rule. A redacted known-marker row withholds
- * its value but does not stop the scan: another layer's served marker still
- * wins.
- *
- * @param headers The captured response headers (possibly empty).
- * @returns The layer's evidence, a withheld marker, or neither.
- */
-function scanCacheLayers(headers: PageHeaders): CacheLayerScan {
-  let withheld = false;
-  for (const marker of CACHE_LAYER_MARKERS) {
-    for (let index = headers.length - 1; index >= 0; index -= 1) {
-      const row = headers[index];
-      if (row === undefined || row.name.toLowerCase() !== marker.header) continue;
-      if (row.redacted === true) {
-        withheld = true;
-        // The last row for this marker is the one the capture withheld; do
-        // not resurrect an earlier duplicate's value. Other markers still
-        // scan (a different served layer wins).
-        break;
-      }
-      if (marker.served(row.value ?? '')) return { kind: 'served', evidence: marker.evidence };
-      break;
-    }
-  }
-  return withheld ? { kind: 'withheld' } : { kind: 'none' };
-}
-
-/**
  * The hosting cache layer whose captured marker says it served the response,
  * independent of WP Rocket's own state — the layer that can strip the
  * plugin's signature (and, on a cached page, served WP Rocket's copy).
@@ -149,8 +74,8 @@ function scanCacheLayers(headers: PageHeaders): CacheLayerScan {
  */
 export function servedCacheLayer(headers: PageHeaders | null): string | null {
   if (headers === null) return null;
-  const layer = scanCacheLayers(headers);
-  return layer.kind === 'served' ? layer.evidence : null;
+  const layer = scanServedLayer(headers);
+  return layer.kind === 'served' ? layer.layer.evidence : null;
 }
 
 /**
@@ -171,7 +96,10 @@ export function cacheLayerHint(state: CacheState, headers: PageHeaders | null): 
 }
 
 /**
- * The cache-layer hint's copy (summary fact and report line).
+ * The cache-layer hint's copy (summary fact and report line). The report
+ * says the layer reports a hit, never that it served the response: some
+ * hit markers (Varnish's two request ids) also stand on a hit its rules
+ * passed on to the server.
  *
  * @param evidence The layer's display name.
  * @returns The short fact and the report line.
@@ -181,8 +109,8 @@ export function cacheLayerCopy(evidence: string): {
   readonly report: string;
 } {
   return {
-    fact: `${evidence} cache-layer marker captured`,
-    report: `${evidence} cache-layer marker captured (that layer served this response, so this visit may not have reached WP Rocket's cache)`
+    fact: `${capitalize(evidence)} cache-layer marker captured`,
+    report: `${capitalize(evidence)} cache-layer marker captured (that layer reports a cache hit, so this visit may not have reached WP Rocket's cache)`
   };
 }
 
@@ -218,11 +146,11 @@ export function cacheStateForPage(input: CacheStateInput): CacheState {
     };
   }
   if (wpr.cacheMarkerFound) return { kind: 'uncertain-signature' };
-  const layer = headers === null ? { kind: 'none' as const } : scanCacheLayers(headers);
+  const layer = headers === null ? { kind: 'none' as const } : scanServedLayer(headers);
   if (layer.kind === 'served') {
     return {
       kind: 'possibly-cached',
-      evidence: layer.evidence,
+      evidence: layer.layer.evidence,
       ...(bypassAttested ? { bypassAttested: true as const } : {})
     };
   }

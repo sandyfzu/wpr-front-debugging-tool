@@ -440,13 +440,13 @@ export const MATRIX_ROUNDS: readonly MatrixRound[] = [
     visit: 'cached',
     meta: 'versioned',
     cache: {
-      chip: 'Cache not detected',
-      report: 'Cache not detected',
+      chip: 'Possibly cached',
+      report: 'Possibly cached (host proxy cache-layer marker; no WP Rocket signature)',
       layer: null,
       header: ['x-proxy-cache', 'HIT']
     },
     rows: BASELINE_META_ROWS,
-    proves: 'the generic x-proxy-cache header is listed but never labeled SiteGround'
+    proves: 'x-proxy-cache: HIT is a served host proxy layer, never labeled SiteGround'
   },
   {
     id: 'K7-live-render-host-layer',

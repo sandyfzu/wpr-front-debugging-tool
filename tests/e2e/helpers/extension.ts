@@ -257,7 +257,7 @@ export class ExtensionDriver {
         { cause }
       );
     }
-    await ExtensionDriver.warmUpHeaderCapture(this.context);
+    await ExtensionDriver.warmUpHeaderCapture(this.context, await this.serviceWorker());
   }
   /**
    * Warm up the header capture after a launch so a fresh worker's FIRST
@@ -267,14 +267,27 @@ export class ExtensionDriver {
    * Testing): the very first main-frame response can arrive while the
    * service worker's first evaluation is still registering the
    * `onResponseStarted` listener — that page's capture is lost (its served
-   * `pageHeaders` stays null), and every later navigation captures
-   * deterministically. One throwaway local page absorbs the window: its
-   * (possibly missed) capture belongs to its own throwaway tab, which is
-   * closed immediately.
+   * `pageHeaders` stays null; the background never recorded it, so no
+   * re-ask recovers it), and every later navigation captures
+   * deterministically. The worker target appears before that evaluation
+   * ends, and one throwaway page alone did not outlast it (measured on 15
+   * fresh launches each: the first fixture page after it lost its capture
+   * 11 times; 0 once the worker had answered an evaluation first). So
+   * the warm-up first waits for one evaluation in the worker — it runs only
+   * after the top-level script, whose synchronous listener registration is
+   * then done — and then loads one throwaway local page, whose (possibly
+   * missed) capture belongs to its own tab, closed immediately.
    *
    * @param context The freshly launched context.
+   * @param worker The extension's service worker.
    */
-  private static async warmUpHeaderCapture(context: BrowserContext): Promise<void> {
+  private static async warmUpHeaderCapture(context: BrowserContext, worker: Worker): Promise<void> {
+    try {
+      await worker.evaluate(() => true);
+    } catch (cause) {
+      // A settle step, never a suite fact: the page below still runs.
+      console.error(`[e2e] the capture warm-up worker evaluation failed: ${String(cause)}`);
+    }
     const page = await context.newPage();
     try {
       await page.goto(`${ORIGIN_A}/`, { waitUntil: 'load', timeout: 10_000 });
