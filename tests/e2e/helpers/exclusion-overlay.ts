@@ -59,7 +59,11 @@ export async function injectOverlay(extension: ExtensionDriver, opened: DriverPa
       files: ['/content-scripts/exclusion-overlay.js']
     });
   }, opened.tabId);
-  await expect(opened.page.getByRole('heading', { name: 'Exclusion builder' })).toBeVisible(MOUNT);
+  // Exact: a fixture's own heading may contain the words (the marker-spoof
+  // page does), which a substring match would take for the overlay's title.
+  await expect(
+    opened.page.getByRole('heading', { name: 'Exclusion builder', exact: true })
+  ).toBeVisible(MOUNT);
   await expect(opened.page.getByRole('button', { name: /^Apply$/ })).toBeVisible(MOUNT);
 }
 

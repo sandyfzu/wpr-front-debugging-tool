@@ -18,6 +18,17 @@
 import type { Logger } from '../logger';
 import type { ExclusionSessionStatus } from '../messaging/exclusion-session';
 import { parseUrl } from '../../utils/urls';
+import { retryOnDeadline } from './timeouts';
+
+/**
+ * How many times one loaded page's status read is tried. A page load is the
+ * re-open's only trigger, so a read lost to a missed deadline (its store
+ * step, or its wait behind the tab's events — both refusals the controller
+ * declares retryable, and both met on a loaded machine) would leave the
+ * page without its overlay until the next navigation. Each attempt is
+ * itself bounded, so the retries are too.
+ */
+export const OVERLAY_STATUS_READ_ATTEMPTS = 3;
 
 /** How a re-opened overlay starts: the open panel, or folded to its pill. */
 export type OverlayPresentation = 'open' | 'folded';
@@ -47,7 +58,10 @@ export interface PresentationMemory {
 
 /** What the re-opener needs. */
 export interface OverlayReopenerDeps {
-  /** The tab's session status (the controller's own read); may reject. */
+  /**
+   * The tab's session status (the controller's own read); may reject — a
+   * missed deadline (`DeadlineExceededError`) is retried (see {@link OVERLAY_STATUS_READ_ATTEMPTS}).
+   */
   status(tabId: number): Promise<ExclusionSessionStatus>;
   /**
    * Re-open the overlay in that presentation on a page of `origin` (the
@@ -100,20 +114,32 @@ export function createOverlayReopener(deps: OverlayReopenerDeps): OverlayReopene
     }
   };
 
-  /** One re-open decision for a loaded page. */
-  const handle = async (tabId: number, pageUrl: string | undefined): Promise<void> => {
-    let status: ExclusionSessionStatus;
+  /**
+   * The tab's status, asked again (immediately: the deadline already
+   * waited) only after a missed deadline; null once it cannot be read
+   * (logged) — an unknown session never gets an overlay on a guess.
+   */
+  const readStatus = async (tabId: number): Promise<ExclusionSessionStatus | null> => {
+    let attempts = 0;
     try {
-      status = await deps.status(tabId);
+      return await retryOnDeadline(OVERLAY_STATUS_READ_ATTEMPTS, (attempt) => {
+        attempts = attempt;
+        return deps.status(tabId);
+      });
     } catch (cause) {
-      // Unknown session ⇒ no overlay: never open on a guess.
       deps.log.warn('Overlay re-open skipped: the tab’s session could not be read', {
         tabId,
+        attempts,
         cause
       });
-      return;
+      return null;
     }
-    if (status.state !== 'active' || !shouldReopenOverlay(status, pageUrl)) return;
+  };
+
+  /** One re-open decision for a loaded page. */
+  const handle = async (tabId: number, pageUrl: string | undefined): Promise<void> => {
+    const status = await readStatus(tabId);
+    if (status?.state !== 'active' || !shouldReopenOverlay(status, pageUrl)) return;
     await deps.reopen(tabId, await presentationOf(tabId), status.origin);
   };
 
