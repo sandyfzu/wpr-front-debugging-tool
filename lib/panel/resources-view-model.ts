@@ -20,6 +20,7 @@ import type {
   WprDetections
 } from '../wp-rocket/types';
 import { hintAttribution, hintRank, type HintAttribution } from './hint-attribution';
+import { lazyloadImageState } from './lazyload-states';
 import {
   NO_SCRIPT_PAGE_FACTS,
   jsScriptState,
@@ -151,17 +152,21 @@ export const JS_PAGE_RESOURCES: ResourcePageDefinition<JsScriptResource, JsFilte
 };
 
 /** The Lazyload page's chip ids, in render order. */
-export type LazyloadFilterId = 'all' | 'lazyloaded' | 'non-lazyloaded';
+export type LazyloadFilterId = 'all' | 'lazyloaded' | 'non-lazyloaded' | 'excluded';
 
-/** The Lazyload page's pattern. */
+/** The Lazyloaded state (its negation is the Non-lazyloaded filter). */
+const LAZYLOADED = lazyloadImageState('lazyloaded');
+
+/** The Lazyload page's pattern: every image, Lazyloaded and its negation, then the local exclusion. */
 export const LAZYLOAD_PAGE_RESOURCES: ResourcePageDefinition<
   LazyloadImageResource,
   LazyloadFilterId
 > = {
   filters: [
     { id: 'all', label: 'Show all', predicate: () => true },
-    { id: 'lazyloaded', label: 'Lazyloaded', predicate: (row) => row.lazyloaded },
-    { id: 'non-lazyloaded', label: 'Non-lazyloaded', predicate: (row) => !row.lazyloaded }
+    stateFilter(LAZYLOADED),
+    { id: 'non-lazyloaded', label: 'Non-lazyloaded', predicate: (row) => !LAZYLOADED.holds(row) },
+    stateFilter(lazyloadImageState('excluded'))
   ],
   searchField: (row) => row.src
 };

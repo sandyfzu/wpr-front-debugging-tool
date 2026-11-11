@@ -45,9 +45,16 @@ test('shows reasons only while image lazyload is detected, including after page 
         panel.getByRole('list', { name: 'Images', exact: true }).getByRole('listitem')
       ).toHaveCount(3);
       await expect(panel.locator('[data-fdt="lazyload-reasons"]')).toHaveCount(present ? 2 : 0);
-      await expect(panel.getByText('Excluded by FDT', { exact: true })).toHaveCount(
-        present ? 1 : 0
+      // The FDT's marker is the row's Excluded chip, a row fact shown either way;
+      // the page's own reason beside it follows the feature.
+      await expect(panel.locator('[data-fdt="state-chip"][data-fdt-source="excluded"]')).toHaveText(
+        ['Excluded']
       );
+      await expect(panel.getByText('data-skip-lazy', { exact: true })).toHaveCount(present ? 1 : 0);
+      // The lazy markup is WP Rocket's only while its LazyLoad is detected; else the page's own.
+      await expect(
+        panel.locator('[data-fdt="state-chip"][data-fdt-state="lazyloaded"]')
+      ).toHaveAttribute('data-fdt-source', present ? 'wp-rocket' : 'page');
       await expect(panel.getByText('No reasons found', { exact: true })).toHaveCount(
         present ? 1 : 0
       );

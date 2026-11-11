@@ -141,7 +141,8 @@ const WORDS = {
   stripHint: 'Lazyload Images simulated',
   panelNote:
     "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included.",
-  panelRow: 'Lazyloaded (Simulated)'
+  /** A lazy row's chip: the state word, its source the FDT simulation (flask, dashed outline). */
+  panelChip: 'Lazyloaded'
 } as const;
 
 /** The lane's script-address line lead, by where the address came from. */
@@ -448,7 +449,12 @@ test.describe('LazyLoad simulation over real sessions', () => {
       await expect(summary).not.toContainText('detected');
       await expect(summary.locator('[data-fdt="resource-note"]')).toContainText([WORDS.panelNote]);
       await expect(
-        panel.locator('[data-fdt="resource-row"]', { hasText: WORDS.panelRow }).first()
+        panel
+          .locator(
+            '[data-fdt="resource-row"] [data-fdt="state-chip"][data-fdt-source="simulated"] [data-fdt="badge"]',
+            { hasText: WORDS.panelChip }
+          )
+          .first()
       ).toBeVisible();
 
       // The toolbar badge reads the served page: a simulation is not WP Rocket.

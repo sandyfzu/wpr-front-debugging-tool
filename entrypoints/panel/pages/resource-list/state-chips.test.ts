@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_VISIBLE_STATE_CHIPS,
   NO_STATE_CHIPS,
+  UNVERIFIED_SIMULATION_SUFFIX,
   chipPhrase,
+  simulatableSource,
   splitStateChips,
   type StateChip
 } from './state-chips';
@@ -85,5 +87,29 @@ describe('chipPhrase', () => {
     ['page', 'Deferred (page)']
   ] as const)('is the label, then the %s source in parentheses', (source, phrase) => {
     expect(chipPhrase({ id: 'd', label: 'Deferred', source })).toBe(phrase);
+  });
+});
+
+describe('simulatableSource', () => {
+  it('a verified simulation is the source, named with the feature', () => {
+    expect(simulatableSource('simulated', 'Lazyloaded', 'Feature X')).toEqual({
+      source: 'simulated',
+      title: "Lazyloaded by the FDT's Feature X simulation"
+    });
+  });
+
+  it('no marker: WP Rocket, unflagged', () => {
+    expect(simulatableSource(null, 'Delayed', 'Feature X')).toEqual({
+      source: 'wp-rocket',
+      title: 'Delayed by WP Rocket (Feature X)'
+    });
+  });
+
+  it('an unverified marker keeps WP Rocket and flags the title', () => {
+    expect(simulatableSource('unverified', 'Delayed', 'Feature X')).toEqual({
+      source: 'wp-rocket',
+      title: `Delayed by WP Rocket (Feature X)${UNVERIFIED_SIMULATION_SUFFIX}`
+    });
+    expect(UNVERIFIED_SIMULATION_SUFFIX).toBe(' (simulation not verified)');
   });
 });

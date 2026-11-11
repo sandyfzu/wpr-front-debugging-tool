@@ -31,9 +31,9 @@ import {
   sameScript,
   scriptChipSplit,
   scriptStateChips,
-  UNVERIFIED_SIMULATION_SUFFIX,
   JS_CHIP_SOURCES
 } from './script-view';
+import { UNVERIFIED_SIMULATION_SUFFIX } from '../resource-list/state-chips';
 
 /** A classified script with overrides. */
 function script(overrides: Partial<JsScriptResource> = {}): JsScriptResource {

@@ -51,6 +51,25 @@ function chip(root: HTMLElement, id: string): HTMLButtonElement {
   return found;
 }
 
+/** Each state chip of a row as `label/source`. */
+function chipSources(item: Element): string[] {
+  return [...item.querySelectorAll<HTMLElement>('[data-fdt="state-chip"]')].map(
+    (chip) => `${chip.textContent}/${chip.dataset.fdtSource ?? ''}`
+  );
+}
+
+/** A payload whose LazyLoad row carries a simulation fact. */
+function withSimulation(fact: 'simulated' | 'unverified'): FdtData {
+  const data = fixture();
+  return {
+    ...data,
+    wprDetections: {
+      ...data.wprDetections,
+      lazyload: { ...data.wprDetections.lazyload, present: fact !== 'simulated', simulation: fact }
+    }
+  };
+}
+
 /** The page's search field. */
 function field(): HTMLInputElement {
   return screen.getByRole<HTMLInputElement>('searchbox', { name: 'Search image URLs' });
@@ -95,15 +114,7 @@ describe('LazyloadPage — frame and summary', () => {
   });
 
   it('spells out a verified simulation as "simulated" (info), its lazy rows and reasons', () => {
-    const data = fixture();
-    const simulated: FdtData = {
-      ...data,
-      wprDetections: {
-        ...data.wprDetections,
-        lazyload: { ...data.wprDetections.lazyload, present: false, simulation: 'simulated' }
-      }
-    };
-    const { root } = renderPage(LazyloadPage, simulated);
+    const { root } = renderPage(LazyloadPage, withSimulation('simulated'));
     const badge = root.querySelector('[data-fdt="resource-summary"] [data-fdt="status-badge"]');
     expect(badge?.textContent).toContain('simulated');
     expect(badge?.textContent).not.toContain('detected');
@@ -111,9 +122,36 @@ describe('LazyloadPage — frame and summary', () => {
     expect(root.querySelector('[data-fdt="resource-note"]')?.textContent).toBe(
       "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
     );
-    expect(screen.getAllByText('Lazyloaded (Simulated)')).toHaveLength(2);
+    // The lazy rows read Lazyloaded with the simulation's source (its flask + dashed outline).
+    const items = screen.getAllByRole('listitem');
+    expect(chipSources(items[0] as HTMLElement)).toEqual(['Lazyloaded/simulated']);
+    expect(chipSources(items[4] as HTMLElement)).toEqual(['Lazyloaded/simulated']);
+    expect(items[0]?.querySelector('[data-fdt="state-chip"] [title]')?.getAttribute('title')).toBe(
+      "Lazyloaded by the FDT's LazyLoad for images simulation"
+    );
     // The exclusion reasons stay meaningful: the simulation lazy loads the page.
     expect(root.querySelectorAll('[data-fdt="lazyload-reasons"]').length).toBeGreaterThan(0);
+  });
+
+  it('an unverified marker keeps WP Rocket as the source, flagged on hover', () => {
+    renderPage(LazyloadPage, withSimulation('unverified'));
+    const first = screen.getAllByRole('listitem')[0] as HTMLElement;
+    expect(chipSources(first)).toEqual(['Lazyloaded/wp-rocket']);
+    expect(first.querySelector('[data-fdt="state-chip"] [title]')?.getAttribute('title')).toBe(
+      'Lazyloaded by WP Rocket (LazyLoad for images) (simulation not verified)'
+    );
+  });
+
+  it('shows the source legend once, listing only the sources its chips can show', () => {
+    const { root } = renderPage(LazyloadPage, fixture());
+    const legends = root.querySelectorAll('[data-fdt="state-source-legend"]');
+    expect(legends).toHaveLength(1);
+    expect(legends[0]?.textContent).toBe('WP RocketSimulated by FDTExcluded by FDTPage');
+  });
+
+  it('shows no legend on a page without images', () => {
+    const { root } = renderPage(LazyloadPage, withImages([]));
+    expect(root.querySelector('[data-fdt="state-source-legend"]')).toBeNull();
   });
 
   it('puts per-filter counts on the chips', () => {
@@ -124,6 +162,9 @@ describe('LazyloadPage — frame and summary', () => {
     );
     expect(screen.getByRole('button', { name: 'Non-lazyloaded 3 matching' })).toBe(
       chip(root, 'non-lazyloaded')
+    );
+    expect(screen.getByRole('button', { name: 'Excluded 1 matching' })).toBe(
+      chip(root, 'excluded')
     );
   });
 });
@@ -138,31 +179,55 @@ describe('LazyloadPage — rows', () => {
     expect(items[4]?.getAttribute('aria-posinset')).toBe('5');
   });
 
-  it('shows the state badges: Lazyloaded as info, Not lazyloaded as neutral', () => {
+  it('shows one-word state chips by source: Lazyloaded (WP Rocket), Excluded (FDT); none for a plain image', () => {
     renderPage(LazyloadPage, fixture());
-    const [first, second] = screen.getAllByRole('listitem');
-    expect(within(first as HTMLElement).getByText('Lazyloaded').className).toContain(
-      'text-status-info'
-    );
-    expect(within(second as HTMLElement).getByText('Not lazyloaded').className).toContain(
-      'text-status-neutral'
-    );
+    const items = screen.getAllByRole('listitem');
+    expect(items.map(chipSources)).toEqual([
+      ['Lazyloaded/wp-rocket'],
+      [],
+      ['Excluded/excluded'],
+      [],
+      ['Lazyloaded/wp-rocket']
+    ]);
+    const lazy = items[0]?.querySelector('[data-fdt="state-chip"] [data-fdt="badge"]');
+    expect(lazy?.getAttribute('title')).toBe('Lazyloaded by WP Rocket (LazyLoad for images)');
+    expect(lazy?.className).toContain('text-status-info');
+    const excluded = items[2]?.querySelector('[data-fdt="state-chip"] [data-fdt="badge"]');
+    expect(excluded?.getAttribute('title')).toBe('Excluded by FDT from LazyLoad for images');
+    expect(excluded?.className).toContain('bg-status-warn-soft');
   });
 
-  it('renders reasons as mono outline badges and the tool marker as a distinct warn badge', () => {
+  it('the Excluded filter selects exactly the rows showing the Excluded chip', () => {
+    const { root } = renderPage(LazyloadPage, fixture());
+    fireEvent.click(chip(root, 'excluded'));
+    expect(rowNames(root)).toEqual(['excluded.jpg']);
+    expect(screen.getAllByRole('listitem').map(chipSources)).toEqual([['Excluded/excluded']]);
+  });
+
+  it('renders page reasons as mono outline badges; the tool marker is the chip, never a reason', () => {
     renderPage(LazyloadPage, fixture());
     const items = screen.getAllByRole('listitem');
     const logo = within(items[1] as HTMLElement);
     expect(logo.getByText('data-skip-lazy').className).toContain('font-mono');
     expect(logo.getByText('skip-lazy').className).toContain('border');
     const excluded = within(items[2] as HTMLElement);
-    const marker = excluded.getByText('Excluded by FDT');
-    expect(marker.className).toContain('bg-status-warn-soft');
-    expect(marker.className).not.toContain('font-mono');
-    // The page's own reason stays visible beside the marker; the raw marker
-    // attribute is never shown as a reason.
+    // The page's own reason stays visible beside the chip; the raw marker
+    // attribute and the old reason badge are gone.
     expect(excluded.getByText('data-src')).toBeTruthy();
     expect(excluded.queryByText(FDT_EXCLUDED_RESOURCE)).toBeNull();
+    expect(excluded.queryByText('Excluded by FDT')).toBeNull();
+  });
+
+  it('a marker-only image shows its chip and no reasons line (never "No reasons found")', () => {
+    renderPage(
+      LazyloadPage,
+      withImages([
+        makeLazyImage({ lazyloadDetected: false, excludedReasonsFound: [FDT_EXCLUDED_RESOURCE] })
+      ])
+    );
+    const item = screen.getByRole('listitem');
+    expect(chipSources(item)).toEqual(['Excluded/excluded']);
+    expect(item.querySelector('[data-fdt="lazyload-reasons"]')).toBeNull();
   });
 
   it('says "No reasons found" for a non-lazyloaded image without reasons, nothing for lazyloaded ones', () => {
@@ -173,22 +238,58 @@ describe('LazyloadPage — rows', () => {
     expect(within(items[0] as HTMLElement).queryByText('Reasons')).toBeNull();
   });
 
-  it('hides all exclusion details when lazyload is not detected, while keeping image rows', () => {
+  it('hides all exclusion reasons when lazyload is not detected, while keeping image rows and chips', () => {
     const data = fixture();
     const { root } = renderPage(
       LazyloadPage,
       withImages(data.wprDetections.lazyload.images, false)
     );
-    expect(screen.getAllByRole('listitem')).toHaveLength(5);
-    expect(screen.getAllByText('Not lazyloaded')).toHaveLength(3);
+    const items = screen.getAllByRole('listitem');
+    expect(items).toHaveLength(5);
     expect(root.querySelector('[data-fdt="lazyload-reasons"]')).toBeNull();
     expect(screen.queryByText('Reasons')).toBeNull();
     expect(screen.queryByText('No reasons found')).toBeNull();
-    expect(screen.queryByText('Excluded by FDT')).toBeNull();
     expect(screen.queryByText('data-skip-lazy')).toBeNull();
+    // The chips are row facts: the FDT's marker still reads Excluded; the lazy
+    // markup, with WP Rocket's LazyLoad not detected, is the page's own.
+    expect(items.map(chipSources)).toEqual([
+      ['Lazyloaded/page'],
+      [],
+      ['Excluded/excluded'],
+      [],
+      ['Lazyloaded/page']
+    ]);
+    expect(items[0]?.querySelector('[data-fdt="state-chip"] [title]')?.getAttribute('title')).toBe(
+      "Lazy markup on the page (WP Rocket's LazyLoad not detected)"
+    );
   });
 
-  it('updates exclusion details on detection-only refreshes without remounting rows or losing focus', () => {
+  it('a refresh from no marker to an unverified one keeps WP Rocket and updates only the title', () => {
+    const page = renderPage(LazyloadPage, fixture());
+    const title = (): string | null | undefined =>
+      screen
+        .getAllByRole('listitem')[0]
+        ?.querySelector('[data-fdt="state-chip"] [title]')
+        ?.getAttribute('title');
+    expect(title()).toBe('Lazyloaded by WP Rocket (LazyLoad for images)');
+    page.refresh(withSimulation('unverified'));
+    expect(chipSources(screen.getAllByRole('listitem')[0] as HTMLElement)).toEqual([
+      'Lazyloaded/wp-rocket'
+    ]);
+    expect(title()).toBe('Lazyloaded by WP Rocket (LazyLoad for images) (simulation not verified)');
+  });
+
+  it('a changed simulation fact re-derives the chips on a refresh', () => {
+    const page = renderPage(LazyloadPage, fixture());
+    const first = screen.getAllByRole('listitem')[0] as HTMLElement;
+    expect(chipSources(first)).toEqual(['Lazyloaded/wp-rocket']);
+    page.refresh(withSimulation('simulated'));
+    expect(chipSources(screen.getAllByRole('listitem')[0] as HTMLElement)).toEqual([
+      'Lazyloaded/simulated'
+    ]);
+  });
+
+  it('updates exclusion details on detection-only refreshes: unchanged rows stay mounted, focus kept, lazy rows re-attributed', () => {
     const data = fixture();
     const page = renderPage(LazyloadPage, withImages(data.wprDetections.lazyload.images, false));
     const before = screen.getAllByRole('listitem');
@@ -199,7 +300,15 @@ describe('LazyloadPage — rows', () => {
       expect(page.root.querySelectorAll('[data-fdt="lazyload-reasons"]')).toHaveLength(
         present ? 3 : 0
       );
-      expect(screen.getAllByRole('listitem')).toEqual(before);
+      const items = screen.getAllByRole('listitem');
+      // Rows whose chips did not change keep their element.
+      expect(items.slice(1, 4)).toEqual(before.slice(1, 4));
+      // The lazy rows' source follows the detection.
+      const source = present ? 'wp-rocket' : 'page';
+      expect([items[0], items[4]].map((item) => chipSources(item as HTMLElement))).toEqual([
+        [`Lazyloaded/${source}`],
+        [`Lazyloaded/${source}`]
+      ]);
       expect(document.activeElement).toBe(copy);
     }
   });
@@ -430,8 +539,8 @@ describe('LazyloadPage — refresh and edge states', () => {
       LazyloadPage,
       withImages([makeLazyImage({ lazyloadDetected: true })], false)
     );
-    expect(root.querySelector('[data-fdt="resource-note"]')?.textContent).toContain(
-      'lazyload script was not found'
+    expect(root.querySelector('[data-fdt="resource-note"]')?.textContent).toBe(
+      "Some images carry lazy-load markup, but WP Rocket's LazyLoad was not detected on this page."
     );
   });
 
