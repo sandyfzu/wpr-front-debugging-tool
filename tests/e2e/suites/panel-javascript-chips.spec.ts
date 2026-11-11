@@ -16,6 +16,7 @@
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import { expectSystemPalette, resetStoredOptions } from '../helpers/options';
 import { openPanelForFixture } from '../helpers/panel-data';
 
 /** The fixture's long original type (the payload cap: 64 characters). */
@@ -99,11 +100,15 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test(`each chip shows its source under one legend and fits at 320 px (${colorScheme})`, async ({
     extension
   }) => {
+    // Suites share one profile and earlier ones leave a Dark/Light choice
+    // stored: seed the System default so the emulated scheme decides.
+    await resetStoredOptions(extension);
     const { panel, fixture } = await openPanelForFixture(extension, '/javascript/sources.html', {
       bootHash: '#/javascript',
       emulation: { colorScheme }
     });
     try {
+      await expectSystemPalette(panel, colorScheme);
       await panel.setViewportSize({ width: 1280, height: 1200 });
       await expect(panel.locator('[data-fdt="script-row"]')).toHaveCount(3);
       expect(await chipSources(rowWith(panel, 'navigation.min.js'))).toEqual([

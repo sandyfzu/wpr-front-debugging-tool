@@ -139,8 +139,12 @@ export function sameStyleRow(a: StyleRowView, b: StyleRowView): boolean {
   );
 }
 
-/** Seed heights (px): a link's chips + URL lines, an inline style's chips + preview lines. */
-export const STYLE_ROW_ESTIMATE = { external: 52, inline: 50 } as const;
+/**
+ * Seed heights (px): a link's name + URL lines (measured at the regular
+ * tier; its states stack below when compact), an inline style's chips +
+ * preview lines.
+ */
+export const STYLE_ROW_ESTIMATE = { external: 55, inline: 50 } as const;
 
 /**
  * A row's seed height (measurement refines it).

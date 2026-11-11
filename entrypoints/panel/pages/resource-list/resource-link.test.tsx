@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@solidjs/testing-library';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { copyLabel, gridTemplate, ResourceLink } from './resource-link';
 
 afterEach(() => {
@@ -139,6 +139,44 @@ describe('ResourceLink', () => {
     ));
     expect(screen.getByText('No URL (srcset only)')).toBeTruthy();
     expect(container.querySelector('[data-fdt="resource-copy-placeholder"]')).not.toBeNull();
+  });
+});
+
+describe('ResourceLink copy options', () => {
+  it('names the copy by the noun alone when the row name is off (established list names)', () => {
+    render(() => (
+      <ResourceLink
+        href="https://cdn.example/wp-includes/js/jquery/jquery.min.js?ver=3.7.1"
+        copyNoun="Script URL"
+        copyNamesRow={false}
+      />
+    ));
+    expect(screen.getByRole('button', { name: 'Script URL — copy' })).toBeTruthy();
+  });
+
+  it('reads the complete text through the loader on copy (the shown URL may be bounded)', async () => {
+    const loadCopyText = vi.fn(() => Promise.resolve('https://cdn.example/full.js'));
+    render(() => (
+      <ResourceLink
+        href="https://cdn.example/clipped"
+        copyNoun="Script URL"
+        copyNamesRow={false}
+        loadCopyText={loadCopyText}
+        copyLoadFailure="Refresh the panel and try copying again."
+      />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'Script URL — copy' }));
+    await vi.waitFor(() => {
+      expect(loadCopyText).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('caps the state track so many chips wrap instead of squeezing the name out', () => {
+    const { container } = render(() => (
+      <ResourceLink href="https://cdn.example/a.js" copyNoun="URL" state={<span>Delayed</span>} />
+    ));
+    const grid = container.querySelector('[data-fdt="resource-link"]');
+    expect(grid?.className).toContain('@regular:grid-cols-[minmax(0,1fr)_fit-content(50%)_auto]');
   });
 });
 

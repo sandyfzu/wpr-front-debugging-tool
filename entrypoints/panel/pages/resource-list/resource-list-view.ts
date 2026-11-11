@@ -1,9 +1,11 @@
 /**
  * Pure presentation rules shared by the resource-list pages (Lazyload,
  * Preloaded Resources): the filtered-empty chip name, query normalization,
- * row reuse across refreshes and resource naming. No Solid, no DOM — the
- * page component composes these inside its memo chain. Count phrasing and
- * the results announcement are shared rules of `lib/panel/list-behavior`.
+ * row reuse across refreshes and resource naming (also used by the
+ * JavaScript and Stylesheets URL rows via the shared resource link). No
+ * Solid, no DOM — the page component composes these inside its memo
+ * chain. Count phrasing and the results announcement are shared rules of
+ * `lib/panel/list-behavior`.
  */
 import { defaultChipId, reconcileList } from '../../../../lib/panel/list-behavior';
 export {

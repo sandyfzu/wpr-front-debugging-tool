@@ -399,8 +399,8 @@ export function buildChips(
 
 /** Seed heights (px) for rows not measured yet — measurement corrects them. */
 export const ROW_ESTIMATES = {
-  /** External row: one line at regular width (two when compact). */
-  external: 37,
+  /** External row at regular width: name line + URL line (states stack below when compact). */
+  external: 55,
   /** Inline row without code to show (blank source). */
   inlineBlank: 57,
   /** Inline row, collapsed: caption/chips line, three code lines, toggle. */

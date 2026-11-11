@@ -19,6 +19,14 @@
 
 import type { Page } from '@playwright/test';
 import { expect, openFixturePage, test, type ExtensionDriver } from '../helpers/extension';
+import { resetStoredOptions } from '../helpers/options';
+
+// One profile serves every suite: the options this file writes go back to the
+// fresh-install item after each test (its assertions are over, so a page it
+// left open no longer needs them) and no stored choice reaches the next suite.
+test.afterEach(async ({ extension }) => {
+  await resetStoredOptions(extension);
+});
 
 /** The overlay's `.sbs-overlay` background under each palette (tokens: surface-0). */
 const SURFACE_0 = { dark: 'rgb(11, 13, 16)', light: 'rgb(244, 245, 248)' } as const;

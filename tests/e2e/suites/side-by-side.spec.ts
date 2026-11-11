@@ -17,6 +17,14 @@
 
 import type { Page } from '@playwright/test';
 import { expect, openFixturePage, test } from '../helpers/extension';
+import { resetStoredOptions } from '../helpers/options';
+
+// One profile serves every suite: the options this file writes go back to the
+// fresh-install item after each test (its assertions are over, so a page it
+// left open no longer needs them) and no stored choice reaches the next suite.
+test.afterEach(async ({ extension }) => {
+  await resetStoredOptions(extension);
+});
 
 /** Overlay host element (WXT shadow-root UI name, feature-scoped). */
 const OVERLAY_HOST_NAME = 'wpr-fdt-side-by-side';
