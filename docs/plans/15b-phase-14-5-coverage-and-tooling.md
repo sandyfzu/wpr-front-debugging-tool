@@ -14,7 +14,7 @@
 
 ### Gate evidence (2026-11-09)
 
-- **Versions:** 3.24 is the latest release (2026-10-27). The local site runs **3.23.5.1**; every file the live evidence exercised is byte-identical between the two zips (deltas only in `DeferJS.php:292` delimiter, an admin notice in `CriticalCSSSubscriber.php`, cookie cache keys).
+- **Versions:** 3.24 is the latest release (2026-10-27). The local site ran **3.23.5.1** (re-pinned to 3.24 on 2026-11-10, G7); every file the live evidence exercised is byte-identical between the two zips (deltas only in `DeferJS.php:292` delimiter, an admin notice in `CriticalCSSSubscriber.php`, cookie cache keys).
 - **Emitters:** `CommentTrait` comments in 3.24 = minify_css/minify_js/minify_concatenate_js/defer_js/delay_js/remove_unused_css/async_css/cdn/lazyload_images/lazyload_iframes/lazyload_css_bg_img/image_dimensions/oci/automatic_lazy_rendering/auto_preload_fonts/preconnect_external_domains/cache_webp; meta-only (option-derived, `Support/Meta.php:96-118`) = preload_links, host_fonts_locally, mobile/desktop, dns_prefetch. `wpr_cache_webp` has no row (not BUILD).
 - **Installed labels** (3.24 `Admin/Settings/Page.php`, identical in 3.23.5.1):
 
@@ -51,7 +51,7 @@
 - **G4 — M2 premise corrected:** RUCSS is bypass-guarded; LazyLoad and the CDN rewrite are not.
 - **G5 — D1/D2 labels (delegated, chosen):** "Separate cache files for mobile devices" (short "Mobile cache"), "Prefetch DNS Requests" (short "DNS prefetch"). `wpr_dns_prefetch` fires when domains exist and (CDN off **or** > 1 domain) (`Meta.php:116-118`); domains may be stored, filter-supplied or CDN CNAMEs ⇒ wording never claims the owner configured them.
 - **G6 — label drift. Fixed in B.0:** `rocket_cdn` decides on `wpr_cdn`, which any CDN emits (was labelled "RocketCDN"); HUD headings used pre-3.24 names.
-- **G7 — local site pinned to 3.23.5.1** while 3.24 is latest; results transfer (identical code). Re-pinning is the owner's call.
+- **G7 — local site re-pinned to 3.24. Closed 2026-11-10** (owner-approved): `tag:v3.24 @ 5b71db4`, the pinned parity zip (sha256 `1a2480ba…`); site hard-reset, generator meta reads `WP Rocket 3.24`; the bootstrap's source claims (local key formula, query-string bus, RUCSS/Async-CSS runtime mask, no `cache` key, no `wp rocket clean`) re-verified in 3.24. Full `pnpm test:e2e` on it: 360 passed, 1 skipped (LCP prerender host skip), 0 failed — no 3.24 markup change hit any expectation.
 
 ## Audit evidence (2026-10-07) — proof limits to keep
 
@@ -198,6 +198,6 @@ Dropped: T1 ± cache, T6 RUCSS sizes, T7 cache age/expiry, T8 phone-UA snapshot,
 - **M4 real hosts** — no Cloudflare/Sucuri/LiteSpeed/Varnish host available; docker edge simulates `sg`/`cf`/`cf-dynamic`/`proxy`; LiteSpeed/Sucuri/Varnish/`cf-ray` unit-pinned only (C.3).
 - **Firefox smoke (owed):** `//host` DNS hint resolution on an https page + same-origin drop (B.6); the Stylesheets ask at runtime (C.2); the resource-hint inventory (C.4); the Beacon instructions card (C.5).
 - **320 px link rows** show only the URL's start (JavaScript and Stylesheets pages; C.2, unchanged by P14.5.2).
-- **Owner calls:** `x-kinsta-cache` hint values have no official Kinsta doc (pre-existing, kept; C.3). Local site pinned to 3.23.5.1 while 3.24 is latest (G7).
+- **Owner calls:** `x-kinsta-cache` hint values have no official Kinsta doc (pre-existing, kept; C.3).
 - **Residual limits (by design, owner-visible):** a hand-set `cache_mobile=0` with `do_caching_mobile_files=1` still declares the device token; FDT device simulation reports the device the render was generated for (B.5). CDN on but nothing rewritten (no `wpr_cdn`) reads a missing `wpr_dns_prefetch` as refuted; a refuted DNS row keeps its hints as inventory (B.6). Fonts self-hosted through other markup (D7 dropped) read declared-only; a page's own native-lazy image withholds the images line (B.7). `data-rocket-feature` (debug-only) not read; async CSS hint rows are timing-bound (C.4). A response arriving during a fresh install's first worker evaluation shows no headers; host-layer precedence assumes the usual stacking, so an inverted pair (nginx proxy cache in front of Varnish, Cloudflare behind Sucuri) names the inner layer, and readings mix slightly (Varnish "cache hit" = lookup hit, a vendor's EXPIRED = "no cache hit") (C.3). PHP's `max_input_nesting_level`/`max_input_vars` drops are not modeled (php.ini-dependent; such URLs still read as a bypass) (B.8).
 - **Flakes:** session-reload settle stalls, only in full runs under load — the two LazyLoad cases above (stage unknown) and `site-builder-sync`'s Defer row (P14.5.1 run 4: page rewritten, overlay never re-opened); possibly a lost re-open (`lib/exclusion-session/overlay-reopen`), unproven — investigate from the next helper message. Load-sensitive under external CPU contention (P14.5.1 run 2/3): `panel-rucss-tester` heartbeat-gap budgets, `panel-shortcuts` 5 s palette wait.
