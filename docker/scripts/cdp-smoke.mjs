@@ -5,7 +5,7 @@
  *  1. /fdt/?fdt-error=reference  -> an immediate ReferenceError at load (no interaction)
  *  2. /fdt/?fdt-delay=1          -> the delayed scripts are held until interaction, and
  *     dispatching a real mousemove (WP Rocket's delay queue listens for it; verified in
- *     the 3.23.5.1 lazyload-scripts runtime) runs the queue: the delayed script throws
+ *     the 3.24 lazyload-scripts runtime) runs the queue: the delayed script throws
  *     its ReferenceError at execution time, the benign one tags itself
  *     data-fdt-delay="executed", WP Rocket sets data-rocket-status on the nodes, and
  *     the definer — held in the queue as the last delayed script — runs only after the

@@ -14,7 +14,7 @@ Live docker site (`minify_js=1` seeded), original enqueue `wp-content/mu-plugins
 
 Why the original path is also the technically robust one (verified mechanics): the Delay JS exclusion check runs on `rocket_buffer` at priority **26** — _after_ minify/combine at **22** — against tags already carrying minified `src`; the minified URL **embeds the original path** (path mirror), so an original-path pattern substring-matches the check in **both** minify states, survives purges/updates (it rides the path, not `?ver=`), and matches the un-minified tag when minify goes off. A cache-path pattern dies in that last state — the state debugging workflows routinely create.
 
-### Evidence anchors (WP Rocket 3.23.5.1, `docker/wpr/wpr-rocket.zip`)
+### Evidence anchors (WP Rocket 3.23.5.1, `docker/wpr/wpr-rocket-3.23.5.1.zip`)
 
 - Per-file minify: original query stripped (`JS/Minify.php:99`, `strtok`); local `[-.]min.js` files skipped (`JS/Minify.php:37-50` — unrewritten, URL untouched); cache filename = `ltrim(rocket_realpath($parsed_url['path']), '/')` (`JS/Minify.php:191-192`); URL = `minify_base_url . $filename` (`JS/AbstractJSOptimization.php:154-166`, CDN rewrites via `rocket_js_url`); base = `WP_ROCKET_MINIFY_CACHE_URL . $site_id` (`AbstractOptimization.php:55-56`); `?ver=` = file mtime or md5(key) (`AbstractOptimization.php:235-241`).
 - Combine: filename = `md5($content . $this->minify_key) . '.js'` under the same base (`JS/Combine.php:337-358`) — **original not recoverable from the URL**.
