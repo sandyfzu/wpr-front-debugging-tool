@@ -510,6 +510,21 @@ describe('detectLazyload', () => {
     ).toBe(true);
   });
 
+  it('reads the readable (SCRIPT_DEBUG) options script, never a lookalike', () => {
+    const runtime = '<script src="/wp-rocket/assets/js/lazyload/17.8.3/lazyload.js"></script>';
+    const readable =
+      '<script>window.lazyLoadOptions = [{\n                elements_selector: "img[data-lazy-src],.rocket-lazyload",\n                data_src: "lazy-src"}];</script>';
+    expect(detectLazyload(page(readable + runtime)).present).toBe(true);
+    expect(
+      detectLazyload(
+        page(
+          '<script>window.lazyLoadOptionsX = [{\n  elements_selector: "img[data-lazy-src]"}];</script>' +
+            runtime
+        )
+      ).present
+    ).toBe(false);
+  });
+
   it('stops the reverse scan after both footprints are found (order-independent)', () => {
     // The blob fires before the script in reverse order — both must be found.
     const result = detectLazyload(
@@ -607,6 +622,11 @@ describe('detectLazyloadIframes', () => {
       </body></html>`
     );
     expect(detectLazyloadIframes(both)).toEqual({ present: true, replaceImage: true });
+    const readable = page(
+      '<script>window.lazyLoadOptions = {\n                elements_selector: "iframe[data-lazy-src]",\n}</script>' +
+        '<script src="/x/wp-rocket/assets/js/lazyload/17.8.3/lazyload.js"></script>'
+    );
+    expect(detectLazyloadIframes(readable)).toEqual({ present: true, replaceImage: false });
     expect(
       detectLazyloadIframes(page('<script>function lazyLoadThumb(){x}</script>')).present
     ).toBe(false);

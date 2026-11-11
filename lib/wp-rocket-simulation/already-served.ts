@@ -18,12 +18,12 @@ import {
   LAZYLOAD_IFRAME_SELECTOR,
   LAZYLOAD_IMG_SELECTOR,
   LAZYLOAD_NOJS_STYLE_ID,
-  LAZYLOAD_OPTIONS_ASSIGNMENT,
   LAZYLOAD_SCRIPT_PATTERN,
   WPR_DEFER_ATTRIBUTE,
   WPR_FEATURES_ATTRIBUTE,
   isDelayJSType
 } from '../wp-rocket/constants';
+import { hasLazyloadOptions } from '../wp-rocket/lazyload-options';
 
 /**
  * Whether a feature-declaration attribute lists any of a row's tokens.
@@ -116,28 +116,18 @@ const LAZYLOAD_META_TOKENS: readonly string[] = [
   ...FEATURE_META_TOKENS.lazyload_iframes
 ];
 
-/** A line break as PCRE's and JS's `.` both refuse it. */
-const LINE_BREAK = /[\n\r\u2028\u2029]/g;
+/** The selectors either LazyLoad options script names (images or iframes). */
+const OPTIONS_SELECTORS: readonly string[] = [LAZYLOAD_IMG_SELECTOR, LAZYLOAD_IFRAME_SELECTOR];
 
 /**
- * Whether an inline script body holds WP Rocket's LazyLoad options: its
- * assignment followed, on the same line, by the image or iframe selector
- * it names (`LAZYLOAD_IMG_OPTIONS_PATTERN` / `…IFRAME…`, read linearly:
- * each line is searched once from its first assignment).
+ * Whether an inline script body holds WP Rocket's LazyLoad options naming
+ * the image or iframe selector, minified or readable (`SCRIPT_DEBUG`) — the
+ * detection checks' rule (`hasLazyloadOptions`, linear).
  *
  * @param body The script's content.
  */
 export function holdsLazyloadOptions(body: string): boolean {
-  for (let at = body.indexOf(LAZYLOAD_OPTIONS_ASSIGNMENT); at >= 0;) {
-    LINE_BREAK.lastIndex = at;
-    const lineEnd = LINE_BREAK.exec(body)?.index ?? body.length;
-    const line = body.slice(at + LAZYLOAD_OPTIONS_ASSIGNMENT.length, lineEnd);
-    if (line.includes(LAZYLOAD_IMG_SELECTOR) || line.includes(LAZYLOAD_IFRAME_SELECTOR)) {
-      return true;
-    }
-    at = body.indexOf(LAZYLOAD_OPTIONS_ASSIGNMENT, lineEnd);
-  }
-  return false;
+  return hasLazyloadOptions(body, OPTIONS_SELECTORS);
 }
 
 /**

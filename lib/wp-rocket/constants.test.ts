@@ -50,12 +50,10 @@ import {
   LAZYLOAD_BG_EXCLUSION_ID,
   LAZYLOAD_BG_PAIRS_PATTERN,
   LAZYLOAD_EXCLUSIONS_LIST,
-  LAZYLOAD_IFRAME_OPTIONS_PATTERN,
   LAZYLOAD_IFRAME_TARGETS_SELECTOR,
   LAZYLOAD_IMAGE_TARGETS_SELECTOR,
   NATIVE_LAZY_IMAGE_CANDIDATE_SELECTOR,
   NATIVE_LAZY_LOADING_VALUE,
-  LAZYLOAD_IMG_OPTIONS_PATTERN,
   LAZYLOAD_SCRIPT_PATTERN,
   LAZYLOAD_YOUTUBE_PATTERN,
   LAZY_RENDER_ATTRIBUTE,
@@ -121,21 +119,13 @@ describe('lazyload footprint vocabulary', () => {
     expect(DATA_LAZY_SRCSET).toBe('data-lazy-srcset');
   });
 
-  it('pins the script and options-blob patterns', () => {
+  it('pins the script and YouTube helper patterns', () => {
     expect(
       LAZYLOAD_SCRIPT_PATTERN.test(
         'https://x/wp-content/plugins/wp-rocket/assets/js/lazyload/17.0/lazyload.min.js'
       )
     ).toBe(true);
     expect(LAZYLOAD_SCRIPT_PATTERN.test('https://x/js/app.js')).toBe(false);
-    expect(
-      LAZYLOAD_IMG_OPTIONS_PATTERN.test('window.lazyLoadOptions={...};img[data-lazy-src]{...}')
-    ).toBe(true);
-    expect(
-      LAZYLOAD_IFRAME_OPTIONS_PATTERN.test(
-        'window.lazyLoadOptions={...};iframe[data-lazy-src]{...}'
-      )
-    ).toBe(true);
     expect(
       LAZYLOAD_YOUTUBE_PATTERN.test('function lazyLoadThumb(a){}function lazyLoadYoutubeIframe()')
     ).toBe(true);

@@ -7,7 +7,6 @@
  * of re-typed copies so the vocabulary can never drift between surfaces.
  */
 
-import { escapeRegex } from '../../utils/regex.ts';
 import type { FeatureMetaRow, ResourceHintMark, ResourceHintRel } from './types';
 
 /** Attribute WP Rocket uses on delayed scripts to carry the original `src`. */
@@ -131,10 +130,11 @@ export const DATA_LAZY_SRCSET = 'data-lazy-srcset';
 export const LAZYLOAD_NOJS_STYLE_ID = 'rocket-lazyload-nojs-css';
 
 /**
- * How WP Rocket's inline LazyLoad options script opens (no space around
- * `=`: generic vanilla-lazyload setups spell the same global their own way).
+ * The global WP Rocket's inline LazyLoad options script assigns (readable
+ * `window.lazyLoadOptions = ` under `SCRIPT_DEBUG`, minified
+ * `window.lazyLoadOptions=` otherwise; the full rule: `./lazyload-options`).
  */
-export const LAZYLOAD_OPTIONS_ASSIGNMENT = 'window.lazyLoadOptions=';
+export const LAZYLOAD_OPTIONS_GLOBAL = 'window.lazyLoadOptions';
 
 /** The selector WP Rocket's options name for lazy images… */
 export const LAZYLOAD_IMG_SELECTOR = `img[${DATA_LAZY_SRC}]`;
@@ -145,14 +145,6 @@ export const LAZYLOAD_IFRAME_SELECTOR = `iframe[${DATA_LAZY_SRC}]`;
 export const LAZYLOAD_SCRIPT_PATTERN =
   /(wp-rocket\/assets\/js\/lazyload\/.*\/lazyload(\.min)?\.js)/;
 
-/** Lazyload options blob tailored per media query (`img` selector). */
-export const LAZYLOAD_IMG_OPTIONS_PATTERN = new RegExp(
-  `${escapeRegex(LAZYLOAD_OPTIONS_ASSIGNMENT)}(.*)${escapeRegex(LAZYLOAD_IMG_SELECTOR)}`
-);
-/** …and for iframes. */
-export const LAZYLOAD_IFRAME_OPTIONS_PATTERN = new RegExp(
-  `${escapeRegex(LAZYLOAD_OPTIONS_ASSIGNMENT)}(.*)${escapeRegex(LAZYLOAD_IFRAME_SELECTOR)}`
-);
 /**
  * The elements LazyLoad for iframes/videos leaves on a page where it acted:
  * a lazy iframe, or the YouTube preview placeholder that replaced one.

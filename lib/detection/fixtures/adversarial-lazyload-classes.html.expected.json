@@ -54,7 +54,7 @@
       "deferredScripts": 0
     },
     "lazyload": {
-      "present": false,
+      "present": true,
       "images": [
         {
           "src": "https://site.example/wp-content/themes/media/alpine.jpg",
@@ -141,11 +141,13 @@
           "lazyloadDetected": false,
           "excludedReasonsFound": ["data-lazysrc"]
         }
-      ]
+      ],
+      "source": "footprint"
     },
     "lazyload_iframes": {
-      "present": false,
-      "replaceImage": false
+      "present": true,
+      "replaceImage": false,
+      "source": "footprint"
     },
     "lazyload_css_bg_img": {
       "present": false

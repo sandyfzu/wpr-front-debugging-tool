@@ -101,6 +101,13 @@
  *     non-ASCII whitespace (e.g. NBSP), so an NBSP-padded `rel` differs from
  *     the port here; real browsers split on ASCII whitespace only, as the
  *     port does.
+ * 11. Both lazyload options-blob patterns also read WP Rocket's readable
+ *     (`SCRIPT_DEBUG`, unminified) script: optional whitespace around the
+ *     assignment's `=`, and the value's leading whitespace/`[`/`{` run may
+ *     cross line breaks before the selector's line (the original required
+ *     `window.lazyLoadOptions=` with the selector on that same line). Read
+ *     here by this file's own regexes; the port reads the same rule with its
+ *     own linear scanner.
  *
  * The port's contract additions (the cache-marker flag with its comment-only
  * white-label registry and strict display-domain timestamp, the defer count,
@@ -146,12 +153,13 @@ import {
   LAZYLOAD_BG_EXCLUSION_ID,
   LAZYLOAD_BG_PAIRS_PATTERN,
   LAZYLOAD_EXCLUSIONS_LIST,
-  LAZYLOAD_IFRAME_OPTIONS_PATTERN,
+  LAZYLOAD_IFRAME_SELECTOR,
   LAZYLOAD_IFRAME_TARGETS_SELECTOR,
   LAZYLOAD_IMAGE_TARGETS_SELECTOR,
   NATIVE_LAZY_IMAGE_CANDIDATE_SELECTOR,
   NATIVE_LAZY_LOADING_VALUE,
-  LAZYLOAD_IMG_OPTIONS_PATTERN,
+  LAZYLOAD_IMG_SELECTOR,
+  LAZYLOAD_OPTIONS_GLOBAL,
   LAZYLOAD_SCRIPT_PATTERN,
   LAZYLOAD_YOUTUBE_PATTERN,
   LAZY_RENDER_ATTRIBUTE,
@@ -188,6 +196,33 @@ import type {
   ResourceHint,
   WprDetections
 } from '../../wp-rocket/types';
+
+/**
+ * A literal as a regex source (the reference keeps its own copy: it may
+ * import only the shared vocabulary, never the port's helpers).
+ *
+ * @param literal The literal text.
+ */
+function regexLiteral(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The options-blob rule as a regex (deviation 11): the global, optional
+ * whitespace, `=`, the value's whitespace/`[`/`{` run (atomic, via a
+ * captured lookahead), then the selector on that run's line.
+ *
+ * @param selector The selector the options must name.
+ */
+function lazyloadOptionsPattern(selector: string): RegExp {
+  return new RegExp(
+    `${regexLiteral(LAZYLOAD_OPTIONS_GLOBAL)}\\s*=(?=([\\s[{]*))\\1.*${regexLiteral(selector)}`
+  );
+}
+/** Lazyload options blob naming the image selector… */
+export const LAZYLOAD_IMG_OPTIONS_PATTERN = lazyloadOptionsPattern(LAZYLOAD_IMG_SELECTOR);
+/** …and the iframe selector. */
+export const LAZYLOAD_IFRAME_OPTIONS_PATTERN = lazyloadOptionsPattern(LAZYLOAD_IFRAME_SELECTOR);
 
 export type CheckOptimizationFunctionPayload = {
   HTMLDocument: Document;
