@@ -77,6 +77,10 @@ describe('alreadyServesLazyload', () => {
       '<script>window.lazyLoadOptions={};\nwindow.lazyLoadOptions={elements_selector:"iframe[data-lazy-src]"};</script>'
     ],
     [
+      'the readable (SCRIPT_DEBUG) options script',
+      '<script>window.lazyLoadOptions = [{\n                elements_selector: "img[data-lazy-src],.rocket-lazyload",\n                data_src: "lazy-src"}];</script>'
+    ],
+    [
       'lazy image with the placeholder SVG',
       `<img src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2010%2010'%3E%3C/svg%3E" data-lazy-src="/a.png">`
     ],
@@ -106,6 +110,10 @@ describe('alreadyServesLazyload', () => {
         '<script async src="/wp-content/themes/t/js/lazyload.min.js"></script>'
     ],
     ['the global named in a string', '<script>var docs="see window.lazyLoadOptions";</script>'],
+    [
+      'a property of the global, spaced',
+      "<script>window.lazyLoadOptions.img = [{ elements_selector: 'img[data-lazy-src]' }];</script>"
+    ],
     [
       'the assignment and a selector on different lines',
       '<script>window.lazyLoadOptions={}\nvar s="img[data-lazy-src]";</script>'

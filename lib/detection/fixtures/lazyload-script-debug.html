@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<!--
+  Source-derived fixture: WP Rocket 3.24's LazyLoad output with `SCRIPT_DEBUG`
+  on, rendered by the plugin's own `Dependencies/RocketLazyload/Assets.php`
+  (no-JS style, inline options script, runtime tag, YouTube helper) with the
+  minify pass skipped exactly as `Engine/Media/Lazyload/Subscriber.php` skips
+  it: the readable options script `window.lazyLoadOptions = [{` with the
+  selectors on the next line, and the unminified `lazyload.js` runtime.
+  LazyLoad for images (+ CSS background arm) and iframes/videos (+ YouTube
+  preview) on; `rocket_disable_meta_generator` on — no generator meta, as on
+  logged-in and white-label renders — so the footprint checks alone decide.
+  Expected: lazyload present (2 lazy images + their <noscript> fallbacks, one
+  skip-lazy exclusion); lazyload_iframes present, replaceImage true.
+-->
+<html lang="en-US">
+<head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LazyLoad &#8211; SCRIPT_DEBUG on</title>
+<noscript><style id="rocket-lazyload-nojs-css">.rll-youtube-player, [data-lazy-src]{display:none !important;}</style></noscript>
+</head>
+<body>
+<main>
+<img width="640" height="480" src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20640%20480'%3E%3C/svg%3E" class="wp-image-11" alt="" data-lazy-src="https://site.example/wp-content/uploads/2026/11/alpine.jpg" /><noscript><img width="640" height="480" src="https://site.example/wp-content/uploads/2026/11/alpine.jpg" class="wp-image-11" alt="" /></noscript>
+<img width="640" height="480" src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20640%20480'%3E%3C/svg%3E" class="wp-image-12" alt="" data-lazy-srcset="https://site.example/wp-content/uploads/2026/11/lake.jpg 640w, https://site.example/wp-content/uploads/2026/11/lake-300x225.jpg 300w" data-lazy-sizes="(max-width: 640px) 100vw, 640px" data-lazy-src="https://site.example/wp-content/uploads/2026/11/lake.jpg" /><noscript><img width="640" height="480" src="https://site.example/wp-content/uploads/2026/11/lake.jpg" class="wp-image-12" alt="" /></noscript>
+<img width="640" height="480" src="https://site.example/wp-content/uploads/2026/11/hero.jpg" class="skip-lazy" alt="" />
+<div class="wp-block-cover rocket-lazyload" data-bg="https://site.example/wp-content/uploads/2026/11/cover.jpg"></div>
+<iframe title="Map" src="about:blank" data-rocket-lazyload="fitvidscompatible" data-lazy-src="https://maps.example/embed?q=alpine"></iframe><noscript><iframe title="Map" src="https://maps.example/embed?q=alpine"></iframe></noscript>
+<div class="rll-youtube-player" data-src="https://www.youtube.com/embed/dQw4w9WgXcQ" data-id="dQw4w9WgXcQ" data-query="feature=oembed" data-alt="Video"></div><noscript><iframe title="Video" src="https://www.youtube.com/embed/dQw4w9WgXcQ?feature=oembed"></iframe></noscript>
+</main>
+<script>window.lazyLoadOptions = [{
+                elements_selector: "img[data-lazy-src],.rocket-lazyload,iframe[data-lazy-src]",
+                data_src: "lazy-src",
+                data_srcset: "lazy-srcset",
+                data_sizes: "lazy-sizes",
+                class_loading: "lazyloading",
+                class_loaded: "lazyloaded",
+                threshold: 300,
+                callback_loaded: function(element) {
+                    if ( element.tagName === "IFRAME" && element.dataset.rocketLazyload == "fitvidscompatible" ) {
+                        if (element.classList.contains("lazyloaded") ) {
+                            if (typeof window.jQuery != "undefined") {
+                                if (jQuery.fn.fitVids) {
+                                    jQuery(element).parent().fitVids();
+                                }
+                            }
+                        }
+                    }
+                }},{
+				elements_selector: ".rocket-lazyload",
+				data_src: "lazy-src",
+				data_srcset: "lazy-srcset",
+				data_sizes: "lazy-sizes",
+				class_loading: "lazyloading",
+				class_loaded: "lazyloaded",
+				threshold: 300,
+			}];
+        window.addEventListener('LazyLoad::Initialized', function (e) {
+            var lazyLoadInstance = e.detail.instance;
+
+            if (window.MutationObserver) {
+                var observer = new MutationObserver(function(mutations) {
+                    var image_count = 0;
+                    var iframe_count = 0;
+                    var rocketlazy_count = 0;
+
+                    mutations.forEach(function(mutation) {
+                        for (var i = 0; i < mutation.addedNodes.length; i++) {
+                            if (typeof mutation.addedNodes[i].getElementsByTagName !== 'function') {
+                                continue;
+                            }
+
+                            if (typeof mutation.addedNodes[i].getElementsByClassName !== 'function') {
+                                continue;
+                            }
+
+                            images = mutation.addedNodes[i].getElementsByTagName('img');
+                            is_image = mutation.addedNodes[i].tagName == "IMG";
+                            iframes = mutation.addedNodes[i].getElementsByTagName('iframe');
+                            is_iframe = mutation.addedNodes[i].tagName == "IFRAME";
+                            rocket_lazy = mutation.addedNodes[i].getElementsByClassName('rocket-lazyload');
+
+                            image_count += images.length;
+			                iframe_count += iframes.length;
+			                rocketlazy_count += rocket_lazy.length;
+
+                            if(is_image){
+                                image_count += 1;
+                            }
+
+                            if(is_iframe){
+                                iframe_count += 1;
+                            }
+                        }
+                    } );
+
+                    if(image_count > 0 || iframe_count > 0 || rocketlazy_count > 0){
+                        lazyLoadInstance.update();
+                    }
+                } );
+
+                var b      = document.getElementsByTagName("body")[0];
+                var config = { childList: true, subtree: true };
+
+                observer.observe(b, config);
+            }
+        }, false);</script><script data-no-minify="1" async src="https://site.example/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.js"></script><script>function lazyLoadImg(id,l){var s='https://i.ytimg.com/vi/ID/hqdefault.jpg'.replace("ID",id),img=document.createElement("img");if(true&&!l&&false){img.setAttribute("loading","lazy");img.setAttribute("src",s);}else if(true&&!l&&!false){img.setAttribute("data-lazy-src",s);}else{img.setAttribute("src",s);}img.setAttribute("width","480");img.setAttribute("height","360");return img;}function lazyLoadThumb(id,alt,l){if(!/^[A-Za-z0-9_-]{11}$/.test(id)){return null;}var frag=document.createDocumentFragment(),img=lazyLoadImg(id,l);img.setAttribute("alt",alt);frag.appendChild(img);var btn=document.createElement("button");btn.setAttribute("class","play");btn.setAttribute("aria-label","play Youtube video");frag.appendChild(btn);return frag;}function lazyLoadYoutubeIframe(){var src=this.parentNode.dataset.src,url;try{url=new URL(src,"https://www.youtube.com");}catch(err){return;}if("https:"!==url.protocol&&"http:"!==url.protocol){return;}if(["youtube.com","www.youtube.com","youtube-nocookie.com","www.youtube-nocookie.com"].indexOf(url.hostname)===-1){return;}if(url.username||url.password||url.port){return;}if(!/^\/embed\/[A-Za-z0-9_-]{11}\/?$/.test(url.pathname)){return;}url=new URL("https://"+url.hostname+url.pathname.replace(/\/$/,""));var query=this.parentNode.dataset.query||"";new URLSearchParams(query).forEach(function(v,k){url.searchParams.set(k,v);});url.searchParams.set("autoplay","1");var e=document.createElement("iframe");e.setAttribute("src",url.href);e.setAttribute("frameborder","0");e.setAttribute("allowfullscreen","1");e.setAttribute("allow","accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture");this.parentNode.parentNode.replaceChild(e,this.parentNode);}document.addEventListener("DOMContentLoaded",function(){var exclusions=[];var e,t,frag,u,l,a=document.getElementsByClassName("rll-youtube-player");for(t=0;t<a.length;t++){u='https://i.ytimg.com/vi/ID/hqdefault.jpg'.replace("ID",a[t].dataset.id);l=exclusions.some(function(exclusion){return u.indexOf(exclusion)!==-1;});e=document.createElement("div");e.setAttribute("data-id",a[t].dataset.id);e.setAttribute("data-query",a[t].dataset.query);e.setAttribute("data-src",a[t].dataset.src);frag=lazyLoadThumb(a[t].dataset.id,a[t].dataset.alt,l);if(!frag){continue;}e.appendChild(frag);a[t].appendChild(e);e.querySelector(".play").onclick=lazyLoadYoutubeIframe;}});</script>
+</body>
+</html>

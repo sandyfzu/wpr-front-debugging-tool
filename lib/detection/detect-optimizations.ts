@@ -36,8 +36,8 @@ import {
   LAZYLOAD_BG_CONTAINER_ID,
   LAZYLOAD_BG_EXCLUSION_ID,
   LAZYLOAD_EXCLUSIONS_LIST,
-  LAZYLOAD_IFRAME_OPTIONS_PATTERN,
-  LAZYLOAD_IMG_OPTIONS_PATTERN,
+  LAZYLOAD_IFRAME_SELECTOR,
+  LAZYLOAD_IMG_SELECTOR,
   LAZYLOAD_SCRIPT_PATTERN,
   LAZYLOAD_YOUTUBE_PATTERN,
   MOBILE_CACHE_VARIANT_TOKENS,
@@ -55,6 +55,7 @@ import {
   WPR_PRELOAD_ATTRIBUTE,
   isDelayJSType
 } from '../wp-rocket/constants';
+import { hasLazyloadOptions } from '../wp-rocket/lazyload-options';
 import type { FeatureMetaEvidence } from './feature-meta';
 import type { ParsedPage } from './parse-page';
 import { carriesMinifyAttribute, hasMinifyFootprint } from './minify-footprint';
@@ -175,17 +176,18 @@ export function detectDeferAllJs(page: ParsedPage): WprDetections['defer_all_js'
 /**
  * The lazyload footprint scan both lazyload checks share (reference control
  * flow, exactly): reverse script order, script-URL footprint first, then the
- * inline options blob for the check's own media type. `extraPattern` (the
- * iframes' youtube helper) is tested inside the same loop so the shared break
- * condition cuts it identically.
+ * inline options blob for the check's own media type (minified or readable:
+ * `hasLazyloadOptions`). `extraPattern` (the iframes' youtube helper) is
+ * tested inside the same loop so the shared break condition cuts it
+ * identically.
  *
  * @param page The parsed page.
- * @param optionsPattern The inline options-blob pattern for this check.
+ * @param optionsSelectors The selector this check's options blob names.
  * @param extraPattern Optional extra footprint detected by the same scan.
  */
 function scanLazyloadFootprint(
   page: ParsedPage,
-  optionsPattern: RegExp,
+  optionsSelectors: readonly string[],
   extraPattern?: RegExp
 ): { scriptPresent: boolean; inlinePresent: boolean; extraFound: boolean } {
   let scriptPresent = false;
@@ -202,7 +204,7 @@ function scanLazyloadFootprint(
       scriptPresent = true;
       continue;
     }
-    if (optionsPattern.test(script.textContent)) {
+    if (hasLazyloadOptions(script.textContent, optionsSelectors)) {
       inlinePresent = true;
     }
     if (extraPattern !== undefined && extraPattern.test(script.textContent)) {
@@ -211,6 +213,11 @@ function scanLazyloadFootprint(
   }
   return { scriptPresent, inlinePresent, extraFound };
 }
+
+/** The selector LazyLoad for images' options name (allocated once, read per script). */
+const IMG_OPTIONS_SELECTORS: readonly string[] = [LAZYLOAD_IMG_SELECTOR];
+/** …and LazyLoad for iframes'. */
+const IFRAME_OPTIONS_SELECTORS: readonly string[] = [LAZYLOAD_IFRAME_SELECTOR];
 
 /**
  * LazyLoad for images: script presence + per-image state.
@@ -221,10 +228,7 @@ function scanLazyloadFootprint(
  * is read once per image because `outerHTML` re-serializes on every access.
  */
 export function detectLazyload(page: ParsedPage): WprDetections['lazyload'] {
-  const { scriptPresent, inlinePresent } = scanLazyloadFootprint(
-    page,
-    LAZYLOAD_IMG_OPTIONS_PATTERN
-  );
+  const { scriptPresent, inlinePresent } = scanLazyloadFootprint(page, IMG_OPTIONS_SELECTORS);
 
   const images: LazyloadImageRecord[] = [...page.document.querySelectorAll('img')].map((img) => {
     const serialized = img.outerHTML;
@@ -249,7 +253,7 @@ export function detectLazyload(page: ParsedPage): WprDetections['lazyload'] {
 export function detectLazyloadIframes(page: ParsedPage): WprDetections['lazyload_iframes'] {
   const { scriptPresent, inlinePresent, extraFound } = scanLazyloadFootprint(
     page,
-    LAZYLOAD_IFRAME_OPTIONS_PATTERN,
+    IFRAME_OPTIONS_SELECTORS,
     LAZYLOAD_YOUTUBE_PATTERN
   );
   const present = scriptPresent && inlinePresent;

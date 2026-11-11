@@ -55,6 +55,9 @@ export const FIXTURES = [
   'dns-prefetch-hostile.html',
   // Real plugin pass: a `nowprocket` render (footprints without the meta).
   'bypass-render.html',
+  // Source-derived LazyLoad page with SCRIPT_DEBUG on: the readable options
+  // script and unminified runtime, no meta (the footprint checks decide).
+  'lazyload-script-debug.html',
   // Source-derived Load CSS asynchronously page: the async-swapped link arm
   // alone (no fallback script, no meta), the critical style, a <noscript>
   // fallback.
