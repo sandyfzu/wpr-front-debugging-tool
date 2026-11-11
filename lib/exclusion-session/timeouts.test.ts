@@ -1,6 +1,6 @@
 /**
- * The deadline helper (settle, reject, time out, late settlements, sync
- * throws, default timer) and the declared host bounds' arithmetic.
+ * The deadline helpers (settle, reject, time out, late settlements, sync
+ * throws, default timer; the deadline-only retry) and the declared host bounds' arithmetic.
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
@@ -29,6 +29,7 @@ import {
   STREAM_FACTS_WAIT_MS,
   STREAM_RELEASE_MARGIN_MS,
   STREAM_SETTLE_WAIT_MS,
+  retryOnDeadline,
   rewriteDocumentBoundMs,
   streamHoldWorstCaseMs,
   withinDeadline,
@@ -156,6 +157,67 @@ function delayTimers(): {
     pending: () => [...timers].map((timer) => timer.ms)
   };
 }
+
+describe('retryOnDeadline', () => {
+  const missed = (): DeadlineExceededError => new DeadlineExceededError('Step', 10);
+
+  /** A task failing with `fail(n)` on its first `failures` tries, then answering `n`. */
+  const flaky = (failures: number, fail: (n: number) => Error = missed) => {
+    const tries: number[] = [];
+    const task = (attempt: number): Promise<number> => {
+      tries.push(attempt);
+      return tries.length <= failures ? Promise.reject(fail(attempt)) : Promise.resolve(attempt);
+    };
+    return { task, tries };
+  };
+
+  it('answers the first try without retrying', async () => {
+    const { task, tries } = flaky(0);
+    await expect(retryOnDeadline(3, task)).resolves.toBe(1);
+    expect(tries).toEqual([1]);
+  });
+
+  it('tries again after a missed deadline, numbering each try', async () => {
+    const { task, tries } = flaky(2);
+    await expect(retryOnDeadline(3, task)).resolves.toBe(3);
+    expect(tries).toEqual([1, 2, 3]);
+  });
+
+  it('stops at the cap with the last missed deadline (the next try would answer)', async () => {
+    const { task, tries } = flaky(3);
+    await expect(retryOnDeadline(3, task)).rejects.toBeInstanceOf(DeadlineExceededError);
+    expect(tries).toEqual([1, 2, 3]);
+  });
+
+  it('never retries with one attempt', async () => {
+    const { task, tries } = flaky(1);
+    await expect(retryOnDeadline(1, task)).rejects.toBeInstanceOf(DeadlineExceededError);
+    expect(tries).toEqual([1]);
+  });
+
+  it('passes any other failure through on its first occurrence', async () => {
+    const failure = new Error('io');
+    const { task, tries } = flaky(1, () => failure);
+    await expect(retryOnDeadline(3, task)).rejects.toBe(failure);
+    expect(tries).toEqual([1]);
+  });
+
+  it('passes a non-deadline failure after a missed deadline through', async () => {
+    const failure = new Error('io');
+    const { task, tries } = flaky(2, (n) => (n === 1 ? missed() : failure));
+    await expect(retryOnDeadline(3, task)).rejects.toBe(failure);
+    expect(tries).toEqual([1, 2]);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'refuses %s attempts before trying',
+    async (attempts) => {
+      const { task, tries } = flaky(0);
+      await expect(retryOnDeadline(attempts, task)).rejects.toThrow(RangeError);
+      expect(tries).toEqual([]);
+    }
+  );
+});
 
 describe('withinExtensibleDeadline', () => {
   const never = (): Promise<number> => new Promise<number>(() => undefined);

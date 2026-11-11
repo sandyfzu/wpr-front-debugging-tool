@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_EXCLUSION_SET } from '../exclusion-builder/set';
 import type { ExclusionSessionStatus } from '../messaging/exclusion-session';
 import {
+  OVERLAY_STATUS_READ_ATTEMPTS,
   createOverlayReopener,
   restoreSessionOverlays,
   shouldReopenOverlay,
   type OverlayPresentation,
   type PresentationMemory
 } from './overlay-reopen';
+import { DeadlineExceededError } from './timeouts';
 
 const ORIGIN = 'http://127.0.0.1:8493';
 
@@ -182,6 +184,64 @@ describe('createOverlayReopener', () => {
       expect.stringContaining('could not be read'),
       expect.objectContaining({ tabId: 1 })
     );
+  });
+
+  it('asks again when the status read missed a deadline: the applied page still gets its overlay', async () => {
+    // The loaded page's one load event: a status read that missed its store
+    // or queue deadline (a loaded machine) must not lose the re-open.
+    let asks = 0;
+    const { reopener, reopened, log } = rig(() => {
+      asks += 1;
+      return asks === 1
+        ? Promise.reject(new DeadlineExceededError('Session read', 500))
+        : Promise.resolve(ACTIVE);
+    });
+    await reopener.pageLoaded(1, `${ORIGIN}/a`);
+    expect(asks).toBe(2);
+    expect(reopened).toEqual([[1, 'open', ORIGIN]]);
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it('gives up, logged, once every attempt missed its deadline', async () => {
+    // The status answers on the next ask: an uncapped retry would re-open.
+    let asks = 0;
+    const { reopener, reopened, log } = rig(() => {
+      asks += 1;
+      return asks <= OVERLAY_STATUS_READ_ATTEMPTS
+        ? Promise.reject(new DeadlineExceededError('tabStatus queue wait', 500))
+        : Promise.resolve(ACTIVE);
+    });
+    await expect(reopener.pageLoaded(1, `${ORIGIN}/a`)).resolves.toBeUndefined();
+    expect(asks).toBe(OVERLAY_STATUS_READ_ATTEMPTS);
+    expect(reopened).toEqual([]);
+    expect(log.warn).toHaveBeenCalledOnce();
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining('could not be read'),
+      expect.objectContaining({ tabId: 1, attempts: OVERLAY_STATUS_READ_ATTEMPTS })
+    );
+  });
+
+  it('never asks again after a failure that is no missed deadline', async () => {
+    let asks = 0;
+    const { reopener, reopened } = rig(() => {
+      asks += 1;
+      return Promise.reject(new Error('store down'));
+    });
+    await reopener.pageLoaded(1, `${ORIGIN}/a`);
+    expect(asks).toBe(1);
+    expect(reopened).toEqual([]);
+  });
+
+  it('re-reads after a missed deadline: a Stop that landed meanwhile opens nothing', async () => {
+    const answers: (() => Promise<ExclusionSessionStatus>)[] = [
+      () => Promise.reject(new DeadlineExceededError('Session read', 500)),
+      () => Promise.resolve({ state: 'inactive' })
+    ];
+    const { reopener, reopened } = rig(() =>
+      (answers.shift() ?? (() => Promise.resolve(ACTIVE)))()
+    );
+    await reopener.pageLoaded(1, `${ORIGIN}/a`);
+    expect(reopened).toEqual([]);
   });
 
   it('degrades a failing presentation store to the open panel, logged, never rejecting', async () => {

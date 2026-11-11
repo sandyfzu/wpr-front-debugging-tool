@@ -30,12 +30,14 @@ import {
 import type { ArmResult, InterceptionBackend, InterceptionHost } from './backend';
 import {
   createExclusionSessionController,
+  ONE_SHOT_DRIVE_ATTEMPTS,
   type ExclusionSessionController,
   type ExclusionSessionControllerDeps
 } from './controller';
 import type { DocumentTransformRunner } from './document-transform';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
 import {
+  DeadlineExceededError,
   DOCUMENT_TRANSFORM_BUDGET_MS,
   INTERCEPTION_HOST_BOUNDS_MS,
   rewriteDocumentBoundMs,
@@ -203,6 +205,28 @@ function htmlDoc(url = `${ORIGIN}/next`, html = DELAYED) {
     status: 200,
     method: 'GET'
   };
+}
+
+/**
+ * Make the rig's session reads miss their deadline on the given 1-based
+ * calls (the rest read the store).
+ *
+ * @returns How many reads were made so far.
+ */
+function missReads(r: Rig, misses: readonly number[]): () => number {
+  let reads = 0;
+  r.deps.sessions.read = (tabId) => {
+    reads += 1;
+    return misses.includes(reads)
+      ? Promise.reject(new DeadlineExceededError('Session read', SESSION_STEP_TIMEOUTS_MS.store))
+      : getExclusionSessionStatus(tabId);
+  };
+  return () => reads;
+}
+
+/** `1 … n`. */
+function range(n: number): number[] {
+  return Array.from({ length: n }, (_, index) => index + 1);
 }
 
 /** A promise that never settles (a hung browser API). */
@@ -653,6 +677,124 @@ describe('tab close', () => {
       level: 'error',
       message: 'Session tab-close cleanup failed'
     });
+  });
+
+  it('drives again after a session read missed its deadline: the record is cleared', async () => {
+    const r = rig();
+    await seedActive();
+    const reads = missReads(r, [1]);
+    await r.controller.tabClosed(TAB);
+    expect(reads()).toBe(2);
+    await expect(getExclusionSessionRecords()).resolves.toEqual({});
+    expect(r.backend.calls).toEqual([`disarm:${String(TAB)}`]);
+    expect(logged(r.log, 'error', /tab-close cleanup failed/)).toBe(false);
+  });
+
+  it('gives up, logged once, after every drive missed its deadline', async () => {
+    const r = rig();
+    await seedActive();
+    // The read answers on the next ask: an uncapped retry would clear the record.
+    const reads = missReads(r, range(ONE_SHOT_DRIVE_ATTEMPTS));
+    await r.controller.tabClosed(TAB);
+    expect(reads()).toBe(ONE_SHOT_DRIVE_ATTEMPTS);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ state: 'active' });
+    expect(r.log.lines.filter((line) => line.level === 'error')).toEqual([
+      { level: 'error', message: 'Session tab-close cleanup failed' }
+    ]);
+  });
+
+  it('never drives again after a failure that is no missed deadline', async () => {
+    const r = rig();
+    await seedActive();
+    let reads = 0;
+    r.deps.sessions.read = () => {
+      reads += 1;
+      return Promise.reject(new Error('io'));
+    };
+    await r.controller.tabClosed(TAB);
+    expect(reads).toBe(1);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ state: 'active' });
+  });
+
+  it('re-drives a removal that missed its deadline: disarmed again, record cleared', async () => {
+    const r = rig();
+    await seedActive();
+    let removals = 0;
+    r.deps.sessions.remove = (tabId) => {
+      removals += 1;
+      return removals === 1
+        ? Promise.reject(new DeadlineExceededError('Session removal', 500))
+        : removeExclusionSessionRecord(tabId);
+    };
+    await r.controller.tabClosed(TAB);
+    expect(removals).toBe(2);
+    await expect(getExclusionSessionRecords()).resolves.toEqual({});
+    expect(r.backend.calls).toEqual([`disarm:${String(TAB)}`, `disarm:${String(TAB)}`]);
+  });
+
+  it('frees its place under the session cap even when the first read was slow', async () => {
+    const r = rig();
+    for (let tab = 100; tab < 100 + EXCLUSION_SESSION_LIMIT; tab++) await seedActive(tab);
+    missReads(r, [1]);
+    await r.controller.tabClosed(100);
+    await expect(r.controller.apply(page(), { set: SET })).resolves.toEqual({
+      outcome: 'applying'
+    });
+  });
+});
+
+describe('one-shot drives', () => {
+  it('cleans a gone tab’s record at wake even when its first read was slow', async () => {
+    await seedActive(9);
+    const r = rig();
+    const reads = missReads(r, [1]);
+    await r.controller.revalidate();
+    expect(reads()).toBe(2);
+    await expect(getExclusionSessionRecords()).resolves.toEqual({});
+  });
+
+  it('records a document whose record drive missed a read deadline', async () => {
+    const r = rig();
+    await seedActive();
+    // Read 1: the host's session gate; read 2: the record drive.
+    const reads = missReads(r, [2]);
+    await r.host.documentPassed(TAB, `${ORIGIN}/x`, 'network-error');
+    expect(reads()).toBe(3);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'network-error' }
+    });
+  });
+
+  it('re-reads on the retry: a session replaced meanwhile never gets the old page’s record', async () => {
+    const r = rig();
+    await seedActive();
+    let reads = 0;
+    r.deps.sessions.read = async (tabId) => {
+      reads += 1;
+      if (reads !== 2) return getExclusionSessionStatus(tabId);
+      // A re-apply's record lands while the first drive's read is slow.
+      await seedActive(TAB, NOW + 5);
+      throw new DeadlineExceededError('Session read', 500);
+    };
+    await r.host.documentPassed(TAB, `${ORIGIN}/x`, 'network-error');
+    expect(reads).toBe(3);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      startedAt: NOW + 5,
+      document: null
+    });
+  });
+
+  it('gives up on a document record after every drive missed its deadline', async () => {
+    const r = rig();
+    await seedActive();
+    const reads = missReads(
+      r,
+      range(ONE_SHOT_DRIVE_ATTEMPTS).map((n) => n + 1)
+    );
+    await r.host.documentPassed(TAB, `${ORIGIN}/x`, 'network-error');
+    expect(reads()).toBe(1 + ONE_SHOT_DRIVE_ATTEMPTS);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
+    expect(logged(r.log, 'error', /document record failed/)).toBe(true);
   });
 });
 

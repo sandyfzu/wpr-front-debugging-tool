@@ -251,6 +251,37 @@ export function withinDeadline<T>(
 }
 
 /**
+ * Run `task` again, immediately (the missed deadline already waited), only
+ * after it rejected with a {@link DeadlineExceededError}, at most `attempts`
+ * times in all — for a one-shot step with no later trigger, where a slow
+ * moment would otherwise lose it. Any other rejection, or the last
+ * attempt's, passes through unchanged. `task` must be safe to re-run after
+ * a missed deadline and bounded itself, so the whole run is bounded too.
+ *
+ * @param attempts The most tries (a positive integer; 1 = no retry).
+ * @param task One try, given its 1-based number.
+ * @returns The first try's value that settled in time.
+ * @throws {@link RangeError} When `attempts` is not a positive integer.
+ */
+export async function retryOnDeadline<T>(
+  attempts: number,
+  task: (attempt: number) => Promise<T>
+): Promise<T> {
+  if (!Number.isInteger(attempts) || attempts < 1) {
+    throw new RangeError(
+      `retryOnDeadline: attempts must be a positive integer, got ${String(attempts)}`
+    );
+  }
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await task(attempt);
+    } catch (cause) {
+      if (!(cause instanceof DeadlineExceededError) || attempt >= attempts) throw cause;
+    }
+  }
+}
+
+/**
  * {@link withinDeadline} with a deadline `work` may lengthen once: both
  * timers start now, and the base one rejects only while `work` has not
  * called `extend` — so the extended deadline counts from the same start

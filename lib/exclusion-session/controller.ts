@@ -114,6 +114,7 @@ import {
   DeadlineExceededError,
   DOCUMENT_TRANSFORM_BUDGET_MS,
   INTERCEPTION_HOST_BOUNDS_MS,
+  retryOnDeadline,
   rewriteDocumentBoundMs,
   SESSION_STEP_TIMEOUTS_MS as STEPS,
   withinDeadline,
@@ -211,6 +212,20 @@ export interface ExclusionSessionController {
  * rule a retry out.
  */
 const ARM_TIMEOUT_CAUSE: ArmUnavailableCause = 'attach-denied';
+
+/**
+ * How many times a one-shot event (a tab close, a document record) is
+ * driven when a store step missed its deadline: nothing re-sends it, so a
+ * slow moment would otherwise lose it — a closed tab's `active` record
+ * would count toward the session cap until the next wake, a page would
+ * show no record. Re-driving is safe: it re-reads the record and re-runs
+ * the pure transition (a stale document is still dropped), and the retry
+ * holds the tab's queue slot, so no later event interleaves. Each attempt
+ * is bounded, so the extra hold is at most two more bounded drives (a
+ * store read each after a missed read; read + disarm + removal each after
+ * a missed removal).
+ */
+export const ONE_SHOT_DRIVE_ATTEMPTS = 3;
 
 /** The newest session start time among records (0 when none) — seeds the start issuer. */
 function newestStart(records: ExclusionSessionRecords): number {
@@ -561,10 +576,20 @@ export function createExclusionSessionController(
     return state;
   };
 
-  /** Drive an event where nobody awaits a reply: every failure is logged. */
-  const driveQuietly = async (tabId: number, event: SessionEvent, what: string): Promise<void> => {
+  /**
+   * Drive an event where nobody awaits a reply: every failure is logged.
+   *
+   * @param attempts How many drives a missed deadline may take (see
+   *   {@link ONE_SHOT_DRIVE_ATTEMPTS}); 1 = no retry.
+   */
+  const driveQuietly = async (
+    tabId: number,
+    event: SessionEvent,
+    what: string,
+    attempts = 1
+  ): Promise<void> => {
     try {
-      await enqueue(tabId, () => drive(tabId, event));
+      await enqueue(tabId, () => retryOnDeadline(attempts, () => drive(tabId, event)));
     } catch (cause) {
       log.error(`Session ${what} failed`, { tabId, cause });
     }
@@ -776,7 +801,12 @@ export function createExclusionSessionController(
     startedAt: number,
     outcome: ExclusionDocumentOutcome
   ): Promise<void> =>
-    driveQuietly(tabId, { type: 'document', startedAt, outcome }, 'document record');
+    driveQuietly(
+      tabId,
+      { type: 'document', startedAt, outcome },
+      'document record',
+      ONE_SHOT_DRIVE_ATTEMPTS
+    );
 
   /**
    * Rewrite one eligible document of the tab's live session (see the seam).
@@ -966,7 +996,7 @@ export function createExclusionSessionController(
   /** Re-validate one stored record at wake. */
   const revalidateRecord = async (tabId: number, record: ExclusionSessionRecord): Promise<void> => {
     if (!(await probeTab(tabId))) {
-      await driveQuietly(tabId, { type: 'tab-closed' }, 'wake cleanup');
+      await driveQuietly(tabId, { type: 'tab-closed' }, 'wake cleanup', ONE_SHOT_DRIVE_ATTEMPTS);
       return;
     }
     if (record.state !== 'active') return;
@@ -1069,7 +1099,12 @@ export function createExclusionSessionController(
 
     async tabClosed(tabId) {
       await awaitReady('tab-close cleanup proceeds');
-      await driveQuietly(tabId, { type: 'tab-closed' }, 'tab-close cleanup');
+      await driveQuietly(
+        tabId,
+        { type: 'tab-closed' },
+        'tab-close cleanup',
+        ONE_SHOT_DRIVE_ATTEMPTS
+      );
     },
 
     revalidate() {
