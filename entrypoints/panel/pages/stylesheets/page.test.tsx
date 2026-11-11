@@ -6,7 +6,7 @@
  * chip, search, a Refresh and a payload refresh keeping the chip and query,
  * and a new page load re-reading without showing the earlier list.
  */
-import { cleanup, fireEvent, screen } from '@solidjs/testing-library';
+import { cleanup, fireEvent, screen, within } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PAGE_STYLE_LIMITS } from '../../../../lib/messaging/page-styles';
 import type {
@@ -135,6 +135,26 @@ describe('StylesheetsPage — states', () => {
     expect(document.querySelector('[data-fdt="stylesheets-total"]')?.textContent).toBe('2 styles');
     expect(rows()[1]?.querySelector('[data-fdt="style-identity"]')?.textContent).toBe('#theme');
     expect(rows()[1]?.querySelector('[data-fdt="style-preview"]')?.textContent).toBe('.a{}');
+  });
+
+  it('leads a link row with its file name over the full, linked, copyable URL', async () => {
+    renderStylesheets([reply([link({ href: 'https://s.test/wp-content/a/b/plain.css?ver=6' })])]);
+    await settle();
+    const row = rows()[0] as HTMLElement;
+    expect(row.querySelector('[data-fdt="resource-name"]')?.textContent).toBe('plain.css');
+    expect(within(row).getByRole('link').getAttribute('href')).toBe(
+      'https://s.test/wp-content/a/b/plain.css?ver=6'
+    );
+    expect(within(row).getByRole('button', { name: 'Stylesheet URL — copy' })).toBeTruthy();
+  });
+
+  it('names a link without an address instead of an empty name', async () => {
+    renderStylesheets([reply([link({ href: '' })])]);
+    await settle();
+    const row = rows()[0] as HTMLElement;
+    expect(row.textContent).toContain('No stylesheet address');
+    expect(within(row).queryByRole('link')).toBeNull();
+    expect(within(row).queryByRole('button', { name: /copy/ })).toBeNull();
   });
 
   it('names a miss and retries', async () => {

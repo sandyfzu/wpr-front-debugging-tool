@@ -1,7 +1,7 @@
 /**
- * One row of the JavaScript page's script list: the type chip and state
- * chips, then the script itself — an external script's URL (opens in a new
- * tab, copyable) or an inline script's code (collapsed to three lines,
+ * One row of the JavaScript page's script list: an external script's
+ * identity (type chip, file name, states, the full URL — opens in a new tab,
+ * copyable), or an inline script's chips then its code (collapsed to three lines,
  * expandable, copyable, wrapped by the row's own Wrap toggle — the compact
  * row owns the language caption and the one toggle, the block owns no
  * chrome). Rows are virtual: they mount and unmount with scrolling, so they
@@ -24,7 +24,7 @@ import type { CodeLanguage } from '../../../../components/ui/code-block-langs';
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { cn } from '../../../../utils/cn';
 import { CURRENT_MATCH_ROW } from '../current-match';
-import { ExternalLink } from '../page-frame';
+import { ResourceLink } from '../resource-list/resource-link';
 import { StateChips } from '../resource-list/state-chip-list';
 import type { ContentCapture, InlineCode, ScriptRowView } from './script-view';
 import {
@@ -82,9 +82,9 @@ export interface ScriptRowProps {
  * Render one script row.
  *
  * The root is the list item (`aria-setsize`/`aria-posinset` — the full list
- * is never in the DOM); its height is natural (the list measures it). Compact
- * width stacks an external URL under its chips; from the regular tier it
- * shares their line.
+ * is never in the DOM); its height is natural (the list measures it). An
+ * external row's states stack under its URL when compact; from the regular
+ * tier they share the name's line.
  *
  * @param props See {@link ScriptRowProps}.
  */
@@ -107,12 +107,11 @@ export function ScriptRow(props: ScriptRowProps): JSX.Element {
         when={props.view.code}
         fallback={
           <ExternalScript
-            url={props.view.row.content}
+            view={props.view}
             loadSource={
               props.loadSource ??
               (props.view.capture === 'clipped' ? missingSnapshotSource : undefined)
             }
-            chips={<RowChips view={props.view} />}
           />
         }
       >
@@ -124,7 +123,12 @@ export function ScriptRow(props: ScriptRowProps): JSX.Element {
             source={props.view.row.content}
             loadSource={props.loadSource}
             code={code()}
-            chips={<RowChips view={props.view} />}
+            chips={
+              <>
+                <TypeChip view={props.view} />
+                <RowStates view={props.view} />
+              </>
+            }
             expanded={props.expanded}
             wrap={props.wrap}
             onToggle={(toggle) => {
@@ -140,22 +144,31 @@ export function ScriptRow(props: ScriptRowProps): JSX.Element {
 }
 
 /**
- * The type chip, the state chips (at most three, then "+N") and, on a
- * delayed row, its original `type` — what the row is and how WP Rocket
- * treats it. Text always names the state; color only reinforces it. Rendered
- * as bare items so the caller's wrapping line lays them out with its own
- * trailing items; a chip never breaks inside its own label, while the type
- * (a page value, up to 64 characters) breaks anywhere rather than push the
- * row sideways.
+ * The type chip: what the row is ("Inline" / "External"), leading every row.
  *
  * @param props.view The row.
  */
-function RowChips(props: { view: ScriptRowView }): JSX.Element {
+function TypeChip(props: { view: ScriptRowView }): JSX.Element {
+  return (
+    <Badge variant="outline" class="font-medium whitespace-nowrap">
+      {props.view.row.type === 'inline' ? 'Inline' : 'External'}
+    </Badge>
+  );
+}
+
+/**
+ * The state chips (at most three, then "+N") and, on a delayed row, its
+ * original `type` — how WP Rocket treats the script. Text always names the
+ * state; color only reinforces it. Rendered as bare items so the caller's
+ * wrapping line lays them out with its own trailing items; a chip never
+ * breaks inside its own label, while the type (a page value, up to 64
+ * characters) breaks anywhere rather than push the row sideways.
+ *
+ * @param props.view The row.
+ */
+function RowStates(props: { view: ScriptRowView }): JSX.Element {
   return (
     <>
-      <Badge variant="outline" class="font-medium whitespace-nowrap">
-        {props.view.row.type === 'inline' ? 'Inline' : 'External'}
-      </Badge>
       <StateChips chips={props.view.chips} />
       <Show when={props.view.typeDetail}>
         {(detail) => (
@@ -173,40 +186,35 @@ function RowChips(props: { view: ScriptRowView }): JSX.Element {
 }
 
 /**
- * An external script: chips, then the URL with its copy control — on the
- * chips' line from the regular tier (wrapping below when the chips leave it
- * under 12 rem), on its own line below when compact.
+ * An external script, through the shared resource link: file name + copy on
+ * the first line, the full URL (new tab) beneath, type and state chips beside
+ * the name from the regular tier and on their own line when compact — so a
+ * narrow panel still names the file where a bare URL would truncate to its
+ * host. The copy keeps its "Script URL" name and reads the exact captured URL
+ * when the shown one is bounded.
  *
- * @param props.url The script URL (possibly relative or empty).
- * @param props.chips The row's chips.
+ * @param props.view The row.
+ * @param props.loadSource Read the exact captured URL (bounded inventories).
  */
 function ExternalScript(props: {
-  url: string;
-  chips: JSX.Element;
+  view: ScriptRowView;
   loadSource?: (signal: AbortSignal) => Promise<string>;
 }): JSX.Element {
   return (
-    <div class="flex flex-wrap items-center gap-1">
-      {props.chips}
-      <div class="flex min-h-6 min-w-0 basis-full items-center gap-1 @regular:ms-1 @regular:flex-1 @regular:basis-48">
-        <Show
-          when={props.url !== ''}
-          fallback={<span class="text-2xs text-fg-muted">Empty src attribute</span>}
-        >
-          <div class="min-w-0 flex-1">
-            <ExternalLink href={props.url} />
-          </div>
-          <CopyButton
-            loadText={props.loadSource}
-            sourceFailureDescription={SOURCE_READ_REMEDY}
-            text={props.url}
-            label="Script URL"
-            showLabel={false}
-            class="shrink-0"
-          />
-        </Show>
-      </div>
-    </div>
+    <ResourceLink
+      href={props.view.row.content}
+      copyNoun="Script URL"
+      copyNamesRow={false}
+      loadCopyText={props.loadSource}
+      copyLoadFailure={SOURCE_READ_REMEDY}
+      missingLabel="Empty src attribute"
+      state={
+        <span class="flex min-w-0 flex-wrap items-center gap-1">
+          <TypeChip view={props.view} />
+          <RowStates view={props.view} />
+        </span>
+      }
+    />
   );
 }
 

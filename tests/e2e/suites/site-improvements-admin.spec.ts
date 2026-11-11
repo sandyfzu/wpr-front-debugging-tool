@@ -20,6 +20,14 @@ import type { Page } from '@playwright/test';
 
 import { expect, type ExtensionDriver } from '../helpers/extension';
 import { SITE_URL, siteTest } from '../helpers/site';
+import { resetStoredOptions } from '../helpers/options';
+
+// One profile serves every suite: the options this file writes go back to the
+// fresh-install item after each test (its assertions are over, so a page it
+// left open no longer needs them) and no stored choice reaches the next suite.
+siteTest.afterEach(async ({ extension }) => {
+  await resetStoredOptions(extension);
+});
 
 /** Id of the admin-bar list item this module owns. */
 const DBUGGER_ITEM_ID = 'wp-admin-bar-d-bugger';

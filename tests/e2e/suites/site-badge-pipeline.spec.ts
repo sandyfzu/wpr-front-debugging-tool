@@ -22,6 +22,14 @@
 import { expect, type ExtensionDriver } from '../helpers/extension';
 import { BADGE_COLORS, BADGE_DOT, POLLED_BADGE_OPTIONS, readBadge } from '../helpers/badge';
 import { openSitePage, SITE_URL, siteTest } from '../helpers/site';
+import { resetStoredOptions } from '../helpers/options';
+
+// One profile serves every suite: the options this file writes go back to the
+// fresh-install item after each test (its assertions are over, so a page it
+// left open no longer needs them) and no stored choice reaches the next suite.
+siteTest.afterEach(async ({ extension }) => {
+  await resetStoredOptions(extension);
+});
 
 /** A unique cacheable flagged URL per run (first-hit = live-optimized). */
 const flaggedUrl = (): string => `${SITE_URL}/?fdt-error=reference&fdt-delay=${String(Date.now())}`;

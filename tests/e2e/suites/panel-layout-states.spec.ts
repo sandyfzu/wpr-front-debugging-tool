@@ -3,6 +3,14 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type { Page } from '@playwright/test';
 import { expect, openFixturePage, panelPageUrl, test } from '../helpers/extension';
+import { resetStoredOptions } from '../helpers/options';
+
+// One profile serves every suite: the options this file writes go back to the
+// fresh-install item after each test (its assertions are over, so a page it
+// left open no longer needs them) and no stored choice reaches the next suite.
+test.afterEach(async ({ extension }) => {
+  await resetStoredOptions(extension);
+});
 
 /** Debugger injection is required by extension CSP. */
 const AXE_SOURCE = readFileSync(

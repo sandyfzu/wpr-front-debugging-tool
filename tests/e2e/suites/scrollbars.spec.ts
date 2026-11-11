@@ -7,6 +7,14 @@ import type { Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { expect, openFixturePage, panelPageUrl, test } from '../helpers/extension';
 import { openPanelForFixture } from '../helpers/panel-data';
+import { resetStoredOptions } from '../helpers/options';
+
+// One profile serves every suite: the options this file writes go back to the
+// fresh-install item after each test (its assertions are over, so a page it
+// left open no longer needs them) and no stored choice reaches the next suite.
+test.afterEach(async ({ extension }) => {
+  await resetStoredOptions(extension);
+});
 
 /** Resolved foreground token values; literals pin both palette branches. */
 const THUMB = { light: 'rgb(93, 102, 117)', dark: 'rgb(139, 150, 169)' } as const;

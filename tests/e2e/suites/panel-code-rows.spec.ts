@@ -13,6 +13,14 @@
 import type { Locator } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
 import { openPanelForFixture } from '../helpers/panel-data';
+import { resetStoredOptions } from '../helpers/options';
+
+// One profile serves every suite: the options this file writes go back to the
+// fresh-install item after each test (its assertions are over, so a page it
+// left open no longer needs them) and no stored choice reaches the next suite.
+test.afterEach(async ({ extension }) => {
+  await resetStoredOptions(extension);
+});
 
 /**
  * A script inventory with every code-row shape: two external markers, a
@@ -314,7 +322,7 @@ interface SeedShape {
 
 /** The four seed shapes and their mirrored estimates. */
 const SEED_SHAPES: readonly SeedShape[] = [
-  { marker: '[data-index]:has(a[href$="a.js"])', seed: 37, code: true },
+  { marker: '[data-index]:has(a[href$="a.js"])', seed: 55, code: true },
   { marker: '[data-index]:has-text("Empty inline script")', seed: 57, code: false },
   { marker: '[data-index]:has-text("short2 = 2")', seed: 115, code: true },
   { marker: '[data-index]:has-text("five1 = 1")', seed: 145, code: true }

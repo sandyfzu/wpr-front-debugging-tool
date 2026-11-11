@@ -44,6 +44,17 @@ export interface ResourceLinkProps {
   state?: JSX.Element;
   /** The meta line's content (e.g. exclusion reasons), wrapping. */
   children?: JSX.Element;
+  /**
+   * `false` names the copy control by {@link ResourceLinkProps.copyNoun}
+   * alone ("Script URL — copy", toast "Script URL copied") instead of the
+   * per-row "<noun> (<name>)" — for a list whose copy name is already
+   * established (default `true`).
+   */
+  copyNamesRow?: boolean;
+  /** Resolve the complete text on copy (the shown URL may be a bounded capture). */
+  loadCopyText?: (signal: AbortSignal) => Promise<string>;
+  /** The remedy toasted when {@link ResourceLinkProps.loadCopyText} fails. */
+  copyLoadFailure?: string;
 }
 
 /**
@@ -69,14 +80,18 @@ const URL_LINE = 'mt-0.5 justify-self-start text-2xs [grid-area:url]';
 /**
  * Grid templates by which optional slots the row has (`chip` × `state`) —
  * literal class strings (the stylesheet is generated from the source text),
- * so an absent slot never leaves an empty track plus its gap.
+ * so an absent slot never leaves an empty track plus its gap. The state
+ * track is `fit-content(50%)`: an `auto` track grows to its chips' full
+ * width before the name's `1fr` gets any, so a row with many chips would
+ * squeeze the name to nothing; capped, the chips wrap and the name keeps
+ * at least half the line.
  */
 const GRID_TEMPLATES = {
   none: 'grid-cols-[minmax(0,1fr)_auto] [grid-template-areas:"name_copy"_"url_url"_"meta_meta"]',
   chip: 'grid-cols-[auto_minmax(0,1fr)_auto] [grid-template-areas:"chip_name_copy"_"url_url_url"_"meta_meta_meta"]',
   state:
-    'grid-cols-[minmax(0,1fr)_auto] [grid-template-areas:"name_copy"_"url_url"_"meta_meta"] @regular:grid-cols-[minmax(0,1fr)_auto_auto] @regular:[grid-template-areas:"name_state_copy"_"url_url_url"_"meta_meta_meta"]',
-  both: 'grid-cols-[auto_minmax(0,1fr)_auto] [grid-template-areas:"chip_name_copy"_"url_url_url"_"meta_meta_meta"] @regular:grid-cols-[auto_minmax(0,1fr)_auto_auto] @regular:[grid-template-areas:"chip_name_state_copy"_"url_url_url_url"_"meta_meta_meta_meta"]'
+    'grid-cols-[minmax(0,1fr)_auto] [grid-template-areas:"name_copy"_"url_url"_"meta_meta"] @regular:grid-cols-[minmax(0,1fr)_fit-content(50%)_auto] @regular:[grid-template-areas:"name_state_copy"_"url_url_url"_"meta_meta_meta"]',
+  both: 'grid-cols-[auto_minmax(0,1fr)_auto] [grid-template-areas:"chip_name_copy"_"url_url_url"_"meta_meta_meta"] @regular:grid-cols-[auto_minmax(0,1fr)_fit-content(50%)_auto] @regular:[grid-template-areas:"chip_name_state_copy"_"url_url_url_url"_"meta_meta_meta_meta"]'
 } as const;
 
 /** Which optional slots a row fills. */
@@ -161,7 +176,13 @@ export function ResourceLink(props: ResourceLinkProps): JSX.Element {
       >
         <CopyButton
           text={props.href}
-          label={copyLabel(props.copyNoun, name(), props.clipped === true)}
+          loadText={props.loadCopyText}
+          sourceFailureDescription={props.copyLoadFailure}
+          label={
+            props.copyNamesRow === false
+              ? props.copyNoun
+              : copyLabel(props.copyNoun, name(), props.clipped === true)
+          }
           showLabel={false}
           class="justify-self-end [grid-area:copy]"
         />

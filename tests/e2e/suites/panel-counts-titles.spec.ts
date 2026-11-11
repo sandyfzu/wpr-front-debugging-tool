@@ -3,6 +3,14 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { expect, test } from '../helpers/extension';
 import { openPanelForFixture } from '../helpers/panel-data';
+import { resetStoredOptions } from '../helpers/options';
+
+// One profile serves every suite: the options this file writes go back to the
+// fresh-install item after each test (its assertions are over, so a page it
+// left open no longer needs them) and no stored choice reaches the next suite.
+test.afterEach(async ({ extension }) => {
+  await resetStoredOptions(extension);
+});
 
 /** Debugger injection keeps the accessibility engine outside extension CSP. */
 const AXE_SOURCE = readFileSync(

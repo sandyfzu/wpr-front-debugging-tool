@@ -225,6 +225,27 @@ export async function readDocumentTheme(page: Page): Promise<{
   }));
 }
 
+/**
+ * Assert an extension document renders the System palette for the emulated
+ * scheme: no stored Dark/Light pins `data-theme` on its root, and the root's
+ * computed `color-scheme` (pinned per palette by the tokens) is the scheme.
+ * Emulated media alone can't prove it: a choice an earlier suite left stored
+ * wins over it.
+ *
+ * @param page An extension-document page (options/panel) booted under `scheme`.
+ * @param scheme The emulated `prefers-color-scheme` arm the page must render.
+ */
+export async function expectSystemPalette(page: Page, scheme: 'dark' | 'light'): Promise<void> {
+  await expect(page.locator('html'), 'no stored Dark/Light pins the palette').not.toHaveAttribute(
+    'data-theme'
+  );
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), {
+      message: `the root renders the ${scheme} palette`
+    })
+    .toBe(scheme);
+}
+
 /** Remove the instant rows' items (gate + shortcut): reads degrade to their defaults. */
 export async function resetInstantRows(driver: ExtensionDriver): Promise<void> {
   await driver.evaluateInWorker(async () => {

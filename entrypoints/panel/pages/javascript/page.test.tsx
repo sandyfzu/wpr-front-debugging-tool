@@ -305,6 +305,8 @@ describe('JavaScriptView — rows', () => {
     expect(deferred?.textContent).toBe('Deferred');
     expect(deferred?.dataset.fdtSource).toBe('wp-rocket');
     expect(deferred?.querySelector('svg')?.classList.contains('lucide-rocket')).toBe(true);
+    // The file name leads; the full URL stays the link beneath it.
+    expect(row.querySelector('[data-fdt="resource-name"]')?.textContent).toBe('cart.js');
     const link = within(row).getByRole('link');
     expect(link.getAttribute('href')).toBe('https://example.test/cart.js');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
