@@ -5,6 +5,7 @@
  * the rest behind one "+N" chip whose title names them with their sources.
  * Pages build the split once per row view (never in the row renderer).
  */
+import type { SimulationFact } from '../../../../lib/wp-rocket/types';
 import { STATE_SOURCE_LOOKS, type StateSource } from './state-sources';
 
 /** One state chip on a row. */
@@ -51,6 +52,32 @@ export const NO_STATE_CHIPS: StateChipSplit = { visible: [], overflow: null };
  */
 export function chipPhrase(chip: StateChip): string {
   return `${chip.label} (${STATE_SOURCE_LOOKS[chip.source].phrase})`;
+}
+
+/** Appended to a WP Rocket chip's title while the page carries an unverified simulation marker for its feature. */
+export const UNVERIFIED_SIMULATION_SUFFIX = ' (simulation not verified)';
+
+/**
+ * Who produced a state an FDT simulation can also produce, and its hover
+ * text: the simulation's on a page where a verified simulation, not WP
+ * Rocket, ran the feature; else WP Rocket's — flagged on hover when an
+ * unverified marker names the feature (a page's markup alone cannot claim a
+ * simulation), so the chip claims no more than the Detections card.
+ *
+ * @param fact The feature's simulation fact (`null`: no marker).
+ * @param verb The state's verb ("Delayed").
+ * @param feature The feature's plugin-settings name.
+ */
+export function simulatableSource(
+  fact: SimulationFact | null,
+  verb: string,
+  feature: string
+): Pick<StateChip, 'source' | 'title'> {
+  if (fact === 'simulated') {
+    return { source: 'simulated', title: `${verb} by the FDT's ${feature} simulation` };
+  }
+  const flag = fact === 'unverified' ? UNVERIFIED_SIMULATION_SUFFIX : '';
+  return { source: 'wp-rocket', title: `${verb} by WP Rocket (${feature})${flag}` };
 }
 
 /**

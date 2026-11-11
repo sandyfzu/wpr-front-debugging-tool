@@ -32,13 +32,14 @@ describe('buildFilterChips', () => {
   it('maps every chip in order with its count and label', () => {
     const chips = buildFilterChips(
       LAZYLOAD_PAGE_RESOURCES,
-      { all: 3, lazyloaded: 2, 'non-lazyloaded': 1 },
+      { all: 3, lazyloaded: 2, 'non-lazyloaded': 1, excluded: 0 },
       'all'
     );
     expect(chips).toEqual([
       { value: 'all', label: 'Show all', count: 3, disabled: false },
       { value: 'lazyloaded', label: 'Lazyloaded', count: 2, disabled: false },
-      { value: 'non-lazyloaded', label: 'Non-lazyloaded', count: 1, disabled: false }
+      { value: 'non-lazyloaded', label: 'Non-lazyloaded', count: 1, disabled: false },
+      { value: 'excluded', label: 'Excluded', count: 0, disabled: true }
     ]);
   });
 

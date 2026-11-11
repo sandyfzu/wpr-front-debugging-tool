@@ -20,6 +20,7 @@ import {
   type PreloadedFilterId
 } from './resources-view-model';
 import { emptyDetections } from './support-report.fixtures';
+import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
 import type { PreloadedResources, WprDetections } from '../wp-rocket/types';
 
 /** Build delay-JS rows straight from record-shaped scripts. */
@@ -256,22 +257,28 @@ describe('the page definitions — chips and predicates', () => {
     expect(JS_PAGE_RESOURCES.searchField).toBeTypeOf('function');
   });
 
-  it('the Lazyload pattern carries its three chips; the field is src', () => {
-    expect(LAZYLOAD_PAGE_RESOURCES.filters.map((filter) => filter.id)).toEqual([
-      'all',
-      'lazyloaded',
-      'non-lazyloaded'
+  it('the Lazyload pattern carries its four chips; the field is src', () => {
+    expect(LAZYLOAD_PAGE_RESOURCES.filters.map((filter) => [filter.id, filter.label])).toEqual([
+      ['all', 'Show all'],
+      ['lazyloaded', 'Lazyloaded'],
+      ['non-lazyloaded', 'Non-lazyloaded'],
+      ['excluded', 'Excluded']
     ]);
     const rows = buildLazyloadRows({
       present: true,
       images: [
         { src: '/a.jpg', lazyloadDetected: true, excludedReasonsFound: [] },
-        { src: '/b.jpg', lazyloadDetected: false, excludedReasonsFound: [] }
+        { src: '/b.jpg', lazyloadDetected: false, excludedReasonsFound: [] },
+        { src: '/c.jpg', lazyloadDetected: false, excludedReasonsFound: [FDT_EXCLUDED_RESOURCE] }
       ]
     });
-    expect(filterAndSearch(rows, LAZYLOAD_PAGE_RESOURCES, 'lazyloaded', '')).toEqual(
-      rows.filter((row) => row.lazyloaded)
-    );
+    expect(filterAndSearch(rows, LAZYLOAD_PAGE_RESOURCES, 'lazyloaded', '')).toEqual([rows[0]]);
+    expect(filterAndSearch(rows, LAZYLOAD_PAGE_RESOURCES, 'non-lazyloaded', '')).toEqual([
+      rows[1],
+      rows[2]
+    ]);
+    // The filter selects exactly the rows whose chip reads Excluded.
+    expect(filterAndSearch(rows, LAZYLOAD_PAGE_RESOURCES, 'excluded', '')).toEqual([rows[2]]);
     expect(filterAndSearch(rows, LAZYLOAD_PAGE_RESOURCES, 'all', '/b.jpg')).toEqual([rows[1]]);
   });
 
@@ -394,7 +401,8 @@ describe('filterCounts — one pass, every chip', () => {
     expect(filterCounts([], LAZYLOAD_PAGE_RESOURCES)).toEqual({
       all: 0,
       lazyloaded: 0,
-      'non-lazyloaded': 0
+      'non-lazyloaded': 0,
+      excluded: 0
     });
   });
 

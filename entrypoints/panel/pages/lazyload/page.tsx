@@ -1,8 +1,12 @@
 /**
  * The Lazyload page: every `<img>` the lazyload check classified, whether
  * WP Rocket lazyloads it, and — when the feature is detected — exclusion
- * evidence for images it does not lazyload. Chips: all / lazyloaded /
- * non-lazyloaded; the search narrows by image URL (`src`). Layout, search wiring and states: `ResourceListPage`.
+ * evidence for images it does not lazyload. Each row's state chip shows
+ * its source (WP Rocket, a verified FDT simulation, an FDT exclusion, the
+ * page's own lazy markup) under
+ * one legend. Filters: all / lazyloaded / non-lazyloaded / excluded; the
+ * search narrows by image URL (`src`). Layout, search wiring and states:
+ * `ResourceListPage`.
  *
  * **Thumbnails: not shipped (decided 2026-10-14, verified on the built
  * extension).** The ship criteria were: remote `img-src` allowed by the
@@ -32,7 +36,6 @@ import { For, Show, createMemo } from 'solid-js';
 import ImageOff from 'lucide-solid/icons/image-off';
 import { Badge } from '../../../../components/ui/badge';
 import { EmptyState } from '../../../../components/ui/empty-state';
-import { StatusBadge } from '../../../../components/ui/status-badge';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { IMAGE_NOUN } from '../../../../lib/detection/count-nouns';
 import { runtimeOnPage } from '../../../../lib/detection/simulation-fact';
@@ -48,13 +51,21 @@ import { useFdtData } from '../../state/use-fdt-data';
 import { ResourceListPage } from '../resource-list/resource-list';
 import { ResourceLink } from '../resource-list/resource-link';
 import { urlClipped } from '../resource-list/resource-list-view';
+import { StateChips } from '../resource-list/state-chip-list';
+import { StateSourceLegend } from '../resource-list/state-source-legend';
 import {
   exclusionReasons,
+  LAZYLOAD_CHIP_SOURCES,
+  lazyloadChipFacts,
+  lazyloadChipTable,
   lazyloadNotes,
   lazyloadRowEstimate,
-  lazyloadStateBadge,
-  sameImageRow,
-  showLazyloadReasons
+  lazyloadRowView,
+  NO_LAZYLOAD_CHIP_FACTS,
+  sameImageRowView,
+  sameLazyloadChipFacts,
+  showLazyloadReasons,
+  type LazyloadRowView
 } from './lazyload-rows';
 
 /**
@@ -86,12 +97,20 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
       ? state.data.wprDetections.lazyload
       : null;
   });
+  /** The facts deciding who produced each Lazyloaded chip — an unchanged set keeps the chip table. */
+  const facts = createMemo(() => lazyloadChipFacts(lazyload()), NO_LAZYLOAD_CHIP_FACTS, {
+    equals: sameLazyloadChipFacts
+  });
+  const chipTable = createMemo(() => lazyloadChipTable(facts()));
+  /** Row views: each row's chips built once here, never in the row renderer. */
   const rows = createMemo(() => {
     const detection = lazyload();
-    return detection === null ? [] : buildLazyloadRows(detection);
+    if (detection === null) return [];
+    const table = chipTable();
+    return buildLazyloadRows(detection).map((row) => lazyloadRowView(row, table));
   });
   /** A verified simulation, not WP Rocket, lazy loads the page. */
-  const simulated = (): boolean => lazyload()?.simulation === 'simulated';
+  const simulated = (): boolean => facts().simulation === 'simulated';
   /** Images are lazy loaded here, by WP Rocket or by a verified simulation. */
   const lazyloading = (): boolean => {
     const row = lazyload();
@@ -105,7 +124,7 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
       subtitle="Every image on the page and whether WP Rocket lazyloads it."
       definition={LAZYLOAD_PAGE_RESOURCES}
       rows={rows()}
-      sameRow={sameImageRow}
+      sameRow={sameImageRowView}
       notes={notesFor(lazyload())}
       featureLabel={getRealOptionName('lazyload')}
       featurePresent={lazyload()?.present ?? false}
@@ -119,10 +138,10 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
         <LazyloadRow
           row={row}
           featurePresent={lazyloading()}
-          simulated={simulated()}
           clipped={urlClipped(lazyload()?.truncated, row.src, PAYLOAD_LIMITS.images.src)}
         />
       )}
+      legend={<StateSourceLegend sources={LAZYLOAD_CHIP_SOURCES} />}
       createVirtualizer={props.createVirtualizer}
       empty={
         <EmptyState
@@ -137,31 +156,29 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
 }
 
 /**
- * One image row: name, state badge, copy and the full URL; a non-lazyloaded
+ * One image row: name, state chip, copy and the full URL; a non-lazyloaded
  * image adds its reasons on the meta line only when lazyload runs on the page.
  *
- * @param props.row The image row.
+ * @param props.row The row view (its chips already built).
  * @param props.featurePresent Whether image lazyload runs on the page (WP Rocket's or a verified simulation's).
- * @param props.simulated Whether a verified simulation runs it.
  * @param props.clipped Whether the capture clipped its URL.
  */
 function LazyloadRow(props: {
-  row: LazyloadImageResource;
+  row: LazyloadRowView;
   featurePresent: boolean;
-  simulated: boolean;
   clipped: boolean;
 }): JSX.Element {
-  const state = (): ReturnType<typeof lazyloadStateBadge> =>
-    lazyloadStateBadge(props.row, props.simulated);
   return (
     <ResourceLink
       href={props.row.src}
       copyNoun="Image URL"
       clipped={props.clipped}
       state={
-        <StatusBadge kind={state().kind} class="shrink-0">
-          {state().label}
-        </StatusBadge>
+        props.row.chips.visible.length > 0 ? (
+          <span class="flex flex-wrap items-center gap-1">
+            <StateChips chips={props.row.chips} />
+          </span>
+        ) : undefined
       }
     >
       <Show when={showLazyloadReasons(props.row, props.featurePresent)}>
@@ -172,27 +189,22 @@ function LazyloadRow(props: {
 }
 
 /**
- * A non-lazyloaded image's reasons (meta-line items, laid out by the row):
- * the tool's own exclusion marker as a distinct warn badge (text and color both differ), then the page's reasons
- * as mono outline badges, wrapping; none → a muted "No reasons found".
+ * A non-lazyloaded image's page reasons (meta-line items, laid out by the
+ * row) as mono outline badges, wrapping; none → a muted "No reasons found".
+ * The tool's own marker is the row's Excluded chip, never a reason here.
  *
  * @param props.row The image row.
  */
 function ReasonsLine(props: { row: LazyloadImageResource }): JSX.Element {
-  const split = (): ReturnType<typeof exclusionReasons> => exclusionReasons(props.row);
+  const reasons = (): readonly string[] => exclusionReasons(props.row).reasons;
   return (
     <span data-fdt="lazyload-reasons" class="contents">
       <Show
-        when={split().excludedByTool || split().reasons.length > 0}
+        when={reasons().length > 0}
         fallback={<span class="text-2xs text-fg-muted">No reasons found</span>}
       >
         <span class="text-2xs text-fg-muted">Reasons</span>
-        <Show when={split().excludedByTool}>
-          <Badge kind="warn" class="font-medium">
-            Excluded by FDT
-          </Badge>
-        </Show>
-        <For each={split().reasons}>
+        <For each={reasons()}>
           {(reason) => (
             <Badge variant="outline" class="font-mono break-all">
               {reason}
