@@ -80,7 +80,8 @@ describe('shared chip rules', () => {
     expect(LAZYLOAD_PAGE_RESOURCES.filters.map(({ label }) => label)).toEqual([
       'Show all',
       'Lazyloaded',
-      'Non-lazyloaded'
+      'Non-lazyloaded',
+      'Excluded'
     ]);
     expect(PRELOADED_PAGE_RESOURCES.filters.map(({ label }) => label)).toEqual([
       'Show all',

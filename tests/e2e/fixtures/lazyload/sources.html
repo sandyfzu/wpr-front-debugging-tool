@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Lazyload chip sources fixture</title>
+  </head>
+  <body>
+    <h1>One chip per source</h1>
+    <p>
+      WP Rocket's lazy markup with its script and options (the runtime never loads): an image it
+      lazyloads, with a URL long enough to wrap at 320 px; one the FDT kept out of lazyload beside a
+      page reason; one the FDT marker alone explains; a plain image.
+    </p>
+    <img
+      data-lazy-src="/wp-content/uploads/2026/11/a-very-long-hero-image-name-that-cannot-fit-at-the-narrowest-panel-width.webp"
+      alt="Lazy"
+    />
+    <img src="/excluded.jpg" data-skip-lazy="1" data-wpr-fdt-excluded="lazyload" alt="Excluded" />
+    <img src="/marker-only.jpg" data-wpr-fdt-excluded="lazyload" alt="Marker only" />
+    <img src="/plain.jpg" alt="Plain" />
+    <script src="/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js"></script>
+    <!-- prettier-ignore -->
+    <script>window.lazyLoadOptions={elements_selector:'img[data-lazy-src]'};</script>
+  </body>
+</html>

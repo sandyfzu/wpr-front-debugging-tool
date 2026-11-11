@@ -1,16 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import type { LazyloadImageResource } from '../../../../lib/panel/resources-view-model';
 import { FDT_EXCLUDED_RESOURCE } from '../../../../lib/wp-rocket/constants';
+import { NO_STATE_CHIPS, UNVERIFIED_SIMULATION_SUFFIX } from '../resource-list/state-chips';
 import {
   exclusionReasons,
+  LAZY_MARKUP_NOTE,
+  LAZYLOAD_CHIP_SOURCES,
   LAZYLOAD_ROW_ESTIMATE,
   LAZYLOAD_ROW_WITH_REASONS_ESTIMATE,
+  lazyloadChipFacts,
+  lazyloadChipSplit,
+  lazyloadChipTable,
   lazyloadNotes,
   lazyloadRowEstimate,
-  lazyloadStateBadge,
+  lazyloadRowView,
+  NO_LAZYLOAD_CHIP_FACTS,
+  PAGE_LAZY_MARKUP_TITLE,
   sameImageRow,
-  showLazyloadReasons
+  sameImageRowView,
+  sameLazyloadChipFacts,
+  showLazyloadReasons,
+  type LazyloadChipTable,
+  type LazyloadRowView
 } from './lazyload-rows';
+import type { SimulationFact } from '../../../../lib/wp-rocket/types';
 
 /** One image row with overrides. */
 function row(overrides: Partial<LazyloadImageResource> = {}): LazyloadImageResource {
@@ -23,21 +36,159 @@ function row(overrides: Partial<LazyloadImageResource> = {}): LazyloadImageResou
   };
 }
 
-describe('lazyloadStateBadge', () => {
-  it('reads lazyloaded as info and the rest as neutral (never an error)', () => {
-    expect(lazyloadStateBadge(row({ lazyloaded: true }))).toEqual({
-      kind: 'info',
-      label: 'Lazyloaded'
+/** The chip table for a fact set (WP Rocket's LazyLoad detected unless said otherwise). */
+function table(simulation: SimulationFact | null = null, present = true): LazyloadChipTable {
+  return lazyloadChipTable({ present, simulation });
+}
+
+describe('lazyloadChipSplit', () => {
+  const lazy = row({ lazyloaded: true });
+  const marked = row({ excludedReasons: ['data-src', FDT_EXCLUDED_RESOURCE] });
+
+  it('WP Rocket’s LazyLoad detected, no marker: a lazyloaded image is WP Rocket’s, named with the feature', () => {
+    expect(lazyloadChipSplit(lazy, table())).toEqual({
+      visible: [
+        {
+          id: 'lazyloaded',
+          label: 'Lazyloaded',
+          source: 'wp-rocket',
+          title: 'Lazyloaded by WP Rocket (LazyLoad for images)'
+        }
+      ],
+      overflow: null
     });
-    expect(lazyloadStateBadge(row())).toEqual({ kind: 'neutral', label: 'Not lazyloaded' });
   });
 
-  it('names a verified simulation’s lazy image as simulated; a skipped one stays plain', () => {
-    expect(lazyloadStateBadge(row({ lazyloaded: true }), true)).toEqual({
-      kind: 'info',
-      label: 'Lazyloaded (Simulated)'
+  it('WP Rocket’s LazyLoad not detected: the lazy markup is the page’s own (any plugin writes it)', () => {
+    expect(lazyloadChipSplit(lazy, table(null, false)).visible).toEqual([
+      { id: 'lazyloaded', label: 'Lazyloaded', source: 'page', title: PAGE_LAZY_MARKUP_TITLE }
+    ]);
+    expect(PAGE_LAZY_MARKUP_TITLE).toBe(
+      "Lazy markup on the page (WP Rocket's LazyLoad not detected)"
+    );
+    // An unverified marker vouches for nothing either; the hover still flags it.
+    expect(lazyloadChipSplit(lazy, table('unverified', false)).visible).toEqual([
+      {
+        id: 'lazyloaded',
+        label: 'Lazyloaded',
+        source: 'page',
+        title: `${PAGE_LAZY_MARKUP_TITLE}${UNVERIFIED_SIMULATION_SUFFIX}`
+      }
+    ]);
+  });
+
+  it('a verified simulation produced it: the simulation’s source and title (WP Rocket absent)', () => {
+    expect(lazyloadChipSplit(lazy, table('simulated', false)).visible).toEqual([
+      {
+        id: 'lazyloaded',
+        label: 'Lazyloaded',
+        source: 'simulated',
+        title: "Lazyloaded by the FDT's LazyLoad for images simulation"
+      }
+    ]);
+  });
+
+  it('an unverified marker on a detected page keeps WP Rocket and flags the title', () => {
+    const [chip] = lazyloadChipSplit(lazy, table('unverified')).visible;
+    expect(chip?.source).toBe('wp-rocket');
+    expect(chip?.title).toBe(
+      `Lazyloaded by WP Rocket (LazyLoad for images)${UNVERIFIED_SIMULATION_SUFFIX}`
+    );
+  });
+
+  it.each([
+    [null, true],
+    [null, false],
+    ['simulated', false],
+    ['unverified', true]
+  ] as const)(
+    'the FDT marker reads Excluded (FDT exclusion) whatever the facts (%s, %s)',
+    (fact, present) => {
+      expect(lazyloadChipSplit(marked, table(fact, present)).visible).toEqual([
+        {
+          id: 'excluded',
+          label: 'Excluded',
+          source: 'excluded',
+          title: 'Excluded by FDT from LazyLoad for images'
+        }
+      ]);
+    }
+  );
+
+  it('a non-lazyloaded image without the marker shows no chip (the filter keeps it)', () => {
+    expect(lazyloadChipSplit(row(), table())).toBe(NO_STATE_CHIPS);
+    expect(lazyloadChipSplit(row({ excludedReasons: ['skip-lazy'] }), table('simulated'))).toBe(
+      NO_STATE_CHIPS
+    );
+  });
+
+  it('every chip source is one the legend declares, and every declared source is reachable', () => {
+    const seen = new Set<string>();
+    for (const fact of [null, 'simulated', 'unverified'] as const) {
+      for (const present of [true, false]) {
+        for (const image of [lazy, marked]) {
+          for (const chip of lazyloadChipSplit(image, table(fact, present)).visible) {
+            expect(LAZYLOAD_CHIP_SOURCES).toContain(chip.source);
+            seen.add(chip.source);
+          }
+        }
+      }
+    }
+    expect([...seen].sort()).toEqual([...LAZYLOAD_CHIP_SOURCES].sort());
+    expect(LAZYLOAD_CHIP_SOURCES).toEqual(['wp-rocket', 'simulated', 'excluded', 'page']);
+  });
+});
+
+describe('chip facts and row views', () => {
+  it('reads the facts off the detection, none while no data is mounted', () => {
+    expect(lazyloadChipFacts(null)).toBe(NO_LAZYLOAD_CHIP_FACTS);
+    expect(lazyloadChipFacts({ present: true, images: [] })).toEqual({
+      present: true,
+      simulation: null
     });
-    expect(lazyloadStateBadge(row(), true)).toEqual({ kind: 'neutral', label: 'Not lazyloaded' });
+    expect(lazyloadChipFacts({ present: false, simulation: 'simulated', images: [] })).toEqual({
+      present: false,
+      simulation: 'simulated'
+    });
+  });
+
+  it('compares fact sets field by field', () => {
+    const base = { present: true, simulation: null };
+    expect(sameLazyloadChipFacts(base, { ...base })).toBe(true);
+    expect(sameLazyloadChipFacts(base, { ...base, present: false })).toBe(false);
+    expect(sameLazyloadChipFacts(base, { ...base, simulation: 'unverified' })).toBe(false);
+  });
+
+  it('a row view carries its row and its split', () => {
+    const chips = table();
+    const view = lazyloadRowView(row({ lazyloaded: true }), chips);
+    expect(view.lazyloaded).toBe(true);
+    expect(view.chips.visible).toEqual([chips.lazyloaded]);
+  });
+
+  it('views match only with the same data and chips that read the same', () => {
+    const chips = table();
+    const a = lazyloadRowView(row({ lazyloaded: true }), chips);
+    expect(sameImageRowView(a, lazyloadRowView(row({ lazyloaded: true }), chips))).toBe(true);
+    // A new fact set builds a new table: every view re-derives.
+    expect(
+      sameImageRowView(a, lazyloadRowView(row({ lazyloaded: true }), table('simulated')))
+    ).toBe(false);
+    expect(sameImageRowView(a, lazyloadRowView(row(), chips))).toBe(false);
+    const plain = lazyloadRowView(row(), chips);
+    expect(sameImageRowView(plain, lazyloadRowView(row(), table('simulated')))).toBe(true);
+  });
+
+  it('views with a "+N" chip compare its title', () => {
+    const chips = table();
+    const base = lazyloadRowView(row({ lazyloaded: true }), chips);
+    const overflow = (title: string): LazyloadRowView => ({
+      ...base,
+      chips: { visible: base.chips.visible, overflow: { label: '+1', title, hidesWpRocket: false } }
+    });
+    expect(sameImageRowView(overflow('Also: A (page)'), overflow('Also: A (page)'))).toBe(true);
+    expect(sameImageRowView(overflow('Also: A (page)'), overflow('Also: B (page)'))).toBe(false);
+    expect(sameImageRowView(base, overflow('Also: A (page)'))).toBe(false);
   });
 });
 
@@ -72,6 +223,15 @@ describe('showLazyloadReasons', () => {
     expect(lazyloadRowEstimate(image, present)).toBe(
       expected ? LAZYLOAD_ROW_WITH_REASONS_ESTIMATE : LAZYLOAD_ROW_ESTIMATE
     );
+  });
+
+  it('the marker alone is no reasons line (its chip says it); beside page reasons the line stays', () => {
+    const only = row({ excludedReasons: [FDT_EXCLUDED_RESOURCE] });
+    expect(showLazyloadReasons(only, true)).toBe(false);
+    expect(lazyloadRowEstimate(only, true)).toBe(LAZYLOAD_ROW_ESTIMATE);
+    const both = row({ excludedReasons: ['skip-lazy', FDT_EXCLUDED_RESOURCE] });
+    expect(showLazyloadReasons(both, true)).toBe(true);
+    expect(showLazyloadReasons(both, false)).toBe(false);
   });
 });
 
@@ -121,14 +281,17 @@ describe('lazyloadNotes', () => {
       "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
     ]);
     // An unverified marker proves nothing: the page reads as served.
-    expect(lazyloadNotes({ present: false, simulation: 'unverified', images })[0]).toContain(
-      'lazyload script was not found'
-    );
+    expect(lazyloadNotes({ present: false, simulation: 'unverified', images })).toEqual([
+      LAZY_MARKUP_NOTE
+    ]);
   });
 
   it('explains lazyloaded images while the feature reads absent', () => {
     const notes = lazyloadNotes({ present: false, images: [{ ...image, lazyloadDetected: true }] });
-    expect(notes).toHaveLength(1);
-    expect(notes[0]).toContain('lazyload script was not found');
+    expect(notes).toEqual([LAZY_MARKUP_NOTE]);
+    // Names no author for the markup, and claims nothing about the script.
+    expect(LAZY_MARKUP_NOTE).toBe(
+      "Some images carry lazy-load markup, but WP Rocket's LazyLoad was not detected on this page."
+    );
   });
 });

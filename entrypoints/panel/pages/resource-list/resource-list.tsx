@@ -58,6 +58,8 @@ export interface ResourceListPageProps<Row extends ResourceRow, Id extends strin
   estimateSize: (row: Row) => number;
   /** Render one row's content (the list wraps it in its `listitem`). */
   renderRow: (row: Row) => JSX.Element;
+  /** A key to the rows' chips, between the filter bar and the list (shown while rows exist). */
+  legend?: JSX.Element;
   /** The virtualizer seam (tests inject a layout-free double). */
   createVirtualizer?: VirtualizerFactory;
 }
@@ -90,6 +92,7 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
         searchPlaceholder={props.searchPlaceholder}
         estimateSize={props.estimateSize}
         renderRow={props.renderRow}
+        legend={props.legend}
         createVirtualizer={props.createVirtualizer}
       />
     </PageFrame>

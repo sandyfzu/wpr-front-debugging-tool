@@ -26,7 +26,12 @@ import {
 } from '../../../../lib/panel/script-states';
 import { countLabel, formatCount, type CountNoun } from '../../../../utils/format-count';
 import { isBlankScriptType, isClassicScriptType } from '../../../../utils/script-type';
-import { splitStateChips, type StateChip, type StateChipSplit } from '../resource-list/state-chips';
+import {
+  simulatableSource,
+  splitStateChips,
+  type StateChip,
+  type StateChipSplit
+} from '../resource-list/state-chips';
 import { STATE_SOURCES, type StateSource } from '../resource-list/state-sources';
 import type { SimulationFact } from '../../../../lib/wp-rocket/types';
 
@@ -108,14 +113,9 @@ type ChipDisplay = (
   simulation: ScriptSimulation
 ) => Pick<StateChip, 'source' | 'title'>;
 
-/** Appended to a WP Rocket chip's title while the page carries an unverified simulation marker for its feature. */
-export const UNVERIFIED_SIMULATION_SUFFIX = ' (simulation not verified)';
-
 /**
- * A Delayed or stamped Deferred chip: the simulation's on a page where a
- * verified simulation, not WP Rocket, ran the feature; else WP Rocket's —
- * flagged on hover when an unverified marker names the feature, so the chip
- * claims no more than the Detections card.
+ * A Delayed or stamped Deferred chip's source and hover text (the shared
+ * rule, {@link simulatableSource}), naming the feature by its plugin-settings name.
  *
  * @param fact The feature's simulation fact (`null`: no marker).
  * @param verb The state's verb ("Delayed").
@@ -126,12 +126,7 @@ function simulatableChip(
   verb: string,
   feature: 'delay_js' | 'defer_all_js'
 ): Pick<StateChip, 'source' | 'title'> {
-  const name = getRealOptionName(feature);
-  if (fact === 'simulated') {
-    return { source: 'simulated', title: `${verb} by the FDT's ${name} simulation` };
-  }
-  const flag = fact === 'unverified' ? UNVERIFIED_SIMULATION_SUFFIX : '';
-  return { source: 'wp-rocket', title: `${verb} by WP Rocket (${name})${flag}` };
+  return simulatableSource(fact, verb, getRealOptionName(feature));
 }
 
 /**
