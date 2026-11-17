@@ -1,22 +1,16 @@
-# P14.6 external verification and P15 release gate
+# P15 release gate (P14.6 moved to post-release P22)
 
 ## TLDR
 
-P14.6 verifies production-only behavior **after P14.5**; then deferredP7→P5J→P15. If owner site unavailable, record scoped skip and carry survivors into P15, never imply runtime pass. P15 closes every required promise across browsers, not just compile/build. No implementation/commit/tag/push/publication authorized merely by this checklist.
+Real-site verification (former P14.6) is post-release [P22](./22-phase-22-post-release-real-site.md); order deferredP7→P5J→P8→P15. Never imply a real-site pass before P22 runs. P15 closes every required promise across browsers, not just compile/build. No implementation/commit/tag/push/publication authorized merely by this checklist.
 
-## P14.6 external-site track
+## P14.6 external-site track — moved
 
-Depends:P4.1/P14.5+owner-authorized site/spawner. Parallel:—chosen slot. Size:S to scope, then small per-flow suites if needed. Existing local browser harness only, no CI.
-
-- [ ] Owner supplies disposable site/credentials through ignored env, never logs. At execution enumerate every external-tagged survivor from core/SBS/P11–P14; decide automatable suites vs manual reasons.
-- [ ] Real PSI framing/auto-flow/cross-origin refresh; real hosting/CDN/stripped cache signature; live RUCSS/beacon service behavior; mobile-cache identity/independent tab/restoration. Local intercepted/stub/fixture tiers stay offline regressions, not replaced or misrepresented as production proof.
-- [ ] If available: local external suites green+survivors documented here. If unavailable: **skipped-by-scope / reason / surviving P15 rows**, explicit owner scope, no fabricated acceptance.
-
-DoD: one of those two evidenced outcomes, secret-safe site cleanup/preconditions. HelpScout authenticated mailbox ergonomics, visual judgment, publication/OS accidents remain manual owner verdicts, not automatically covered by site availability.
+Owner 2026-11-17: deferred after the first release as [P22](./22-phase-22-post-release-real-site.md) (scope enumerated, suites planned, site provided). Not a P15 blocker; P15 rows that cite real-site evidence stay open and are re-checked in P22.
 
 ## P15 hardening/release
 
-Depends:all required phases inclP14.5/P14.6 disposition/P7/P5J/P21 WP Rocket simulation (before release, owner 2026-10-22); P10 needs owner replan/disposition, not silent skip; P17 optional. Parallel:—final gate. Installed Node24/pinned pnpm/TS5.9/WXT/Solid/test tools, no speculative upgrades.
+Depends:all required phases inclP14.5/P7/P5J/P21 WP Rocket simulation (before release, owner 2026-10-22); P10 needs owner replan/disposition, not silent skip; P17 optional. Parallel:—final gate. Installed Node24/pinned pnpm/TS5.9/WXT/Solid/test tools, no speculative upgrades.
 
 ### P15A — Budgets/performance
 

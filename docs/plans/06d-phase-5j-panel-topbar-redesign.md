@@ -2,13 +2,13 @@
 
 ## TLDR
 
-**Planned:** after P14.6/P7, followed by deferred P8 (the popup takes the last pre-release slot); dependencies shippedP5C/D/I. Parallel:—in release slot. Installed stack/shared nav registry/primitives, no new dependency approved. Design first, then small implementation/test slices; don't revive retired top-bar morphology.
+**Planned:** after P7, followed by deferred P8 (the popup takes the last pre-release slot); dependencies shippedP5C/D/I. Parallel:—in release slot. Installed stack/shared nav registry/primitives, no new dependency approved. Design first, then small implementation/test slices; don't revive retired top-bar morphology.
 
 Owner2026-10-13 found wide top bar ugly/scrolling, below-row tooltips stealing clicks and white boot. Immediate fixes already shipped: **rail only at every width**, tooltips right/sibling hit-test safe, themed boot canvas/per-icon imports. Background-only System→stored-theme flip before content accepted; content never wrong palette. P5J owns the **deferred final form**, not those completed repairs. [Shell record](./completed-shell.md), [design decisions](./design-decisions.md).
 
 ## P5J.A — Design gate
 
-Depends:P7/P14.6 delivery knowledge+P5I. Parallel:—. Goal: final right/bottom/undocked shape agreed before code.
+Depends:P7 delivery knowledge+P5I. Parallel:—. Goal: final right/bottom/undocked shape agreed before code.
 
 - [ ] Wireframes/decisions for brand/header/status bar/appearance, grouping/live details, wide/narrow/short overflow, rail-only or dual form. Explicitly solve wide polish/default-visible scrollbar complaint, not old bar recolor.
 - [ ] Preserve nav registry/additive rows, UX-D2/D14/D15/D16; amend dated design decision **first** if contradictory. If width form returns, one named container threshold/pure rule+CSS sync guard, not viewport branches.

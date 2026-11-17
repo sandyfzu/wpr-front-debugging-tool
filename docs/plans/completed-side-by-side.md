@@ -70,5 +70,5 @@ Do not mark the whole suite phase complete from mechanics passing:
 - [ ] Permanent dual-origin sync-degrade pin: one blocked marker, no repeat errors, healthy half independent, switch usable. `fdt-redirect=cross` was dropped/not built; add a dual-origin fixture, not a false same-origin test.
 - [ ] Promote once-verified UA echo/mobile-cache copy, second-tab independence and PSI-no-leak round to permanent assertions where feasible. Existing rule/continuity/tag subset does not prove every network/page-copy claim.
 - [ ] Firefox manual: permission-gated DNR, mobile rule/identity/viewport, scroll sync, desktop width; absent namespace must return unavailable without calls. Playwright cannot load Firefox extensions. Record result in Firefox/P15, not build-only success.
-- [ ] Authorized external real mobile-cache site, independent tab and restoration (P14.6/P15); real PSI production behavior. Stub flow evidence is insufficient.
+- [ ] Authorized external real mobile-cache site, independent tab and restoration (P22E); real PSI production behavior. Stub flow evidence is insufficient.
 - Real-device touch/DPR/etc. and PSI scroll semantics remain deliberate non-emulation, not test failures.

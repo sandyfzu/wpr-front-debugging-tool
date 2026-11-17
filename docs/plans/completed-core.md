@@ -138,6 +138,6 @@ Evidence:33 extraction/cap/sentinel/safety/teardown tests plus real-window compo
 
 - Real first-baseline header-capture comparison and total-page timing/absolute counts; repeat source-compiled diff in P15.
 - 120-tab LRU/memory exercise (unit cap is covered); menu click ergonomics and real in-place extension reload/mid-page stale capture.
-- Authenticated HelpScout SPA/count/hide-show behavior; PSI production/redirect refresh (P14.6).
+- Authenticated HelpScout SPA/count/hide-show behavior; PSI production/redirect refresh (P22B).
 - Firefox runtime, including MAIN capture, messaging/global alias and injected UI. Build-only evidence does not close these; see [Firefox plan](./17-firefox-runtime-parity.md) and P15.
 - All current manual rows in [e2e README](../../tests/e2e/README.md) remain authoritative operational checklists. P2–P4 are not relabeled fully done merely because automated subsets passed.

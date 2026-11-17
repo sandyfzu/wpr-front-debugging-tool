@@ -2,7 +2,7 @@
 
 ## TLDR
 
-**Deferred until rebuilt Support Diagnoser JSON is available.** Parser/extraction already ship; adapt them to v2 before rendering. Execute **after P14.6, before P5J/P15**; reserved nav row remains disabled/explained until then. Technical dependencies:P1/P5/P6+rebuilt plugin; independent P9/parked P10 need not wait (P8 deferred pre-release). Installed WXT/Solid/TS, shared UI/JSON tree, Vitest/Playwright; no planned dependency additions.
+**Deferred until rebuilt Support Diagnoser JSON is available.** Parser/extraction already ship; adapt them to v2 before rendering. Execute **before P5J/P15**; reserved nav row remains disabled/explained until then. Technical dependencies:P1/P5/P6+rebuilt plugin; independent P9/parked P10 need not wait (P8 deferred pre-release). Installed WXT/Solid/TS, shared UI/JSON tree, Vitest/Playwright; no planned dependency additions.
 
 ## Reference and retained requirements
 

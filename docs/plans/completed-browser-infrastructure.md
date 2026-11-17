@@ -22,7 +22,7 @@ Limitations: Firefox Playwright cannot load the extension; attached DevTools vis
 
 ## P4.2: reproducible WordPress site
 
-Delivered Compose WordPress+MariaDB+wp-cli, idempotent bootstrap, up/down/reset scripts, ignored credentials/plugin ZIP, mu-plugin fixtures, conflict-plugin derivation and zero-dependency raw-CDP smoke. Docker is the default site; P14.6 owns external-site scope.
+Delivered Compose WordPress+MariaDB+wp-cli, idempotent bootstrap, up/down/reset scripts, ignored credentials/plugin ZIP, mu-plugin fixtures, conflict-plugin derivation and zero-dependency raw-CDP smoke. Docker is the default site; [P22](./22-phase-22-post-release-real-site.md) (post-release) owns external-site scope.
 
 Historical pins: WP Rocket3.23.5.1, `v3.23.5.1@8e89a59` built by apvm3.2.0; MariaDB11.8.9, WordPress7.1.3/php8.4, CLI2.12.0/php8.4. Read compose/env/runbook before rebuilding; the ZIP is never committed and bootstrap rejects a mismatched version.
 

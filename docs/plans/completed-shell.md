@@ -2,7 +2,7 @@
 
 ## TLDR
 
-Shell/design system shipped2026-10-12/13; browser suites closed2026-10-14. [Design decisions](./design-decisions.md) retain binding requirements; [P5J](./06d-phase-5j-panel-topbar-redesign.md) remains the **last implementation phase**, after P7/P14.6 and before P15. Rail is interim, not an unfinished top-bar toggle. Later layout/feedback acceptance is [here](./completed-ui-acceptance.md); page behavior is [here](./completed-panel-pages.md).
+Shell/design system shipped2026-10-12/13; browser suites closed2026-10-14. [Design decisions](./design-decisions.md) retain binding requirements; [P5J](./06d-phase-5j-panel-topbar-redesign.md) remains the **last implementation phase**, after P7 and before P15. Rail is interim, not an unfinished top-bar toggle. Later layout/feedback acceptance is [here](./completed-ui-acceptance.md); page behavior is [here](./completed-panel-pages.md).
 
 Original sequencing: A(devtools)/B(light primitives)/H(strip brief) parallel; C(shell)→D(nav)→E(keyboard)/F(status) parallel→I(close-out); G(page primitives) after B. Real data needed P3/P4; mock work could parallel producers. Do not replay completed execution checklists.
 
