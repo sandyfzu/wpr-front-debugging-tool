@@ -26,7 +26,7 @@ const DATA = JSON.parse(
 };
 /** A bundled list of the reference version, by its data-file entry key. */
 const bundled = (key: string): string[] => {
-  const sha256 = DATA.versions['3.24']?.[key]?.sha256 ?? '';
+  const sha256 = DATA.versions['3.24.1']?.[key]?.sha256 ?? '';
   return DATA.rowLists[sha256] ?? [];
 };
 /** The bundled reference lists. */

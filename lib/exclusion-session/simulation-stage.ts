@@ -57,7 +57,7 @@ import {
   type SimulationCspUnavailableReason,
   type SimulationState
 } from '../wp-rocket-simulation/spec';
-import { supportedWprVersion } from '../wp-rocket/versions';
+import { supportedWprVersion, type WprRuleVariants } from '../wp-rocket/versions';
 import { countOccurrences } from '../../utils/text';
 
 /** A Delay JS step's report: the forward transform's, or one the step decided without it. */
@@ -66,25 +66,41 @@ type DelayStepReport = Omit<DelayJsForwardReport, 'state' | 'defer'> & {
 };
 
 /**
+ * The rule variants of the version the input simulates.
+ *
+ * @param simulation The simulation input.
+ * @throws {@link Error} when the input names an unsupported version: a
+ *   broken invariant, since the input guard refuses every such input.
+ */
+function simulatedVariants(simulation: DocumentSimulationInput): WprRuleVariants {
+  const version = supportedWprVersion(simulation.wpRocketVersion);
+  if (version === undefined) {
+    throw new Error(
+      `simulation input names WP Rocket ${simulation.wpRocketVersion}, not a supported version`
+    );
+  }
+  return version.variants;
+}
+
+/**
  * The input's Defer JS pass inputs: its lists and the simulated version's
  * inline-list quoting.
  *
  * @param simulation The simulation input.
  * @throws {@link Error} when the input lacks the Defer JS lists or names an
- *   unsupported version (the input guard refuses both).
+ *   unsupported version (broken invariants: the input guard refuses both).
  */
 function deferPassInput(simulation: DocumentSimulationInput): DeferJsPassInput {
-  const version = supportedWprVersion(simulation.wpRocketVersion);
   const lists = simulation.deferLists;
-  if (version === undefined || lists === undefined) {
+  if (lists === undefined) {
     throw new Error(
-      `Defer JS simulation input for WP Rocket ${simulation.wpRocketVersion} lacks its lists or a supported version`
+      `Defer JS simulation input for WP Rocket ${simulation.wpRocketVersion} lacks its lists`
     );
   }
   return {
     rows: [],
     lists: { external: lists.external, inline: lists.inline },
-    inlineQuoteDelimiter: version.variants.deferInlineQuoteDelimiter
+    inlineQuoteDelimiter: simulatedVariants(simulation).deferInlineQuoteDelimiter
   };
 }
 
@@ -421,6 +437,7 @@ function delayStep(
     ieFallback: input.fallback,
     listRows: input.listRows,
     rows: [],
+    metaCharsetMoveText: simulatedVariants(input).metaCharsetMoveText,
     measure,
     ...(buffer === undefined ? {} : { buffer })
   });

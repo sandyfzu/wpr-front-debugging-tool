@@ -28,12 +28,12 @@ import { parsePage } from './parse-page';
 import { applyPresencePropagation, runChecks } from './run-detection';
 import { SIMULATED_MARKER_ID } from './simulated-pages.fixtures';
 
-/** The packaged 3.24 LazyLoad inputs. */
+/** The packaged 3.24.1 LazyLoad inputs. */
 const LAZYLOAD = (() => {
   const text = readFileSync(join(process.cwd(), 'public', SIMULATION_DATA_PATH), 'utf8');
   const read = readSimulationData(JSON.parse(text));
   if (!read.ok) throw new Error(read.problem);
-  const version = packagedVersion(read.data, '3.24');
+  const version = packagedVersion(read.data, '3.24.1');
   if (!version.ok) throw new Error(version.cause);
   return version.package.lazyload;
 })();

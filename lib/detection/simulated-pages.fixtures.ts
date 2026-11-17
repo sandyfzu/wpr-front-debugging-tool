@@ -1,6 +1,6 @@
 /**
  * Test pages for the simulation's detection rules: a page as the session
- * serves it after simulating Delay JS — WP Rocket 3.24's packaged runtime,
+ * serves it after simulating Delay JS — the latest stable WP Rocket's packaged runtime,
  * IE fallback and bundled exclusion list run through the forward transform —
  * plus the marker the session writes. Test-only (reads the committed data
  * file from disk).
@@ -11,17 +11,21 @@ import { packagedVersion } from '../exclusion-session/packaged-simulation-data';
 import { simulateDelayJs } from '../wp-rocket-simulation/delay-js-forward';
 import { writeSimulationMarker } from '../wp-rocket-simulation/marker-write';
 import { readSimulationData, SIMULATION_DATA_PATH } from '../wp-rocket-simulation/simulation-data';
+import { latestStableWprVersion } from '../wp-rocket/versions';
 
 /** A marker id as the background draws them. */
 export const SIMULATED_MARKER_ID = '5f0c1e2d3a4b5c6d7e8f90a1b2c3d4e5';
 
-/** The packaged WP Rocket 3.24 inputs, read once. */
+/** The latest stable version, whose packaged inputs and variants the pages use. */
+const LATEST = latestStableWprVersion();
+
+/** The packaged latest stable inputs, read once. */
 const PACKAGE = (() => {
   const text = readFileSync(join(process.cwd(), 'public', SIMULATION_DATA_PATH), 'utf8');
   const read = readSimulationData(JSON.parse(text));
   if (!read.ok) throw new Error(`simulation data unreadable: ${read.problem}`);
-  const version = packagedVersion(read.data, '3.24');
-  if (!version.ok) throw new Error(`no packaged 3.24: ${version.cause}`);
+  const version = packagedVersion(read.data, LATEST.version);
+  if (!version.ok) throw new Error(`no packaged ${LATEST.version}: ${version.cause}`);
   return version.package;
 })();
 
@@ -52,7 +56,8 @@ export function simulatedPage(
     runtime: PACKAGE.runtime,
     ieFallback: PACKAGE.fallback,
     listRows: PACKAGE.bundledListRows,
-    rows: []
+    rows: [],
+    metaCharsetMoveText: LATEST.variants.metaCharsetMoveText
   });
   if (result.report.state !== 'simulated') {
     throw new Error(`fixture not simulated: ${result.report.state}`);

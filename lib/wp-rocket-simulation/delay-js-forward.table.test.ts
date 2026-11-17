@@ -1,14 +1,18 @@
 /**
  * The forward Delay JS transform against the plugin oracle: every
  * `simulate` row of the committed simulation parity table — produced by
- * the real WP Rocket passes — is reproduced byte for byte, with the
- * header's sentinels as runtime and IE fallback and, for `"list": "bundled"`
- * rows, the shipped data file's list (the real-list arm).
+ * the real WP Rocket passes — is reproduced byte for byte under every
+ * supported version (its own outputs where it differs, its rule variants),
+ * with the header's sentinels as runtime and IE fallback and, for
+ * `"list": "bundled"` rows, the shipped data file's list for that version
+ * (the real-list arm).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { expectationsFor } from '../exclusion-builder/parity-version-expectations';
+import { SUPPORTED_WPR_VERSIONS, type SupportedWprVersion } from '../wp-rocket/versions';
 import { simulateDelayJs } from './delay-js-forward';
 import { SIMULATION_DATA_PATH, readSimulationData } from './simulation-data';
 import { isDelayOnlyRow, parseSimulationTable, type DelayOnlyRow } from './simulation-parity-table';
@@ -26,28 +30,33 @@ const DATA = readSimulationData(
   JSON.parse(readFileSync(join(HERE, '../../public', SIMULATION_DATA_PATH), 'utf8'))
 );
 
-/** The data file's list for the table's plugin version (the bundled list). */
-function bundledList(): readonly string[] {
+/**
+ * The data file's bundled list for a version.
+ *
+ * @param version The version key.
+ */
+function bundledList(version: string): readonly string[] {
   if (!DATA.ok) throw new Error(`simulation data file unreadable: ${DATA.problem}`);
-  const version = DATA.data.versions[TABLE.header.plugin];
-  const rows =
-    version === undefined ? undefined : DATA.data.rowLists[version.delayJsExclusions.sha256];
-  if (rows === undefined) throw new Error(`no bundled list for ${TABLE.header.plugin}`);
+  const entry = DATA.data.versions[version];
+  const rows = entry === undefined ? undefined : DATA.data.rowLists[entry.delayJsExclusions.sha256];
+  if (rows === undefined) throw new Error(`no bundled list for ${version}`);
   return rows;
 }
 
 /**
- * The transform's output for a table row.
+ * The transform's output for a table row under one version.
  *
  * @param row The row.
+ * @param pin The version.
  */
-function simulated(row: DelayOnlyRow): string {
+function simulated(row: DelayOnlyRow, pin: SupportedWprVersion): string {
   return simulateDelayJs({
     html: row.html,
     runtime: TABLE.header.simulation.sentinels.runtime,
     ieFallback: TABLE.header.simulation.sentinels.ieFallback,
-    listRows: row.list === 'bundled' ? bundledList() : (row.listRows ?? []),
-    rows: row.rows
+    listRows: row.list === 'bundled' ? bundledList(pin.version) : (row.listRows ?? []),
+    rows: row.rows,
+    metaCharsetMoveText: pin.variants.metaCharsetMoveText
   }).html;
 }
 
@@ -68,18 +77,26 @@ function firstDifference(
 }
 
 describe('simulateDelayJs — simulation parity table', () => {
-  it('covers both list sources', () => {
+  it('covers both list sources and a row expecting per version', () => {
     expect(DELAY_ROWS.some((row) => row.list === 'bundled')).toBe(true);
     expect(DELAY_ROWS.some((row) => row.listRows !== undefined)).toBe(true);
+    expect(DELAY_ROWS.some((row) => row.byVersion !== undefined)).toBe(true);
   });
 
   it('pins the bundled list it reads to the table header', () => {
-    expect(bundledList()).toHaveLength(TABLE.header.simulation.delayJsExclusions.count);
-  });
-
-  it.each(DELAY_ROWS.map((row) => [row.id, row] as const))('%s', (_id, row) => {
-    // Compared as strings, reported as the first difference (not a megabyte diff).
-    const out = simulated(row);
-    expect(firstDifference(out, row.served)).toBeNull();
+    expect(bundledList(TABLE.header.plugin)).toHaveLength(
+      TABLE.header.simulation.delayJsExclusions.count
+    );
   });
 });
+
+describe.each(SUPPORTED_WPR_VERSIONS.map((pin) => [pin.version, pin] as const))(
+  'simulateDelayJs — simulation parity table under WP Rocket %s',
+  (version, pin) => {
+    it.each(DELAY_ROWS.map((row) => [row.id, row] as const))('%s', (_id, row) => {
+      // Compared as strings, reported as the first difference (not a megabyte diff).
+      const out = simulated(row, pin);
+      expect(firstDifference(out, expectationsFor(row, version).served)).toBeNull();
+    });
+  }
+);

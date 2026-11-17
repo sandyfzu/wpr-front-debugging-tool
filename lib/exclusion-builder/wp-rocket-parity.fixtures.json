@@ -1,12 +1,12 @@
 {
   "header": {
-    "plugin": "3.24",
-    "pluginZipSha256": "1a2480ba830ede3270e5527edb93663e42618c6c900165dcb5cf100569385155",
+    "plugin": "3.24.1",
+    "pluginZipSha256": "83dd6a00dabffb2609a33028e28b93491232403d3908f0186d2be49e7afca4d9",
     "pluginPackages": { "wp-media/apply-filters-typed": "v1.2" },
     "plugins": [
       {
-        "version": "3.24",
-        "zipSha256": "1a2480ba830ede3270e5527edb93663e42618c6c900165dcb5cf100569385155",
+        "version": "3.24.1",
+        "zipSha256": "83dd6a00dabffb2609a33028e28b93491232403d3908f0186d2be49e7afca4d9",
         "packages": { "wp-media/apply-filters-typed": "v1.2" }
       },
       {
@@ -5217,6 +5217,24 @@
       "excluded": [],
       "hashed": ["nc-child", "nc2"],
       "rekeyed": []
+    },
+    {
+      "id": "match-alr-replacement-syntax",
+      "kind": "match",
+      "feature": "automatic_lazy_rendering",
+      "rows": ["data-q"],
+      "note": "replacement syntax ($n, \\n, \\\\) inside a hashed opening tag: written literally since 3.24.1 (3.23.5.1 expands it into the served tag)",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<div id=\"a\" data-p=\"$1 \\0 $0 \\\\\">a</div>\n<div id=\"b\" data-q=\"x\">b</div>\n<div id=\"c\">c</div>\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"><style id=\"rocket-lazyrender-inline-css\">[data-wpr-lazyrender] {content-visibility: auto;}</style></head><body>\n<div data-wpr-lazyrender=\"1\" id=\"a\" data-p=\"$1 \\0 $0 \\\\\">a</div>\n<div data-wpr-lazyrender=\"1\" id=\"b\" data-q=\"x\">b</div>\n<div data-wpr-lazyrender=\"1\" id=\"c\">c</div>\n</body></html><!-- wpr_automatic_lazy_rendering -->",
+      "candidates": ["a", "b", "c"],
+      "excluded": ["b"],
+      "hashed": ["a", "c"],
+      "rekeyed": ["c"],
+      "byVersion": {
+        "3.23.5.1": {
+          "served": "<html><head><meta charset=\"utf-8\"><style id=\"rocket-lazyrender-inline-css\">[data-wpr-lazyrender] {content-visibility: auto;}</style></head><body>\n<div data-wpr-lazyrender=\"1\" id=\"a\" data-p=\" <div id=\"a\" data-p=\"$1 \\0 $0 \\\\\"> <div id=\"a\" data-p=\"$1 \\0 $0 \\\\\"> \\\">a</div>\n<div data-wpr-lazyrender=\"1\" id=\"b\" data-q=\"x\">b</div>\n<div data-wpr-lazyrender=\"1\" id=\"c\">c</div>\n</body></html><!-- wpr_automatic_lazy_rendering -->"
+        }
+      }
     }
   ]
 }

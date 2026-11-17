@@ -293,6 +293,7 @@ function oneBuffer(html: string, simulate: DocumentSimulationInput, pin: Support
     ieFallback: simulate.fallback,
     listRows: simulate.listRows,
     rows: [],
+    metaCharsetMoveText: pin.variants.metaCharsetMoveText,
     defer
   });
   return both.report.state === 'simulated' ? both : simulateDeferJs({ html, ...defer });
@@ -398,7 +399,8 @@ describe.each(VERSIONS)(
         runtime: simulate.runtime,
         ieFallback: simulate.fallback,
         listRows: simulate.listRows,
-        rows: []
+        rows: [],
+        metaCharsetMoveText: pin.variants.metaCharsetMoveText
       }).html;
       expect(twoBuffers).not.toBe(result.html);
     });

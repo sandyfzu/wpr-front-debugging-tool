@@ -36,6 +36,7 @@ import {
   simulatedReport,
   simulationInput
 } from './exclusion-simulation.fixtures';
+import { SUPPORTED_WPR_VERSIONS } from '../wp-rocket/versions';
 
 /** A deep-cloned plain-object copy the cases mutate freely. */
 function clone(value: unknown): Record<string, unknown> {
@@ -338,6 +339,24 @@ describe('parseDocumentSimulationInput', () => {
     expect(parseDocumentSimulationInput(site, HTML_LENGTH)).toEqual(site);
     const emptyList = input({ listRows: [] });
     expect(parseDocumentSimulationInput(emptyList, HTML_LENGTH)).toEqual(emptyList);
+  });
+
+  it.each(SUPPORTED_WPR_VERSIONS.map((row) => row.version))(
+    'accepts a Delay JS input naming supported WP Rocket %s',
+    (wpRocketVersion) => {
+      const named = input({ wpRocketVersion });
+      expect(parseDocumentSimulationInput(named, HTML_LENGTH)).toEqual(named);
+    }
+  );
+
+  it.each([
+    ['a dropped supported version', '3.24'],
+    ['an older release', '3.20'],
+    ['a longer form of a supported version', '3.24.1.0'],
+    ['a pre-release of a supported version', '3.24.1-beta1'],
+    ['a non-string', 3.24]
+  ])('refuses a Delay JS-only input naming %s (%s)', (_name, wpRocketVersion) => {
+    expect(parseDocumentSimulationInput(input({ wpRocketVersion }), HTML_LENGTH)).toBeNull();
   });
 
   it('holds the caps at their exact edges', () => {

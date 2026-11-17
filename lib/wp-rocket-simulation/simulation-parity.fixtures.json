@@ -1,12 +1,12 @@
 {
   "header": {
-    "plugin": "3.24",
-    "pluginZipSha256": "1a2480ba830ede3270e5527edb93663e42618c6c900165dcb5cf100569385155",
+    "plugin": "3.24.1",
+    "pluginZipSha256": "83dd6a00dabffb2609a33028e28b93491232403d3908f0186d2be49e7afca4d9",
     "pluginPackages": { "wp-media/apply-filters-typed": "v1.2" },
     "plugins": [
       {
-        "version": "3.24",
-        "zipSha256": "1a2480ba830ede3270e5527edb93663e42618c6c900165dcb5cf100569385155",
+        "version": "3.24.1",
+        "zipSha256": "83dd6a00dabffb2609a33028e28b93491232403d3908f0186d2be49e7afca4d9",
         "packages": { "wp-media/apply-filters-typed": "v1.2" }
       },
       {
@@ -507,6 +507,51 @@
       "listRows": [],
       "html": "<meta charset=\"utf-8\"><title>t</title></head><p>x</p><script src=\"/a.js\"></script>\n",
       "served": "<meta charset=\"utf-8\"><title>t</title></head><p>x</p><script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/a.js\"></script>\n"
+    },
+    {
+      "id": "simulate-delay-charset-replacement-syntax",
+      "kind": "simulate",
+      "feature": "delay_js",
+      "note": "replacement syntax inside the moved meta ($n, \\n, ${n}, \\\\, \\$): expanded by 3.23.5.1, copied as is by 3.24.1",
+      "rows": [],
+      "listRows": [],
+      "html": "<!DOCTYPE html>\n<html lang=\"en\"><head><title>t</title><meta charset=\"utf-8\" data-x=\"$0 \\1 ${1} \\\\ \\$ $9 \\\"></head><body><script src=\"/a.js\"></script></body></html>\n",
+      "served": "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\" data-x=\"$0 \\1 ${1} \\\\ \\$ $9 \\\"><script>/*wpr-fdt-simulation-sentinel:ie-fallback*/if(navigator.userAgent.match(/MSIE|Trident/i)){document.location.href+=\"?nowprocket=1\"}</script><script>/*wpr-fdt-simulation-sentinel:delay-js-runtime*/RocketLazyLoadScripts.run();</script><title>t</title></head><body><script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/a.js\"></script></body></html>\n",
+      "byVersion": {
+        "3.23.5.1": {
+          "served": "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\" data-x=\"<head> <head> <head> \\ $  \\\"><script>/*wpr-fdt-simulation-sentinel:ie-fallback*/if(navigator.userAgent.match(/MSIE|Trident/i)){document.location.href+=\"?nowprocket=1\"}</script><script>/*wpr-fdt-simulation-sentinel:delay-js-runtime*/RocketLazyLoadScripts.run();</script><title>t</title></head><body><script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/a.js\"></script></body></html>\n"
+        }
+      }
+    },
+    {
+      "id": "simulate-delay-charset-replacement-syntax-no-head",
+      "kind": "simulate",
+      "feature": "delay_js",
+      "note": "the same meta moved after <html> (no <head> opening tag)",
+      "rows": [],
+      "listRows": [],
+      "html": "<!DOCTYPE html>\n<html lang=\"en\"><meta charset=\"utf-8\" data-x=\"$0 \\1 ${1} \\\\ \\$ $9 \\\"><title>t</title></head><body><script src=\"/a.js\"></script></body></html>\n",
+      "served": "<!DOCTYPE html>\n<html lang=\"en\"><meta charset=\"utf-8\" data-x=\"$0 \\1 ${1} \\\\ \\$ $9 \\\"><title>t</title></head><body><script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/a.js\"></script></body></html>\n",
+      "byVersion": {
+        "3.23.5.1": {
+          "served": "<!DOCTYPE html>\n<html lang=\"en\"><meta charset=\"utf-8\" data-x=\"<html lang=\"en\"> <html lang=\"en\"> <html lang=\"en\"> \\ $  \\\"><title>t</title></head><body><script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/a.js\"></script></body></html>\n"
+        }
+      }
+    },
+    {
+      "id": "simulate-delay-charset-replacement-syntax-no-html",
+      "kind": "simulate",
+      "feature": "delay_js",
+      "note": "the same meta moved before the first tag (neither <head> nor <html>)",
+      "rows": [],
+      "listRows": [],
+      "html": "<meta charset=\"utf-8\" data-x=\"$0 \\1 ${1} \\\\ \\$ $9 \\\"><title>t</title></head><p>x</p><script src=\"/a.js\"></script>\n",
+      "served": "<meta charset=\"utf-8\" data-x=\"$0 \\1 ${1} \\\\ \\$ $9 \\\"><title>t</title></head><p>x</p><script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/a.js\"></script>\n",
+      "byVersion": {
+        "3.23.5.1": {
+          "served": "<meta charset=\"utf-8\" data-x=\"<title <title <title \\ $  \\\"><title>t</title></head><p>x</p><script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/a.js\"></script>\n"
+        }
+      }
     },
     {
       "id": "simulate-delay-no-scripts",

@@ -15,17 +15,22 @@ import {
 
 /** A registry row for the error-path tests. */
 function row(version: string, role: SupportedWprVersion['role']): SupportedWprVersion {
-  return { version, zipSha256: '0'.repeat(64), role, variants: { deferInlineQuoteDelimiter: '/' } };
+  return {
+    version,
+    zipSha256: '0'.repeat(64),
+    role,
+    variants: { deferInlineQuoteDelimiter: '/', metaCharsetMoveText: 'literal' }
+  };
 }
 
 describe('SUPPORTED_WPR_VERSIONS', () => {
-  it('pins 3.24 (latest stable) and 3.23.5.1 (previous minor) to their zips, newest first', () => {
+  it('pins 3.24.1 (latest stable) and 3.23.5.1 (previous minor) to their zips, newest first', () => {
     expect(
       SUPPORTED_WPR_VERSIONS.map(({ version, zipSha256, role }) => ({ version, zipSha256, role }))
     ).toEqual([
       {
-        version: '3.24',
-        zipSha256: '1a2480ba830ede3270e5527edb93663e42618c6c900165dcb5cf100569385155',
+        version: '3.24.1',
+        zipSha256: '83dd6a00dabffb2609a33028e28b93491232403d3908f0186d2be49e7afca4d9',
         role: 'latest-stable'
       },
       {
@@ -50,15 +55,17 @@ describe('SUPPORTED_WPR_VERSIONS', () => {
 describe('supportedWprVersion', () => {
   it('finds a row by its exact version string only', () => {
     expect(supportedWprVersion('3.23.5.1')?.role).toBe('previous-minor');
-    expect(supportedWprVersion('3.24')?.role).toBe('latest-stable');
-    expect(supportedWprVersion('3.24.0')).toBeUndefined();
+    expect(supportedWprVersion('3.24.1')?.role).toBe('latest-stable');
+    expect(supportedWprVersion('3.24.1.0')).toBeUndefined();
+    // Superseded by 3.24.1: dropped, so its pages simulate the latest stable.
+    expect(supportedWprVersion('3.24')).toBeUndefined();
     expect(supportedWprVersion('3.23.5')).toBeUndefined();
   });
 });
 
 describe('latestStableWprVersion', () => {
-  it('is the 3.24 row', () => {
-    expect(latestStableWprVersion().version).toBe('3.24');
+  it('is the 3.24.1 row', () => {
+    expect(latestStableWprVersion().version).toBe('3.24.1');
   });
 
   it('throws unless exactly one row is latest-stable', () => {
@@ -85,21 +92,37 @@ describe('the Defer JS inline-list quote variant', () => {
     return new RegExp(`(${alternation})`, 'msi').test(body);
   }
 
-  it("declares '#' for 3.23.5.1 and '/' for 3.24", () => {
-    expect(supportedWprVersion('3.23.5.1')?.variants).toEqual({ deferInlineQuoteDelimiter: '#' });
-    expect(supportedWprVersion('3.24')?.variants).toEqual({ deferInlineQuoteDelimiter: '/' });
+  it("declares '#' for 3.23.5.1 and '/' for 3.24.1", () => {
+    expect(supportedWprVersion('3.23.5.1')?.variants.deferInlineQuoteDelimiter).toBe('#');
+    expect(supportedWprVersion('3.24.1')?.variants.deferInlineQuoteDelimiter).toBe('/');
   });
 
-  it('a row holding `/`: 3.23.5.1 excludes nothing by list, 3.24 matches it', () => {
+  it('a row holding `/`: 3.23.5.1 excludes nothing by list, 3.24.1 matches it', () => {
     const body = 'var x = "a/b"; c#d';
     expect(inlineListMatches('3.23.5.1', ['a/b', 'c#d'], body)).toBeNull();
-    expect(inlineListMatches('3.24', ['a/b', 'c#d'], body)).toBe(true);
+    expect(inlineListMatches('3.24.1', ['a/b', 'c#d'], body)).toBe(true);
   });
 
   it('`#` is quoted by both versions', () => {
-    for (const version of ['3.23.5.1', '3.24']) {
+    for (const version of ['3.23.5.1', '3.24.1']) {
       expect(inlineListMatches(version, ['c#d'], 'x c#d')).toBe(true);
       expect(inlineListMatches(version, ['c#d'], 'x c d')).toBe(false);
+    }
+  });
+});
+
+describe('the meta charset move variant', () => {
+  it("declares 'replacement' for 3.23.5.1 and 'literal' for 3.24.1 (its `addcslashes`)", () => {
+    expect(supportedWprVersion('3.23.5.1')?.variants.metaCharsetMoveText).toBe('replacement');
+    expect(supportedWprVersion('3.24.1')?.variants.metaCharsetMoveText).toBe('literal');
+  });
+
+  it('gives every row exactly the known variant fields', () => {
+    for (const entry of SUPPORTED_WPR_VERSIONS) {
+      expect(Object.keys(entry.variants).sort()).toEqual([
+        'deferInlineQuoteDelimiter',
+        'metaCharsetMoveText'
+      ]);
     }
   });
 });

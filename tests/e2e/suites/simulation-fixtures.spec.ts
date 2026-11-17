@@ -140,7 +140,7 @@ test.describe('Delay JS simulation on fixture pages', () => {
       expect(await simulationMarkers(page)).toEqual([expect.stringMatching(MARKER)]);
       await expect(simulatedChip(page, 'header')).toBeVisible();
       expect(await delayLaneLines(page)).toContain(
-        'Exclusion list: bundled with WP Rocket 3.24 (latest list unreachable: network error)'
+        'Exclusion list: bundled with WP Rocket 3.24.1 (latest list unreachable: network error)'
       );
 
       expect(await ran(page)).toEqual({ external: false, inline: false, handler: false });

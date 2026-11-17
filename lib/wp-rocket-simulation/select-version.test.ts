@@ -21,7 +21,7 @@ function select(html: string): { selected: string; siteVersion?: string } {
 
 describe('selectWprVersion', () => {
   it('simulates the version the meta names when it is supported', () => {
-    expect(select(page(wprMeta('3.24')))).toEqual({ selected: '3.24', siteVersion: '3.24' });
+    expect(select(page(wprMeta('3.24.1')))).toEqual({ selected: '3.24.1', siteVersion: '3.24.1' });
     expect(select(page(wprMeta('3.23.5.1')))).toEqual({
       selected: '3.23.5.1',
       siteVersion: '3.23.5.1'
@@ -29,33 +29,35 @@ describe('selectWprVersion', () => {
   });
 
   it('falls back to the latest stable for an older or unsupported version, naming it', () => {
-    expect(select(page(wprMeta('3.22')))).toEqual({ selected: '3.24', siteVersion: '3.22' });
-    expect(select(page(wprMeta('3.23.5')))).toEqual({ selected: '3.24', siteVersion: '3.23.5' });
-    expect(select(page(wprMeta('3.25')))).toEqual({ selected: '3.24', siteVersion: '3.25' });
+    expect(select(page(wprMeta('3.22')))).toEqual({ selected: '3.24.1', siteVersion: '3.22' });
+    // A superseded patch of the latest minor is not supported: its pages simulate the latest.
+    expect(select(page(wprMeta('3.24')))).toEqual({ selected: '3.24.1', siteVersion: '3.24' });
+    expect(select(page(wprMeta('3.23.5')))).toEqual({ selected: '3.24.1', siteVersion: '3.23.5' });
+    expect(select(page(wprMeta('3.25')))).toEqual({ selected: '3.24.1', siteVersion: '3.25' });
   });
 
   it('falls back to the latest stable without a WP Rocket meta or its version', () => {
-    expect(select(page(''))).toEqual({ selected: '3.24' });
+    expect(select(page(''))).toEqual({ selected: '3.24.1' });
     expect(select(page('<meta name="generator" content="WordPress 7.1.3" />'))).toEqual({
-      selected: '3.24'
+      selected: '3.24.1'
     });
-    expect(select(page(wprMeta()))).toEqual({ selected: '3.24' });
+    expect(select(page(wprMeta()))).toEqual({ selected: '3.24.1' });
     expect(select(page('<meta name="generator" content="WP Rocket abc" />'))).toEqual({
-      selected: '3.24'
+      selected: '3.24.1'
     });
   });
 
   it('never reads a malformed token as the supported version it starts with', () => {
-    expect(select(page(wprMeta('3.24-beta5')))).toEqual({
-      selected: '3.24',
-      siteVersion: '3.24-beta5'
+    expect(select(page(wprMeta('3.24.1-beta5')))).toEqual({
+      selected: '3.24.1',
+      siteVersion: '3.24.1-beta5'
     });
     expect(select(page(wprMeta('3.23.5.1.9')))).toEqual({
-      selected: '3.24',
+      selected: '3.24.1',
       siteVersion: '3.23.5.1.9'
     });
     expect(select(page(wprMeta('3.23.5.1x')))).toEqual({
-      selected: '3.24',
+      selected: '3.24.1',
       siteVersion: '3.23.5.1x'
     });
   });
@@ -66,7 +68,7 @@ describe('selectWprVersion', () => {
       siteVersion: '3.23.5.1'
     });
     expect(select(page(wprMeta('3.22') + wprMeta('3.22')))).toEqual({
-      selected: '3.24',
+      selected: '3.24.1',
       siteVersion: '3.22'
     });
   });
@@ -80,20 +82,20 @@ describe('selectWprVersion', () => {
       selected: '3.23.5.1',
       siteVersion: '3.23.5.1'
     });
-    expect(select(page(wprMeta() + wprMeta()))).toEqual({ selected: '3.24' });
+    expect(select(page(wprMeta() + wprMeta()))).toEqual({ selected: '3.24.1' });
   });
 
   it('falls back to the latest stable when versions disagree, naming the first', () => {
-    expect(select(page(wprMeta('3.23.5.1') + wprMeta('3.24')))).toEqual({
-      selected: '3.24',
+    expect(select(page(wprMeta('3.23.5.1') + wprMeta('3.24.1')))).toEqual({
+      selected: '3.24.1',
       siteVersion: '3.23.5.1'
     });
-    expect(select(page(wprMeta() + wprMeta('3.24-beta5') + wprMeta('3.24')))).toEqual({
-      selected: '3.24',
-      siteVersion: '3.24-beta5'
+    expect(select(page(wprMeta() + wprMeta('3.24.1-beta5') + wprMeta('3.24.1')))).toEqual({
+      selected: '3.24.1',
+      siteVersion: '3.24.1-beta5'
     });
     expect(select(page(wprMeta('3.23.5.1') + wprMeta('3.23.5.1') + wprMeta('3.22')))).toEqual({
-      selected: '3.24',
+      selected: '3.24.1',
       siteVersion: '3.23.5.1'
     });
   });
@@ -104,13 +106,13 @@ describe('selectWprVersion', () => {
       selected: '3.23.5.1',
       siteVersion: '3.23.5.1'
     });
-    const commented = `<!-- ${wprMeta('3.24')} -->${wprMeta('3.23.5.1')}`;
+    const commented = `<!-- ${wprMeta('3.24.1')} -->${wprMeta('3.23.5.1')}`;
     expect(select(page(commented))).toMatchObject({ selected: '3.23.5.1' });
   });
 
   it('reads only `<meta name="generator">` (exact name), whatever its other attributes', () => {
     expect(select(page('<meta name="Generator" content="WP Rocket 3.23.5.1" />'))).toEqual({
-      selected: '3.24'
+      selected: '3.24.1'
     });
     expect(select(page('<meta content="WP Rocket 3.23.5.1" name="generator">'))).toEqual({
       selected: '3.23.5.1',
@@ -123,7 +125,7 @@ describe('selectWprVersion', () => {
       version,
       zipSha256: '0'.repeat(64),
       role,
-      variants: { deferInlineQuoteDelimiter: '/' }
+      variants: { deferInlineQuoteDelimiter: '/', metaCharsetMoveText: 'literal' }
     });
     const rows = [row('9.0', 'previous-minor'), row('9.1', 'latest-stable')];
     const html = page(wprMeta('9.0'));

@@ -171,7 +171,7 @@ step "wp-rocket: version pin verified (${installed_version})"
 # Local synthetic activation. WP Rocket's front-end optimization subscribers (minify,
 # delay, defer, lazyload buffers) register ONLY when rocket_valid_key() finds the
 # plugin's own local validity formula true: consumer_key of exactly eight characters
-# AND secret_key equal to crc32 of consumer_email (verified in the 3.24 source).
+# AND secret_key equal to crc32 of consumer_email (verified in the 3.24.1 source).
 # No license server, no real credentials: this fixture site is license-free by design
 # and the values below are synthetic local-only test data, never logged anywhere.
 # Without them the site caches pages but never optimizes any (observed first-hand).
@@ -202,7 +202,7 @@ php /mnt/seed-settings.php || die "wpr_seed" "settings seeding failed (exit $?) 
 #                                        the scenario FLAGS themselves become cached
 #                                        URLs: the buffer pipeline only processes
 #                                        parameters from this option (verified in the
-#                                        3.24 source), so without them every query-
+#                                        3.24.1 source), so without them every query-
 #                                        string fixture URL would serve unoptimized
 #                                        HTML and the flagged scenarios would not run.
 #                                        The two Priority-Elements knobs are here for
@@ -223,9 +223,9 @@ php /mnt/seed-settings.php || die "wpr_seed" "settings seeding failed (exit $?) 
 # Everything else keeps the plugin's own defaults — the exclusion lists in particular
 # stay at their untouched defaults so the delay queue mirrors a real site's baseline.
 # NOTE: `cache` is not a settings key: page caching is unconditional in WP Rocket
-# (verified in the 3.24 defaults), so there is nothing to force about it.
+# (verified in the 3.24.1 defaults), so there is nothing to force about it.
 # NOTE: `remove_unused_css` (and `async_css`) are forced here at the option-row level,
-# but 3.24's license check masks their RUNTIME reads to 0 (License/Renewal "expired
+# but 3.24.1's license check masks their RUNTIME reads to 0 (License/Renewal "expired
 # >15 days" gate hooks the option read at PHP_INT_MAX; a synthetic local key has no
 # expiration, so it always reads as expired). RUCSS/Async-CSS therefore never engage on
 # this site by plugin design — see the runbook's baseline table and 05c's record.
@@ -326,7 +326,7 @@ if [ "$total" -gt 0 ] && [ "$installed" -eq 0 ] && [ "$skipped" -eq 0 ]; then
 fi
 
 # Start every session from a cold cache: stale fixture-page HTML from a previous code
-# state cannot leak into a new boot. `wp rocket clean` does not exist in 3.24 (the
+# state cannot leak into a new boot. `wp rocket clean` does not exist in 3.24.1 (the
 # plugin registers only `rocket abilities-catalog` on wp-cli), so the purge calls the
 # plugin's own purge/minify cleaners directly — the same entries the admin purge uses.
 # Used-CSS state is deliberately NOT purged here: it is row-driven and stable across

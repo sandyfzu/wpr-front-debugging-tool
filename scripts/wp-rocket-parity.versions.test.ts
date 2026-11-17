@@ -119,7 +119,7 @@ describe('zipPinProblem', () => {
     version: '3.24',
     zipSha256: 'a'.repeat(64),
     role: 'latest-stable',
-    variants: { deferInlineQuoteDelimiter: '/' }
+    variants: { deferInlineQuoteDelimiter: '/', metaCharsetMoveText: 'literal' }
   };
 
   it('names one zip per version', () => {

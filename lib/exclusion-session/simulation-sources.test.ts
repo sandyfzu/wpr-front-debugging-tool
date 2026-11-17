@@ -59,11 +59,11 @@ function sources(
 
 describe('INERT_SIMULATION_SOURCES', () => {
   it('loads no runtime, uses the bundled list (never fetched), no marker, no CSP', async () => {
-    await expect(INERT_SIMULATION_SOURCES.runtime('3.24')).resolves.toEqual({
+    await expect(INERT_SIMULATION_SOURCES.runtime('3.24.1')).resolves.toEqual({
       ok: false,
       cause: 'asset-unreachable'
     });
-    await expect(INERT_SIMULATION_SOURCES.list('3.24', ['a'])).resolves.toEqual({
+    await expect(INERT_SIMULATION_SOURCES.list('3.24.1', ['a'])).resolves.toEqual({
       listRows: ['a'],
       listSource: 'bundled',
       listMiss: 'never-fetched'
@@ -94,7 +94,7 @@ describe('prepareSimulation', () => {
       ok: true,
       input: {
         features: ['delay_js'],
-        wpRocketVersion: '3.24',
+        wpRocketVersion: '3.24.1',
         runtime: PACKAGE.runtime,
         fallback: PACKAGE.fallback,
         listRows: PACKAGE.bundledListRows,
@@ -102,7 +102,7 @@ describe('prepareSimulation', () => {
         listMiss: 'never-fetched'
       }
     });
-    expect(asked).toEqual(['3.24']);
+    expect(asked).toEqual(['3.24.1']);
   });
 
   it('simulates the supported version the page serves, naming it', async () => {
@@ -124,7 +124,7 @@ describe('prepareSimulation', () => {
     const prepared = await prepareSimulation(page(wprMeta('3.20')), SIMULATE, DOCUMENT, sources());
     expect(prepared).toMatchObject({
       ok: true,
-      input: { wpRocketVersion: '3.24', siteVersion: '3.20' }
+      input: { wpRocketVersion: '3.24.1', siteVersion: '3.20' }
     });
   });
 
@@ -185,7 +185,7 @@ describe('prepareSimulation', () => {
         })
       })
     );
-    expect(lists).toEqual([['3.24', PACKAGE.bundledListRows]]);
+    expect(lists).toEqual([['3.24.1', PACKAGE.bundledListRows]]);
     expect(prepared).toMatchObject({
       ok: true,
       input: {
@@ -225,7 +225,7 @@ describe('prepareSimulation', () => {
       runtime: () => Promise.resolve({ ok: true, package: { ...PACKAGE, runtime: '' } })
     });
     await expect(prepareSimulation(page(), SIMULATE, DOCUMENT, broken)).rejects.toThrow(
-      /WP Rocket 3\.24 fails the engine contract/
+      /WP Rocket 3\.24\.1 fails the engine contract/
     );
     await expect(prepareSimulation(page(), SIMULATE, DOCUMENT, broken)).rejects.toBeInstanceOf(
       SimulationPreparationError

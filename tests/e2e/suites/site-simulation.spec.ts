@@ -88,7 +88,7 @@ const SCENARIO_ERROR = 'ReferenceError: fdtDelayTypedDependency is not defined';
 const SCENARIO_DELAYED = 5;
 
 /** The WP Rocket version simulated on a page that names none (the newest supported). */
-const SIMULATED_VERSION = '3.24';
+const SIMULATED_VERSION = '3.24.1';
 
 /** A simulation marker naming Delay JS with a 128-bit id. */
 const MARKER = /^v1 delay_js=simulated id=[0-9a-f]{32}$/;

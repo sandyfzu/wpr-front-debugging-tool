@@ -202,6 +202,44 @@ describe('meta authority: per-row verdict and source', () => {
   });
 });
 
+/**
+ * WP Rocket's tag on a page none of its features touched, licence not
+ * expired (its `Meta.php` adds the licence-state token and emits the tag
+ * even when it is the only one) — exactly as it prints it.
+ */
+const LICENCE_ONLY_META =
+  '<meta name="generator" content="WP Rocket 3.24.1" data-wpr-features="wpr_insights" />';
+
+describe('meta authority: the licence-state token (no feature row)', () => {
+  it.each(REGISTRY_ROWS)(
+    '$row: a declaration holding only it refutes the row, footprint or not',
+    ({ row, footprint }) => {
+      const detections = runDetection(page(LICENCE_ONLY_META, footprint ?? '')).detections;
+      expect(detections[row]).toMatchObject({ present: false, source: 'meta' });
+    }
+  );
+
+  it('proves the plugin and its version', () => {
+    const { wpr } = runDetection(page(LICENCE_ONLY_META)).detections;
+    expect(wpr.present).toBe(true);
+    expect(wpr.version).toBe('3.24.1');
+  });
+
+  it('changes nothing beside feature tokens', () => {
+    const tokens = ['wpr_delay_js', 'wpr_cdn', 'wpr_desktop'];
+    const body = '<script type="rocketlazyloadscript" src="/delayed.js"></script>' + RUCSS;
+    const without = runDetection(page(meta(tokens, '3.24.1'), body)).detections;
+    for (const order of [
+      ['wpr_insights', ...tokens],
+      [...tokens, 'wpr_insights']
+    ]) {
+      expect(runDetection(page(meta(order, '3.24.1'), body)).detections).toEqual(without);
+    }
+    expect(without.delay_js).toMatchObject({ present: true, source: 'meta' });
+    expect(without.remove_unused_css).toEqual({ present: false, source: 'meta' });
+  });
+});
+
 describe('meta authority: the declared rows whose evidence is inventory', () => {
   it('minify declares the stage even when nothing was rewritten (documented exception)', () => {
     const result = runDetection(page(meta(['wpr_minify_css', 'wpr_minify_js'])));
@@ -300,6 +338,7 @@ describe('meta authority: boundary contract', () => {
       'declared inventory',
       page(meta(['wpr_delay_js']), '<script type="rocketlazyloadscript" src="/a.js"></script>')
     ],
+    ['licence-state token only', page(LICENCE_ONLY_META, RUCSS)],
     [
       'degraded',
       page(

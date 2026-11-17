@@ -1,7 +1,7 @@
 {
   "format": 1,
   "versions": {
-    "3.24": {
+    "3.24.1": {
       "runtime": {
         "sha256": "00bd608a083105a0ec3181e439f2975c911aae30c6c2a8e476a10ea9b49bae98",
         "version": "2.0.5"

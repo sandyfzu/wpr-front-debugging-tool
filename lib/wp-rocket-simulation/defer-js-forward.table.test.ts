@@ -117,6 +117,7 @@ describe.each(SUPPORTED_WPR_VERSIONS.map((pin) => [pin.version, pin] as const))(
             ? dataRows(entryOf(version).delayJsExclusions.sha256)
             : (row.listRows ?? []),
         rows: row.rows ?? [],
+        metaCharsetMoveText: pin.variants.metaCharsetMoveText,
         defer: deferInput(row, pin)
       });
       // The local site's page is served with Defer JS on already: identity for that pass.

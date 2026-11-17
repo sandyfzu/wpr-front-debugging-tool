@@ -1006,20 +1006,16 @@ export function parseSimulationDeferLists(input: unknown): SimulationDeferLists 
 }
 
 /**
- * The input's Defer JS lists: present exactly when the run simulates Defer
- * JS, and then only for a supported WP Rocket version (its inline-list
- * quoting is version-keyed).
+ * The input's Defer JS lists: present exactly when the run simulates Defer JS.
  *
  * @returns The field to spread (empty when absent), or null when invalid.
  */
 function inputDeferLists(
   input: Record<string, unknown>,
-  features: readonly SimulatedFeatureId[],
-  wpRocketVersion: string
+  features: readonly SimulatedFeatureId[]
 ): Pick<DocumentSimulationInput, 'deferLists'> | null {
   const raw = ownValue(input, 'deferLists');
   if (!features.includes('defer_all_js')) return raw === undefined ? {} : null;
-  if (supportedWprVersion(wpRocketVersion) === undefined) return null;
   const deferLists = parseSimulationDeferLists(raw);
   return deferLists === null ? null : { deferLists };
 }
@@ -1117,9 +1113,21 @@ function inputLazyload(
 }
 
 /**
+ * Whether a value names a supported WP Rocket version: the engine simulates
+ * only those (each step reads the version's rule variants), and the host
+ * always sends the version it selected from the registry.
+ *
+ * @param value The candidate.
+ */
+function isSupportedVersion(value: unknown): value is string {
+  return typeof value === 'string' && supportedWprVersion(value) !== undefined;
+}
+
+/**
  * Parse an engine request's simulation input (exact keys — host and
- * engine ship in one build; Defer JS lists exactly with Defer JS, for a
- * supported version; LazyLoad inputs exactly with LazyLoad). Page-derived parts degrade instead of failing
+ * engine ship in one build; a supported WP Rocket version, whatever the
+ * features; Defer JS lists exactly with Defer JS; LazyLoad inputs exactly
+ * with LazyLoad). Page-derived parts degrade instead of failing
  * the request: an unfit `siteVersion` string is omitted, an unfit `csp`
  * becomes `cspUnavailable`; a non-string `siteVersion` or a `csp` beside a
  * `cspUnavailable` is our own bug and fails it.
@@ -1139,14 +1147,14 @@ export function parseDocumentSimulationInput(
   const runtime = ownValue(input, 'runtime');
   const fallback = ownValue(input, 'fallback');
   const markerId = ownValue(input, 'markerId');
-  if (spec === null || siteVersion === null || !isWireVersion(wpRocketVersion)) return null;
+  if (spec === null || siteVersion === null || !isSupportedVersion(wpRocketVersion)) return null;
   if (!isBoundedText(runtime, SIMULATION_WIRE_LIMITS.runtimeChars, 1)) return null;
   if (!isBoundedText(fallback, SIMULATION_WIRE_LIMITS.fallbackChars, 1)) return null;
   if (markerId !== undefined && !isSimulationMarkerId(markerId)) return null;
   const listRows = parseSimulationListRows(ownValue(input, 'listRows'));
   const list = parseListProvenance(input);
   const csp = inputCsp(input, htmlLength);
-  const defer = inputDeferLists(input, spec.features, wpRocketVersion);
+  const defer = inputDeferLists(input, spec.features);
   const lazyload = inputLazyload(input, spec.features);
   if (listRows === null || list === null || csp === null || defer === null) return null;
   if (lazyload === null) return null;

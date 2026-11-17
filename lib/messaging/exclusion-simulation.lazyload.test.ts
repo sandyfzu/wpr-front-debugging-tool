@@ -39,7 +39,7 @@ function input(
   return {
     ...(lazyload === null ? {} : { lazyload }),
     features,
-    wpRocketVersion: '3.24',
+    wpRocketVersion: '3.24.1',
     runtime: 'r',
     fallback: 'f',
     listRows: [],
@@ -81,6 +81,15 @@ describe('parseSimulationLazyloadInput', () => {
   it('rebuilds an unusable runtime’s cause', () => {
     const unusable = { ...LAZYLOAD, runtimeUnavailable: 'hash-mismatch' };
     expect(parseSimulationLazyloadInput(unusable)).toEqual(unusable);
+  });
+
+  it('refuses a LazyLoad-only input naming an unsupported version (the engine simulates supported ones only)', () => {
+    for (const wpRocketVersion of ['3.24', '3.20', '3.24.1.0', 'latest']) {
+      expect(
+        parseDocumentSimulationInput({ ...input(), wpRocketVersion }, 10),
+        wpRocketVersion
+      ).toBeNull();
+    }
   });
 
   it('rides the engine input exactly with LazyLoad', () => {

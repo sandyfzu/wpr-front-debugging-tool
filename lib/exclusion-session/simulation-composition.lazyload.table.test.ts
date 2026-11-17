@@ -315,7 +315,8 @@ describe.each(VERSIONS)('LazyLoad composition under WP Rocket %s', (version, pin
         runtime: simulate.runtime,
         ieFallback: simulate.fallback,
         listRows: simulate.listRows,
-        rows: []
+        rows: [],
+        metaCharsetMoveText: pin.variants.metaCharsetMoveText
       });
       expect(result.html).toBe(delayOnly.html);
       expect(result.simulation?.state).toBe('simulated');

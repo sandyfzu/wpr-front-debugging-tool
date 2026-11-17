@@ -27,7 +27,7 @@ export function simulatedReport(): DelaySimulationReport {
     delayed: 4,
     undetermined: 1,
     runtimeInjected: true,
-    wpRocketVersion: '3.24',
+    wpRocketVersion: '3.24.1',
     siteVersion: '3.12.1',
     listSource: 'latest',
     listFetchedAt: 1_790_000_000_000,
@@ -44,7 +44,7 @@ export function deferSimulatedReport(): DeferSimulationReport {
     state: 'simulated',
     deferred: 4,
     wrapped: 1,
-    wpRocketVersion: '3.24',
+    wpRocketVersion: '3.24.1',
     listSource: 'bundled',
     listMiss: 'never-fetched',
     markerId: MARKER_ID
@@ -63,7 +63,7 @@ export function lazyloadSimulatedReport(): LazyloadSimulationReport {
     images: 5,
     pictures: 1,
     backgrounds: 2,
-    wpRocketVersion: '3.24',
+    wpRocketVersion: '3.24.1',
     markerId: MARKER_ID,
     runtimeUrl:
       'https://example.com/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js',
