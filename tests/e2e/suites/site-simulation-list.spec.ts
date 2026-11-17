@@ -32,7 +32,7 @@ import { openSitePage, SITE_URL } from '../helpers/site';
 const OFF = `${SITE_URL}/fdt/?fdt-delay=1&fdt-no-store=1&nowprocket=1`;
 
 /** The version simulated on a page that names none, whose bundled list the copy extends. */
-const SIMULATED_VERSION = '3.24';
+const SIMULATED_VERSION = '3.24.1';
 
 /** The extra row: matches the scenario's benign delayed script (one of five). */
 const EXTRA_ROW = 'fdt-delayed-lifecycle';

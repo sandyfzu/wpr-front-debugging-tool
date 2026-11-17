@@ -3,7 +3,8 @@
  * run after it injects the Delay JS scripts at the top of `<head>`: the
  * first charset declaration before the last `</head>` is moved right after
  * the `<head …>` opening tag (else after `<html …>`, else before the first
- * tag), and every other declaration its pattern matches is removed.
+ * tag), and every other declaration its pattern matches is removed. How
+ * the moved text is written depends on the version (`MetaCharsetMoveText`).
  *
  * Its pattern is textual and runs on bytes (no UTF option), so it is read
  * here over the page's byte view. The matches come from a scanner
@@ -11,7 +12,8 @@
  * order in linear time; whether PCRE's backtrack limit could stop the
  * pattern first is the caller's check (`./meta-charset-cost`).
  */
-import { expandPhpReplacement } from './php-replacement';
+import type { MetaCharsetMoveText } from '../wp-rocket/versions';
+import { expandPhpReplacement, quotePhpReplacement } from './php-replacement';
 import { metaCharsetByteSpans } from './meta-charset-scan';
 import { firstOpeningTag, openingTagStart, type TagSpan } from './opening-tag';
 import { byteView, unitOffsetsOfBytes, UTF8_MEASURE, type ByteMeasure } from './utf8';
@@ -87,18 +89,33 @@ function insertAfter(html: string, tag: TagSpan | null, text: string): string {
 }
 
 /**
+ * The moved declaration as the version interpolates it into its replacements.
+ *
+ * @param declaration The matched declaration.
+ * @param moveText The simulated version's {@link MetaCharsetMoveText}.
+ */
+function replacementText(declaration: string, moveText: MetaCharsetMoveText): string {
+  return moveText === 'literal' ? quotePhpReplacement(declaration) : declaration;
+}
+
+/**
  * WP Rocket's `move_meta_charset_to_head` on a page.
  *
  * @param html The page (after the Delay JS scripts were injected).
+ * @param moveText How the simulated version writes the moved declaration.
  * @param measure The served encoding's byte measure.
  * @returns The page with the first declaration moved and the others removed,
  *   or as given when the pattern matches nothing.
  */
-export function moveMetaCharsetToHead(html: string, measure: ByteMeasure = UTF8_MEASURE): string {
+export function moveMetaCharsetToHead(
+  html: string,
+  moveText: MetaCharsetMoveText,
+  measure: ByteMeasure = UTF8_MEASURE
+): string {
   const spans = metaCharsetSpans(html, measure);
   const [first] = spans;
   if (first === undefined) return html;
-  const declaration = html.slice(first[0], first[1]);
+  const interpolated = replacementText(html.slice(first[0], first[1]), moveText);
   let removed = '';
   let at = 0;
   for (const [start, end] of spans) {
@@ -109,16 +126,16 @@ export function moveMetaCharsetToHead(html: string, measure: ByteMeasure = UTF8_
   if (phpEmpty(removed)) return html;
   let moved: string;
   if (openingTagStart(removed, 'head', true) !== -1) {
-    moved = insertAfter(removed, firstOpeningTag(removed, 'head', true), declaration);
+    moved = insertAfter(removed, firstOpeningTag(removed, 'head', true), interpolated);
   } else if (openingTagStart(removed, 'html', true) !== -1) {
-    moved = insertAfter(removed, firstOpeningTag(removed, 'html', true), declaration);
+    moved = insertAfter(removed, firstOpeningTag(removed, 'html', true), interpolated);
   } else {
     const found = FIRST_TAG.exec(removed);
     moved =
       found === null
         ? removed
         : removed.slice(0, found.index) +
-          expandPhpReplacement(`${declaration}\${1}`, [found[0], found[1] ?? '']) +
+          expandPhpReplacement(`${interpolated}\${1}`, [found[0], found[1] ?? '']) +
           removed.slice(found.index + found[0].length);
   }
   return phpEmpty(moved) ? html : moved;

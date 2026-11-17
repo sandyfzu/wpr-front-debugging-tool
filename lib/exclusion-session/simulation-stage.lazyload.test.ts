@@ -40,7 +40,7 @@ function input(
 ): DocumentSimulationInput {
   return {
     features,
-    wpRocketVersion: '3.24',
+    wpRocketVersion: '3.24.1',
     runtime: 'RocketLazyLoadScripts.run();',
     fallback: 'if(0){}',
     listRows: ['lazyLoadOptions', 'wp-rocket/assets/js/lazyload/(.*)'],
@@ -77,7 +77,7 @@ describe('the LazyLoad step', () => {
     expect(result.lazyloadSimulation).toEqual({
       feature: 'lazyload',
       state: 'simulated',
-      wpRocketVersion: '3.24',
+      wpRocketVersion: '3.24.1',
       images: 1,
       pictures: 0,
       backgrounds: 0,
@@ -320,7 +320,7 @@ describe('the LazyLoad step under the page’s CSP', () => {
       expect(result.lazyloadSimulation).toEqual({
         feature: 'lazyload',
         state: 'csp-blocked',
-        wpRocketVersion: '3.24',
+        wpRocketVersion: '3.24.1',
         images: 0,
         pictures: 0,
         backgrounds: 0

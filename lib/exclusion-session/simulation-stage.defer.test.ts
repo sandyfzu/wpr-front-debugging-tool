@@ -21,7 +21,7 @@ function input(
 ): DocumentSimulationInput {
   return {
     features,
-    wpRocketVersion: '3.24',
+    wpRocketVersion: '3.24.1',
     runtime: RUNTIME,
     fallback: 'if(0){}',
     listRows: [],
@@ -73,7 +73,7 @@ describe('the Defer JS step', () => {
         state: 'simulated',
         deferred: 1,
         wrapped: 1,
-        wpRocketVersion: '3.24',
+        wpRocketVersion: '3.24.1',
         listSource: 'latest',
         listFetchedAt: 7
       }
@@ -106,7 +106,7 @@ describe('the Defer JS step', () => {
       reason: 'delay-js-served',
       deferred: 0,
       wrapped: 0,
-      wpRocketVersion: '3.24',
+      wpRocketVersion: '3.24.1',
       listSource: 'latest',
       listFetchedAt: 7
     });
@@ -244,7 +244,7 @@ describe('wireSimulationReport per feature', () => {
       state: 'already-served',
       deferred: 0,
       wrapped: 0,
-      wpRocketVersion: '3.24',
+      wpRocketVersion: '3.24.1',
       listSource: 'latest',
       listFetchedAt: 7
     });

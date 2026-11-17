@@ -77,7 +77,7 @@ describe('createLatestDeferListsSource', () => {
       () => NOW,
       { warn: vi.fn() }
     );
-    await expect(source('3.24', BUNDLED)).resolves.toMatchObject({ listSource: 'latest' });
+    await expect(source('3.24.1', BUNDLED)).resolves.toMatchObject({ listSource: 'latest' });
   });
 
   it('degrades a failed read to the bundled lists (unreadable), logged, never rejecting', async () => {
@@ -89,7 +89,7 @@ describe('createLatestDeferListsSource', () => {
         warn
       }
     );
-    await expect(source('3.24', BUNDLED)).resolves.toEqual({
+    await expect(source('3.24.1', BUNDLED)).resolves.toEqual({
       ...BUNDLED,
       listSource: 'bundled',
       listMiss: 'unreadable'
@@ -141,7 +141,7 @@ describe('prepareSimulation — Defer JS lists', () => {
       ok: true,
       input: { deferLists: { ...BUNDLED, listSource: 'bundled', listMiss: 'never-fetched' } }
     });
-    expect(asked).toEqual([['3.24', BUNDLED]]);
+    expect(asked).toEqual([['3.24.1', BUNDLED]]);
     const delay = await prepareSimulation(
       PAGE,
       { features: ['delay_js'] },

@@ -82,3 +82,15 @@ export function expandPhpReplacement(template: string, groups: readonly string[]
   }
   return out;
 }
+
+/**
+ * PHP's `addcslashes($text, '\\$')`: every `\` and `$` gets a `\` in front,
+ * which is how WP Rocket makes interpolated text literal in a `preg_replace`
+ * replacement — {@link expandPhpReplacement} then copies it as is.
+ *
+ * @param text The text to interpolate.
+ * @returns The text with each `\` and `$` escaped.
+ */
+export function quotePhpReplacement(text: string): string {
+  return text.replace(/[\\$]/g, '\\$&');
+}

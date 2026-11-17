@@ -23,7 +23,14 @@ const fill = (unit: string, bytes: number): string => unit.repeat(Math.ceil(byte
  * @param html The page.
  */
 const simulate = (html: string): DelayJsForwardResult =>
-  simulateDelayJs({ html, runtime: 'R', ieFallback: 'F', listRows: [], rows: [] });
+  simulateDelayJs({
+    html,
+    runtime: 'R',
+    ieFallback: 'F',
+    listRows: [],
+    rows: [],
+    metaCharsetMoveText: 'literal'
+  });
 
 describe('simulateDelayJs — linear on hostile pages', () => {
   it.each<[string, (bytes: number) => string]>([

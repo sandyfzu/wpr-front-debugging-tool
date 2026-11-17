@@ -47,6 +47,7 @@ import { simulateDelayJs } from '../wp-rocket-simulation/delay-js-forward';
 import type { SimulationMarkerEntry } from '../storage/simulation-markers';
 import { createMarkerIdSource, createMarkerSettler } from './simulation-marker-memo';
 import { INERT_SIMULATION_SOURCES, type SimulationSources } from './simulation-sources';
+import { latestStableWprVersion } from '../wp-rocket/versions';
 
 const TAB = 3;
 const ORIGIN = 'https://site.test';
@@ -2075,10 +2076,11 @@ describe('host — simulating sessions', () => {
       runtime: PACKAGE.runtime,
       ieFallback: PACKAGE.fallback,
       listRows: [],
-      rows: []
+      rows: [],
+      metaCharsetMoveText: latestStableWprVersion().variants.metaCharsetMoveText
     });
     const expected = applyPipeline(simulated.html, SET);
-    expect(asked).toEqual(['3.24']);
+    expect(asked).toEqual([latestStableWprVersion().version]);
     expect(body).toEqual(encoder.encode(expected.html));
     await flush();
     await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
@@ -2086,7 +2088,12 @@ describe('host — simulating sessions', () => {
       document: {
         outcome: 'rewritten',
         reports: expected.reports,
-        simulation: { feature: 'delay_js', state: 'simulated', delayed: 1, wpRocketVersion: '3.24' }
+        simulation: {
+          feature: 'delay_js',
+          state: 'simulated',
+          delayed: 1,
+          wpRocketVersion: latestStableWprVersion().version
+        }
       }
     });
   });

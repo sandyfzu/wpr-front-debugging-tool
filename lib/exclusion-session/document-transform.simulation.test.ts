@@ -30,7 +30,7 @@ const PAGE =
 
 const SIMULATION: DocumentSimulationInput = {
   features: ['delay_js'],
-  wpRocketVersion: '3.24',
+  wpRocketVersion: '3.24.1',
   runtime: '/*runtime*/RocketLazyLoadScripts.run();',
   fallback:
     'if(navigator.userAgent.match(/MSIE|Trident/i)){document.location.href+="?nowprocket=1"}',
@@ -45,7 +45,8 @@ const DELAY_ON = simulateDelayJs({
   runtime: SIMULATION.runtime,
   ieFallback: SIMULATION.fallback,
   listRows: [],
-  rows: []
+  rows: [],
+  metaCharsetMoveText: 'literal'
 }).html;
 
 const REQUEST: DocumentTransformRequest = {
@@ -79,7 +80,7 @@ describe('runDocumentPipeline with a simulation', () => {
           state: 'simulated',
           delayed: 2,
           runtimeInjected: true,
-          wpRocketVersion: '3.24',
+          wpRocketVersion: '3.24.1',
           listSource: 'bundled',
           listMiss: 'never-fetched'
         }

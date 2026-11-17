@@ -1,6 +1,6 @@
 /**
  * The simulation contracts' Defer JS fields: the input's `deferLists`
- * (exactly with Defer JS, for a supported version), the report's
+ * (exactly with Defer JS; any input names a supported version), the report's
  * own fields per feature (Defer JS's counts, never Delay JS's fields or
  * values, and the reverse), and the `rewritten`
  * outcome's `deferSimulation` beside the Delay JS `simulation`.
@@ -84,7 +84,8 @@ describe('parseDocumentSimulationInput — Defer JS lists', () => {
     ['Defer JS without its lists', { ...BOTH }],
     ['lists without Defer JS', { deferLists: DEFER_LISTS }],
     ['malformed lists', { ...BOTH, deferLists: { ...DEFER_LISTS, inline: 'x' } }],
-    ['an unsupported version', { ...BOTH, deferLists: DEFER_LISTS, wpRocketVersion: '3.20' }]
+    ['an unsupported version', { ...BOTH, deferLists: DEFER_LISTS, wpRocketVersion: '3.20' }],
+    ['a dropped supported version', { ...BOTH, deferLists: DEFER_LISTS, wpRocketVersion: '3.24' }]
   ])('refuses %s', (_name, change) => {
     expect(
       parseDocumentSimulationInput({ ...simulationInput(), ...change }, html.length)

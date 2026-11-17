@@ -13,6 +13,10 @@
  *   engine names); or, for a row with a `problem` / `residual`
  *   disposition, the row problem / documented residual it names.
  *
+ * Every row runs once per supported WP Rocket version, against that
+ * version's expectations (the row's `byVersion` overrides applied: e.g. the
+ * page that version serves).
+ *
  * Every compared field is asserted per row. A field listed in the row's
  * `pending.fields` is behavior the engine does not mirror yet: it must still
  * differ, and fails once it matches — the signal to drop it from the mark.
@@ -24,11 +28,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
+import { SUPPORTED_WPR_VERSIONS } from '../wp-rocket/versions';
 import { INLINE_WRAP_OPEN } from '../wp-rocket/constants';
 import { ExclusionValidationError, type InvalidExclusionRow } from './errors';
 import { saveExclusionRows, type SubmittedRow } from './field-text';
 import { parseTagAt, scanTags } from './html-scan';
 import { lazyRenderRekeyed } from './lazy-render-hashing';
+import { expectationsFor } from './parity-version-expectations';
 import { exclusionPipelineSteps } from './pipeline';
 import { prevalidateExclusionSet } from './validate';
 import type { TransformReport } from './report';
@@ -367,34 +373,59 @@ function title(row: ParityRow): string {
   return `${pending}${row.id}${row.note === undefined ? '' : ` — ${row.note}`}`;
 }
 
+/**
+ * The table's rows as one version expects them (its `byVersion` overrides
+ * applied), so every row replays against that version's served page and outputs.
+ *
+ * @param version The WP Rocket version.
+ */
+function rowsFor(version: string): (SaveRow | MatchRow)[] {
+  // Resolved per kind: `Omit` over the row union would drop its `kind` discriminant.
+  return table.rows.map((row) =>
+    row.kind === 'save' ? expectationsFor(row, version) : expectationsFor(row, version)
+  );
+}
+
 describe('WP Rocket parity table', () => {
-  // The harness keys subjects with its own tag scan; this replay must see the
-  // same keys in the same order, or it would compare different elements.
-  it('keys the served page subjects exactly as the harness did', () => {
-    for (const row of table.rows) {
-      if (row.kind !== 'match') continue;
-      const keys = subjectTags(row.served, row.feature).map(({ key }) => key);
-      const expected = row.subjects ?? row.candidates;
-      const seen = row.subjects === undefined ? keys.filter((key) => expected.includes(key)) : keys;
-      expect({ row: row.id, keys: seen }).toEqual({ row: row.id, keys: expected });
-    }
-  });
-
-  describe('save rows (typed → stored + dropped)', () => {
-    for (const row of table.rows) {
-      if (row.kind !== 'save') continue;
-      it(title(row), () => {
-        assertRow(row, engineSave(row), { stored: row.stored, dropped: row.dropped });
-      });
-    }
-  });
-
-  describe('match rows (stored rows + served page → engine outcome)', () => {
-    for (const row of table.rows) {
-      if (row.kind !== 'match') continue;
-      it(title(row), () => {
-        assertRow(row, engineMatch(row), expectedMatch(row));
-      });
-    }
+  it('replays a row expecting per version (its version-keyed outputs are exercised)', () => {
+    expect(table.rows.some((row) => row.byVersion !== undefined)).toBe(true);
   });
 });
+
+describe.each(SUPPORTED_WPR_VERSIONS.map((pin) => [pin.version] as const))(
+  'WP Rocket parity table under WP Rocket %s',
+  (version) => {
+    const rows = rowsFor(version);
+
+    // The harness keys subjects with its own tag scan; this replay must see the
+    // same keys in the same order, or it would compare different elements.
+    it('keys the served page subjects exactly as the harness did', () => {
+      for (const row of rows) {
+        if (row.kind !== 'match') continue;
+        const keys = subjectTags(row.served, row.feature).map(({ key }) => key);
+        const expected = row.subjects ?? row.candidates;
+        const seen =
+          row.subjects === undefined ? keys.filter((key) => expected.includes(key)) : keys;
+        expect({ row: row.id, keys: seen }).toEqual({ row: row.id, keys: expected });
+      }
+    });
+
+    describe('save rows (typed → stored + dropped)', () => {
+      for (const row of rows) {
+        if (row.kind !== 'save') continue;
+        it(title(row), () => {
+          assertRow(row, engineSave(row), { stored: row.stored, dropped: row.dropped });
+        });
+      }
+    });
+
+    describe('match rows (stored rows + served page → engine outcome)', () => {
+      for (const row of rows) {
+        if (row.kind !== 'match') continue;
+        it(title(row), () => {
+          assertRow(row, engineMatch(row), expectedMatch(row));
+        });
+      }
+    });
+  }
+);

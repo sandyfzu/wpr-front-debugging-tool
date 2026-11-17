@@ -390,7 +390,7 @@ describe('Delay JS lane mode control', () => {
     expect(screen.getByText('4 delayed by the simulation · 1 excluded by your rows')).toBeTruthy();
     expect(screen.queryByText(/delayed scripts restored/)).toBeNull();
     expect(
-      screen.getByText(`Simulated · WP Rocket 3.24 (the site serves 3.12.1)${SITE_TAIL}`)
+      screen.getByText(`Simulated · WP Rocket 3.24.1 (the site serves 3.12.1)${SITE_TAIL}`)
     ).toBeTruthy();
     expect(screen.queryByText(FULL_SITE_NOTE)).toBeNull();
     expect(screen.getByText('Exclusion list: latest (fetched 3 h ago)')).toBeTruthy();
@@ -470,9 +470,9 @@ describe('Defer JS lane mode control', () => {
         '4 deferred and 1 inline wrapped by the simulation · 1 excluded by your rows'
       )
     ).toBeTruthy();
-    expect(screen.getByText(`Simulated · WP Rocket 3.24${SITE_TAIL}`)).toBeTruthy();
+    expect(screen.getByText(`Simulated · WP Rocket 3.24.1${SITE_TAIL}`)).toBeTruthy();
     expect(screen.queryByText(FULL_SITE_NOTE)).toBeNull();
-    expect(screen.getByText(/^Exclusion list: bundled with WP Rocket 3.24/)).toBeTruthy();
+    expect(screen.getByText(/^Exclusion list: bundled with WP Rocket 3.24.1/)).toBeTruthy();
     // Defer JS has no lane limits: no disclosure.
     expect(screen.queryByRole('button', { name: /^\d+ limits?$/ })).toBeNull();
     expect(radio('Simulated').checked).toBe(true);
@@ -572,7 +572,7 @@ describe('LazyLoad lane mode control', () => {
       )
     ).toBeTruthy();
     expect(screen.queryByText(/lazy images restored/)).toBeNull();
-    expect(screen.getByText(`Simulated · WP Rocket 3.24${SITE_TAIL}`)).toBeTruthy();
+    expect(screen.getByText(`Simulated · WP Rocket 3.24.1${SITE_TAIL}`)).toBeTruthy();
     // The long note is the banner's alone now.
     expect(screen.queryByText(FULL_SITE_NOTE)).toBeNull();
     // No exclusion list: LazyLoad's exclusions ship with the version.
@@ -637,7 +637,7 @@ describe('site-exclusions note on a mixed page', () => {
           images: 0,
           pictures: 0,
           backgrounds: 0,
-          wpRocketVersion: '3.24'
+          wpRocketVersion: '3.24.1'
         },
         served: {
           urlPath: PAGE,
@@ -663,7 +663,7 @@ describe('site-exclusions note on a mixed page', () => {
     cleanup();
     mount(controller);
     expect(
-      screen.getByText(`Simulated · WP Rocket 3.24 (the site serves 3.12.1)${SITE_TAIL}`)
+      screen.getByText(`Simulated · WP Rocket 3.24.1 (the site serves 3.12.1)${SITE_TAIL}`)
     ).toBeTruthy();
   });
 });

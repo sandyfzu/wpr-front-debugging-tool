@@ -34,6 +34,7 @@ import { scriptProbeBudget } from '../exclusion-builder/pcre/id-probe';
 import { translateRegexRows, type TranslatedRow } from '../exclusion-builder/pcre/rows';
 import { runtimeParse } from '../exclusion-builder/pcre/translate';
 import { DELAY_JS_TYPE_CURRENT } from '../wp-rocket/constants';
+import type { MetaCharsetMoveText } from '../wp-rocket/versions';
 import { alreadyServesDeferJs, alreadyServesDelayJs } from './already-served';
 import { deferJsPasses, type DeferJsPassCounts, type DeferJsPassInput } from './defer-js-forward';
 import { isAmpDocument } from './amp';
@@ -71,6 +72,8 @@ export interface DelayJsForwardInput {
   readonly listRows: readonly string[];
   /** The stored Delay JS exclusion rows (the settings field; tested after the list). */
   readonly rows: readonly string[];
+  /** How the simulated version writes the `<meta charset>` it moves. */
+  readonly metaCharsetMoveText: MetaCharsetMoveText;
   /**
    * How many bytes each code unit of `html` was served as — WP Rocket's
    * regexes count bytes (PCRE without UTF), which decides their backtrack
@@ -577,7 +580,7 @@ export function simulateDelayJs(input: DelayJsForwardInput): DelayJsForwardResul
   if (injected.movesMeta && metaCharsetSpans(added, measure).length > 0) {
     // A page whose metas the pattern never matches is left as is either way.
     if (!metaCharsetWithinCeiling(added, measure)) return beyond('meta-charset');
-    added = moveMetaCharsetToHead(added, measure);
+    added = moveMetaCharsetToHead(added, input.metaCharsetMoveText, measure);
   }
   return {
     html: injectIeConditionals(added, buffer.conditionals),

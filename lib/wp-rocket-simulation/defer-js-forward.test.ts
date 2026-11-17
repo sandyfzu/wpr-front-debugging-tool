@@ -185,7 +185,15 @@ describe('holdsAsyncOrDefer', () => {
 
 describe('simulateDelayJs with Defer JS ahead', () => {
   const delay = (html: string, defer: DeferJsPassInput): ReturnType<typeof simulateDelayJs> =>
-    simulateDelayJs({ html, runtime: 'R', ieFallback: 'F', listRows: [], rows: [], defer });
+    simulateDelayJs({
+      html,
+      runtime: 'R',
+      ieFallback: 'F',
+      listRows: [],
+      rows: [],
+      metaCharsetMoveText: 'literal',
+      defer
+    });
 
   it('reports the Defer JS passes, or that the page already defers', () => {
     expect(delay('<head></head><script src="a.js"></script>', input()).report.defer).toEqual({

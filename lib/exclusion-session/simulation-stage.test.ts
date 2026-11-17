@@ -57,6 +57,12 @@ describe('simulationStepIds', () => {
 });
 
 describe('simulationStage', () => {
+  it('throws on an input naming an unsupported version (the input guard refuses it: a broken invariant)', () => {
+    expect(() => run(PAGE, input({ wpRocketVersion: '3.24' }))).toThrow(
+      'simulation input names WP Rocket 3.24, not a supported version'
+    );
+  });
+
   it('simulates Delay JS with the input’s runtime, fallback and list (never stored rows)', () => {
     const simulation = input();
     const out = run(PAGE, simulation);
@@ -65,7 +71,9 @@ describe('simulationStage', () => {
       runtime: simulation.runtime,
       ieFallback: simulation.fallback,
       listRows: simulation.listRows,
-      rows: []
+      rows: [],
+      // The fixture input simulates 3.23.5.1.
+      metaCharsetMoveText: 'replacement'
     });
     expect(out.html).toBe(expected.html);
     expect(out.reports).toEqual([
@@ -80,6 +88,17 @@ describe('simulationStage', () => {
       }
     ]);
     expect(out.reports.every(crossesContract)).toBe(true);
+  });
+
+  it('moves the meta charset as the input’s version writes it', () => {
+    const served =
+      '<html><head><title>t</title><meta charset="utf-8" data-x="$0"></head><body></body></html>';
+    const moved = (wpRocketVersion: string): string | undefined =>
+      /<meta charset="utf-8" data-x="[^"]*">/.exec(
+        run(served, input({ wpRocketVersion })).html
+      )?.[0];
+    expect(moved('3.23.5.1')).toBe('<meta charset="utf-8" data-x="<head>">');
+    expect(moved('3.24.1')).toBe('<meta charset="utf-8" data-x="$0">');
   });
 
   it('serves an already-delayed page as is (already-served)', () => {

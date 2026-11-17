@@ -23,11 +23,31 @@ import { byteView, type ByteMeasure } from './utf8';
  * @param more Other inputs.
  */
 function run(html: string, more: Partial<DelayJsForwardInput> = {}) {
-  return simulateDelayJs({ html, runtime: 'R', ieFallback: 'F', listRows: [], rows: [], ...more });
+  return simulateDelayJs({
+    html,
+    runtime: 'R',
+    ieFallback: 'F',
+    listRows: [],
+    rows: [],
+    metaCharsetMoveText: 'literal',
+    ...more
+  });
 }
 
 const HEAD = '<head><script>F</script><script>R</script></head>';
 const DIGEST = '0123456789abcdef0123456789abcdef';
+
+describe('simulateDelayJs — the meta charset move variant', () => {
+  it('writes the moved declaration as the given variant does', () => {
+    const page = '<html><head><title>t</title><meta charset=utf-8 data-x="\\1"></head></html>';
+    expect(run(page, { metaCharsetMoveText: 'replacement' }).html).toBe(
+      '<html><head><meta charset=utf-8 data-x="<head>"><script>F</script><script>R</script><title>t</title></head></html>'
+    );
+    expect(run(page).html).toBe(
+      '<html><head><meta charset=utf-8 data-x="\\1"><script>F</script><script>R</script><title>t</title></head></html>'
+    );
+  });
+});
 
 describe('simulateDelayJs — report', () => {
   it('counts delayed scripts and the injection', () => {

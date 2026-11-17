@@ -23,7 +23,7 @@ export interface WprVersionSelection {
   /**
    * The version token the page's WP Rocket generator metas name (see
    * {@link wprVersionToken}; may be unsupported, e.g. `3.22` or
-   * `3.24-beta5`), absent when none names one. When versioned metas
+   * `3.24.1-beta1`), absent when none names one. When versioned metas
    * disagree: the first in document order (the page's own first claim) —
    * the selection then falls back to the latest stable. The UI states both
    * when they differ.
@@ -37,7 +37,7 @@ const VERSION_TAIL = /^[\w.+-]*/;
 /**
  * The whole version token a WP Rocket generator content names: the digits
  * the shared version pattern reads, plus any text glued to them — so
- * `3.24-beta5` or `3.23.5.1.9` never reads as a supported `3.24` /
+ * `3.24.1-beta1` or `3.23.5.1.9` never reads as a supported `3.24.1` /
  * `3.23.5.1`. Deliberately wider than detection's digits-only version
  * (`extractWprVersion`): detection only reports the number, while the
  * simulation picks plugin behavior by exact version, so a pre-release or

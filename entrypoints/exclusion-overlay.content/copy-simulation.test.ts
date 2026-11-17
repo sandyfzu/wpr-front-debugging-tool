@@ -43,7 +43,7 @@ function report(
     state,
     delayed: 0,
     runtimeInjected: false,
-    wpRocketVersion: '3.24',
+    wpRocketVersion: '3.24.1',
     listSource: 'bundled',
     listMiss: 'never-fetched',
     ...extra
@@ -142,7 +142,7 @@ describe('simulation outcome words', () => {
     const lazyload = {
       feature: 'lazyload',
       state: 'csp-blocked',
-      wpRocketVersion: '3.24',
+      wpRocketVersion: '3.24.1',
       images: 0,
       pictures: 0,
       backgrounds: 0
@@ -265,17 +265,17 @@ describe('simulation outcome words', () => {
   it('ends every simulated lane’s version line with the site-exclusions note in short', () => {
     const TAIL = ' · without the site’s own exclusions';
     expect(SIMULATION_LANE_COPY.version(simulatedReport())).toBe(
-      `Simulated · WP Rocket 3.24 (the site serves 3.12.1)${TAIL}`
+      `Simulated · WP Rocket 3.24.1 (the site serves 3.12.1)${TAIL}`
     );
     for (const report of [
-      { ...simulatedReport(), siteVersion: '3.24' },
+      { ...simulatedReport(), siteVersion: '3.24.1' },
       deferSimulatedReport(),
       lazyloadSimulatedReport()
     ])
-      expect(SIMULATION_LANE_COPY.version(report)).toBe(`Simulated · WP Rocket 3.24${TAIL}`);
+      expect(SIMULATION_LANE_COPY.version(report)).toBe(`Simulated · WP Rocket 3.24.1${TAIL}`);
     expect(
       SIMULATION_LANE_COPY.version({ ...lazyloadSimulatedReport(), siteVersion: '3.12.1' })
-    ).toBe(`Simulated · WP Rocket 3.24 (the site serves 3.12.1)${TAIL}`);
+    ).toBe(`Simulated · WP Rocket 3.24.1 (the site serves 3.12.1)${TAIL}`);
   });
 
   it('puts nothing of Delay JS or Defer JS behind a lane disclosure', () => {
@@ -326,14 +326,17 @@ describe('simulation banners', () => {
 describe('owner words: the latest-list misses and the inline-after-fallback limit', () => {
   it('starts every miss with "latest list", one voice', () => {
     const misses = LATEST_LIST_MISSES.map((listMiss) =>
-      simulationListCopy({ listSource: 'bundled', listMiss, wpRocketVersion: '3.24' }, 0)
+      simulationListCopy({ listSource: 'bundled', listMiss, wpRocketVersion: '3.24.1' }, 0)
     );
     for (const line of misses) {
-      expect(line).toMatch(/^Exclusion list: bundled with WP Rocket 3\.24 \(latest list .+\)$/);
+      expect(line).toMatch(/^Exclusion list: bundled with WP Rocket 3\.24\.1 \(latest list .+\)$/);
     }
     expect(
-      simulationListCopy({ listSource: 'bundled', listMiss: 'expired', wpRocketVersion: '3.24' }, 0)
-    ).toBe('Exclusion list: bundled with WP Rocket 3.24 (latest list copy over 14 days old)');
+      simulationListCopy(
+        { listSource: 'bundled', listMiss: 'expired', wpRocketVersion: '3.24.1' },
+        0
+      )
+    ).toBe('Exclusion list: bundled with WP Rocket 3.24.1 (latest list copy over 14 days old)');
   });
 
   it('words the inline-after-fallback limit from the earlier page’s fallback', () => {

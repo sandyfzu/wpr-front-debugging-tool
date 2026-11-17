@@ -36,6 +36,13 @@ describe('parseFeatureMeta', () => {
     });
   });
 
+  it('keeps a token no row maps (the licence-state one) as a plain member', () => {
+    expect(read(metaHtml('wpr_insights'))).toEqual({
+      attributePresent: true,
+      tokens: ['wpr_insights']
+    });
+  });
+
   it('answers no declaration when the generator meta or the attribute is absent', () => {
     expect(read('<p>no metas here</p>')).toEqual({ attributePresent: false, tokens: [] });
     // A WP Rocket tag without the attribute says nothing about features.
@@ -300,6 +307,8 @@ describe('FEATURE_META_TOKENS registry', () => {
 
   it('maps no row to the tokens whose rows are not carried yet', () => {
     expect(featureRowForMetaToken('wpr_cache_webp')).toBeNull();
+    // The licence-state token (not expired) names no feature.
+    expect(featureRowForMetaToken('wpr_insights')).toBeNull();
     expect(featureRowForMetaToken('wpr_nonexistent')).toBeNull();
   });
 });
