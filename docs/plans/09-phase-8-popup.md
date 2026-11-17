@@ -2,7 +2,7 @@
 
 ## TLDR
 
-Build the12-parameter optimization popup with exact Apply/Reset URL behavior, accessible switches and truthful initial state. Depends:P1/P3/P5. **Deferred to the last pre-release slot** (owner2026-10-19: popup not settled): executes afterP5J, immediately beforeP15 — no longer parallel withP6/P9. P7 is **not an implementation dependency**, but v2 plugin must later reverify URL contract. Installed stack/shared UI; no planned dependencies. Mobile-simulation popup row is **withdrawn**, including its obsolete P8.1 suite/dependency.
+Build the12-parameter optimization popup with exact Apply/Reset URL behavior, accessible switches and truthful initial state. Depends:P1/P3/P5. **Deferred post-release** (owner 2026-11-17): the 12 URL parameters are read only by the Support Diagnoser plugin (none in WP Rocket 3.24.1's code), so the popup returns only with a rebuilt Diagnoser (P7), its URL contract re-verified against it. First release ships **no popup** (scaffold removed pre-release, with the Diagnoser entry). Installed stack/shared UI; no planned dependencies. Mobile-simulation popup row is **withdrawn**, including its obsolete P8.1 suite/dependency.
 
 ## Reference/contract
 

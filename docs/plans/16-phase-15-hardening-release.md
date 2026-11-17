@@ -2,7 +2,7 @@
 
 ## TLDR
 
-Real-site verification (former P14.6) is post-release [P22](./22-phase-22-post-release-real-site.md); order deferredP7→P5J→P8→P15. Never imply a real-site pass before P22 runs. P15 closes every required promise across browsers, not just compile/build. No implementation/commit/tag/push/publication authorized merely by this checklist.
+Real-site verification (former P14.6) is post-release [P22](./22-phase-22-post-release-real-site.md); order P5J (closed)→popup + Diagnoser-entry removal→P15; P7/P8 post-release (owner 2026-11-17). Never imply a real-site pass before P22 runs. P15 closes every required promise across browsers, not just compile/build. No implementation/commit/tag/push/publication authorized merely by this checklist.
 
 ## P14.6 external-site track — moved
 
@@ -10,7 +10,7 @@ Owner 2026-11-17: deferred after the first release as [P22](./22-phase-22-post-r
 
 ## P15 hardening/release
 
-Depends:all required phases inclP14.5/P7/P5J/P21 WP Rocket simulation (before release, owner 2026-10-22); P10 needs owner replan/disposition, not silent skip; P17 optional. Parallel:—final gate. Installed Node24/pinned pnpm/TS5.9/WXT/Solid/test tools, no speculative upgrades.
+Depends:all required phases inclP14.5/P5J/P21 WP Rocket simulation (before release, owner 2026-10-22); P10 needs owner replan/disposition, not silent skip; P17 optional. Parallel:—final gate. Installed Node24/pinned pnpm/TS5.9/WXT/Solid/test tools, no speculative upgrades.
 
 ### P15A — Budgets/performance
 
