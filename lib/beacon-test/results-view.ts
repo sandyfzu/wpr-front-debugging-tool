@@ -6,7 +6,8 @@
  * searched text) for the panel's shared filter/search list. Pure; rows keep
  * the beacon's report order, ids are positions in it.
  */
-import type { ResourcePageDefinition } from '../panel/resources-view-model';
+import { choiceFacet, defineFacets, type FacetSet } from '../panel/resource-facets';
+import type { ResourceFilterRow, ResourcePageDefinition } from '../panel/resources-view-model';
 import type { AboveTheFoldCandidate, FeatureList, PictureSource } from './results';
 
 /** The beacon's label for the largest candidate (its LCP). */
@@ -178,19 +179,39 @@ export function lazyRenderRows(list: FeatureList<string> | null): readonly LazyR
 /** The above-the-fold list's chip ids. */
 export type AboveTheFoldFilterId = 'all' | 'lcp' | 'above-the-fold';
 
+/** The label chips past "All" — declared once (chip bar + facet). */
+const LABEL_CHIPS: readonly ResourceFilterRow<AboveTheFoldRow, AboveTheFoldFilterId>[] = [
+  { id: 'lcp', label: 'LCP', predicate: (row) => row.label === LCP_LABEL },
+  {
+    id: 'above-the-fold',
+    label: 'Above the fold',
+    predicate: (row) => row.label === ABOVE_THE_FOLD_LABEL
+  }
+];
+
 /** The above-the-fold list's chips (by the beacon's label) and searched text (every value shown). */
 export const ABOVE_THE_FOLD_LIST: ResourcePageDefinition<AboveTheFoldRow, AboveTheFoldFilterId> = {
-  filters: [
-    { id: 'all', label: 'All', predicate: () => true },
-    { id: 'lcp', label: 'LCP', predicate: (row) => row.label === LCP_LABEL },
-    {
-      id: 'above-the-fold',
-      label: 'Above the fold',
-      predicate: (row) => row.label === ABOVE_THE_FOLD_LABEL
-    }
-  ],
+  filters: [{ id: 'all', label: 'All', predicate: () => true }, ...LABEL_CHIPS],
   searchField: (row) => `${row.url}\n${row.kind}\n${row.label}\n${row.detail}`
 };
+
+/** The above-the-fold list's facet ids. */
+export type AboveTheFoldFacetId = 'label';
+
+/**
+ * The above-the-fold list's facets: one label per record, so one choice
+ * (value ids = the chip ids); a label a newer beacon sends shows under Any only.
+ */
+export const ABOVE_THE_FOLD_FACETS: FacetSet<AboveTheFoldRow, AboveTheFoldFacetId> = defineFacets<
+  AboveTheFoldRow,
+  AboveTheFoldFacetId
+>([choiceFacet('label', 'Label', LABEL_CHIPS)]);
+
+/** The lazy-render list's facets: none (search only). */
+export const LAZY_RENDER_FACETS: FacetSet<LazyRenderRow, never> = defineFacets<
+  LazyRenderRow,
+  never
+>([]);
 
 /** The lazy-render list: no chips, the hash searched. */
 export const LAZY_RENDER_LIST: ResourcePageDefinition<LazyRenderRow, 'all'> = {

@@ -1,12 +1,16 @@
 /** Beacon results as list rows: URL choice, facts and detail, chips by label, search, and row identity. */
 import { describe, expect, it } from 'vitest';
+import { chipParityMismatches } from '../panel/facet-parity.fixtures';
+import { applyFacets, facetCounts } from '../panel/resource-facets';
 import { filterAndSearch, filterCounts } from '../panel/resources-view-model';
 import type { AboveTheFoldCandidate } from './results';
 import {
+  ABOVE_THE_FOLD_FACETS,
   ABOVE_THE_FOLD_LIST,
   aboveTheFoldRows,
   candidateFacts,
   candidateUrl,
+  LAZY_RENDER_FACETS,
   LAZY_RENDER_LIST,
   lazyRenderRows,
   sameAboveTheFoldRow,
@@ -175,6 +179,57 @@ describe('ABOVE_THE_FOLD_LIST', () => {
     const facts = withMore[0]?.facts.map((fact) => fact.value).join('\n') ?? '';
     expect(facts).toContain('480px');
     expect(facts).toContain('high');
+  });
+});
+
+describe('ABOVE_THE_FOLD_FACETS', () => {
+  const rows = aboveTheFoldRows({
+    kind: 'ok',
+    items: [LCP, BG, PICTURE, candidate({ label: 'future-label', src: 'x.gif' })],
+    dropped: 0,
+    truncated: false
+  });
+
+  it('reaches every label chip as one selection with the same rows (with and without a query)', () => {
+    const mapping = {
+      all: {},
+      lcp: { label: 'lcp' },
+      'above-the-fold': { label: 'above-the-fold' }
+    };
+    for (const query of ['', 'a.test', 'PICTURE']) {
+      expect(
+        chipParityMismatches(rows, ABOVE_THE_FOLD_LIST, ABOVE_THE_FOLD_FACETS, mapping, query)
+      ).toEqual([]);
+    }
+  });
+
+  it('counts by label; an unknown label only under Any', () => {
+    const search = { field: ABOVE_THE_FOLD_LIST.searchField, query: '' };
+    expect(facetCounts(rows, ABOVE_THE_FOLD_FACETS, {}, search).byFacet.label).toEqual({
+      any: 4,
+      lcp: 1,
+      'above-the-fold': 2
+    });
+  });
+});
+
+describe('LAZY_RENDER_FACETS', () => {
+  it('declares no facet: the search alone narrows, as the chip-less list does', () => {
+    const rows = lazyRenderRows({
+      kind: 'ok',
+      items: ['abc123', 'def456'],
+      dropped: 0,
+      truncated: false
+    });
+    expect(LAZY_RENDER_FACETS.facets).toEqual([]);
+    expect(
+      applyFacets(
+        rows,
+        LAZY_RENDER_FACETS,
+        {},
+        { field: LAZY_RENDER_LIST.searchField, query: 'DEF' }
+      )
+    ).toEqual(filterAndSearch(rows, LAZY_RENDER_LIST, 'all', 'DEF'));
   });
 });
 
