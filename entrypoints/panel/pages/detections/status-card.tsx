@@ -7,6 +7,10 @@
  * - **link** — the whole card is an anchor to the page that explains the
  *   feature, with the hover lift and the focus ring.
  *
+ * The page's layout picks the surface: `adaptive` is a row at compact and a
+ * card from the regular tier up; `list` is a row at every width (hover wash,
+ * inset ring, never a lift).
+ *
  * A feature card adds its evidence line under the name: the source chip
  * (`Meta` / `Footprint`, its meaning spelled out for assistive tech and in
  * the native title) and, for an unsure verdict (collecting / unknown), the
@@ -50,8 +54,13 @@ import {
   type BuilderBadgeKind
 } from '../../../../lib/detection/hud';
 import { STATUS_LABELS } from '../../../../lib/panel/detections-summary';
-import { hostLayersTooltip, type StatusItem } from '../../../../lib/panel/detections-view-model';
+import {
+  hostLayersTooltip,
+  type StatusItem,
+  type StatusKind
+} from '../../../../lib/panel/detections-view-model';
 import type { SimulationFact } from '../../../../lib/wp-rocket/types';
+import type { DetectionLayout } from '../../state/detections-layout';
 import { cn } from '../../../../utils/cn';
 import { navRoute, type RouteId } from '../../routes';
 import { cacheAgeText, STATUS_TONES } from './card-presentation';
@@ -67,6 +76,15 @@ import { cacheAgeText, STATUS_TONES } from './card-presentation';
  */
 export const STATUS_CARD_SURFACE =
   'flex h-full w-full flex-col gap-1 px-2.5 py-2 text-xs text-fg-primary @regular:rounded-md @regular:border @regular:border-line-1 @regular:bg-surface-1 @regular:p-2.5';
+
+/**
+ * The List layout's row: the compact row at every width (no border, radius
+ * or shadow of its own — the grid's grouped surface divides the rows), with
+ * roomier padding from the regular tier up so a wide column still reads as
+ * a list rather than a strip of cramped lines.
+ */
+export const STATUS_LIST_ROW_SURFACE =
+  'flex h-full w-full flex-col gap-1 px-2.5 py-2 text-xs text-fg-primary @regular:px-3 @regular:py-2.5';
 
 /** The level-1 pair the regular-tier card mirrors (exported for the pin). */
 export const CARD_SURFACE_PAIR = CARD_LEVEL_CLASSES[1];
@@ -87,6 +105,36 @@ const LINK_ACTIVE = cn(
  */
 const LINK_QUIET = '@max-regular:focus-visible:-outline-offset-2 hover:bg-surface-2';
 
+/**
+ * A List-layout link row, active or quiet alike: the row hover wash and an
+ * inset ring (the grouped surface's clip would cut an outset one) at every
+ * width — a row never lifts.
+ */
+const LINK_ROW = 'hover:bg-surface-2 focus-visible:-outline-offset-2';
+
+/**
+ * The card root's surface for a layout.
+ *
+ * @param layout The page's layout.
+ * @returns {@link STATUS_CARD_SURFACE} (adaptive) or {@link STATUS_LIST_ROW_SURFACE} (list).
+ */
+export function statusCardSurface(layout: DetectionLayout): string {
+  return layout === 'list' ? STATUS_LIST_ROW_SURFACE : STATUS_CARD_SURFACE;
+}
+
+/**
+ * A link card's interaction classes for a layout and verdict: adaptive keeps
+ * the active lift / quiet wash pair, list is always the row treatment.
+ *
+ * @param layout The page's layout.
+ * @param status The card's verdict (only `active` lifts, and only adaptive).
+ * @returns The classes appended after the surface and focus ring.
+ */
+export function statusLinkInteraction(layout: DetectionLayout, status: StatusKind): string {
+  if (layout === 'list') return LINK_ROW;
+  return status === 'active' ? LINK_ACTIVE : LINK_QUIET;
+}
+
 /** Indents the lines under the head row to the name's start (14 px icon + `gap-1.5`). */
 const UNDER_NAME = 'ps-5';
 
@@ -106,6 +154,8 @@ export interface StatusCardProps {
   linkTo?: RouteId;
   /** The page clock reading (epoch ms) the Cached card ages against. */
   now: number;
+  /** The page's layout (absent: `adaptive`). */
+  layout?: DetectionLayout;
 }
 
 /**
@@ -475,11 +525,16 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
 export function StatusCard(props: StatusCardProps): JSX.Element {
   /** The destination's nav row (the link form needs its label). */
   const destination = () => (props.linkTo === undefined ? undefined : navRoute(props.linkTo));
+  const layout = (): DetectionLayout => props.layout ?? 'adaptive';
   return (
     <Show
       when={destination()}
       fallback={
-        <div data-fdt="status-card" data-fdt-card-id={props.item.id} class={STATUS_CARD_SURFACE}>
+        <div
+          data-fdt="status-card"
+          data-fdt-card-id={props.item.id}
+          class={statusCardSurface(layout())}
+        >
           <CardHead item={props.item} />
           <StaticSubtitle item={props.item} now={props.now} />
           <CardEvidence item={props.item} />
@@ -492,10 +547,10 @@ export function StatusCard(props: StatusCardProps): JSX.Element {
           data-fdt-card-id={props.item.id}
           href={`#/${route().id}`}
           class={cn(
-            STATUS_CARD_SURFACE,
+            statusCardSurface(layout()),
             'group no-underline',
             FOCUS_RING,
-            props.item.status === 'active' ? LINK_ACTIVE : LINK_QUIET
+            statusLinkInteraction(layout(), props.item.status)
           )}
         >
           <CardHead item={props.item} />

@@ -64,6 +64,7 @@ import {
   type FdtDataStore
 } from './state/use-fdt-data';
 import { createSearchStore, type SearchStore } from './state/search';
+import { createDetectionsLayout, DetectionsLayoutContext } from './state/detections-layout';
 import { devtoolsInspectedTabId, fdtRequestEdges, realMessagingEdges } from './state/edges';
 import { withRelayedPushes } from './state/relayed-pushes';
 import { createHardReloadBudget } from './state/hard-reload-budget';
@@ -194,6 +195,8 @@ export function PanelApp(props: AppProps): JSX.Element {
   // eslint-disable-next-line solid/reactivity
   const builderEntryDeps = props.builderEntry ?? realBuilderEntryDeps(devtoolsInspectedTabId);
   const router = createHashRoute();
+  // Shell-scoped so the Detections layout survives route switches and refreshes.
+  const detectionsLayout = createDetectionsLayout();
   // eslint-disable-next-line solid/reactivity
   const paletteChord = createPanelChordBinding(props.paletteChord ?? realPanelChordDeps(log));
 
@@ -376,7 +379,9 @@ export function PanelApp(props: AppProps): JSX.Element {
                     <Match
                       when={data.state().status === 'ready' || data.state().status === 'refreshing'}
                     >
-                      <Dynamic component={PAGES[router.route()]} />
+                      <DetectionsLayoutContext.Provider value={detectionsLayout}>
+                        <Dynamic component={PAGES[router.route()]} />
+                      </DetectionsLayoutContext.Provider>
                     </Match>
                   </Switch>
                 </ErrorBoundary>

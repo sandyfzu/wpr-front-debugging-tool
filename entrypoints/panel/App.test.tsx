@@ -6,11 +6,12 @@
  * switching swaps the body for the registry row's own page (exactly one h1
  * in the document at any time) and resets the search store; a soft refresh
  * preserves the mounted page (node identity, scroll, focus, route) while the
- * data swaps, unmount cancels the search flow, and a page body that throws
+ * data swaps, the Detections layout choice outlives route and ready-branch
+ * remounts, unmount cancels the search flow, and a page body that throws
  * meets the crash boundary's actionable reload. The stores are injected; no
  * messaging API is touched here.
  */
-import { cleanup, render, screen, waitFor } from '@solidjs/testing-library';
+import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PanelApp } from './App';
@@ -428,6 +429,48 @@ describe('soft refresh preservation (the render-level contract)', () => {
     expect(content.scrollTop).toBe(40);
     expect(document.activeElement).toBe(javascriptLink);
     expect(activePage.getAttribute('aria-current')).toBe('page');
+  });
+});
+
+describe('the Detections layout choice (shell-owned)', () => {
+  /** The Detections grid's current layout hook (`undefined` when unmounted). */
+  const gridLayout = (): string | undefined =>
+    document.querySelector<HTMLElement>('[data-fdt="detections-grid"]')?.dataset.fdtLayout;
+
+  it('survives a route round-trip and a ready → error → fetching → ready remount', async () => {
+    const shell = makeShell();
+    render(() => <PanelApp search={shell.search} data={shell.data} />);
+    shell.settle(pageData());
+    await waitFor(() => {
+      expect(gridLayout()).toBe('adaptive');
+    });
+    fireEvent.click(screen.getByText('List'));
+    expect(gridLayout()).toBe('list');
+
+    // The route body unmounts and remounts.
+    hashTo('javascript');
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'JavaScript' })).toBeTruthy();
+    });
+    hashTo('detections');
+    await waitFor(() => {
+      expect(gridLayout()).toBe('list');
+    });
+
+    // A failed soft refresh leaves the ready branch; the retry's fetch and
+    // settle mount a fresh one, which must read the same shell store.
+    shell.deliverReload();
+    shell.fail(new Error('Could not establish connection. Receiving end does not exist.'));
+    await waitFor(() => {
+      expect(screen.getByText("Couldn't load page data")).toBeTruthy();
+    });
+    expect(gridLayout()).toBeUndefined();
+    shell.data.retry();
+    expect(document.querySelector('[data-fdt-page="fetching"]')).not.toBeNull();
+    shell.settle(pageData());
+    await waitFor(() => {
+      expect(gridLayout()).toBe('list');
+    });
   });
 });
 
