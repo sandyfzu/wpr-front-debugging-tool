@@ -4,6 +4,8 @@
  * source groups and their counts, row sameness across re-reads, seed heights.
  */
 import { describe, expect, it } from 'vitest';
+import { exclusivityViolations } from '../../../../lib/panel/facet-parity.fixtures';
+import { applyFacets, facetCounts } from '../../../../lib/panel/resource-facets';
 import { filterAndSearch, filterCounts } from '../../../../lib/panel/resources-view-model';
 import type { LiveScriptRecord } from '../../../../lib/script-runtime/read-live';
 import { DELAYED, liveScript } from './runtime-fixtures';
@@ -11,6 +13,8 @@ import {
   estimateRuntimeRow,
   groupCounts,
   outsideFilterCounts,
+  RUNTIME_FACETS,
+  RUNTIME_GROUPS,
   RUNTIME_STATE_LIST,
   rowsOfSource,
   runtimeRows,
@@ -89,6 +93,63 @@ describe('source groups', () => {
     const rows = runtimeRows(scripts());
     expect(outsideFilterCounts(rows)).toEqual({ skipped: 1, unknown: 1 });
     expect(outsideFilterCounts(rowsOfSource(rows, 'theme'))).toEqual({ skipped: 0, unknown: 0 });
+  });
+});
+
+describe('RUNTIME_FACETS', () => {
+  const rows = runtimeRows(scripts());
+  const search = (query: string) => ({ field: RUNTIME_STATE_LIST.searchField, query });
+
+  it('reaches every source × state chip pair as one selection with the same rows', () => {
+    for (const query of ['', 'a.test', 'PENDING']) {
+      for (const source of ['all', ...RUNTIME_GROUPS] as const) {
+        for (const chip of RUNTIME_STATE_LIST.filters) {
+          const expected = filterAndSearch(
+            rowsOfSource(rows, source),
+            RUNTIME_STATE_LIST,
+            chip.id,
+            query
+          );
+          const selection = {
+            source: source === 'all' ? 'any' : source,
+            state: chip.id === 'all' ? 'any' : chip.id
+          };
+          expect(applyFacets(rows, RUNTIME_FACETS, selection, search(query))).toEqual(expected);
+        }
+      }
+    }
+  });
+
+  it('keeps one source and one state per script', () => {
+    expect(exclusivityViolations(rows, RUNTIME_FACETS)).toEqual([]);
+  });
+
+  it('counts each facet given the other (skipped and unknown under Any only)', () => {
+    expect(facetCounts(rows, RUNTIME_FACETS, {}, search('')).byFacet.state).toEqual({
+      any: 7,
+      executed: 1,
+      failed: 1,
+      pending: 1,
+      'not-delayed': 2
+    });
+    const inline = facetCounts(rows, RUNTIME_FACETS, { source: 'inline' }, search(''));
+    expect(inline.byFacet.state).toEqual({
+      any: 3,
+      executed: 0,
+      failed: 0,
+      pending: 1,
+      'not-delayed': 1
+    });
+    // Source counts follow the state selection (groupCounts ignores it).
+    expect(
+      facetCounts(rows, RUNTIME_FACETS, { state: 'not-delayed' }, search('')).byFacet.source
+    ).toEqual({
+      any: 2,
+      theme: 0,
+      plugin: 0,
+      inline: 1,
+      other: 1
+    });
   });
 });
 

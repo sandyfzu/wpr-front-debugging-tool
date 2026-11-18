@@ -3,7 +3,8 @@
  * per script in document order (its position is its id), named the way the
  * reader tells scripts apart — a URL's file name, an inline script's ordinal
  * — plus the two filter dimensions: the state chips (the shared list's
- * definition) and the source groups (narrowed before the list).
+ * definition) and the source groups (narrowed before the list) — also
+ * declared as the two facets of the combinable filter.
  *
  * State chips: executed / failed / pending / not delayed. `skipped` (a
  * nomodule fallback WP Rocket's runtime deliberately did not run) and
@@ -11,10 +12,22 @@
  * failed nor waiting, so no chip claims them: they are listed under all
  * states only, and the section names them in a note.
  */
-import type { ResourcePageDefinition } from '../../../../lib/panel/resources-view-model';
-import type { ScriptGroup } from '../../../../lib/script-runtime/classify';
+import {
+  choiceFacet,
+  defineFacets,
+  type FacetSet,
+  type FacetValue
+} from '../../../../lib/panel/resource-facets';
+import type {
+  ResourceFilterRow,
+  ResourcePageDefinition
+} from '../../../../lib/panel/resources-view-model';
+import type { ScriptGroup, ScriptRuntimeState } from '../../../../lib/script-runtime/classify';
 import type { LiveScriptRecord } from '../../../../lib/script-runtime/read-live';
-import type { OutsideFilterCounts } from '../../../../lib/script-runtime/outcome-view';
+import {
+  RUNTIME_GROUP_LABELS,
+  type OutsideFilterCounts
+} from '../../../../lib/script-runtime/outcome-view';
 import { resourceName } from '../resource-list/resource-list-view';
 
 /** One script's row. */
@@ -29,19 +42,31 @@ export interface RuntimeRow {
 /** The state chips' ids, in render order. */
 export type RuntimeStateFilterId = 'all' | 'executed' | 'failed' | 'pending' | 'not-delayed';
 
+/**
+ * A chip over one runtime state (its id is the state's own).
+ *
+ * @param state The state (also the chip id).
+ * @param label The chip label.
+ * @returns The chip row (also the State facet's value).
+ */
+function stateChip(
+  state: Extract<ScriptRuntimeState, RuntimeStateFilterId>,
+  label: string
+): ResourceFilterRow<RuntimeRow, RuntimeStateFilterId> {
+  return { id: state, label, predicate: (row) => row.script.state === state };
+}
+
+/** The state chips past "All states", in render order — declared once (chip bar + facet). */
+const STATE_CHIPS: readonly ResourceFilterRow<RuntimeRow, RuntimeStateFilterId>[] = [
+  stateChip('executed', 'Executed'),
+  stateChip('failed', 'Failed'),
+  stateChip('pending', 'Pending'),
+  stateChip('not-delayed', 'Not delayed')
+];
+
 /** The state chips + the searched text (URL, id, classes, code). */
 export const RUNTIME_STATE_LIST: ResourcePageDefinition<RuntimeRow, RuntimeStateFilterId> = {
-  filters: [
-    { id: 'all', label: 'All states', predicate: () => true },
-    { id: 'executed', label: 'Executed', predicate: (row) => row.script.state === 'executed' },
-    { id: 'failed', label: 'Failed', predicate: (row) => row.script.state === 'failed' },
-    { id: 'pending', label: 'Pending', predicate: (row) => row.script.state === 'pending' },
-    {
-      id: 'not-delayed',
-      label: 'Not delayed',
-      predicate: (row) => row.script.state === 'not-delayed'
-    }
-  ],
+  filters: [{ id: 'all', label: 'All states', predicate: () => true }, ...STATE_CHIPS],
   searchField: (row) =>
     [row.script.source, row.script.id, row.script.classes.join(' '), row.script.fullText].join('\n')
 };
@@ -51,6 +76,40 @@ export type RuntimeSourceFilter = 'all' | ScriptGroup;
 
 /** The groups, in chip order. */
 export const RUNTIME_GROUPS: readonly ScriptGroup[] = ['theme', 'plugin', 'inline', 'other'];
+
+/**
+ * Whether a row's script comes from one source group.
+ *
+ * @param group The group.
+ * @returns The row predicate.
+ */
+function inGroup(group: ScriptGroup): (row: RuntimeRow) => boolean {
+  return (row) => row.script.group === group;
+}
+
+/** The section's facet ids, in render order. */
+export type RuntimeFacetId = 'source' | 'state';
+
+/**
+ * The section's facets (value ids = the chip ids): a script has one source
+ * group and one state, so each is a choice. `skipped` and `unknown` match no
+ * State value — reachable under Any only, as under "All states" today.
+ */
+export const RUNTIME_FACETS: FacetSet<RuntimeRow, RuntimeFacetId> = defineFacets<
+  RuntimeRow,
+  RuntimeFacetId
+>([
+  choiceFacet(
+    'source',
+    'Source',
+    RUNTIME_GROUPS.map((group): FacetValue<RuntimeRow> => ({
+      id: group,
+      label: RUNTIME_GROUP_LABELS[group],
+      predicate: inGroup(group)
+    }))
+  ),
+  choiceFacet('state', 'State', STATE_CHIPS)
+]);
 
 /**
  * The rows of a read.
@@ -103,7 +162,7 @@ export function rowsOfSource(
   rows: readonly RuntimeRow[],
   source: RuntimeSourceFilter
 ): readonly RuntimeRow[] {
-  return source === 'all' ? rows : rows.filter((row) => row.script.group === source);
+  return source === 'all' ? rows : rows.filter(inGroup(source));
 }
 
 /**

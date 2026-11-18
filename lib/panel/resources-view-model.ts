@@ -21,6 +21,8 @@ import type {
 } from '../wp-rocket/types';
 import { hintAttribution, hintRank, type HintAttribution } from './hint-attribution';
 import { lazyloadImageState } from './lazyload-states';
+import { choiceFacet, defineFacets, toggleFacet, type FacetSet } from './resource-facets';
+import { searchPredicate } from './row-search';
 import {
   NO_SCRIPT_PAGE_FACTS,
   jsScriptState,
@@ -87,6 +89,25 @@ export interface ResourcePageDefinition<Row, Id extends string> {
   readonly searchField: (row: Row) => string;
 }
 
+/** A row with a type: the script and style rows' shared Type dimension. */
+interface TypedRow {
+  readonly type: 'inline' | 'external';
+}
+
+/** The Inline type chip / facet value (shared by the script and style pages). */
+export const INLINE_TYPE_FILTER: ResourceFilterRow<TypedRow, 'inline'> = {
+  id: 'inline',
+  label: 'Inline',
+  predicate: (row) => row.type === 'inline'
+};
+
+/** The External type chip / facet value (shared by the script and style pages). */
+export const EXTERNAL_TYPE_FILTER: ResourceFilterRow<TypedRow, 'external'> = {
+  id: 'external',
+  label: 'External',
+  predicate: (row) => row.type === 'external'
+};
+
 /** The JavaScript page's chip ids, in render order. */
 export type JsFilterId =
   | 'all'
@@ -131,6 +152,23 @@ function negatedFilter(
   return { id, label, predicate: (row) => !holds(row) };
 }
 
+// The script chips, each declared once: the chip bar and the facets list the same objects.
+
+/** Delayed chip / Delay value: Delay JS delayed the script. */
+const DELAYED_SCRIPTS = stateFilter(jsScriptState('delayed'));
+/** Non-delayed chip / Delay value: every script the Delayed chip leaves out. */
+const NON_DELAYED_SCRIPTS = negatedFilter('non-delayed', 'Non-delayed', 'delayed');
+/** Deferred chip / Defer value: an external script with a native `defer` or WP Rocket's defer stamp. */
+const DEFERRED_SCRIPTS = stateFilter(jsScriptState('deferred'));
+/** Non-deferred chip / Defer value: every script the Deferred chip leaves out. */
+const NON_DEFERRED_SCRIPTS = negatedFilter('non-deferred', 'Non-deferred', 'deferred');
+/** Minified chip / File value: a file Minify JS served (never a bundle). */
+const MINIFIED_SCRIPTS = stateFilter(jsScriptState('minified'));
+/** Combined chip / File value: a Combine JS bundle. */
+const COMBINED_SCRIPTS = stateFilter(jsScriptState('combined'));
+/** Excluded chip / toggle: the local exclusion marker kept the script out of Delay/Defer JS. */
+const EXCLUDED_SCRIPTS = stateFilter(jsScriptState('excluded'));
+
 /**
  * The JavaScript page's pattern: the reference-surface chips, then the file
  * states and the local exclusion, then the type chips.
@@ -138,24 +176,56 @@ function negatedFilter(
 export const JS_PAGE_RESOURCES: ResourcePageDefinition<JsScriptResource, JsFilterId> = {
   filters: [
     { id: 'all', label: 'Show all', predicate: () => true },
-    stateFilter(jsScriptState('delayed')),
-    negatedFilter('non-delayed', 'Non-delayed', 'delayed'),
-    stateFilter(jsScriptState('deferred')),
-    negatedFilter('non-deferred', 'Non-deferred', 'deferred'),
-    stateFilter(jsScriptState('minified')),
-    stateFilter(jsScriptState('combined')),
-    stateFilter(jsScriptState('excluded')),
-    { id: 'inline', label: 'Inline', predicate: (row) => row.type === 'inline' },
-    { id: 'external', label: 'External', predicate: (row) => row.type === 'external' }
+    DELAYED_SCRIPTS,
+    NON_DELAYED_SCRIPTS,
+    DEFERRED_SCRIPTS,
+    NON_DEFERRED_SCRIPTS,
+    MINIFIED_SCRIPTS,
+    COMBINED_SCRIPTS,
+    EXCLUDED_SCRIPTS,
+    INLINE_TYPE_FILTER,
+    EXTERNAL_TYPE_FILTER
   ],
   searchField: (row) => row.content
 };
 
+/** The JavaScript page's facet ids, in render order. */
+export type JsFacetId = 'delay' | 'defer' | 'type' | 'file' | 'excluded';
+
+/**
+ * The JavaScript page's facets (value ids = the chip ids): Delay, Defer and
+ * Type each split every script in two (a state and its negation; inline or
+ * external). File holds the two minify states, exclusive by construction (a
+ * bundle never reads Minified), so they are one choice rather than two
+ * toggles that could only combine to nothing. Excluded overlaps Delay and
+ * Defer (the marker keeps a script out of either), so it is a toggle.
+ */
+export const JS_PAGE_FACETS: FacetSet<JsScriptResource, JsFacetId> = defineFacets<
+  JsScriptResource,
+  JsFacetId
+>([
+  choiceFacet('delay', 'Delay', [DELAYED_SCRIPTS, NON_DELAYED_SCRIPTS]),
+  choiceFacet('defer', 'Defer', [DEFERRED_SCRIPTS, NON_DEFERRED_SCRIPTS]),
+  choiceFacet('type', 'Type', [INLINE_TYPE_FILTER, EXTERNAL_TYPE_FILTER]),
+  choiceFacet('file', 'File', [MINIFIED_SCRIPTS, COMBINED_SCRIPTS]),
+  toggleFacet('excluded', EXCLUDED_SCRIPTS.label, EXCLUDED_SCRIPTS.predicate)
+]);
+
 /** The Lazyload page's chip ids, in render order. */
 export type LazyloadFilterId = 'all' | 'lazyloaded' | 'non-lazyloaded' | 'excluded';
 
-/** The Lazyloaded state (its negation is the Non-lazyloaded filter). */
-const LAZYLOADED = lazyloadImageState('lazyloaded');
+// The image chips, each declared once: the chip bar and the facets list the same objects.
+
+/** Lazyloaded chip / Lazyload value: WP Rocket's lazyload took the image. */
+const LAZYLOADED_IMAGES = stateFilter(lazyloadImageState('lazyloaded'));
+/** Non-lazyloaded chip / Lazyload value: every image the Lazyloaded chip leaves out. */
+const NON_LAZYLOADED_IMAGES: ResourceFilterRow<LazyloadImageResource, LazyloadFilterId> = {
+  id: 'non-lazyloaded',
+  label: 'Non-lazyloaded',
+  predicate: (row) => !LAZYLOADED_IMAGES.predicate(row)
+};
+/** Excluded chip / toggle: the local exclusion marker kept the image out of lazyload. */
+const EXCLUDED_IMAGES = stateFilter(lazyloadImageState('excluded'));
 
 /** The Lazyload page's pattern: every image, Lazyloaded and its negation, then the local exclusion. */
 export const LAZYLOAD_PAGE_RESOURCES: ResourcePageDefinition<
@@ -164,12 +234,28 @@ export const LAZYLOAD_PAGE_RESOURCES: ResourcePageDefinition<
 > = {
   filters: [
     { id: 'all', label: 'Show all', predicate: () => true },
-    stateFilter(LAZYLOADED),
-    { id: 'non-lazyloaded', label: 'Non-lazyloaded', predicate: (row) => !LAZYLOADED.holds(row) },
-    stateFilter(lazyloadImageState('excluded'))
+    LAZYLOADED_IMAGES,
+    NON_LAZYLOADED_IMAGES,
+    EXCLUDED_IMAGES
   ],
   searchField: (row) => row.src
 };
+
+/** The Lazyload page's facet ids, in render order. */
+export type LazyloadFacetId = 'lazyload' | 'excluded';
+
+/**
+ * The Lazyload page's facets: Lazyload splits every image in two; Excluded
+ * is a subset of Non-lazyloaded (the marker counts only on an image that is
+ * not lazyloaded), so it is a toggle — on alone it is exactly the Excluded chip.
+ */
+export const LAZYLOAD_PAGE_FACETS: FacetSet<LazyloadImageResource, LazyloadFacetId> = defineFacets<
+  LazyloadImageResource,
+  LazyloadFacetId
+>([
+  choiceFacet('lazyload', 'Lazyload', [LAZYLOADED_IMAGES, NON_LAZYLOADED_IMAGES]),
+  toggleFacet('excluded', EXCLUDED_IMAGES.label, EXCLUDED_IMAGES.predicate)
+]);
 
 /** The Preloaded Resources page's chip ids, in render order. */
 export type PreloadedFilterId =
@@ -211,6 +297,33 @@ function preloadAsFilter(
   return { id, label, predicate: (row) => row.rel === 'preload' && row.as === as };
 }
 
+// The hint chips, each declared once: the chip bar and the facets list the same objects.
+
+/** WP Rocket chip / Source value: a hint attributed to WP Rocket. */
+const WP_ROCKET_HINTS: ResourceFilterRow<PreloadedResource, PreloadedFilterId> = {
+  id: 'wp-rocket',
+  label: 'WP Rocket',
+  predicate: (row) => row.attribution.by === 'wp-rocket'
+};
+/** Unattributed chip / Source value: a hint not attributed to WP Rocket. */
+const UNATTRIBUTED_HINTS: ResourceFilterRow<PreloadedResource, PreloadedFilterId> = {
+  id: 'unattributed',
+  label: 'Unattributed',
+  predicate: (row) => row.attribution.by === 'page'
+};
+/** Preload chip / Hint value: `rel=preload`. */
+const PRELOAD_HINTS = kindFilter('preload', 'Preload');
+/** Images chip / Preload type value: a preload `as=image`. */
+const IMAGE_PRELOADS = preloadAsFilter('images', 'Images', 'image');
+/** Fonts chip / Preload type value: a preload `as=font`. */
+const FONT_PRELOADS = preloadAsFilter('fonts', 'Fonts', 'font');
+/** Module preload chip / Hint value: `rel=modulepreload`. */
+const MODULEPRELOAD_HINTS = kindFilter('modulepreload', 'Module preload');
+/** Preconnect chip / Hint value: `rel=preconnect`. */
+const PRECONNECT_HINTS = kindFilter('preconnect', 'Preconnect');
+/** DNS prefetch chip / Hint value: `rel=dns-prefetch`. */
+const DNS_PREFETCH_HINTS = kindFilter('dns-prefetch', 'DNS prefetch');
+
 /**
  * The Preloaded Resources page's pattern: attribution first (WP Rocket's
  * hints vs the unattributed rest), then the hint kinds, preloads with their
@@ -222,21 +335,40 @@ export const PRELOADED_PAGE_RESOURCES: ResourcePageDefinition<
 > = {
   filters: [
     { id: 'all', label: 'Show all', predicate: () => true },
-    { id: 'wp-rocket', label: 'WP Rocket', predicate: (row) => row.attribution.by === 'wp-rocket' },
-    {
-      id: 'unattributed',
-      label: 'Unattributed',
-      predicate: (row) => row.attribution.by === 'page'
-    },
-    kindFilter('preload', 'Preload'),
-    preloadAsFilter('images', 'Images', 'image'),
-    preloadAsFilter('fonts', 'Fonts', 'font'),
-    kindFilter('modulepreload', 'Module preload'),
-    kindFilter('preconnect', 'Preconnect'),
-    kindFilter('dns-prefetch', 'DNS prefetch')
+    WP_ROCKET_HINTS,
+    UNATTRIBUTED_HINTS,
+    PRELOAD_HINTS,
+    IMAGE_PRELOADS,
+    FONT_PRELOADS,
+    MODULEPRELOAD_HINTS,
+    PRECONNECT_HINTS,
+    DNS_PREFETCH_HINTS
   ],
   searchField: (row) => row.href
 };
+
+/** The Preloaded Resources page's facet ids, in render order. */
+export type PreloadedFacetId = 'source' | 'hint' | 'preload-type';
+
+/**
+ * The Preloaded Resources page's facets: attribution and hint kind each
+ * split every hint (one attribution, one `rel` per row). Images and Fonts
+ * are preloads (a subset of the Preload kind), so they get their own choice
+ * whose values keep the preload condition — each alone is exactly its chip.
+ */
+export const PRELOADED_PAGE_FACETS: FacetSet<PreloadedResource, PreloadedFacetId> = defineFacets<
+  PreloadedResource,
+  PreloadedFacetId
+>([
+  choiceFacet('source', 'Source', [WP_ROCKET_HINTS, UNATTRIBUTED_HINTS]),
+  choiceFacet('hint', 'Hint', [
+    PRELOAD_HINTS,
+    MODULEPRELOAD_HINTS,
+    PRECONNECT_HINTS,
+    DNS_PREFETCH_HINTS
+  ]),
+  choiceFacet('preload-type', 'Preload type', [IMAGE_PRELOADS, FONT_PRELOADS])
+]);
 
 /**
  * Classify the Delay JS script inventory into page rows. The searched
@@ -370,9 +502,8 @@ export function filterAndSearch<Row, Id extends string>(
     throw new Error(`Unknown filter id: this page's chip set has no id "${filterId}".`);
   }
   const filtered = items.filter(filter.predicate);
-  const queryText = query.toLowerCase();
-  if (queryText === '') return filtered;
-  return filtered.filter((row) => definition.searchField(row).toLowerCase().includes(queryText));
+  const matches = searchPredicate(definition.searchField, query);
+  return matches === null ? filtered : filtered.filter(matches);
 }
 
 /**

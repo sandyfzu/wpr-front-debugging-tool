@@ -2,12 +2,24 @@
  * The Stylesheets page's rows: the classification of the page's stylesheet
  * inventory (with the one Critical placement rule) into the row shape
  * `./style-states` declares, and the page's filter pattern — the shared
- * resource-list pattern (`./resources-view-model`) over those rows. Imported
- * by the lazily loaded page only.
+ * resource-list pattern (`./resources-view-model`) over those rows — and its
+ * facets (`./resource-facets`). Imported by the lazily loaded page only.
  */
 import type { PageStylesheetsReply } from '../messaging/page-stylesheets';
 import { CRITICAL_CSS_STYLE_ID } from '../wp-rocket/constants';
-import { stateFilter, type ResourcePageDefinition } from './resources-view-model';
+import {
+  choiceFacet,
+  defineFacets,
+  toggleFacet,
+  type Facet,
+  type FacetSet
+} from './resource-facets';
+import {
+  EXTERNAL_TYPE_FILTER,
+  INLINE_TYPE_FILTER,
+  stateFilter,
+  type ResourcePageDefinition
+} from './resources-view-model';
 import { styleIdentity } from './style-identity';
 import {
   NO_STYLESHEET_PAGE_FACTS,
@@ -32,11 +44,47 @@ export const CSS_PAGE_RESOURCES: ResourcePageDefinition<CssStyleResource, CssFil
     stateFilter(cssStyleState('async')),
     stateFilter(cssStyleState('minified')),
     stateFilter(cssStyleState('font')),
-    { id: 'inline', label: 'Inline', predicate: (row) => row.type === 'inline' },
-    { id: 'external', label: 'External', predicate: (row) => row.type === 'external' }
+    INLINE_TYPE_FILTER,
+    EXTERNAL_TYPE_FILTER
   ],
   searchField: (row) => row.content
 };
+
+/** The Stylesheets page's facet ids, in render order. */
+export type CssFacetId = 'type' | 'rocket-css' | 'async' | 'minified' | 'font';
+
+/**
+ * A toggle facet over one style state (id, label and predicate the state's own).
+ *
+ * @param id The state id (also the facet id).
+ * @returns The toggle facet.
+ */
+function stateToggle(id: Extract<CssStateId, CssFacetId>): Facet<CssStyleResource, CssFacetId> {
+  const state = cssStyleState(id);
+  return toggleFacet(id, state.label, state.holds);
+}
+
+/**
+ * The Stylesheets page's facets (value ids = the chip ids): Type splits
+ * every style in two. The three styles WP Rocket prints itself (Critical,
+ * RUCSS, Lazy BG) are inline styles told apart by their reserved id — one
+ * row holds at most one — so they are one choice. The link states (Async,
+ * Minified, Font) can stack on one link, so each is a toggle.
+ */
+export const CSS_PAGE_FACETS: FacetSet<CssStyleResource, CssFacetId> = defineFacets<
+  CssStyleResource,
+  CssFacetId
+>([
+  choiceFacet('type', 'Type', [INLINE_TYPE_FILTER, EXTERNAL_TYPE_FILTER]),
+  choiceFacet('rocket-css', 'WP Rocket CSS', [
+    stateFilter(cssStyleState('critical')),
+    stateFilter(cssStyleState('rucss')),
+    stateFilter(cssStyleState('lazy-bg'))
+  ]),
+  stateToggle('async'),
+  stateToggle('minified'),
+  stateToggle('font')
+]);
 
 /** The snapshot-only critical row's id (live rows count from 0). */
 export const CRITICAL_SNAPSHOT_ROW_ID = -1;

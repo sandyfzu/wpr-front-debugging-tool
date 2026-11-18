@@ -5,13 +5,23 @@
  * filter selects exactly the rows showing its chip).
  */
 import { describe, expect, it } from 'vitest';
+import { chipParityMismatches, exclusivityViolations } from './facet-parity.fixtures';
+import { applyFacets, facetCounts, type FacetSelection } from './resource-facets';
 import { filterCounts } from './resources-view-model';
 import { ALL, MINIFIED, inline, link, rows, statesOf } from './stylesheet.fixtures';
 import {
   CRITICAL_SNAPSHOT_ROW_ID,
+  CSS_PAGE_FACETS,
   CSS_PAGE_RESOURCES,
-  buildStylesheetRows
+  buildStylesheetRows,
+  type CssFacetId,
+  type CssFilterId
 } from './stylesheet-rows';
+import {
+  LAZYLOAD_BG_CONTAINER_ID,
+  LAZYLOAD_BG_EXCLUSION_ID,
+  RUCSS_USED_CSS_ID
+} from '../wp-rocket/constants';
 import { CSS_STYLE_STATES, NO_STYLESHEET_PAGE_FACTS, type CssStyleResource } from './style-states';
 
 describe('buildStylesheetRows — Critical placement', () => {
@@ -125,5 +135,80 @@ describe('CSS_PAGE_RESOURCES', () => {
     expect(CSS_PAGE_RESOURCES.searchField(rows([link()])[1] as CssStyleResource)).toBe(
       'https://s.test/plain.css'
     );
+  });
+});
+
+describe('CSS_PAGE_FACETS', () => {
+  /**
+   * Edge rows: every state, stacked link states, a link wearing RUCSS's
+   * reserved id, plain rows — plus a second list whose critical style is the
+   * snapshot row (the two Critical placements in one fixture).
+   */
+  const STYLES: readonly CssStyleResource[] = [
+    ...rows([
+      link({ href: 'https://cdn.test/plain.css' }),
+      link({ href: MINIFIED }),
+      link({ href: MINIFIED, rocketAsync: true }),
+      link({ hostedFont: true }),
+      link({ rocketAsync: true, hostedFont: true }),
+      inline({ id: 'rocket-critical-css' }),
+      inline({ id: RUCSS_USED_CSS_ID }),
+      inline({ id: LAZYLOAD_BG_CONTAINER_ID }),
+      inline({ id: LAZYLOAD_BG_EXCLUSION_ID }),
+      // A link with the reserved id is no used-CSS style.
+      link({ id: RUCSS_USED_CSS_ID }),
+      inline()
+    ]),
+    ...rows([link(), inline({ preview: '.cdn{}' })])
+  ];
+
+  /** Old Stylesheets chip → its one facet selection (every chip reachable as one selection). */
+  const CSS_CHIP_MAP: Record<CssFilterId, FacetSelection<CssFacetId>> = {
+    all: {},
+    critical: { 'rocket-css': 'critical' },
+    rucss: { 'rocket-css': 'rucss' },
+    'lazy-bg': { 'rocket-css': 'lazy-bg' },
+    async: { async: 'yes' },
+    minified: { minified: 'yes' },
+    font: { font: 'yes' },
+    inline: { type: 'inline' },
+    external: { type: 'external' }
+  };
+
+  it('holds both Critical placements in the fixture', () => {
+    expect(STYLES.filter((row) => row.critical).map((row) => row.source)).toEqual([
+      'live',
+      'snapshot'
+    ]);
+  });
+
+  it('reaches every chip as one selection with the same rows (with and without a query)', () => {
+    for (const query of ['', 'cdn', 'WPR-']) {
+      expect(
+        chipParityMismatches(STYLES, CSS_PAGE_RESOURCES, CSS_PAGE_FACETS, CSS_CHIP_MAP, query)
+      ).toEqual([]);
+    }
+  });
+
+  it('keeps the WP Rocket CSS values exclusive; the link states stack (toggles)', () => {
+    expect(exclusivityViolations(STYLES, CSS_PAGE_FACETS)).toEqual([]);
+    const stacked = applyFacets(
+      STYLES,
+      CSS_PAGE_FACETS,
+      { async: 'yes', minified: 'yes' },
+      { field: (row) => row.content, query: '' }
+    );
+    expect(stacked.map((row) => row.href)).toEqual([MINIFIED]);
+  });
+
+  it('counts the link toggles given the Type selection', () => {
+    const counts = facetCounts(
+      STYLES,
+      CSS_PAGE_FACETS,
+      { type: 'inline' },
+      { field: (row) => row.content, query: '' }
+    );
+    expect(counts.byFacet.async).toEqual({ any: 7, yes: 0 });
+    expect(counts.byFacet['rocket-css']).toEqual({ any: 7, critical: 2, rucss: 1, 'lazy-bg': 2 });
   });
 });
