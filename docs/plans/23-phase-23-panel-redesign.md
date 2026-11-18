@@ -39,7 +39,7 @@ Node 24 · pnpm (pinned) · TypeScript 5.9 · WXT · SolidJS · Tailwind CSS 4 (
 - Nav: `routes.ts` (`NAV_GROUPS`, `liveState` text+tone), `nav/adaptive-nav.tsx` (32 px icon rows, tooltip labels), overflow `visible-rows.ts` + `rail-metrics.ts` (ResizeObserver, height only).
 - Refresh: `data.reload()` (`state/use-fdt-data.ts`) = the palette's Reload row (soft refresh). No shell button today.
 - Appearance: `optionsStore.appearance` (`lib/storage/options.ts`, `setAppearanceOption`/`cycleAppearanceOption`), applied live by `lib/appearance/appearance.ts`; the panel changes it only through the palette row today (AGENTS: panel + options are the only writers).
-- h1 ring after route switch: `palette/focus.ts` focuses `[data-fdt-page] h1` (`tabindex=-1`, `page-header.tsx`), no outline override → browser default `:focus-visible` ring.
+- h1 ring after route switch: `palette/focus.ts` focuses `[data-fdt-page] h1` (`tabindex=-1`, `page-header.tsx`), no outline override → browser default `:focus-visible` ring (removed in P23D.4).
 - Lists: `pages/resource-list/filtered-list.tsx` rows carry `border-t` hairlines inside a bordered frame; filters single-select (`components/ui/filter-bar.tsx`, `lib/panel/resources-view-model.ts` `filterAndSearch` one id, negation chips); `MAX_VISIBLE_STATE_CHIPS = 3` (`state-chips.ts`); per-row UI state lives in pages keyed by row identity; find via `pages/current-match.ts`; **no ↑/↓/Enter row keys today**. JavaScript inline rows render a `CodeBlock` each (`script-row.tsx`, 3 collapsed lines). Stylesheet data carries only a ≤ 160-char `preview` (`lib/messaging/page-styles.ts`) — full CSS needs a new bounded read (script precedent: `lib/messaging/script-source.ts` `loadScriptSource`).
 - Detections: `pages/detections/*` (summary strip, All/Active/Inactive, Adaptive/List, `status-card.tsx`); `HUD_GROUPS`/`hudFeatureOf` (`lib/detection/hud.ts`) exist but the panel does not group.
 - Tools: RUCSS (`rucss-tester/`, eager in panel chunk), Beacon (`beacon-tester/`, lazy), LCP & Vitals (`lcp-vitals/`, lazy); settings via `pages/settings/*`.
@@ -223,10 +223,12 @@ Depends: D.0, D.1. Parallel: D.2, every E and F phase. Size: M. Difficulty: high
 
 ### P23D.4 — Route-switch h1 without ring
 
-Depends: A. Parallel: everything. Size: XS. Difficulty: low.
-
-- [ ] `components/ui/page-header.tsx`: the programmatic focus target gets `outline-none` (it is `tabindex=-1`, not interactive; K-2 applies to interactive elements). Focus still lands on the h1 (`palette/focus.ts` unchanged).
-- [ ] Tests: unit (class present); `panel-a11y.spec.ts:249` still proves focus moves to the h1. `PageHeader`'s other user is options (in scope, so the change applies there too): run the options specs.
+- [x] Done 2026-11-18. Receipt:
+  - Decision — `focus:outline-hidden`, not `outline-none`: Tailwind 4.3.3 renamed v3's `outline-none` (2px transparent) to `outline-hidden` (`outline-style: none` + `@media (forced-colors: active) { outline: 2px solid transparent; outline-offset: 2px }`, read in `node_modules/tailwindcss/dist/lib.js`); v4 `outline-none` is bare `outline-style: none`. The `focus:` variant scopes it to the focused state, so the forced-colors outline exists only on the focused h1 (unconditional, it would sit on every unfocused h1 too); its forced-colors paint is not checked visually, only computed. No global `:focus`/`outline` rule in `assets/css/*.css`, `entrypoints/{panel,options}/style.css` (grep empty); the browser default `:focus-visible { outline: auto }` was the ring. `palette/focus.ts` unchanged.
+  - Change: `components/ui/page-header.tsx` (class + TSDoc), applies to panel pages and options (`PageHeader` user).
+  - Tests: `page-header.test.tsx` asserts the class. `panel-a11y.spec.ts` route-switch test + keyboard arm: Enter on a nav link (dark → Stylesheets, light → Lazyload), the h1 owns focus, matches `:focus-visible`, computed `outline-style: none`; forced colors emulated → `solid`. Mutation-checked: without the class the arm fails (`auto`). No existing assertion changed.
+  - Gates: compile, lint, format, `pnpm test` (629 files, 14 855 passed), build + build:firefox, check:budgets green (no row moved measurably: panel JS 410.7/600, whole 2090.3/2160). e2e 14/14: `panel-a11y`, `options-page-ui`, `options-palettes`, `options-a11y-layout`.
+  - §D: D-2 both palettes in the e2e arm (reduced motion n/a: no motion); D-1/D-5/D-7 n/a (no layout, state or list change); D-6 grep on the 3 files empty.
 
 ## P23E — Lists
 
