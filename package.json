@@ -2,7 +2,7 @@
   "name": "wpr-front-debugging-tool",
   "description": "A tool for debugging WP Rocket WordPress plugin.",
   "private": true,
-  "version": "0.9.0",
+  "version": "0.10.0",
   "type": "module",
   "author": {
     "name": "Sandy Figueroa",
