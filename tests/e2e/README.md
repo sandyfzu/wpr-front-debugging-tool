@@ -42,7 +42,7 @@ pnpm exec playwright show-report tests/e2e/playwright-report   # inspect the las
   fixture page can prove its body is from the latest request).
 - **The latest exclusion list's endpoint never answers a run**: the driver
   launches Chromium with a host-resolver rule mapping its host to nothing
-  (`helpers/extension.ts`), so the background's start-up refresh misses
+  (`helpers/blocked-hosts.ts`, also used by `pnpm screenshots`), so the background's start-up refresh misses
   with `network-error` and simulations run the bundled list; a suite needing
   the latest list stages a kept copy (`helpers/simulation.ts`). The RUCSS
   service host is mapped to nothing the same way: a suite answers it with a
