@@ -39,8 +39,16 @@ export const KC_NEVER_SYNCED = 'Not synced yet — the tool checks hourly.';
 /** The raw stored-options shape the harness seeds (the validator's own slots). */
 export type RawStoredOptions = Record<string, unknown>;
 
-/** The document element's resolved surface color under each palette. */
-export const SURFACE_0 = { dark: 'rgb(11, 13, 16)', light: 'rgb(244, 245, 248)' } as const;
+/**
+ * An extension document's (options/panel) resolved `--surface-0` under each
+ * palette: the extension-page token block's values, which differ from the
+ * shared ones injected UIs keep ({@link INJECTED_SURFACE_0}) — so a match
+ * also proves the document's scope attribute took effect.
+ */
+export const PAGE_SURFACE_0 = { dark: 'rgb(11, 13, 17)', light: 'rgb(241, 242, 245)' } as const;
+
+/** An injected UI's resolved `--surface-0` (the shared token block) under each palette. */
+export const INJECTED_SURFACE_0 = { dark: 'rgb(11, 13, 16)', light: 'rgb(244, 245, 248)' } as const;
 
 /**
  * Open the options page on the installed bundle and wait for its ready state.

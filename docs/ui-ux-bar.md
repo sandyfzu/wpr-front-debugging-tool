@@ -60,7 +60,7 @@
 
 ## C — Color, contrast, themes
 
-- **C-1 Tokens only** — no hex/`rgb()`, no `opacity-*`/`/NN` alpha on text, no gradient text on data. `assets/css/theme.test.ts` pins every `fg-*`/`accent`/`status-*` text token at AA 4.5:1 on every `surface-*` and `*-soft` background in both palettes, so a token pair passes by construction; contrast audits beyond the tokens are not required (owner 2026-10-27).
+- **C-1 Tokens only** — no hex/`rgb()`, no `opacity-*`/`/NN` alpha on text, no gradient text on data. `assets/css/theme.test.ts` pins every `fg-*`/`accent`/`status-*` text token at AA 4.5:1 on every `surface-*` and `status-*-soft` background (`fg-*`/`accent` also on `accent-soft`) in both palettes and both token scopes (shared, and the extension-page block panel + options resolve), so a token pair passes by construction; contrast audits beyond the tokens are not required (owner 2026-10-27).
 - **C-2 One status vocabulary** (`UX-D7`) through `StatusBadge`/`Badge` and the `STATUS_*` tables; an optional feature being off is `neutral`, never `error`.
 - **C-3 Themes:** verified in `system`, `dark`, `light`, switched live (AGENTS.md UI-themes rule); injected UIs honor it inside their shadow roots.
 
@@ -108,4 +108,5 @@
 - 2026-11-18 — `D-1` panel checkpoints 320 / 420 / 480 / 760 / 1100 / 1280 px (was 320 / 480 / 768 / 1280) — owner, P23.
 - 2026-11-18 — `P-2` rows render text only, code highlights only in a detail view (calm lists) — owner, P23; no value moved.
 - 2026-11-18 — `L-3` compact Cards form drops `divide-y` for the T-3 row gap and T-3 binds Detections List/Grouped rows (owner root cause "lines everywhere"); the ≈ 270 px figure defers to L-2 — P23A audit.
+- 2026-11-18 — `C-1` gate covers both token scopes (shared + the extension-page block) and `accent-soft` — P23B; no value moved.
 - 2026-11-18 — `L-1` a pinned labeled sidebar holds down to the 760 px top-bar threshold, rail forced below it — supervisor, P23A audit.
