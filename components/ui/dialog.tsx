@@ -13,7 +13,9 @@
  * The dialog is mount-driven: callers render it inside a `<Show>` while open
  * and react to {@link ModalDialogProps.onClose} by unmounting — which makes
  * every open a fresh surface (autofocus runs per open, transient state never
- * outlives a close).
+ * outlives a close). A caller that must outlive the dismissal (an exit
+ * motion) passes {@link ModalDialogProps.open}: the dialog then only reports
+ * each dismissal request and stays mounted until the caller unmounts it.
  *
  * The scrim is the dialog's outside, and a press on it dismisses at once:
  * the library arms its outside-pointer listener a task after mount, and the
@@ -51,8 +53,22 @@ import { isMacPlatform } from '../../utils/platform';
 import { FOCUS_RING } from './classes';
 
 export interface ModalDialogProps {
-  /** Called once per mount when the dialog is dismissed (Escape, an outside pointer, the close control). */
+  /**
+   * Called when the dialog is dismissed (Escape, an outside pointer, the
+   * close control): once per mount, or once per gesture when {@link open}
+   * is set.
+   */
   onClose: () => void;
+  /**
+   * Controlled mode: the library's open state, held by the caller. Left
+   * undefined (every existing surface), the library closes itself on a
+   * dismissal — its presence unmounts the content at once when no keyframe
+   * animation runs, before `onClose` fires. Set (`true` while mounted), a
+   * dismissal is only a request: nothing unmounts until the caller does, so
+   * a class-driven exit can play on the live panel, and the guard re-arms
+   * after each gesture's task (the dialog stays up for the next request).
+   */
+  open?: boolean;
   /**
    * A keydown handler on the panel's capture phase — it runs before the
    * content's own listeners (including composed components the wrapper
@@ -72,6 +88,8 @@ export interface ModalDialogProps {
   closeButton?: boolean;
   /** Extra classes on the dialog panel, merged last so callers win. */
   class?: string;
+  /** Extra classes on the scrim, merged last so callers win (a variant's own motion). */
+  overlayClass?: string;
   /**
    * Render into this node instead of the document body (an injected UI's
    * shadow-root container) — mounted mode, see the module TSDoc.
@@ -191,10 +209,12 @@ function dismissOnScrimPress(scrim: HTMLElement, modal: boolean, dismiss: () => 
  *
  * @param props.onClose The dismissal callback (Escape / outside pointer / the
  *   optional close button).
+ * @param props.open Controlled mode's open state (optional; see the prop).
  * @param props.title The dialog's accessible name (visually hidden).
  * @param props.description The accessible description (optional, hidden).
  * @param props.closeButton Whether the explicit dismissal control renders.
  * @param props.class Extra classes on the panel.
+ * @param props.overlayClass Extra classes on the scrim.
  * @param props.mount The injected UI's render node (mounted mode).
  * @param props.initialFocus The element focused on mount, same task (optional).
  * @param props.children The dialog's content (fields, lists, texts).
@@ -204,20 +224,35 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
   // the root and the scrim must agree, and the mount never changes per mount.
   // eslint-disable-next-line solid/reactivity -- a mount-time read by design
   const modal = props.mount === undefined;
-  /** Set by the first dismissal: later seams (one press seen twice) are no-ops. */
+  /** Set by a dismissal: later seams of the same press (one press seen twice) are no-ops. */
   let dismissed = false;
+  /** Controlled mode's re-arm timer (pending while a gesture's task runs). */
+  let rearm: ReturnType<typeof setTimeout> | undefined;
   const dismiss = (): void => {
     if (dismissed) return;
     dismissed = true;
+    // Every seam of one gesture fires within its task (mouse/pen pointerdown,
+    // a tap's click, a keydown), so a task later the next gesture is a new
+    // request — only while the caller keeps the dialog up (controlled).
+    if (props.open !== undefined) {
+      rearm = setTimeout(() => {
+        dismissed = false;
+      }, 0);
+    }
     props.onClose();
   };
+  onCleanup(() => {
+    clearTimeout(rearm);
+  });
   return (
     <KobalteDialog.Root
       modal={modal}
       // Mount-driven: the caller renders the dialog only while it is open, so
       // it starts open on every mount (a fresh surface per open) and its only
       // transitions are the dismissals funneled into one branch below.
+      // `open` undefined leaves the library uncontrolled (defaultOpen rules).
       defaultOpen
+      open={props.open}
       onOpenChange={(open) => {
         if (!open) dismiss();
       }}
@@ -225,7 +260,7 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
       <KobalteDialog.Portal mount={props.mount}>
         <KobalteDialog.Overlay
           data-fdt="dialog-overlay"
-          class={OVERLAY_CLASSES}
+          class={cn(OVERLAY_CLASSES, props.overlayClass)}
           ref={(element) => {
             onCleanup(dismissOnScrimPress(element, modal, dismiss));
           }}
