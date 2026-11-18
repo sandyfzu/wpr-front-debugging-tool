@@ -3,6 +3,7 @@
  * their hairlines. Class-level assertions pin the token wiring only.
  */
 import { cleanup, render, screen } from '@solidjs/testing-library';
+import type { JSX } from 'solid-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Card } from './card';
 
@@ -15,6 +16,22 @@ function bodyElement(): HTMLElement {
   const body = document.querySelector<HTMLElement>('[data-fdt="card-body"]');
   if (!body) throw new Error('card body missing');
   return body;
+}
+
+/**
+ * A slot probe that counts its own creations, to prove each slot is built once.
+ *
+ * @returns The probe and a reader of how many times it was created.
+ */
+function creationProbe(): { Probe: () => JSX.Element; count: () => number } {
+  let created = 0;
+  return {
+    Probe: () => {
+      created += 1;
+      return <span data-probe />;
+    },
+    count: () => created
+  };
 }
 
 describe('Card', () => {
@@ -46,5 +63,18 @@ describe('Card', () => {
     expect(header.className).toContain('border-line-1');
     const footer = screen.getByText('Copy report').closest('[data-fdt=card-footer]');
     expect(footer?.className).toContain('border-t');
+  });
+
+  it('builds the header and footer slots exactly once', () => {
+    const header = creationProbe();
+    const footer = creationProbe();
+    render(() => (
+      <Card header={<header.Probe />} footer={<footer.Probe />}>
+        Content
+      </Card>
+    ));
+    expect(header.count()).toBe(1);
+    expect(footer.count()).toBe(1);
+    expect(document.querySelectorAll('[data-probe]')).toHaveLength(2);
   });
 });

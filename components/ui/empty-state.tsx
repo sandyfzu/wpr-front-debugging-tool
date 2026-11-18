@@ -40,16 +40,13 @@ export function EmptyState(props: EmptyStateProps): JSX.Element {
       data-fdt="empty-state"
       class={cn('flex flex-col items-center gap-1 py-6 text-center', props.class)}
     >
-      <Show when={props.icon}>
-        <div class="text-fg-muted">{props.icon}</div>
-      </Show>
+      {/* Callback form: a JSX prop is a getter, so reading it again would build it twice. */}
+      <Show when={props.icon}>{(icon) => <div class="text-fg-muted">{icon()}</div>}</Show>
       <div class="text-xs font-medium text-fg-primary">{props.title}</div>
       <Show when={props.description}>
         <p class="max-w-64 text-2xs leading-snug text-fg-secondary">{props.description}</p>
       </Show>
-      <Show when={props.action}>
-        <div class="mt-2">{props.action}</div>
-      </Show>
+      <Show when={props.action}>{(action) => <div class="mt-2">{action()}</div>}</Show>
     </div>
   );
 }
