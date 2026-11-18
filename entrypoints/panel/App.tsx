@@ -65,6 +65,7 @@ import {
 } from './state/use-fdt-data';
 import { createSearchStore, type SearchStore } from './state/search';
 import { createDetectionsLayout, DetectionsLayoutContext } from './state/detections-layout';
+import { createDetailPresence, DetailPresenceContext } from './state/detail-presence';
 import { devtoolsInspectedTabId, fdtRequestEdges, realMessagingEdges } from './state/edges';
 import { withRelayedPushes } from './state/relayed-pushes';
 import { createHardReloadBudget } from './state/hard-reload-budget';
@@ -197,6 +198,8 @@ export function PanelApp(props: AppProps): JSX.Element {
   const router = createHashRoute();
   // Shell-scoped so the Detections layout survives route switches and refreshes.
   const detectionsLayout = createDetectionsLayout();
+  // Shell-scoped so a page's open detail reaches the chrome; per route.
+  const detailPresence = createDetailPresence(router.route);
   // eslint-disable-next-line solid/reactivity
   const paletteChord = createPanelChordBinding(props.paletteChord ?? realPanelChordDeps(log));
 
@@ -298,112 +301,116 @@ export function PanelApp(props: AppProps): JSX.Element {
   return (
     <FdtDataContext.Provider value={data}>
       <SearchContext.Provider value={search}>
-        <div data-fdt="panel-shell" class="flex h-dvh bg-surface-0 text-fg-primary">
-          <div data-fdt="panel-stack" class={BOTTOM_EDGE}>
-            <div class={STACK_ROW}>
-              <header data-fdt="panel-header" class={HEADER}>
-                {/* The brand block: the mark and the palette trigger — the
+        <DetailPresenceContext.Provider value={detailPresence}>
+          <div data-fdt="panel-shell" class="flex h-dvh bg-surface-0 text-fg-primary">
+            <div data-fdt="panel-stack" class={BOTTOM_EDGE}>
+              <div class={STACK_ROW}>
+                <header data-fdt="panel-header" class={HEADER}>
+                  {/* The brand block: the mark and the palette trigger — the
                 keyboard layer's mouse entry point — beside the rail's first
                 row (the interim geometry; the band redesign owns the final
                 shape). The brand is not a heading: each page owns the single
                 h1. Its name rides the sr-only span. */}
-                <div data-fdt="panel-brand-row" class="flex shrink-0 items-center gap-1.5">
-                  <p class={BRAND}>
-                    <Rocket size={14} class="shrink-0 text-accent" aria-hidden="true" />
-                    <span class="sr-only">WPR FDT</span>
-                  </p>
-                  <PaletteTrigger
-                    open={() => overlays.paletteOpen()}
-                    toggle={() => {
-                      overlays.togglePalette();
-                    }}
-                  />
-                </div>
-                <AdaptiveNav route={router.route} data={navData} />
-              </header>
-              <main data-fdt="panel-content" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
-                <ErrorBoundary
-                  fallback={(error: unknown) => {
-                    // The render-crash retry reloads the whole panel document
-                    // (a Solid reset cannot re-create arbitrary lost state); the
-                    // original error is logged here, never rendered — only the
-                    // actionable reload affordance reaches the user.
-                    log.error('Panel render crashed — the fallback view is up', {
-                      cause: error instanceof Error ? { message: error.message } : error
-                    });
-                    return (
-                      <PageCanvas id={router.route()}>
-                        <ErrorState
-                          pageHeading
-                          title="The panel came apart"
-                          message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
-                          onRetry={props.reload ?? reloadPanelDocument}
-                        />
-                      </PageCanvas>
-                    );
-                  }}
-                >
-                  <Switch>
-                    {/* The real waits only: skeleton while nothing has arrived. */}
-                    <Match
-                      when={data.state().status === 'fetching' || data.state().status === 'idle'}
-                    >
-                      <SkeletonPage route={router.route()} />
-                    </Match>
-                    {/* The error view with its retry (the phase's dead-end rule). */}
-                    <Match when={errorState()} keyed>
-                      {(error) => (
+                  <div data-fdt="panel-brand-row" class="flex shrink-0 items-center gap-1.5">
+                    <p class={BRAND}>
+                      <Rocket size={14} class="shrink-0 text-accent" aria-hidden="true" />
+                      <span class="sr-only">WPR FDT</span>
+                    </p>
+                    <PaletteTrigger
+                      open={() => overlays.paletteOpen()}
+                      toggle={() => {
+                        overlays.togglePalette();
+                      }}
+                    />
+                  </div>
+                  <AdaptiveNav route={router.route} data={navData} />
+                </header>
+                <main data-fdt="panel-content" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+                  <ErrorBoundary
+                    fallback={(error: unknown) => {
+                      // The render-crash retry reloads the whole panel document
+                      // (a Solid reset cannot re-create arbitrary lost state); the
+                      // original error is logged here, never rendered — only the
+                      // actionable reload affordance reaches the user.
+                      log.error('Panel render crashed — the fallback view is up', {
+                        cause: error instanceof Error ? { message: error.message } : error
+                      });
+                      return (
                         <PageCanvas id={router.route()}>
                           <ErrorState
                             pageHeading
-                            title="Couldn't load page data"
-                            message={error.cause}
-                            onRetry={() => {
-                              data.retry();
-                            }}
+                            title="The panel came apart"
+                            message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
+                            onRetry={props.reload ?? reloadPanelDocument}
                           />
                         </PageCanvas>
-                      )}
-                    </Match>
-                    {/* No way to message the page here (feature-detected): an
+                      );
+                    }}
+                  >
+                    <Switch>
+                      {/* The real waits only: skeleton while nothing has arrived. */}
+                      <Match
+                        when={data.state().status === 'fetching' || data.state().status === 'idle'}
+                      >
+                        <SkeletonPage route={router.route()} />
+                      </Match>
+                      {/* The error view with its retry (the phase's dead-end rule). */}
+                      <Match when={errorState()} keyed>
+                        {(error) => (
+                          <PageCanvas id={router.route()}>
+                            <ErrorState
+                              pageHeading
+                              title="Couldn't load page data"
+                              message={error.cause}
+                              onRetry={() => {
+                                data.retry();
+                              }}
+                            />
+                          </PageCanvas>
+                        )}
+                      </Match>
+                      {/* No way to message the page here (feature-detected): an
                         explicit state naming what still works — no retry. */}
-                    <Match when={unavailableReason()} keyed>
-                      {(reason) => (
-                        <PageCanvas id={router.route()}>
-                          <DataUnavailable reason={reason} />
-                        </PageCanvas>
-                      )}
-                    </Match>
-                    {/* `ready` and `refreshing` render the same body — the data
+                      <Match when={unavailableReason()} keyed>
+                        {(reason) => (
+                          <PageCanvas id={router.route()}>
+                            <DataUnavailable reason={reason} />
+                          </PageCanvas>
+                        )}
+                      </Match>
+                      {/* `ready` and `refreshing` render the same body — the data
                         swap is the only change a soft refresh makes. */}
-                    <Match
-                      when={data.state().status === 'ready' || data.state().status === 'refreshing'}
-                    >
-                      <DetectionsLayoutContext.Provider value={detectionsLayout}>
-                        <Dynamic component={PAGES[router.route()]} />
-                      </DetectionsLayoutContext.Provider>
-                    </Match>
-                  </Switch>
-                </ErrorBoundary>
-              </main>
+                      <Match
+                        when={
+                          data.state().status === 'ready' || data.state().status === 'refreshing'
+                        }
+                      >
+                        <DetectionsLayoutContext.Provider value={detectionsLayout}>
+                          <Dynamic component={PAGES[router.route()]} />
+                        </DetectionsLayoutContext.Provider>
+                      </Match>
+                    </Switch>
+                  </ErrorBoundary>
+                </main>
+              </div>
+              <StatusBar trailing={<BuilderEntry deps={builderEntryDeps} />} />
             </div>
-            <StatusBar trailing={<BuilderEntry deps={builderEntryDeps} />} />
+            <div role="status" class="sr-only" aria-live="polite" data-fdt="panel-status">
+              {statusLine()}
+            </div>
+            <PanelOverlays
+              overlays={overlays}
+              data={data}
+              currentRoute={() => router.route()}
+              navigate={(route) => {
+                router.navigate(route);
+              }}
+              focusRouteHeading={focusRouteHeading}
+              paletteChord={paletteChord.binding}
+            />
+            <Toasts />
           </div>
-          <div role="status" class="sr-only" aria-live="polite" data-fdt="panel-status">
-            {statusLine()}
-          </div>
-          <PanelOverlays
-            overlays={overlays}
-            data={data}
-            currentRoute={() => router.route()}
-            navigate={(route) => {
-              router.navigate(route);
-            }}
-            focusRouteHeading={focusRouteHeading}
-            paletteChord={paletteChord.binding}
-          />
-          <Toasts />
-        </div>
+        </DetailPresenceContext.Provider>
       </SearchContext.Provider>
     </FdtDataContext.Provider>
   );

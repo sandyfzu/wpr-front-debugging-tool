@@ -13,7 +13,7 @@ import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 
 const clock = vi.hoisted(() => ({ setLoaded: vi.fn(), stop: vi.fn(), created: 0 }));
 
-vi.mock('../../status-bar/aging-clock', () => ({
+vi.mock('../../state/aging-clock', () => ({
   realAgingClockDeps: () => ({}),
   createAgingClock: () => {
     clock.created += 1;

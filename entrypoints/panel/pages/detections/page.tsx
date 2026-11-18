@@ -50,7 +50,7 @@ import {
   type DetectionsLayoutStore
 } from '../../state/detections-layout';
 import { useFdtData } from '../../state/use-fdt-data';
-import { createAgingClock, realAgingClockDeps } from '../../status-bar/aging-clock';
+import { createAgingClock, realAgingClockDeps } from '../../state/aging-clock';
 import { NoMatches, PageFrame } from '../page-frame';
 import { inspectedReloadAction } from '../reload-inspected';
 import { TestModeNotice } from '../test-mode-notice';

@@ -6,15 +6,18 @@
  * in the document at any time) and resets the search store; a soft refresh
  * preserves the mounted page (node identity, scroll, focus, route) while the
  * data swaps, the Detections layout choice outlives route and ready-branch
- * remounts, unmount cancels the search flow, and a page body that throws
- * meets the crash boundary's actionable reload. The stores are injected; no
+ * remounts, the detail presence reaches page bodies and resets per route,
+ * unmount cancels the search flow, and a page body that throws meets the
+ * crash boundary's actionable reload. The stores are injected; no
  * messaging API is touched here.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
+import type { JSX } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PanelApp } from './App';
 import { createSearchStore, type SearchStore } from './state/search';
+import { useDetailPresence, type DetailPresenceStore } from './state/detail-presence';
 import {
   NO_PAGE_TRANSPORT_REASON,
   createFdtDataStore,
@@ -461,6 +464,34 @@ describe('the Detections layout choice (shell-owned)', () => {
     await waitFor(() => {
       expect(gridLayout()).toBe('list');
     });
+  });
+});
+
+describe('the detail presence (shell-owned)', () => {
+  it('reaches page bodies and resets when the route changes', async () => {
+    const shell = makeShell();
+    const originalBody = PAGES['detections'];
+    let presence: DetailPresenceStore | undefined;
+    PAGES['detections'] = (): JSX.Element => {
+      presence = useDetailPresence();
+      return <h1>Probe</h1>;
+    };
+    try {
+      render(() => <PanelApp search={shell.search} data={shell.data} />);
+      shell.settle(pageData());
+      await waitFor(() => {
+        expect(presence).toBeDefined();
+      });
+      const store = presence as DetailPresenceStore;
+      expect(store.detailOpen()).toBe(false);
+      store.setDetailOpen(true);
+      expect(store.detailOpen()).toBe(true);
+      hashTo('javascript');
+      expect(store.detailOpen()).toBe(false);
+    } finally {
+      PAGES['detections'] = originalBody;
+      cleanup();
+    }
   });
 });
 

@@ -43,7 +43,7 @@ import { Tooltip } from '../../../components/ui/tooltip';
 import { cn } from '../../../utils/cn';
 import { createLogger } from '../../../lib/logger';
 import { useFdtData } from '../state/use-fdt-data';
-import { createAgingClock, realAgingClockDeps } from './aging-clock';
+import { createAgingClock, realAgingClockDeps } from '../state/aging-clock';
 import type { SegmentId, StatusBarSegments } from './selectors';
 import { STALE_WINDOW_MINUTES, statusBarSegments } from './selectors';
 
