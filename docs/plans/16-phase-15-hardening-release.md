@@ -10,7 +10,7 @@ Owner 2026-11-17: deferred after the first release as [P22](./22-phase-22-post-r
 
 ## P15 hardening/release
 
-Depends:all required phases inclP14.5/P5J/P21 WP Rocket simulation (before release, owner 2026-10-22); P10 needs owner replan/disposition, not silent skip; P17 optional. Parallel:—final gate. Installed Node24/pinned pnpm/TS5.9/WXT/Solid/test tools, no speculative upgrades.
+Depends:all required phases inclP14.5/P5J/P21 WP Rocket simulation (before release, owner 2026-10-22)/P23 panel redesign (owner 2026-11-18); P10 needs owner replan/disposition, not silent skip; P17 optional. Parallel:—final gate. Installed Node24/pinned pnpm/TS5.9/WXT/Solid/test tools, no speculative upgrades.
 
 ### P15A — Budgets/performance
 
