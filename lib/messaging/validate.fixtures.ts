@@ -50,8 +50,7 @@ export function validFdt(): Record<string, unknown> {
     pageHeaders: [{ name: 'X-Cache' }],
     undefinedReferencesOnPage: ['jQuery'],
     wprDetections: minimalDetections(),
-    preloadedResources: { present: false },
-    diagnoserData: null
+    preloadedResources: { present: false }
   };
 }
 
@@ -139,7 +138,6 @@ export function validFdtPayload(): Record<string, unknown> {
     pageHeaders: [{ name: 'X-Cache', value: 'MISS' }],
     undefinedReferencesOnPage: ['jQuery'],
     wprDetections: validDetections(),
-    preloadedResources: { present: false },
-    diagnoserData: null
+    preloadedResources: { present: false }
   };
 }

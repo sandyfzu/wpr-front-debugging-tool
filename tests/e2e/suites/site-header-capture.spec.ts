@@ -120,14 +120,14 @@ test.describe('site header capture', () => {
   });
 
   test('a tabless sender is ignored: null served, no tab targeted', async ({ extension }) => {
-    // The popup page opened as a tab is a real extension context WITHOUT a
+    // The options page opened as a tab is a real extension context WITHOUT a
     // page tab: its runtime send reaches the background with no
     // `sender.tab`, so the handler must answer null (the SW side never
     // serves another tab's rows to it).
     const worker = await extension.serviceWorker();
-    const popupPage = await extension.browserContext.newPage();
-    await popupPage.goto(`chrome-extension://${new URL(worker.url()).host}/popup.html`);
-    const reply = await popupPage.evaluate(
+    const extensionPage = await extension.browserContext.newPage();
+    await extensionPage.goto(`chrome-extension://${new URL(worker.url()).host}/options.html`);
+    const reply = await extensionPage.evaluate(
       async () =>
         await new Promise<unknown>((resolve) => {
           chrome.runtime.sendMessage(
@@ -139,7 +139,7 @@ test.describe('site header capture', () => {
         })
     );
     expect(reply, 'the tabless sender got the handler null answer').toEqual({ res: null });
-    await popupPage.close();
+    await extensionPage.close();
   });
 
   test('secret-bearing headers are redacted at capture, before anything is served', async ({

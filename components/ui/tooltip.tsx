@@ -1,7 +1,7 @@
 /**
  * The panel's tooltip — attribution for icon-only controls and live-state
- * hints, including the disabled-but-explained case (e.g. reserved nav rows
- * render disabled and explain themselves on hover instead of dead-ending).
+ * hints, including the disabled-but-explained case (a disabled control
+ * explains itself on hover instead of dead-ending).
  *
  * Wraps Kobalte's APG tooltip: `role="tooltip"` content, `aria-describedby`
  * linkage from the trigger, hover + keyboard-focus opening, open/close
@@ -35,7 +35,7 @@ export type TooltipProps = {
   /**
    * Disable the trigger (native `disabled` attribute). The disabled control
    * keeps its pointer *hover*, so its tooltip still opens — that is the
-   * disabled-but-explained pattern (e.g. reserved nav rows); keyboard-focus
+   * disabled-but-explained pattern; keyboard-focus
    * opening does not apply since a disabled control is not focusable.
    */
   disabled?: boolean;

@@ -4,10 +4,8 @@
  * boundary fits, fractional device pixels, heights too small for even one
  * row (the rail is reduced to its trigger and the menu holds everything),
  * a group separator that does not fit hides its whole group behind the
- * rail's top edge, a mid-group cut, and the reserved disabled row (which
- * is just one more measured row — the registry drives order, the reserved
- * flag changes nothing here). Contract violations throw with the offending
- * value named.
+ * rail's top edge, a mid-group cut and a cut inside the last row.
+ * Contract violations throw with the offending value named.
  */
 import { describe, expect, it } from 'vitest';
 import type { RailRowBox } from './visible-rows';
@@ -54,7 +52,6 @@ function groupOf(route: RailRowBox['route']): string {
     case 'headers-cookies':
       return 'Inspect';
     case 'undefined-references':
-    case 'diagnoser':
       return 'Diagnose';
     case 'rucss-tester':
     case 'beacon-tester':
@@ -70,33 +67,33 @@ const ALL = railLayout([
   'javascript',
   'lazyload',
   'preloaded-resources',
-  'undefined-references',
-  'diagnoser'
+  'rucss-tester',
+  'beacon-tester'
 ]);
 
 describe('visibleRowsInRail', () => {
   it('keeps every row when the height covers the full rail (no overflow, no trigger)', () => {
-    // Overview 32 + Inspect 117 (13 + 3 × 32 + 2 × 4) + Diagnose 81 (13 + 2 × 32 + 4) = 230.
+    // Overview 32 + Inspect 117 (13 + 3 × 32 + 2 × 4) + Tools 81 (13 + 2 × 32 + 4) = 230.
     const result = visibleRowsInRail(ALL, 230);
     expect(result.visible.map((row) => row.route)).toEqual(ALL.map((row) => row.route));
     expect(result.hidden).toEqual([]);
   });
 
   it('cuts the registry-order suffix: the visible rows are exactly the prefix that fits', () => {
-    // The Diagnoser row ends at 230; one whisker less hides exactly that row.
+    // The Beacon Tester row ends at 230; one whisker less hides exactly that row.
     const result = visibleRowsInRail(ALL, 229);
     expect(result.visible.map((row) => row.route)).toEqual([
       'detections',
       'javascript',
       'lazyload',
       'preloaded-resources',
-      'undefined-references'
+      'rucss-tester'
     ]);
-    expect(result.hidden.map((row) => row.route)).toEqual(['diagnoser']);
+    expect(result.hidden.map((row) => row.route)).toEqual(['beacon-tester']);
   });
 
   it('pinned exact boundary: a row whose bottom edge equals the available height fits', () => {
-    // The Diagnoser row spans 198..230 — 230 exactly reaches its bottom.
+    // The Beacon Tester row spans 198..230 — 230 exactly reaches its bottom.
     const result = visibleRowsInRail(ALL, 230);
     expect(result.hidden).toEqual([]);
   });
@@ -134,8 +131,8 @@ describe('visibleRowsInRail', () => {
       'javascript',
       'lazyload',
       'preloaded-resources',
-      'undefined-references',
-      'diagnoser'
+      'rucss-tester',
+      'beacon-tester'
     ]);
   });
 
@@ -151,8 +148,8 @@ describe('visibleRowsInRail', () => {
       'javascript',
       'lazyload',
       'preloaded-resources',
-      'undefined-references',
-      'diagnoser'
+      'rucss-tester',
+      'beacon-tester'
     ]);
   });
 
@@ -166,15 +163,15 @@ describe('visibleRowsInRail', () => {
     expect(result.hidden.map((row) => row.route)).toEqual([
       'lazyload',
       'preloaded-resources',
-      'undefined-references',
-      'diagnoser'
+      'rucss-tester',
+      'beacon-tester'
     ]);
   });
 
-  it('the reserved disabled row is just one more measured row (registry drives order)', () => {
-    // Available height ends inside the Diagnoser row (198..230): it hides like any other.
+  it('a height ending inside the last row hides that row alone', () => {
+    // Available height ends inside the Beacon Tester row (198..230).
     const result = visibleRowsInRail(ALL, 199);
-    expect(result.hidden.map((row) => row.route)).toEqual(['diagnoser']);
+    expect(result.hidden.map((row) => row.route)).toEqual(['beacon-tester']);
     const oneMore = visibleRowsInRail(ALL, 230);
     expect(oneMore.hidden).toEqual([]);
   });

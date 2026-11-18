@@ -33,11 +33,11 @@ const ROWS: readonly PaletteCommand[] = [
   { id: 'page-lazyload', label: 'Lazyload', icon: Zap, hint: 'Inspect' },
   { id: 'export', label: 'Export JSON', hint: 'Export' },
   {
-    id: 'reserved',
-    label: 'Diagnoser',
-    hint: 'Returns with the Diagnoser plugin v2',
+    id: 'copy-report',
+    label: 'Copy report',
+    hint: 'Export',
     disabled: true,
-    disabledNote: 'Returns with the Diagnoser plugin v2'
+    disabledNote: 'No page data loaded'
   }
 ];
 
@@ -103,7 +103,7 @@ describe('CommandPalette structure', () => {
     expect(list?.getAttribute('aria-label')).toBe('Commands');
     expect(document.querySelectorAll('[data-fdt="palette-command"]')).toHaveLength(4);
     expect(screen.getByText('Export JSON')).toBeTruthy();
-    expect(screen.getByText('Diagnoser')).toBeTruthy();
+    expect(screen.getByText('Copy report')).toBeTruthy();
   });
 
   it('carries the APG combobox state on the field (expanded, listbox owned, autocomplete=list)', async () => {
@@ -313,7 +313,7 @@ describe('CommandPalette filtering', () => {
     expect(status.textContent).toBe('');
     fireEvent.input(field, { target: { value: 'o' } });
     await waitFor(() => {
-      // "Detections", "Lazyload", "Export JSON", "Diagnoser" all contain an "o".
+      // "Detections", "Lazyload", "Export JSON", "Copy report" all contain an "o".
       expect(status.textContent).toBe('4 commands available');
     });
     fireEvent.keyDown(field, { key: 'ArrowDown' });
@@ -381,9 +381,9 @@ describe('CommandPalette mount-time focus', () => {
 describe('CommandPalette disabled rows', () => {
   it('renders disabled rows marked and explained, skipped by the arrows, inert to clicks', async () => {
     const { field, onRun } = await mountPalette();
-    const disabled = screen.getByRole('option', { name: /Diagnoser/ });
+    const disabled = screen.getByRole('option', { name: /Copy report/ });
     expect(disabled.getAttribute('aria-disabled')).toBe('true');
-    expect(disabled.textContent).toContain('Returns with the Diagnoser plugin v2');
+    expect(disabled.textContent).toContain('No page data loaded');
 
     // End lands past the disabled row; stepping further never enters it.
     fireEvent.keyDown(field, { key: 'End' });
@@ -431,7 +431,7 @@ describe('CommandPalette pointer', () => {
     expect(field.getAttribute('aria-activedescendant')).toBe(exportRow.id);
     expect(exportRow.getAttribute('aria-selected')).toBe('true');
     expect(exportRow.hasAttribute('data-highlighted')).toBe(true);
-    fireEvent.pointerMove(screen.getByRole('option', { name: /Diagnoser/ }), {
+    fireEvent.pointerMove(screen.getByRole('option', { name: /Copy report/ }), {
       pointerType: 'mouse'
     });
     expect(field.getAttribute('aria-activedescendant')).toBe(exportRow.id);

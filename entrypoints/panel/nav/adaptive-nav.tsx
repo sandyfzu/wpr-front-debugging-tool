@@ -15,7 +15,7 @@
  * pitches) and {@link visibleRowsInRail} slices the registry into the rows
  * that fit and the rows that move to the rail-end "More pages" trigger's
  * APG menu — where they stay full citizens: real hash links, live state,
- * `aria-current`, the reserved row disabled with its note. A failed
+ * `aria-current`. A failed
  * measurement is contained: the rail keeps the slice it has until a
  * truthful measurement arrives.
  */
@@ -31,14 +31,11 @@ import {
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import ChevronDown from 'lucide-solid/icons/chevron-down';
-import { DISABLED } from '../../../components/ui/classes';
 import {
   Menu,
   MENU_CONTENT_CLASSES,
   MENU_ITEM_CLASSES,
   MENU_ITEM_LABEL_CLASSES,
-  MENU_ITEM_NOTE_CLASSES,
-  MENU_ITEM_WITH_NOTE_CLASSES,
   MENU_SEPARATOR_CLASSES
 } from '../../../components/ui/menu';
 import { StatusBadge } from '../../../components/ui/status-badge';
@@ -163,9 +160,6 @@ const ROW_IDLE = 'text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
  */
 const ROW_LABEL = 'sr-only';
 
-/** The disabled reserved row's treatment (inside the registry-driven tooltip). */
-const ROW_RESERVED = 'text-fg-muted';
-
 /**
  * The geometry stub's container: a zero-size clip box sitting exactly on
  * the rail's content origin, holding the full-layout stub (every registry
@@ -225,14 +219,12 @@ export interface NavRowProps {
 }
 
 /**
- * Render one registry row as its anchor (or the reserved disabled button).
+ * Render one registry row as its anchor (`#/route` hash form).
  *
- * Non-reserved rows are real anchors (`#/route` hash form); reserved rows
- * are the disabled explained button. Both forms answer their tooltip with
- * the row's full label (or the reserved note) plus the live-state chip, and
- * both float it to the row's *right* — beside the rail column, never over
- * the sibling rows below (a below-placed tooltip would sit on top of the
- * next row's hit area and swallow its clicks).
+ * The tooltip answers with the row's full label plus the live-state chip,
+ * floated to the row's *right* — beside the rail column, never over the
+ * sibling rows below (a below-placed tooltip would sit on top of the next
+ * row's hit area and swallow its clicks).
  *
  * @param props The row, the active route and the loaded data.
  */
@@ -244,7 +236,7 @@ function NavRow(props: NavRowProps): JSX.Element {
 
   const tooltipContent = (
     <>
-      <span class="font-medium">{props.row.reservedNote ?? props.row.label}</span>
+      <span class="font-medium">{props.row.label}</span>
       <Show when={live()}>
         {(state) => <StatusBadge kind={state().tone}>{state().text}</StatusBadge>}
       </Show>
@@ -252,33 +244,17 @@ function NavRow(props: NavRowProps): JSX.Element {
   );
 
   return (
-    <Show
-      when={props.row.reserved ?? false}
-      fallback={
-        <Tooltip
-          as="a"
-          href={`#/${props.row.id}`}
-          ariaCurrent={active()}
-          content={tooltipContent}
-          placement="right"
-          class={rowClasses()}
-        >
-          <Dynamic component={props.row.icon} size={14} class="shrink-0" aria-hidden="true" />
-          <span class={ROW_LABEL}>{props.row.label}</span>
-        </Tooltip>
-      }
+    <Tooltip
+      as="a"
+      href={`#/${props.row.id}`}
+      ariaCurrent={active()}
+      content={tooltipContent}
+      placement="right"
+      class={rowClasses()}
     >
-      <Tooltip
-        content={tooltipContent}
-        disabled
-        placement="right"
-        // No idle hover: the reserved row keeps its resting look under the pointer.
-        class={cn(ROW, ROW_RESERVED, DISABLED)}
-      >
-        <Dynamic component={props.row.icon} size={14} class="shrink-0" aria-hidden="true" />
-        <span class={ROW_LABEL}>{props.row.label}</span>
-      </Tooltip>
-    </Show>
+      <Dynamic component={props.row.icon} size={14} class="shrink-0" aria-hidden="true" />
+      <span class={ROW_LABEL}>{props.row.label}</span>
+    </Tooltip>
   );
 }
 
@@ -314,10 +290,7 @@ export interface HiddenRowProps {
  * Render one hidden registry row as a menu item: a real hash link (the
  * rail's own href form; the browser navigates while Kobalte closes the
  * menu on selection), the row's visible label beside its live-state chip,
- * and `aria-current` riding the hidden active row. The reserved row renders
- * disabled with its note as the item's description line — the
- * disabled-but-explained pattern, menu-carried (the rail's version carries
- * it in the tooltip).
+ * and `aria-current` riding the hidden active row.
  *
  * @param props The row, the active route and the loaded data.
  */
@@ -325,43 +298,26 @@ function HiddenRow(props: HiddenRowProps): JSX.Element {
   const live = createMemo(() => resolveLiveState(props.row, props.data()));
   const active = (): boolean => props.route() === props.row.id;
   return (
-    <Show
-      when={props.row.reserved ?? false}
-      fallback={
-        <Menu.Item
-          as="a"
-          href={`#/${props.row.id}`}
-          aria-current={active() ? 'page' : undefined}
-          closeOnSelect
-          data-fdt="nav-overflow-item"
-          class={MENU_ITEM_CLASSES}
-        >
-          <Dynamic component={props.row.icon} size={14} class="shrink-0" aria-hidden="true" />
-          <Menu.ItemLabel class={MENU_ITEM_LABEL_CLASSES}>
-            <span class="min-w-0 truncate">{props.row.label}</span>
-            <Show when={live()}>
-              {(state) => (
-                <StatusBadge kind={state().tone} class="shrink-0">
-                  {state().text}
-                </StatusBadge>
-              )}
-            </Show>
-          </Menu.ItemLabel>
-        </Menu.Item>
-      }
+    <Menu.Item
+      as="a"
+      href={`#/${props.row.id}`}
+      aria-current={active() ? 'page' : undefined}
+      closeOnSelect
+      data-fdt="nav-overflow-item"
+      class={MENU_ITEM_CLASSES}
     >
-      <Menu.Item
-        disabled
-        data-fdt="nav-overflow-item"
-        class={cn(MENU_ITEM_CLASSES, MENU_ITEM_WITH_NOTE_CLASSES, ROW_RESERVED, DISABLED)}
-      >
-        <Dynamic component={props.row.icon} size={14} class="shrink-0" aria-hidden="true" />
-        <Menu.ItemLabel class={MENU_ITEM_LABEL_CLASSES}>{props.row.label}</Menu.ItemLabel>
-        <Menu.ItemDescription class={MENU_ITEM_NOTE_CLASSES}>
-          {props.row.reservedNote}
-        </Menu.ItemDescription>
-      </Menu.Item>
-    </Show>
+      <Dynamic component={props.row.icon} size={14} class="shrink-0" aria-hidden="true" />
+      <Menu.ItemLabel class={MENU_ITEM_LABEL_CLASSES}>
+        <span class="min-w-0 truncate">{props.row.label}</span>
+        <Show when={live()}>
+          {(state) => (
+            <StatusBadge kind={state().tone} class="shrink-0">
+              {state().text}
+            </StatusBadge>
+          )}
+        </Show>
+      </Menu.ItemLabel>
+    </Menu.Item>
   );
 }
 

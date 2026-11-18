@@ -5,8 +5,7 @@
  * grouped nav that later morphs it) and the command palette consume the rows
  * in table order; adding a page = adding one row (+ its tests), never new
  * branches in sibling surfaces. Rows carry everything a nav item renders:
- * label, icon, journey group, and a reserved flag for pages whose producer
- * ships in a later phase.
+ * label, icon, journey group and an optional live-state selector.
  */
 import type { LucideIcon } from 'lucide-solid';
 import FileCode from 'lucide-solid/icons/file-code';
@@ -17,7 +16,6 @@ import Radar from 'lucide-solid/icons/radar';
 import ScrollText from 'lucide-solid/icons/scroll-text';
 import SearchX from 'lucide-solid/icons/search-x';
 import ShieldCheck from 'lucide-solid/icons/shield-check';
-import Stethoscope from 'lucide-solid/icons/stethoscope';
 import TestTubeDiagonal from 'lucide-solid/icons/test-tube-diagonal';
 import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
@@ -44,7 +42,6 @@ export const ROUTE_IDS = [
   'preloaded-resources',
   'headers-cookies',
   'undefined-references',
-  'diagnoser',
   'rucss-tester',
   'beacon-tester',
   'lcp-vitals'
@@ -81,16 +78,6 @@ export interface NavRoute {
   /** The row's lucide icon (the nav renders it when it has room for it). */
   icon: LucideIcon;
   group: NavGroup;
-  /**
-   * Reserved rows have no producer yet: the nav renders them disabled with
-   * {@link NavRoute.reservedNote}, and enabling the page later is one flag
-   * flip. The palette likewise declines their rows. Their hash deep-links
-   * still resolve — the pages table renders the shared honest placeholder
-   * body until the real page ships — so a bookmarked link never dead-ends.
-   */
-  reserved?: boolean;
-  /** What the disabled row's tooltip says (a reserved row must not dead-end). */
-  reservedNote?: string;
   /** Per-row live-state selector (consumed by the adaptive nav, not this shell). */
   liveState?: NavLiveStateSelector;
 }
@@ -195,15 +182,6 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       // watching; once loading settled, a clean page is silence.
       return data.allScriptsLoaded ? null : { text: 'Monitoring', tone: 'neutral' };
     }
-  },
-  {
-    id: 'diagnoser',
-    reading: true,
-    label: 'Diagnoser',
-    icon: Stethoscope,
-    group: 'Diagnose',
-    reserved: true,
-    reservedNote: 'Returns with the Diagnoser plugin v2'
   },
   {
     // A tool, not a reading of the page: TEST MODE is the page's own fact

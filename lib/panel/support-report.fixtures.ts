@@ -56,7 +56,6 @@ export function makeReportData(overrides?: Partial<FdtData>): FdtData {
     undefinedReferencesOnPage: [],
     wprDetections: emptyDetections(),
     preloadedResources: { present: false },
-    diagnoserData: null,
     ...overrides
   };
 }

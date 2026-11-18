@@ -2,7 +2,7 @@
 import { expect, openFixturePage, panelPageUrl, test } from '../helpers/extension';
 import { openPanelForFixture } from '../helpers/panel-data';
 
-/** Every route, including the hash-addressable reserved route. */
+/** Every route. */
 const ROUTES = [
   'detections',
   'javascript',
@@ -11,7 +11,6 @@ const ROUTES = [
   'preloaded-resources',
   'headers-cookies',
   'undefined-references',
-  'diagnoser',
   'rucss-tester',
   'beacon-tester',
   'lcp-vitals'
@@ -155,9 +154,9 @@ test('keeps routes and hostile search contained at narrow, ultrawide and shallow
   try {
     await panel.emulateMedia({ reducedMotion: 'reduce' });
     await panel.evaluate(() => {
-      location.hash = '#/diagnoser';
+      location.hash = '#/undefined-references';
     });
-    await expect(panel.locator('[data-fdt-page="diagnoser"]')).toBeVisible();
+    await expect(panel.locator('[data-fdt-page="undefined-references"]')).toBeVisible();
     for (const size of [
       { width: 320, height: 220 },
       { width: 3440, height: 220 },

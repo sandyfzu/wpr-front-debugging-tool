@@ -108,7 +108,7 @@ describe('Tooltip', () => {
   it('renders a disabled trigger that still opens on hover (disabled-but-explained)', async () => {
     vi.useFakeTimers();
     try {
-      // The reserved-row pattern: a disabled control must keep explaining
+      // The disabled-but-explained pattern: a disabled control must keep explaining
       // itself, so the trigger carries the native attribute without
       // pointer-events suppression — hover stays the open path.
       const trigger = await renderTooltipWith({ disabled: true });

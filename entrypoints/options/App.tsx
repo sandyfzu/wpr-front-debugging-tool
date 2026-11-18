@@ -7,7 +7,7 @@
  * item, outside the draft) and the Known Conflicts freshness row.
  *
  * The page is a **writer**: only it and the panel drive the appearance
- * setting; the popup and injected UIs only read. The Save flow is the model's
+ * setting; injected UIs only read. The Save flow is the model's
  * — dirty-gated, busy-guarded, awaiting one write, its typed outcome toasts —
  * with no artificial delay anywhere.
  */

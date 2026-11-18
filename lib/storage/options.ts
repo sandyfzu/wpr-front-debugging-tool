@@ -2,7 +2,7 @@
  * The options surface's registered storage shape.
  *
  * All option keys this tool stores live here as one shape so a surface (the
- * options page, the popup, injected UI) only ever reads keys defined here;
+ * options page, the panel, injected UI) only ever reads keys defined here;
  * phases may extend additively with a documented default.
  *
  * Read options through {@link getOptions} (validated, corrupt-tolerant);

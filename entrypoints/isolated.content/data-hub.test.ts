@@ -54,14 +54,12 @@ describe('processSerializedPage', () => {
         ) as { preloadedResources: unknown }
       ).preloadedResources
     );
-    // A page without a diagnoser print leaves both slots null.
-    expect(result.diagnoserData).toEqual({ noRocketData: null, rocketData: null });
   });
 
   it('shares one parsed tree across every consumer (no re-parse per pass)', async () => {
     // The timing budget rides on this: parsePage runs once, and the engine,
-    // the preloaded-resources check and the diagnoser extraction all read the
-    // same tree.
+    // the preloaded-resources check and the version read all read the same
+    // tree.
     const html = fixture('me-support-cdn.html');
     const original = globalThis.DOMParser;
     let parsedCount = 0;
@@ -78,17 +76,6 @@ describe('processSerializedPage', () => {
       globalThis.DOMParser = original;
     }
     expect(parsedCount).toBe(1);
-  });
-
-  it('extracts a repairable diagnoser print (malformed JSON tolerated)', async () => {
-    // jsonrepair's tolerance covers the plugin's realistic corruption shapes
-    // (single quotes, trailing commas) — arbitrary garbage still fails the
-    // slot to null, which the panel renders explicitly.
-    const html = `${fixture('psi-shell.html')}<script id="wpr-diagnoser-rocket-json-data" type="application/json">{'options': {},}</script>`;
-    const result = await processSerializedPage(html);
-    expect(result.diagnoserData?.rocketData).toEqual({ options: {} });
-    const garbage = `${fixture('psi-shell.html')}<script id="wpr-diagnoser-rocket-json-data" type="application/json">{broken,</script>`;
-    expect((await processSerializedPage(garbage)).diagnoserData?.rocketData).toBeNull();
   });
 });
 

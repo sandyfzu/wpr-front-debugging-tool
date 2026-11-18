@@ -37,10 +37,10 @@ describe('matchesGlob', () => {
   });
 
   it('keeps `*` within one path segment', () => {
-    expect(matchesGlob('chunks/popup-BptklVxT.js', 'chunks/popup-*.js')).toBe(true);
-    expect(matchesGlob('chunks/popup.js', 'chunks/popup-*.js')).toBe(false);
-    expect(matchesGlob('chunks/nested/popup-x.js', 'chunks/popup-*.js')).toBe(false);
-    expect(matchesGlob('chunks/nested/popup-x.js', 'chunks/*/popup-*.js')).toBe(true);
+    expect(matchesGlob('chunks/options-BptklVxT.js', 'chunks/options-*.js')).toBe(true);
+    expect(matchesGlob('chunks/options.js', 'chunks/options-*.js')).toBe(false);
+    expect(matchesGlob('chunks/nested/options-x.js', 'chunks/options-*.js')).toBe(false);
+    expect(matchesGlob('chunks/nested/options-x.js', 'chunks/*/options-*.js')).toBe(true);
   });
 
   it('matches the committed content-script globs', () => {
@@ -63,8 +63,8 @@ describe('matchesGlob', () => {
 describe('measureSurface', () => {
   // 2 KB of a compressible pattern + 1 KB of another, both in-memory.
   const sampleContents = [
-    { path: 'chunks/popup-x.js', body: 'a'.repeat(2048) },
-    { path: 'chunks/popup-y.js', body: 'b'.repeat(1024) },
+    { path: 'chunks/options-x.js', body: 'a'.repeat(2048) },
+    { path: 'chunks/options-y.js', body: 'b'.repeat(1024) },
     { path: 'chunks/other-x.js', body: 'c'.repeat(4096) }
   ];
   const fileContents = new Map(sampleContents.map(({ path, body }) => [path, Buffer.from(body)]));
@@ -77,20 +77,20 @@ describe('measureSurface', () => {
   it('sums raw bytes over all matching files and reports them', () => {
     const { rawBytes, files: matched } = measureSurface(
       sampleContents.map(({ path }) => path),
-      ['chunks/popup-*.js'],
+      ['chunks/options-*.js'],
       readFile
     );
-    expect(matched).toEqual(['chunks/popup-x.js', 'chunks/popup-y.js']);
+    expect(matched).toEqual(['chunks/options-x.js', 'chunks/options-y.js']);
     expect(rawBytes).toBe(3072);
   });
 
   it('sums gzip bytes per file', () => {
     const expectedGzip = [...fileContents]
-      .filter(([path]) => path.startsWith('chunks/popup-'))
+      .filter(([path]) => path.startsWith('chunks/options-'))
       .reduce((total, [, content]) => total + gzipSync(content).length, 0);
     const { gzipBytes } = measureSurface(
       sampleContents.map(({ path }) => path),
-      ['chunks/popup-*.js'],
+      ['chunks/options-*.js'],
       readFile
     );
     expect(gzipBytes).toBe(expectedGzip);
@@ -101,7 +101,7 @@ describe('measureSurface', () => {
   it('returns zero totals when nothing matches', () => {
     const { rawBytes, gzipBytes, files } = measureSurface(
       ['chunks/other-x.js'],
-      ['chunks/popup-*.js'],
+      ['chunks/options-*.js'],
       readFile
     );
     expect(files).toEqual([]);
@@ -113,8 +113,8 @@ describe('measureSurface', () => {
 describe('parseBudgetRows', () => {
   /** A valid bytes row (the default kind every pre-existing row used). */
   const bytesRow = {
-    surface: 'popup JS',
-    globs: ['chunks/popup-*.js'],
+    surface: 'options JS',
+    globs: ['chunks/options-*.js'],
     maxKb: { raw: 50 }
   };
   /** A valid timing row (the runtime-facing kind). */
@@ -150,7 +150,7 @@ describe('parseBudgetRows', () => {
 
   it('rejects an unknown build, and a build on a timing row, naming the row', () => {
     expect(() => parseBudgetRows([{ ...bytesRow, build: 'safari' }])).toThrow(
-      /#0 \(popup JS\) build must be one of chrome-mv3, firefox-mv2/
+      /#0 \(options JS\) build must be one of chrome-mv3, firefox-mv2/
     );
     expect(() => parseBudgetRows([{ ...timingRow, build: 'firefox-mv2' }])).toThrow(
       /timing row .* cannot carry build/

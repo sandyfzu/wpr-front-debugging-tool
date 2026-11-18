@@ -8,7 +8,7 @@
   plus the iframe/youtube replacement trio, minified asset URLs on
   non-delayed elements, the preload-links blob, RocketCDN's dns-prefetch,
   the CSS-background container, the measuring beacon and preloaded critical
-  images). Also carries the diagnoser json elements.
+  images).
   Snapshot note: every mapped feature is present — remove_unused_css,
   async_css and rocket_cdn are declared by the meta and their real markup
   also exists here; image_dimensions is declaration-only (true only by this
@@ -78,8 +78,5 @@ window.addEventListener('lazyloadready',function(e){var i=document.querySelector
   <script id="rocket-preload-links-js-extra">var RocketPreloadLinksConfig = {"excludeUris":"\/cart|\/my-account","ttl":"3600"}</script>
   <!-- The measuring beacon. -->
   <script data-name="wpr-wpr-beacon" src="https://all.example/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js"></script>
-  <!-- Diagnoser report slots. -->
-  <script id="wpr-diagnoser-no-rocket-json-data">{"wpr_plugin":{"version":"3.20.6.1"},"get_rocket_option":{"delay_js":{"option_value":true},"version":"3.20.6.1"},"server_info":{"server_load":"1.4","web_server":"nginx","php_memory_limit":"256M"},"wpr_diagnoser_version":"2.1"}</script>
-  <script id="wpr-diagnoser-rocket-json-data">{"options":{"delay_js":{"option_name":"delay_js","get_rocket_option":{"value":"1"}}},"post_meta_excluded_options":{"cdn":false}}</script>
 </body>
 </html><!-- This website is like a Rocket, isn't it? Performance optimized by WP Rocket. Learn more: https://wp-rocket.me - Debug: cached@1699999999 -->

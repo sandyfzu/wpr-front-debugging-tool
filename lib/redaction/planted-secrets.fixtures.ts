@@ -57,7 +57,7 @@ export const PLANTED_INLINE_BODIES: readonly string[] = [
 ];
 
 /**
- * Diagnoser/options-like objects keyed in camelCase and the other spellings
+ * Options-like objects keyed in camelCase and the other spellings
  * the name rule must read word by word.
  */
 export const PLANTED_OPTIONS: Readonly<Record<string, unknown>> = {

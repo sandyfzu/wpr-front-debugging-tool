@@ -11,11 +11,11 @@
  *   shapes than any text scrub can recognise (call arguments, nested
  *   objects, JSON inside strings, template literals, concatenation), so
  *   only their length leaves; `src` and every flag stay.
- * - every other page-derived value (detections, preloaded resources, the
- *   diagnoser report, undefined references, cookie names) — walked whole:
- *   a field under a sensitive NAME (the diagnoser's `consumer_key`,
- *   `secret_key`, `licenseKey`, `*_email`, …) is replaced wholesale, and
- *   every string is scrubbed as text ({@link scrubText}).
+ * - every other page-derived value (detections, preloaded resources,
+ *   undefined references, cookie names, any field added later) — walked
+ *   whole: a field under a sensitive NAME (`consumer_key`, `secret_key`,
+ *   `licenseKey`, `*_email`, …) is replaced wholesale, and every string is
+ *   scrubbed as text ({@link scrubText}).
  *
  * The text scrub is name-based and over-inclusive, like the rule it
  * applies; it serves short page strings (URLs, config values), never code.

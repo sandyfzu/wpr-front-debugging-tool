@@ -15,7 +15,7 @@ Count deliberate clicks/keypresses after ready; opening DevTools, hover and wait
 - Cached/version/platform/server, cache age, delayed/undefined count: ≤1 interaction (initial status/counts ideally0).
 - Feature state≤2; reverify change≤1 (soft refresh0); delayed source≤3; exclusion≤2; support report≤1; JSON export≤2; page jump≤2; appearance≤2; error recovery≤1; search clear≤1; keyboard access as primitives give it (completeness audit dropped — owner 2026-10-27: no screen-reader support).
 - Interactive shell+first genuine data state≤500ms. Measurement begins at entry execution, not ESM import evaluation; no unmeasured “instant startup” claim.
-- Main hierarchy: status bar short answers; Detections statuses/report; resource pages counts→filters→rows; references names→definitions→exclusion; Headers & Cookies cache evidence→full names-only inventory; reserved Diagnoser disabled/explained; tools appear only when implemented. Elements remains a native object inventory. Cookie values, header credentials and raw page-content logs are never glanceable output.
+- Main hierarchy: status bar short answers; Detections statuses/report; resource pages counts→filters→rows; references names→definitions→exclusion; Headers & Cookies cache evidence→full names-only inventory; reserved Diagnoser row removed pre-release (2026-11-17); tools appear only when implemented. Elements remains a native object inventory. Cookie values, header credentials and raw page-content logs are never glanceable output.
 
 ## Panel decisions
 

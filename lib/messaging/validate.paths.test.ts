@@ -625,19 +625,16 @@ describe('parseWprDetections — rejection arms', () => {
 });
 
 describe('parseFdtData — tolerant reads', () => {
-  it('passes future additive fields through untouched', () => {
+  it('drops unknown additive fields and keeps the payload valid', () => {
     const payload = { ...validFdtPayload(), futureField: { any: 'shape' } };
     const parsed = parseFdtData(payload);
     expect(parsed).toEqual(validFdtPayload());
   });
 
-  it('accepts diagnoser reports with unknown slot shapes', () => {
-    const payload = {
-      ...validFdtPayload(),
-      diagnoserData: { noRocketData: { anything: [1, 2] }, rocketData: null }
-    };
-    const parsed = parseFdtData(payload);
-    expect(parsed?.diagnoserData).toEqual({ noRocketData: { anything: [1, 2] }, rocketData: null });
+  it('drops a retired diagnoserData key of any shape (older payloads keep parsing)', () => {
+    for (const diagnoserData of [{ rocketData: { options: [] }, noRocketData: null }, 'nope']) {
+      expect(parseFdtData({ ...validFdtPayload(), diagnoserData })).toEqual(validFdtPayload());
+    }
   });
 });
 

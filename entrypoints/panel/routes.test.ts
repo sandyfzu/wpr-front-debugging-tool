@@ -1,6 +1,5 @@
 /**
- * The nav registry's shape tests: row order, groups, the reserved row and
- * its copy, uniqueness — plus the route-body table matching the registry
+ * The nav registry's shape tests: row order, groups, copy, uniqueness — plus the route-body table matching the registry
  * (the shell cannot run out of bodies), and every live-state selector's
  * resolutions against the fixture-grade `FdtData` values each state is
  * about.
@@ -22,7 +21,7 @@ function liveStateOf(
 }
 
 describe('NAV_ROUTES', () => {
-  it('lists the eleven rows in the journey order', () => {
+  it('lists the ten rows in the journey order', () => {
     expect(NAV_ROUTES.map((row) => row.id)).toEqual([
       'detections',
       'javascript',
@@ -31,7 +30,6 @@ describe('NAV_ROUTES', () => {
       'preloaded-resources',
       'headers-cookies',
       'undefined-references',
-      'diagnoser',
       'rucss-tester',
       'beacon-tester',
       'lcp-vitals'
@@ -44,7 +42,6 @@ describe('NAV_ROUTES', () => {
       'Inspect',
       'Inspect',
       'Diagnose',
-      'Diagnose',
       'Tools',
       'Tools',
       'Tools'
@@ -55,7 +52,6 @@ describe('NAV_ROUTES', () => {
     const row = navRoute('rucss-tester');
     expect(row?.label).toBe('RUCSS Tester');
     expect(row?.group).toBe('Tools');
-    expect(row?.reserved).toBeUndefined();
     expect(row?.liveState).toBeUndefined();
   });
 
@@ -63,7 +59,6 @@ describe('NAV_ROUTES', () => {
     const row = navRoute('beacon-tester');
     expect(row?.label).toBe('Beacon Tester');
     expect(row?.group).toBe('Tools');
-    expect(row?.reserved).toBeUndefined();
     expect(row?.liveState).toBeUndefined();
   });
 
@@ -71,7 +66,6 @@ describe('NAV_ROUTES', () => {
     const row = navRoute('lcp-vitals');
     expect(row?.label).toBe('LCP & Vitals');
     expect(row?.group).toBe('Tools');
-    expect(row?.reserved).toBeUndefined();
     expect(row?.liveState).toBeUndefined();
   });
 
@@ -79,7 +73,6 @@ describe('NAV_ROUTES', () => {
     const row = navRoute('stylesheets');
     expect(row?.label).toBe('Stylesheets');
     expect(row?.group).toBe('Inspect');
-    expect(row?.reserved).toBeUndefined();
     expect(row?.liveState).toBeUndefined();
   });
 
@@ -87,7 +80,6 @@ describe('NAV_ROUTES', () => {
     const row = navRoute('headers-cookies');
     expect(row?.label).toBe('Headers & Cookies');
     expect(row?.group).toBe('Inspect');
-    expect(row?.reserved).toBeUndefined();
     // Its cache answers are the status bar's: the nav says nothing.
     expect(row?.liveState).toBeUndefined();
   });
@@ -105,12 +97,6 @@ describe('NAV_ROUTES', () => {
       expect(row.label.length).toBeGreaterThan(0);
       expect((ROUTE_IDS as readonly string[]).includes(row.id)).toBe(true);
     }
-  });
-
-  it('renders the Diagnoser row reserved, with its explanatory note', () => {
-    const diagnoser = navRoute('diagnoser');
-    expect(diagnoser?.reserved).toBe(true);
-    expect(diagnoser?.reservedNote).toBe('Returns with the Diagnoser plugin v2');
   });
 
   it('names the plural explicitly where the singular menu name was wrong', () => {
@@ -366,11 +352,9 @@ describe('nav live-state selectors', () => {
     expect(navRoute('preloaded-resources')?.liveState?.(null)).toBeNull();
   });
 
-  it('leaves the overview and reserved rows stateless', () => {
-    // The Overview row never duplicates the first-paint status-bar answers;
-    // reserved rows say nothing until the pages return.
+  it('leaves the overview row stateless', () => {
+    // The Overview row never duplicates the first-paint status-bar answers.
     expect(navRoute('detections')?.liveState).toBeUndefined();
-    expect(navRoute('diagnoser')?.liveState).toBeUndefined();
   });
 });
 

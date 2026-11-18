@@ -9,7 +9,6 @@ import {
   isPrintable,
   parseDbUpdateResult,
   parseDetectionSummary,
-  parseDiagnoserData,
   parseErrorWords,
   parseFdtData,
   parseFdtDataExplained,
@@ -179,29 +178,6 @@ describe('parseDbUpdateResult', () => {
     expect(parseDbUpdateResult({ updatedAt: 'now' })).toBeNull();
     expect(parseDbUpdateResult({})).toBeNull();
     expect(parseDbUpdateResult(NaN)).toBeNull();
-  });
-});
-
-describe('parseDiagnoserData', () => {
-  it('passes object reports through and coerces wrong-typed slots to null', () => {
-    const report = { noRocketData: { server_info: {} }, rocketData: { options: {} } };
-    expect(parseDiagnoserData(report)).toEqual(report);
-    expect(parseDiagnoserData({ noRocketData: 'bad', rocketData: {} })).toEqual({
-      noRocketData: null,
-      rocketData: {}
-    });
-  });
-
-  it('accepts both-null and rejects arrays/wrappers', () => {
-    expect(parseDiagnoserData({ noRocketData: null, rocketData: null })).toEqual({
-      noRocketData: null,
-      rocketData: null
-    });
-    expect(parseDiagnoserData([{}, {}])).toBeNull();
-    expect(parseDiagnoserData({ noRocketData: [], rocketData: {} })).toEqual({
-      noRocketData: null,
-      rocketData: {}
-    });
   });
 });
 
@@ -593,14 +569,12 @@ describe('parseFdtData', () => {
     expect(parseFdtData({ ...full, undefinedReferencesOnPage: null })).toBeNull();
     expect(parseFdtData({ ...full, wprDetections: null })).toBeNull();
     expect(parseFdtData({ ...full, preloadedResources: null })).toBeNull();
-    expect(parseFdtData({ ...full, diagnoserData: 'nope' })).toBeNull();
     expect(parseFdtData(null)).toBeNull();
     expect(parseFdtData('nope')).toBeNull();
   });
 
   it('requires every optional slot rather than guessing', () => {
     const full = { ...validFdt(), wprDetections: minimalDetections() };
-    expect(parseFdtData({ ...full, diagnoserData: undefined })).toBeNull();
     expect(parseFdtData({ ...full, preloadedResources: undefined })).toBeNull();
     expect(parseFdtData({ ...full, undefinedReferencesOnPage: undefined })).toBeNull();
   });

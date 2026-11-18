@@ -4,7 +4,7 @@ Operating guide for AI agents (and humans) working in this repository. Keep it a
 
 ## Project Overview
 
-Browser extension for debugging the [WP Rocket](https://wp-rocket.me) WordPress plugin on the front end. This repo is a **modernized port** of the legacy project [wpr-front-debugging-tool-legacy](https://github.com/wp-media/wpr-front-debugging-tool-legacy) (you might find it at `../wpr-front-debugging-tool-legacy`, check) (WXT + React 18): same feature set + new features, rebuilt on a faster stack (WXT + SolidJS). Legacy entrypoints being ported: `background`, `devtools`, `exclusion-builder` (re-planned as the in-page overlay `exclusion-overlay.content/`), `fdt` (main UI, shown as the devtools panel — ported as `panel/`), `options`, `popup`, and two content scripts (isolated world + main world — ported as `isolated.content.ts` / `main-world.content.ts`).
+Browser extension for debugging the [WP Rocket](https://wp-rocket.me) WordPress plugin on the front end. This repo is a **modernized port** of the legacy project [wpr-front-debugging-tool-legacy](https://github.com/wp-media/wpr-front-debugging-tool-legacy) (you might find it at `../wpr-front-debugging-tool-legacy`, check) (WXT + React 18): same feature set + new features, rebuilt on a faster stack (WXT + SolidJS). Legacy entrypoints being ported: `background`, `devtools`, `exclusion-builder` (re-planned as the in-page overlay `exclusion-overlay.content/`), `fdt` (main UI, shown as the devtools panel — ported as `panel/`), `options`, `popup` (deferred post-release with the Diagnoser — not shipped; the toolbar button has no popup), and two content scripts (isolated world + main world — ported as `isolated.content.ts` / `main-world.content.ts`).
 
 A **second behavioral baseline** is also being integrated: the features of [wpr-inspector](https://github.com/wp-media/wpr-inspector) (you might find it at `../wpr-inspector`, check) — WP Rocket feature detection via the `data-wpr-features` generator meta, an on-page detection strip, the RUCSS live tester, and the runtime analysis tools (beacon/LCP/script views). Same rules apply: port behavior, improve and enhance, never copy; that baseline is planned as phases P11–P14 in `docs/plans/`.
 
@@ -40,7 +40,6 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 ├── assets/                    # bundled assets: images, fonts, `assets/css/theme.css` design tokens
 ├── entrypoints/               # one folder/file per extension surface
 │   ├── background/            # service worker — listener wiring only; logic lives in lib/
-│   ├── popup/                 # browser-action popup
 │   ├── devtools/              # registers the devtools panel (points at panel.html)
 │   ├── panel/                 # main debugging UI, shown as the devtools panel (panel.html)
 │   ├── options/               # options page
@@ -203,9 +202,9 @@ Extension surfaces fail differently from web apps (asynchronous API errors, list
 
 ### UI themes: light & dark
 
-- **Every user-facing surface supports both palettes** — panel, popup, options, and every injected UI (strips, badges, overlays — the exclusion builder included): token-based theming only; tokens are palette-agnostic; no hardcoded palette colors anywhere else.
+- **Every user-facing surface supports both palettes** — panel, options, and every injected UI (strips, badges, overlays — the exclusion builder included): token-based theming only; tokens are palette-agnostic; no hardcoded palette colors anywhere else.
 - **The appearance setting has exactly three options — System (default), Dark, Light.** System follows `prefers-color-scheme`; an explicit Dark/Light always wins over it. The choice persists across surfaces (one synced option) and is resolved before the UI renders — no wrong-palette flash.
-- **Real time** — changing the appearance setting updates all surfaces immediately, including injected UIs, without a reload. The panel and options pages are the only surfaces that can change the setting; injected UIs and the popup only read it.
+- **Real time** — changing the appearance setting updates all surfaces immediately, including injected UIs, without a reload. The panel and options pages are the only surfaces that can change the setting; injected UIs only read it.
 
 ### Accessibility: minimal, effort-free
 
@@ -213,7 +212,7 @@ Internal support-team tool (owner 2026-10-27): **zero screen-reader support**. O
 
 ### UI/UX bar
 
-Every user-facing surface — panel, popup, options, exclusion builder, every injected UI, and any future one — meets **[`docs/ui-ux-bar.md`](docs/ui-ux-bar.md)**, the single declaring site of the bar: refined, fast, responsive, with restrained motion. In short: container-query layouts with no horizontal scroll down to 320 px; tokens and `components/ui/` primitives only (token contrast pinned by `theme.test.ts`); motion only through the motion tokens and the bar's closed list of moments (`opacity`/`transform`, reduced motion honored, no per-row or infinite animation outside real waits); every async state designed (no dead ends, no fake waits); visible focus; virtualized lists with no long task > 50 ms. Phase docs cite its rule ids instead of re-declaring values; every UI change receipts its §D checks.
+Every user-facing surface — panel, options, exclusion builder, every injected UI, and any future one — meets **[`docs/ui-ux-bar.md`](docs/ui-ux-bar.md)**, the single declaring site of the bar: refined, fast, responsive, with restrained motion. In short: container-query layouts with no horizontal scroll down to 320 px; tokens and `components/ui/` primitives only (token contrast pinned by `theme.test.ts`); motion only through the motion tokens and the bar's closed list of moments (`opacity`/`transform`, reduced motion honored, no per-row or infinite animation outside real waits); every async state designed (no dead ends, no fake waits); visible focus; virtualized lists with no long task > 50 ms. Phase docs cite its rule ids instead of re-declaring values; every UI change receipts its §D checks.
 
 ### Required workflow after every edit
 

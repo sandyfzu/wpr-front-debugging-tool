@@ -33,7 +33,6 @@ import {
   servableWordPressVersion
 } from '../../lib/messaging/payload-bounds';
 import type {
-  DiagnoserDocData,
   FdtData,
   PageCookies,
   PageHeaderCapture,
@@ -49,7 +48,6 @@ import type { CacheState } from '../../lib/detection/cache-context';
 import { isCacheBypassUrl } from '../../lib/wp-rocket/constants';
 import { detectPreloadedResources } from '../../lib/detection/detect-optimizations';
 import { detectWordPressVersion } from '../../lib/detection/wordpress-version';
-import { extractDiagnoserData } from '../../lib/diagnostics/extract';
 import { createLogger } from '../../lib/logger';
 import { rucssTestModeFor } from './rucss-test';
 import {
@@ -137,7 +135,6 @@ export function createCaptureWaitPoint(
 export interface PageData {
   detections: WprDetections;
   preloadedResources: PreloadedResources;
-  diagnoserData: DiagnoserDocData | null;
   /** The WordPress core version the generator meta declared (within the version cap), or null. */
   wordpressVersion: string | null;
   /** The page carries WP Rocket's generator meta, readable or degraded (never on a bypass render). */
@@ -180,7 +177,7 @@ export function pageDataFor(ctx: ContentScriptContext): PageDataRead | null {
 
 /**
  * Run the whole page pass over serialized HTML: detection engine, preloaded
- * resources, diagnoser report, the WordPress generator version.
+ * resources, the WordPress generator version.
  *
  * The page parses once (`parsePage`) and every consumer reads that same tree —
  * the single-`DOMParser` shape of the pass minus the engine's repeated document
@@ -193,9 +190,8 @@ export function pageDataFor(ctx: ContentScriptContext): PageDataRead | null {
  * @param verify Verifies the page's simulation marker — asked only when the
  *   page carries a well-formed one (default: vouches for nothing, so a
  *   marker reads as unverified and changes no verdict).
- * @returns The results; diagnoser data nulls per element when its content is
- *   unreliable. Throws only for impossible callers (engine checks branch on
- *   anything a page can contain).
+ * @returns The results. Throws only for impossible callers (engine checks
+ *   branch on anything a page can contain).
  */
 export async function processSerializedPage(
   pageHTML: string,
@@ -211,11 +207,9 @@ export async function processSerializedPage(
   // Bounded once at collection: the strip (same-context read) and the panel
   // payload carry the same value — an over-cap version is dropped, not clipped.
   const wordpressVersion = servableWordPressVersion(detectWordPressVersion(page.document));
-  const diagnoserData = await extractDiagnoserData(page.document);
   return {
     detections,
     preloadedResources,
-    diagnoserData,
     wordpressVersion,
     wprGeneratorMeta: page.featureMeta.attributePresent
   };
@@ -266,7 +260,6 @@ export function composeFdtData(data: PageData, live: LivePageFacts): FdtData {
     undefinedReferencesOnPage: live.undefinedReferences,
     wprDetections: servedDetections(data),
     preloadedResources: boundPreloadedResources(data.preloadedResources),
-    diagnoserData: data.diagnoserData,
     ...(live.headerCapture?.truncated === true ? { pageHeadersTruncated: true as const } : {}),
     ...(live.bypassAttested ? { bypassAttested: true as const } : {}),
     ...(data.wprGeneratorMeta ? { wprGeneratorMeta: true as const } : {}),

@@ -64,7 +64,7 @@ function actionDeps(options?: { data: FdtData | null }): {
 }
 
 describe('createPageCommands (the pages half)', () => {
-  it('mirrors the nav registry exactly: order, labels, group hints, reserved gates', () => {
+  it('mirrors the nav registry exactly: order, labels, group hints, always enabled', () => {
     const deps: PageCommandDeps = {
       navigate: vi.fn(),
       currentRoute: () => 'detections',
@@ -78,8 +78,9 @@ describe('createPageCommands (the pages half)', () => {
       expect(row.id).toBe(`page-${source.id}`);
       expect(row.label).toBe(source.label);
       expect(row.hint).toBe(source.group);
-      expect(row.disabled).toBe(source.reserved ?? false);
-      expect(row.disabledNote).toBe(source.reservedNote);
+      // Every page exists, so no page row is ever gated.
+      expect(row.disabled).toBeUndefined();
+      expect(row.disabledNote).toBeUndefined();
     });
   });
 

@@ -42,12 +42,12 @@ afterEach(() => {
 describe('Tabs', () => {
   it('renders the APG semantics and marks the first enabled tab selected', () => {
     render(() => (
-      <Tabs items={ITEMS} label="Diagnoser views">
+      <Tabs items={ITEMS} label="Report views">
         <BILL />
       </Tabs>
     ));
     const list = screen.getByRole('tablist');
-    expect(list.getAttribute('aria-label')).toBe('Diagnoser views');
+    expect(list.getAttribute('aria-label')).toBe('Report views');
     const tabs = screen.getAllByRole('tab');
     expect(tabs).toHaveLength(3);
     expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
@@ -183,7 +183,7 @@ describe('Tabs', () => {
     expect(disabledTab.getAttribute('aria-selected')).toBe('false');
   });
 
-  it('fragments the disabled treatment from the hover treatment (reserved-row tooltips)', () => {
+  it('fragments the disabled treatment from the hover treatment (disabled-but-explained tooltips)', () => {
     // The disabled row keeps hover reachable (no pointer-events kill) so a
     // tooltip can explain it, while the hover tint stays enabled-only —
     // pinned as class composition: the two fragments never share classes.

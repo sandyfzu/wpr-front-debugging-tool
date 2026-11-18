@@ -65,10 +65,6 @@ export const INLINE_WRAP_CLOSE = '});';
 /** Attribute marking WP Rocket-preloaded subresources on `link` elements. */
 export const WPR_PRELOAD_ATTRIBUTE = 'data-rocket-preload';
 
-/** Diagnoser script element ids: pages embed the plugin report as JSON text nodes. */
-export const DIAGNOSER_NO_ROCKET_DATA_ID = 'wpr-diagnoser-no-rocket-json-data';
-export const DIAGNOSER_ROCKET_DATA_ID = 'wpr-diagnoser-rocket-json-data';
-
 /**
  * Type-attribute value on delayed scripts from WP Rocket versions before 3.20.6.
  */
