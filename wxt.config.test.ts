@@ -36,6 +36,20 @@ describe('manifest browser_specific_settings', () => {
   });
 });
 
+describe('manifest toolbar button', () => {
+  it('declares the button without a popup in the config for every target', async () => {
+    for (const browser of ['chrome', 'edge', 'firefox']) {
+      // The badge and the action-menu rows need the key; WXT emits it only
+      // for a popup entrypoint, so the config declares it. This reads the
+      // config's raw `action`; WXT renames it `browser_action` in the MV2
+      // manifest it writes, which only a build shows.
+      expect((await manifestFor(browser)).action).toEqual({
+        default_title: 'WPR Front Debugging Tool'
+      });
+    }
+  });
+});
+
 describe('extension namespace alias', () => {
   it('resolves exactly `@wxt-dev/browser` to the project resolver in every build', async () => {
     const vite = config.vite;

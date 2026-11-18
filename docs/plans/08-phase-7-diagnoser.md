@@ -2,7 +2,7 @@
 
 ## TLDR
 
-**Deferred post-release** (owner 2026-11-17): first release ships without Diagnoser parity (accepted); runs only if a rebuilt Support Diagnoser ships. Parser/extraction already ship; adapt them to v2 before rendering; reserved nav row remains disabled/explained until then. Technical dependencies:P1/P5/P6+rebuilt plugin; independent P9/parked P10 need not wait (P8 deferred pre-release). Installed WXT/Solid/TS, shared UI/JSON tree, Vitest/Playwright; no planned dependency additions.
+**Deferred post-release** (owner 2026-11-17): first release ships without Diagnoser parity (accepted); runs only if a rebuilt Support Diagnoser ships. **Report extraction removed pre-release** (owner 2026-11-17): a revival must re-add it for the v2 print — page parse of the report elements (repair tolerant, e.g. `jsonrepair`), the `FdtData` field + its boundary validator, data-hub wiring, export redaction coverage, fixtures. **Nav entry removed pre-release** (2026-11-17, with the reserved-row machinery only it used): a revival re-adds the `diagnoser` route id + `NAV_ROUTES` row (`Diagnose` group, `reading: true`, icon) + its `PAGES` body (full `Record`, type-checked) and the e2e route lists (`panel-layout*`, `panel-nav`); the palette row follows the registry. Technical dependencies:P1/P5/P6+rebuilt plugin; independent P9/parked P10 need not wait (P8 deferred pre-release). Installed WXT/Solid/TS, shared UI/JSON tree, Vitest/Playwright; no planned dependency additions.
 
 ## Reference and retained requirements
 

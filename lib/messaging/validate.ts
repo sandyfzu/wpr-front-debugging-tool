@@ -23,7 +23,6 @@ import type {
   BeaconFeatureStatus,
   BuilderFact,
   SimulationFact,
-  DiagnoserDocData,
   FdtData,
   FeatureEvidenceSource,
   PageCookies,
@@ -305,22 +304,6 @@ export function parseDbUpdateResult(input: unknown): DbUpdateResult | null {
   const updatedAt = input['updatedAt'];
   if (typeof updatedAt !== 'number' || !Number.isFinite(updatedAt)) return null;
   return { updatedAt };
-}
-
-/**
- * Structural sanity for the parsed diagnoser report — the payload itself is
- * arbitrary page-provided JSON, so only the two report slots are checked here
- * (`null` or object) and both slots are rebuilt as fresh own-key objects;
- * depth, hostile values and rendering stay with consumers.
- */
-export function parseDiagnoserData(input: unknown): DiagnoserDocData | null {
-  if (!isRecord(input)) return null;
-  const noRocket = input['noRocketData'];
-  const rocket = input['rocketData'];
-  return {
-    noRocketData: isRecord(noRocket) ? { ...noRocket } : null,
-    rocketData: isRecord(rocket) ? { ...rocket } : null
-  };
 }
 
 /**
@@ -1363,9 +1346,6 @@ export function parseFdtData(input: unknown): FdtData | null {
     return reject('preloadedResources');
   const preloadedResources = parsePreloadedResources(preloadedResourcesRaw);
   if (preloadedResources === null) return reject('preloadedResources');
-  const diagnoserRaw = input['diagnoserData'];
-  const diagnoserData = diagnoserRaw === null ? null : parseDiagnoserData(diagnoserRaw);
-  if (diagnoserRaw !== null && diagnoserData === null) return reject('diagnoserData');
   if (typeof input['allScriptsLoaded'] !== 'boolean') return reject('allScriptsLoaded');
   const scriptSnapshotId = input['scriptSnapshotId'];
   if (scriptSnapshotId !== undefined && !isScriptSnapshotId(scriptSnapshotId))
@@ -1377,7 +1357,6 @@ export function parseFdtData(input: unknown): FdtData | null {
     undefinedReferencesOnPage,
     wprDetections,
     preloadedResources,
-    diagnoserData,
     ...(headersMark === true ? { pageHeadersTruncated: true as const } : {})
   };
   // Additive top-level field. An own `undefined` reads exactly like absence

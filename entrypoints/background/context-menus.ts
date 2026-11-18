@@ -140,10 +140,9 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
   },
   {
     // The per-origin override of the on-page detection widget's global
-    // default (default-on; the entry wins) — the same store item the
-    // full phase's popup/Detections/options rows will write, so the
-    // page-level toggle exists on the pages themselves before those
-    // surfaces do. Flipping recomputes from the site's effective state,
+    // default (default-on; the entry wins) — the same store item every
+    // other writer toggles, so the page-level toggle lives on the pages
+    // themselves. Flipping recomputes from the site's effective state,
     // so every right-click changes the site's visible state.
     action: 'toggle-detection-widget',
     id: CONTEXT_MENU_IDS.toggleDetectionWidget,
@@ -699,8 +698,7 @@ export function registerContextMenus(refreshDatabase: () => Promise<DbUpdateResu
     openExclusionBuilder: (tabId) => openExclusionOverlay(tabId),
     refreshDatabase,
     // The on-page widget's per-origin override writes through the storage
-    // module's one toggle — the menu row is the page-context writer; the
-    // popup and the options row write the same item later.
+    // module's one toggle — the menu row is the page-context writer.
     toggleDetectionWidget: toggleDetectionWidgetSite,
     openUrl: (url, placement) => browser.tabs.create({ url, ...placement }),
     togglePageUiGate: () => gate.toggle()

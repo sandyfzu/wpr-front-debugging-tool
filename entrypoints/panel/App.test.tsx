@@ -1,8 +1,7 @@
 /**
  * The panel shell's render tests: boot states render as real states
  * (skeleton → page body), the error branch renders its retry (and a retry
- * click recovers), the header nav is registry-driven (five navigable rows,
- * the reserved Diagnoser row disabled with its explaining trigger), route
+ * click recovers), the header nav is registry-driven (every row a link), route
  * switching swaps the body for the registry row's own page (exactly one h1
  * in the document at any time) and resets the search store; a soft refresh
  * preserves the mounted page (node identity, scroll, focus, route) while the
@@ -117,9 +116,7 @@ describe('PanelApp boot states', () => {
       hashTo(id);
       const shell = makeShell();
       render(() => <PanelApp search={shell.search} data={shell.data} />);
-      const expected = ['undefined-references', 'diagnoser'].includes(id)
-        ? 'max-w-4xl'
-        : 'max-w-7xl';
+      const expected = id === 'undefined-references' ? 'max-w-4xl' : 'max-w-7xl';
       /** Assert the width policy without relying on layout unavailable in happy-dom. */
       const assertCanvas = (): void => {
         const body = document.querySelector('[data-fdt="panel-content"] [data-fdt="page-body"]');
@@ -294,13 +291,6 @@ describe('PanelApp shell structure', () => {
     expect(screen.getByRole('link', { name: 'JavaScript' }).getAttribute('aria-current')).toBe(
       'page'
     );
-  });
-
-  it('renders the reserved Diagnoser row disabled (explained, never dead)', () => {
-    const shell = makeShell();
-    render(() => <PanelApp search={shell.search} data={shell.data} />);
-    const reserved = screen.getByRole('button', { name: 'Diagnoser' });
-    expect(reserved.getAttribute('disabled')).not.toBeNull();
   });
 
   it('keeps the rail geometry (header column with its right edge) at every width', async () => {

@@ -75,13 +75,9 @@ describe('the keyboard overlays in the shell', () => {
     fireEvent.click(trigger);
     await paletteField();
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    // Pages and actions render; the reserved row explains itself; the export
-    // row is enabled (the boot data settled).
+    // Pages and actions render.
     expect(screen.getByRole('option', { name: /Detections/ })).toBeTruthy();
     expect(screen.getByRole('option', { name: /Export JSON/ })).toBeTruthy();
-    expect(screen.getByRole('option', { name: /Diagnoser/ }).getAttribute('aria-disabled')).toBe(
-      'true'
-    );
   });
 
   it('running a page row closes the palette and swaps the route body', async () => {

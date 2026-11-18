@@ -3,9 +3,8 @@
  *
  * Feature options are named by the feature labels (`lib/detection/labels`,
  * the one declaring site of feature names), so an option row and a feature
- * card can never spell one feature two ways; the two JSON maps carry the
- * rest of the plugin vocabulary (non-feature options and diagnoser labels).
- * `getRealOptionName` is the single accessor. The JSON is imported
+ * card can never spell one feature two ways; the JSON map carries the
+ * non-feature options. `getRealOptionName` is the single accessor. The JSON is imported
  * statically (small, always needed) so typings flow through the bundler.
  */
 
@@ -31,7 +30,6 @@ import {
   LABEL_WP_ROCKET
 } from '../detection/labels';
 import optionNames from './option-names.json' with { type: 'json' };
-import otherNames from './other-names.json' with { type: 'json' };
 
 /** Option ids that name a detected feature (or the plugin) → its feature label. */
 export const FEATURE_OPTION_LABELS: Readonly<Record<string, string>> = {
@@ -59,14 +57,13 @@ export const FEATURE_OPTION_LABELS: Readonly<Record<string, string>> = {
 /** Internal option id → user-facing label. */
 const OPTION_NAMES: ReadonlyMap<string, string> = new Map<string, string>([
   ...Object.entries<string>(optionNames),
-  ...Object.entries<string>(otherNames),
   ...Object.entries(FEATURE_OPTION_LABELS)
 ]);
 
 /**
- * Label for an option id, or the id itself when unmapped (the diagnoser can
- * surface option ids this file does not know yet — showing the raw id is the
- * honest fallback and beats a collected crash).
+ * Label for an option id, or the id itself when unmapped (a caller can pass
+ * option ids this file does not know yet — showing the raw id is the honest
+ * fallback and beats a collected crash).
  */
 export function getRealOptionName(option: string): string {
   return OPTION_NAMES.get(option) ?? option;

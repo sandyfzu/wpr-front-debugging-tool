@@ -13,7 +13,6 @@ import { EXPORT_REDACTION_NOTICE, redactPageDataForExport } from '../../../lib/r
 import {
   PLANTED,
   PLANTED_INLINE_BODIES,
-  PLANTED_OPTIONS,
   PLANTED_RAW_HEADERS
 } from '../../../lib/redaction/planted-secrets.fixtures';
 
@@ -105,8 +104,7 @@ describe('exportPageDataJson', () => {
             minifyAttribute: false
           }))
         }
-      },
-      diagnoserData: { noRocketData: { constants: PLANTED_OPTIONS }, rocketData: null }
+      }
     });
     const result = await exportPageDataJson(
       planted,

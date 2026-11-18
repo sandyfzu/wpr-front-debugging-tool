@@ -18,7 +18,7 @@ const AXE_SOURCE = readFileSync(
   'utf8'
 );
 
-/** All shipped routes plus the reserved page, with their expected width policy. */
+/** Every route, with its label (the width policy is pinned per id below). */
 const ROUTES = [
   { id: 'detections', label: 'Detections' },
   { id: 'javascript', label: 'JavaScript' },
@@ -27,7 +27,6 @@ const ROUTES = [
   { id: 'preloaded-resources', label: 'Preloaded Resources' },
   { id: 'headers-cookies', label: 'Headers & Cookies' },
   { id: 'undefined-references', label: 'Undefined References' },
-  { id: 'diagnoser', label: 'Diagnoser' },
   { id: 'rucss-tester', label: 'RUCSS Tester' },
   { id: 'beacon-tester', label: 'Beacon Tester' },
   { id: 'lcp-vitals', label: 'LCP & Vitals' }
@@ -146,7 +145,7 @@ for (const theme of ['light', 'dark'] as const) {
                 overflow: element.scrollWidth - element.clientWidth
               };
             });
-            const cap = ['undefined-references', 'diagnoser'].includes(route.id) ? 896 : 1280;
+            const cap = route.id === 'undefined-references' ? 896 : 1280;
             expect(geometry.canvasWidth).toBeCloseTo(Math.min(geometry.regionWidth, cap), 0);
             expect(Math.abs(geometry.left - geometry.right)).toBeLessThanOrEqual(1);
             expect(geometry.headerWidth).toBeCloseTo(geometry.canvasWidth - 24, 0);

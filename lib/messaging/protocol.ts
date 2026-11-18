@@ -7,10 +7,10 @@
  *   edit established rows.
  * - Payloads and returns are validated at the receiving boundary with the
  *   guards in `lib/messaging/validate` whenever they originate from the page.
- * - **tabId never appears in a payload.** Content scripts, devtools, popup and
+ * - **tabId never appears in a payload.** Content scripts, devtools and
  *   options send *without* tab targeting: the background resolves the sender
  *   from its runtime `sender` (`onMessage` exposes it). Senders that must
- *   reach one specific tab (devtools/popup/background → content script) pass
+ *   reach one specific tab (devtools/background → content script) pass
  *   the tab id as `sendMessage`'s third argument, never inside the data.
  *   (`panelSearch` is the one exception: devtools→panel is an extension-
  *   internal send with no runtime sender tab, so its payload carries the
@@ -95,7 +95,7 @@ export interface ProtocolMap {
   getFdtData(): FdtData | null;
   /** Panel → tab: bounded read from the exact immutable script capture. */
   getScriptSourceChunk(data: ScriptSourceRequest): ScriptSourceReply;
-  /** Popup → tab content script: detections only. */
+  /** Extension page → tab content script: the served detections alone. */
   getWprDetections(): WprDetections | null;
   /** Content script → devtools (push, sender-tab checked): reload the panel. */
   notifyPanelReload(): true;

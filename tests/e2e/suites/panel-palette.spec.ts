@@ -7,8 +7,8 @@
  * the overlay chords and the hint-matches-binding rows — and a single jump
  * (the launcher at overflow heights) is `panel-nav`'s. The reception this
  * suite adds: every registry page reachable from the palette on real data,
- * the shortcuts overlay listing the advertised set, the reserved row
- * declining to run, the export row's data gate open, and the Reload
+ * the shortcuts overlay listing the advertised set, the export row's data
+ * gate open, and the Reload
  * action's refresh flight re-settling the strip's freshness answer through
  * the real machine.
  */
@@ -109,9 +109,7 @@ function captureStamp(page: Page): Promise<string | null> {
 }
 
 test.describe('command palette over the data path', () => {
-  test('jumps to every page; the reserved row declines; the export row’s gate is open', async ({
-    extension
-  }) => {
+  test('jumps to every page; the export row’s gate is open', async ({ extension }) => {
     const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
     try {
       await expect
@@ -127,15 +125,11 @@ test.describe('command palette over the data path', () => {
         await expect.poll(async () => await h1(panel)).toBe(jump.heading);
       }
 
-      // One open to read the row states: the reserved row carries its
-      // disabled explanation (it exists but never runs) and the export row
-      // is runnable thanks to the loaded data (its gate is the open state).
+      // One open to read the row states: the export row is runnable thanks
+      // to the loaded data (its gate is the open state).
       await panel.keyboard.press('ControlOrMeta+k');
       const field = panel.getByRole('combobox');
       await expect(field).toBeVisible();
-      const reserved = panel.getByRole('option', { name: 'Diagnoser' });
-      await expect(reserved).toHaveAttribute('aria-disabled', 'true');
-      await expect(reserved).toContainText('Returns with the Diagnoser plugin v2');
       const exportRow = panel.getByRole('option', { name: 'Export JSON' });
       await expect(exportRow).toBeVisible();
       // Kobalte stamps the flag on every row; the enabled state reads false.

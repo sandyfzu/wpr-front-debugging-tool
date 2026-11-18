@@ -6,7 +6,7 @@
  * Precedence: an explicit per-origin entry wins over the global default (the
  * `features.detectionWidget` option, `./options` — on by default), and
  * origins without an entry follow it. Every writer (the context-menu row,
- * the command palette; the popup's row later) toggles through the one
+ * the command palette) toggles through the one
  * helper here, so the toggling semantics live exactly once: a toggle flips
  * the site's current effective state and persists it as an explicit entry —
  * read-modify-write over the validated shape, bounded, and coercing corrupt

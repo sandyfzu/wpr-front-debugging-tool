@@ -135,24 +135,6 @@
           "deferredByWPR": false,
           "fdtExcluded": null,
           "minifyAttribute": false
-        },
-        {
-          "delayed": false,
-          "inline": true,
-          "content": "{\"wpr_plugin\":{\"version\":\"3.20.6.1\"},\"get_rocket_option\":{\"delay_js\":{\"option_value\":true},\"version\":\"3.20.6.1\"},\"server_info\":{\"server_load\":\"1.4\",\"web_server\":\"nginx\",\"php_memory_limit\":\"256M\"},\"wpr_diagnoser_version\":\"2.1\"}",
-          "deferred": false,
-          "deferredByWPR": false,
-          "fdtExcluded": null,
-          "minifyAttribute": false
-        },
-        {
-          "delayed": false,
-          "inline": true,
-          "content": "{\"options\":{\"delay_js\":{\"option_name\":\"delay_js\",\"get_rocket_option\":{\"value\":\"1\"}}},\"post_meta_excluded_options\":{\"cdn\":false}}",
-          "deferred": false,
-          "deferredByWPR": false,
-          "fdtExcluded": null,
-          "minifyAttribute": false
         }
       ],
       "version": "3.20.6",

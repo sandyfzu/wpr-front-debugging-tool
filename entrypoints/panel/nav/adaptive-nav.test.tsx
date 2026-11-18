@@ -1,9 +1,8 @@
 /**
  * The nav's render tests: the registry's full row set (one element per
  * row), the icon rail's class anatomy (no container variants — the rail is
- * the form at every width), real anchor links with `aria-current`, the
- * reserved row explained by its tooltip, and live state resolving from the
- * row's own selector into that tooltip — including the throw-containment
+ * the form at every width), real anchor links with `aria-current`, and live
+ * state resolving from the row's own selector into the row's tooltip — including the throw-containment
  * that keeps a registry bug from taking the nav down.
  *
  * The overflow affordance tests drive the measure seam with synthetic rail
@@ -93,10 +92,9 @@ function layoutRows(): readonly RailRowBox[] {
     { route: 'preloaded-resources', top: 153, height: 32 },
     { route: 'headers-cookies', top: 189, height: 32 },
     { route: 'undefined-references', top: 234, height: 32 },
-    { route: 'diagnoser', top: 270, height: 32 },
-    { route: 'rucss-tester', top: 315, height: 32 },
-    { route: 'beacon-tester', top: 351, height: 32 },
-    { route: 'lcp-vitals', top: 387, height: 32 }
+    { route: 'rucss-tester', top: 279, height: 32 },
+    { route: 'beacon-tester', top: 315, height: 32 },
+    { route: 'lcp-vitals', top: 351, height: 32 }
   ] as const;
 }
 
@@ -159,7 +157,7 @@ function syntheticRail(initialHeight: number): SyntheticRail {
 }
 
 describe('AdaptiveNav structure', () => {
-  it('renders the registry as one nav: four named group lists, every row once', () => {
+  it('renders the registry as one nav: four named group lists, every row a link once', () => {
     renderNav();
     const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
     expect(document.querySelectorAll('nav')).toHaveLength(1); // never two trees
@@ -186,7 +184,8 @@ describe('AdaptiveNav structure', () => {
     // bare labels as accessible names.
     expect(screen.getByRole('link', { name: 'Detections' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'JavaScript' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Diagnoser' })).toBeTruthy();
+    // Every registry row is navigable: no disabled control sits in the rail.
+    expect(nav.querySelectorAll('button[disabled]')).toHaveLength(0);
   });
 
   it('is the icon rail at every width (the classes carry no container variants)', () => {
@@ -245,7 +244,6 @@ describe('AdaptiveNav structure', () => {
       'preloaded-resources',
       'headers-cookies',
       'undefined-references',
-      'diagnoser',
       'rucss-tester',
       'beacon-tester',
       'lcp-vitals'
@@ -253,36 +251,33 @@ describe('AdaptiveNav structure', () => {
   });
 });
 
-describe('AdaptiveNav reserved row', () => {
-  it('renders disabled and explains itself on hover', () => {
+describe('AdaptiveNav row tooltip', () => {
+  it('opens on hover with the row’s label, described by the anchor', () => {
     vi.useFakeTimers();
     try {
       renderNav();
-      const reserved = screen.getByRole('button', { name: 'Diagnoser' });
-      expect(reserved.getAttribute('disabled')).not.toBeNull();
-      // No anchor form for a reserved row — it must not open a page that
-      // does not exist.
-      expect(reserved.closest('a')).toBeNull();
+      const row = screen.getByRole('link', { name: 'Stylesheets' });
       expect(screen.queryByRole('tooltip')).toBeNull();
-      fireEvent.pointerEnter(reserved);
+      fireEvent.pointerEnter(row);
       vi.advanceTimersByTime(350);
       const content = screen.getByRole('tooltip');
-      expect(content.textContent).toContain('Returns with the Diagnoser plugin v2');
-      expect(reserved.getAttribute('aria-describedby')).toBe(content.id);
+      expect(content.textContent).toBe('Stylesheets');
+      expect(row.getAttribute('aria-describedby')).toBe(content.id);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('keeps its resting look under the pointer, unlike a live row', () => {
+  it('carries the shared hover treatment on every non-active row', () => {
     renderNav();
+    const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
     const hover = (element: Element): string[] =>
       element.className.split(/\s+/).filter((token) => token.startsWith('hover:'));
-    const reserved = screen.getByRole('button', { name: 'Diagnoser' });
-    expect(hover(reserved)).toEqual([]);
-    const live = document.querySelector('a[href="#/javascript"]');
-    expect(live).not.toBeNull();
-    expect(hover(live ?? reserved)).toEqual(['hover:bg-surface-3', 'hover:text-fg-primary']);
+    const rows = [...nav.querySelectorAll('a[href^="#/"]:not([aria-current])')];
+    expect(rows).toHaveLength(9); // every row but the active Detections
+    for (const row of rows) {
+      expect(hover(row)).toEqual(['hover:bg-surface-3', 'hover:text-fg-primary']);
+    }
   });
 });
 
@@ -451,7 +446,7 @@ describe('AdaptiveNav overflow — the geometry stub', () => {
     renderNav();
     const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
     const stubRows = [...nav.querySelectorAll(`[${NAV_MIRROR_ROW_ATTR}]`)] as HTMLElement[];
-    expect(stubRows).toHaveLength(11); // every registry row, in order
+    expect(stubRows).toHaveLength(10); // every registry row, in order
     expect(stubRows.map((row) => row.getAttribute(NAV_MIRROR_ROW_ATTR))).toEqual([
       'detections',
       'javascript',
@@ -460,7 +455,6 @@ describe('AdaptiveNav overflow — the geometry stub', () => {
       'preloaded-resources',
       'headers-cookies',
       'undefined-references',
-      'diagnoser',
       'rucss-tester',
       'beacon-tester',
       'lcp-vitals'
@@ -489,7 +483,7 @@ describe('AdaptiveNav overflow — the slice', () => {
     renderNav({ measure: () => null, watch: staticWatch() });
     expect(screen.getByRole('link', { name: 'Detections' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Preloaded Resources' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Diagnoser' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'LCP & Vitals' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeNull();
   });
 
@@ -503,7 +497,7 @@ describe('AdaptiveNav overflow — the slice', () => {
     // The suffix is not in the rail’s DOM at all (the rail never renders
     // invisible rows — its content is exactly its visible content).
     expect(nav.querySelector('a[href="#/lazyload"]')).toBeNull();
-    expect(nav.querySelector('a[href="#/diagnoser"]')).toBeNull();
+    expect(nav.querySelector('a[href="#/lcp-vitals"]')).toBeNull();
     // The trigger: the “More pages” affordance.
     expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
   });
@@ -516,7 +510,7 @@ describe('AdaptiveNav overflow — the slice', () => {
       screen
         .getByRole('navigation', { name: 'WPR FDT pages' })
         .querySelectorAll(
-          'a[href="#/detections"], a[href="#/javascript"], a[href="#/stylesheets"], a[href="#/lazyload"], a[href="#/preloaded-resources"], a[href="#/headers-cookies"], a[href="#/undefined-references"], a[href="#/rucss-tester"], a[href="#/beacon-tester"], a[href="#/lcp-vitals"], button[disabled]'
+          'a[href="#/detections"], a[href="#/javascript"], a[href="#/stylesheets"], a[href="#/lazyload"], a[href="#/preloaded-resources"], a[href="#/headers-cookies"], a[href="#/undefined-references"], a[href="#/rucss-tester"], a[href="#/beacon-tester"], a[href="#/lcp-vitals"]'
         ).length;
     expect(railControls()).toBe(1); // Detections only
     expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
@@ -526,7 +520,7 @@ describe('AdaptiveNav overflow — the slice', () => {
     expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
 
     rail.resize(9999);
-    expect(railControls()).toBe(11); // the full rail back, reserved row included
+    expect(railControls()).toBe(10); // the full rail back
     expect(screen.queryByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeNull();
   });
 
@@ -566,13 +560,13 @@ describe('AdaptiveNav overflow — the slice', () => {
   });
 
   it('fits exactly at the boundary: every row stays (the trigger never appears)', () => {
-    renderNav({ measure: syntheticRail(419).measure, watch: staticWatch() });
+    renderNav({ measure: syntheticRail(383).measure, watch: staticWatch() });
     expect(screen.queryByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeNull();
     expect(screen.getByRole('link', { name: 'LCP & Vitals' })).toBeTruthy();
   });
 
   it('one pixel short of the boundary, the last row leaves for the trigger', () => {
-    renderNav({ measure: syntheticRail(418).measure, watch: staticWatch() });
+    renderNav({ measure: syntheticRail(382).measure, watch: staticWatch() });
     expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'LCP & Vitals' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Beacon Tester' })).toBeTruthy();
@@ -594,23 +588,25 @@ describe('AdaptiveNav overflow — the “More pages” menu', () => {
       ['Lazyload', '#/lazyload'],
       ['Preloaded Resources', '#/preloaded-resources'],
       ['Headers & Cookies', '#/headers-cookies'],
-      ['Undefined References', '#/undefined-references']
+      ['Undefined References', '#/undefined-references'],
+      ['RUCSS Tester', '#/rucss-tester'],
+      ['Beacon Tester', '#/beacon-tester'],
+      ['LCP & Vitals', '#/lcp-vitals']
     ] as const) {
       const item = within(menu).getByRole('menuitem', { name: label });
       expect(item.getAttribute('href')).toBe(href);
     }
-    // The reserved row: disabled menuitem with its note, no href.
-    const reserved = within(menu).getByRole('menuitem', { name: 'Diagnoser' });
-    expect(reserved.getAttribute('aria-disabled')).toBe('true');
-    expect(reserved.getAttribute('href')).toBeNull();
-    expect(menu.textContent.includes('Returns with the Diagnoser plugin v2')).toBe(true);
+    // Exactly the hidden suffix: every item is an enabled link.
+    const items = within(menu).getAllByRole('menuitem');
+    expect(items).toHaveLength(8);
+    expect(items.every((item) => item.getAttribute('aria-disabled') !== 'true')).toBe(true);
   });
 
   it('puts a separator exactly where the hidden rows change group', async () => {
     renderNav({ measure: syntheticRail(90).measure, watch: staticWatch() });
     openMenu();
     const menu = await screen.findByRole('menu');
-    // Hidden rows span Inspect (3) + Diagnose (2) + Tools (2): two
+    // Hidden rows span Inspect (4) + Diagnose (1) + Tools (3): two
     // separators, and no group captions (the rail shows none either).
     expect(within(menu).getAllByRole('separator')).toHaveLength(2);
   });

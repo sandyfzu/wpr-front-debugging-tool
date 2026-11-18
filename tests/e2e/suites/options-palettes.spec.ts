@@ -16,9 +16,6 @@
  *   panel document, the injected side-by-side overlay (the mount's shared
  *   live-theme leg, the code path every injected UI rides) and the on-page
  *   detection strip (over the real site) with no reload anywhere.
- *
- * The popup is excluded honestly: it is the unported stock template (its
- * phase owns the wiring) — this suite drives the surfaces that exist.
  */
 
 import type { Page } from '@playwright/test';

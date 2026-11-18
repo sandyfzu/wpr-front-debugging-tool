@@ -56,7 +56,6 @@ function makeData(overrides?: Partial<Pick<FdtData, 'pageHeaders' | 'wprDetectio
     undefinedReferencesOnPage: [],
     wprDetections: fullDetections(),
     preloadedResources: { present: false },
-    diagnoserData: null,
     ...overrides
   };
 }

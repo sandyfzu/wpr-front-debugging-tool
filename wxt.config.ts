@@ -79,6 +79,12 @@ export default defineConfig({
     // `description` and `version` are filled from package.json by default.
     // Chromium floor per project policy; see AGENTS.md (Chromium-based primary target).
     minimum_chrome_version: '145',
+    // The toolbar button, declared without a popup: it carries the per-tab
+    // detection badge and the action-menu rows (`contextMenus` context
+    // `action`); a left click opens nothing. Declared here because WXT only
+    // emits the key for a popup entrypoint; the MV2 build gets it renamed to
+    // `browser_action`. The tooltip names the extension.
+    action: { default_title: NAME },
     // Firefox only: the add-on id (see FIREFOX_ADDON_ID) and the supported
     // floor — without it any old Firefox could install a build it was never
     // verified on.
@@ -146,9 +152,8 @@ export default defineConfig({
       ...(browser === 'firefox' ? ['webRequestBlocking'] : [])
     ],
     // Required for `webRequest` main-frame header capture (the source omitted these,
-    // putting that feature at risk) and lets the popup read the active web tab's URL
-    // without the `tabs` permission. `tabs` is intentionally NOT requested; the
-    // phases that would need it must first verify they cannot work without it.
+    // putting that feature at risk). `tabs` is intentionally NOT requested; a
+    // feature that would need it must first verify it cannot work without it.
     // Same list the runtime listeners use — single-sourced in lib/wp-rocket/constants.
     // It also covers the RUCSS test's one request, sent by the background only
     // when the user starts a test, to the fixed WP Rocket service

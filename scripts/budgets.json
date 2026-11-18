@@ -62,13 +62,6 @@
     "required": true
   },
   {
-    "surface": "popup JS",
-    "globs": ["chunks/popup-*.js", "popup.js"],
-    "maxKb": {
-      "raw": 50
-    }
-  },
-  {
     "surface": "options JS",
     "globs": ["chunks/options-*.js", "options.js"],
     "maxKb": {

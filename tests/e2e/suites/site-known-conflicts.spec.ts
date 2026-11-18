@@ -9,7 +9,7 @@
  * Assert surfaces (named per assert): the shadow-DOM probe of the injected
  * Known Conflicts UI (badge + list), the SW-side storage read-back
  * (`known-conflicts-db` + its `$` meta item), and the background serve path
- * answered through the popup page's runtime send (a real tabless extension
+ * answered through the options page's runtime send (a real tabless extension
  * context).
  *
  * Independent expectation derivation: the expected findings are computed
@@ -280,9 +280,9 @@ siteTest.describe('site known conflicts', () => {
       // state is assertable. The SERVE PATH's contract is what this pins:
       // whatever the storage state, the ask never returns without rows.
       const worker = await extension.serviceWorker();
-      const popupPage = await extension.browserContext.newPage();
-      await popupPage.goto(`chrome-extension://${new URL(worker.url()).host}/popup.html`);
-      const reply = (await popupPage.evaluate(
+      const extensionPage = await extension.browserContext.newPage();
+      await extensionPage.goto(`chrome-extension://${new URL(worker.url()).host}/options.html`);
+      const reply = (await extensionPage.evaluate(
         async () =>
           await new Promise<unknown>((resolve) => {
             chrome.runtime.sendMessage(

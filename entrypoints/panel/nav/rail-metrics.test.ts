@@ -86,11 +86,15 @@ describe('realRailMeasure', () => {
       rows: [
         { route: 'detections', left: 0, top: 0, height: 32 },
         { route: 'lazyload', left: 0, top: 75, height: 32 },
-        { route: 'diagnoser', left: 0, top: 186, height: 32 }
+        { route: 'undefined-references', left: 0, top: 186, height: 32 }
       ]
     });
     const measured = realRailMeasure(rail as unknown as HTMLElement);
-    expect(measured?.rows.map((row) => row.route)).toEqual(['detections', 'lazyload', 'diagnoser']);
+    expect(measured?.rows.map((row) => row.route)).toEqual([
+      'detections',
+      'lazyload',
+      'undefined-references'
+    ]);
   });
 
   it('answers null for a missing stub (nothing to measure)', () => {

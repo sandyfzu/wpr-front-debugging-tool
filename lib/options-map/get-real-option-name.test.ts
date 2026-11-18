@@ -6,7 +6,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import optionNames from './option-names.json' with { type: 'json' };
-import otherNames from './other-names.json' with { type: 'json' };
 import { FEATURE_OPTION_LABELS, getRealOptionName, knownOptionIds } from './get-real-option-name';
 import {
   LABEL_DNS_PREFETCH,
@@ -17,21 +16,20 @@ import {
 
 describe('option name maps', () => {
   it('maps every key to a non-empty string', () => {
-    for (const [key, label] of Object.entries({ ...optionNames, ...otherNames })) {
+    for (const [key, label] of Object.entries(optionNames)) {
       expect(typeof label, `option "${key}"`).toBe('string');
       expect(label.trim().length, `option "${key}"`).toBeGreaterThan(0);
     }
   });
 
-  it('carries the expected set sizes (24 non-feature options + 3 labels + 19 feature ids)', () => {
+  it('carries the expected set sizes (24 non-feature options + 19 feature ids)', () => {
     expect(Object.keys(optionNames).length).toBe(24);
-    expect(Object.keys(otherNames).length).toBe(3);
     expect(Object.keys(FEATURE_OPTION_LABELS).length).toBe(19);
   });
 
   it('names feature options only through the feature labels (one declaring site)', () => {
     for (const id of Object.keys(FEATURE_OPTION_LABELS)) {
-      expect(id in optionNames || id in otherNames, `${id} re-typed in the JSON`).toBe(false);
+      expect(id in optionNames, `${id} re-typed in the JSON`).toBe(false);
     }
     expect(getRealOptionName('lazyload')).toBe(LABEL_IMAGE_LAZYLOAD);
     expect(getRealOptionName('minify_css')).toBe(LABEL_MINIFY_CSS);
@@ -54,9 +52,7 @@ describe('option name maps', () => {
   it('enumerates all mapped ids, without duplicates', () => {
     const ids = knownOptionIds();
     expect(ids.length).toBe(
-      Object.keys(optionNames).length +
-        Object.keys(otherNames).length +
-        Object.keys(FEATURE_OPTION_LABELS).length
+      Object.keys(optionNames).length + Object.keys(FEATURE_OPTION_LABELS).length
     );
     expect(new Set(ids).size).toBe(ids.length);
   });

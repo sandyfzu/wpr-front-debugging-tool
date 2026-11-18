@@ -1,8 +1,9 @@
 /**
  * The panel's route bodies, keyed by the nav registry — one component per
  * route id. Each shipped page lives in its own `pages/<route-id>/page.tsx`
- * folder and is mapped here once; routes without a page folder render the
- * shared honest placeholder, so a deep link never dead-ends.
+ * folder and is mapped here once. The table is a full `Record` over the
+ * route ids, so a route without a body fails the type check — a deep link
+ * can never resolve to nothing.
  *
  * Pages that only some sessions open (tools) load on first visit, from their
  * own chunk (`./pages/lazy-page`); the panel's start pays nothing for them.
@@ -16,18 +17,17 @@ import { DetectionsPage } from './pages/detections/page';
 import { HeadersCookiesPage } from './pages/headers-cookies/page';
 import { JavaScriptPage } from './pages/javascript/page';
 import { LazyloadPage } from './pages/lazyload/page';
-import { placeholderPage } from './pages/placeholder';
 import { PreloadedResourcesPage } from './pages/preloaded-resources/page';
 import { RucssTesterPage } from './pages/rucss-tester/page';
 import { UndefinedReferencesPage } from './pages/undefined-references/page';
 import { lazyPage } from './pages/lazy-page';
-import { NAV_ROUTES, type RouteId } from './routes';
+import type { RouteId } from './routes';
 
 /** One route body: renders the page's content (no props — real pages read the shell's store context). */
 export type PageBody = Component;
 
-/** The routes that own a page folder; every other route gets the placeholder. */
-export const PAGE_BODIES: Partial<Record<RouteId, PageBody>> = {
+/** The route-body table: one body per route id, each from its page folder. */
+export const PAGES: Record<RouteId, PageBody> = {
   detections: DetectionsPage,
   javascript: JavaScriptPage,
   stylesheets: lazyPage('stylesheets', async () => {
@@ -48,8 +48,3 @@ export const PAGE_BODIES: Partial<Record<RouteId, PageBody>> = {
     return LcpVitalsPage;
   })
 };
-
-/** The route-body table, generated from the registry — the two cannot drift apart. */
-export const PAGES: Record<RouteId, PageBody> = Object.fromEntries(
-  NAV_ROUTES.map((row) => [row.id, PAGE_BODIES[row.id] ?? placeholderPage(row.id)])
-) as Record<RouteId, PageBody>;

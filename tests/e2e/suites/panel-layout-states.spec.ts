@@ -26,7 +26,6 @@ const ROUTES = [
   'preloaded-resources',
   'headers-cookies',
   'undefined-references',
-  'diagnoser',
   'rucss-tester',
   'beacon-tester',
   'lcp-vitals'
@@ -74,7 +73,7 @@ async function canvasGeometry(panel: Page, id: string): Promise<{ left: number; 
       })
     };
   });
-  const cap = ['undefined-references', 'diagnoser'].includes(id) ? 896 : 1280;
+  const cap = id === 'undefined-references' ? 896 : 1280;
   expect(geometry.width, JSON.stringify({ id, ...geometry })).toBeCloseTo(
     Math.min(geometry.regionWidth, cap),
     0
@@ -201,9 +200,7 @@ for (const theme of ['system', 'light', 'dark']) {
           await expect(loading).toBeVisible();
           await expect
             .poll(async () => {
-              const cap = ['undefined-references', 'diagnoser'].includes(id)
-                ? 'max-w-4xl'
-                : 'max-w-7xl';
+              const cap = id === 'undefined-references' ? 'max-w-4xl' : 'max-w-7xl';
               return panel
                 .locator('[data-fdt="page-body"]')
                 .evaluate((el, cls) => el.classList.contains(cls), cap);
@@ -221,7 +218,7 @@ for (const theme of ['system', 'light', 'dark']) {
       }
       // Pin the reading-width route by name, not by its place in the registry.
       await panel.evaluate(() => {
-        location.hash = '#/diagnoser';
+        location.hash = '#/undefined-references';
       });
       await expect(loading).toBeVisible();
       await expect
@@ -231,12 +228,12 @@ for (const theme of ['system', 'light', 'dark']) {
             .evaluate((el) => el.classList.contains('max-w-4xl'))
         )
         .toBe(true);
-      const before = await canvasGeometry(panel, 'diagnoser');
+      const before = await canvasGeometry(panel, 'undefined-references');
       await panel.evaluate(() => {
         (window as unknown as { releaseLayoutReply: () => void }).releaseLayoutReply();
       });
-      await expect(panel.locator('[data-fdt-page="diagnoser"]')).toBeVisible();
-      expect(await canvasGeometry(panel, 'diagnoser')).toEqual(before);
+      await expect(panel.locator('[data-fdt-page="undefined-references"]')).toBeVisible();
+      expect(await canvasGeometry(panel, 'undefined-references')).toEqual(before);
       for (const width of [320, 1920]) {
         await panel.setViewportSize({ width, height: 800 });
         for (const id of ['javascript', 'undefined-references']) {
@@ -479,9 +476,9 @@ for (const theme of ['light', 'dark']) {
         }
         // Retry recovers the route in view: pin it by name, not by registry order.
         await panel.evaluate(() => {
-          location.hash = '#/diagnoser';
+          location.hash = '#/rucss-tester';
         });
-        await expect(panel).toHaveURL(/#\/diagnoser$/);
+        await expect(panel).toHaveURL(/#\/rucss-tester$/);
         await panel.setViewportSize({ width: recoveryWidth, height: 220 });
         for (let stop = 0; stop < 30; stop += 1) {
           await panel.keyboard.press('Tab');
@@ -489,7 +486,7 @@ for (const theme of ['light', 'dark']) {
         }
         await expect(retry).toBeFocused();
         await panel.keyboard.press('Enter');
-        await expect(panel.locator('[data-fdt-page="diagnoser"]')).toBeVisible();
+        await expect(panel.locator('[data-fdt-page="rucss-tester"]')).toBeVisible();
         await expect(panel.getByRole('alert')).toHaveCount(0);
         await expect(title).toHaveCount(1);
         await auditState(panel);

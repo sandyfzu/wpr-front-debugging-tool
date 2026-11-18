@@ -24,16 +24,14 @@ describe('engine output satisfies the boundary contract', () => {
           pageHeaders: null,
           undefinedReferencesOnPage: [],
           wprDetections: detections,
-          preloadedResources,
-          diagnoserData: null
+          preloadedResources
         })
       ).toEqual({
         allScriptsLoaded: true,
         pageHeaders: null,
         undefinedReferencesOnPage: [],
         wprDetections: detections,
-        preloadedResources,
-        diagnoserData: null
+        preloadedResources
       });
     });
   }

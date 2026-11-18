@@ -22,7 +22,7 @@ export const FOCUS_RING =
  *
  * `pointer-events-none` is deliberately NOT applied — native disabled buttons
  * keep receiving pointer *hover*, which surfaces must rely on to show tooltips
- * explaining why the control is disabled (e.g. reserved nav rows).
+ * explaining why the control is disabled.
  */
 export const DISABLED = 'disabled:opacity-50 disabled:cursor-not-allowed';
 

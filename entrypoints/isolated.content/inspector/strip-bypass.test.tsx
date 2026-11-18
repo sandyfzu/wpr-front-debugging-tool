@@ -156,7 +156,6 @@ describe('the hub-read snapshot', () => {
       data: {
         detections: BYPASS_RENDER,
         preloadedResources: { present: false },
-        diagnoserData: null,
         wordpressVersion: null,
         wprGeneratorMeta
       },

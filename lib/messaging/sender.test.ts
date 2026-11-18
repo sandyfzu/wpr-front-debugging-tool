@@ -19,7 +19,7 @@ describe('resolveSenderTabId', () => {
   });
 
   it('yields null for senders without a tab', () => {
-    // Extension pages (panel, popup, options) and internal sends have none.
+    // Extension pages (panel, options) and internal sends have none.
     expect(resolveSenderTabId(undefined)).toBeNull();
     expect(resolveSenderTabId({})).toBeNull();
     expect(resolveSenderTabId({ tab: undefined })).toBeNull();

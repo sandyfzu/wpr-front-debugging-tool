@@ -17,10 +17,24 @@ import {
 } from './planted-secrets.fixtures';
 import { isSensitiveName } from './rule';
 
+/**
+ * Page data plus one free-form page-derived tree under a key the typed
+ * contract does not declare: the walker redacts every field, so an additive
+ * field carrying arbitrary page JSON is covered before it exists.
+ *
+ * @param data The typed page data.
+ * @param tree The free-form tree.
+ * @returns The data with the tree under `pageTree`.
+ */
+function withPageTree(data: FdtData, tree: Record<string, unknown>): FdtData {
+  const extra = { pageTree: tree };
+  return { ...data, ...extra };
+}
+
 /** A page whose every free-text corner carries a planted secret. */
 function plantedPage(pageHeaders: FdtData['pageHeaders']): FdtData {
   const base = makeReportData({ pageHeaders });
-  return {
+  const page: FdtData = {
     ...base,
     wprDetections: {
       ...base.wprDetections,
@@ -60,23 +74,18 @@ function plantedPage(pageHeaders: FdtData['pageHeaders']): FdtData {
       resources: [
         { href: 'https://u:PLANTED_CRED@a.example/f.woff2?sig=PLANTED_SIG', type: 'font' }
       ]
-    },
-    diagnoserData: {
-      noRocketData: {
-        constants: { WP_ROCKET_KEY: 'PLANTED_LICENSE', WP_ROCKET_EMAIL: 'PLANTED@a.example' },
-        server_info: { web_server: 'nginx' },
-        imagify: PLANTED_OPTIONS
-      },
-      rocketData: {
-        options: {
-          consumer_key: { option_name: 'consumer_key', get_rocket_option: { value: 'PLANTED_CK' } },
-          secret_key: { option_name: 'secret_key', get_rocket_option: { value: 'PLANTED_SK' } },
-          cdn: { option_name: 'cdn', get_rocket_option: { value: 1 }, filters: {} }
-        },
-        post_meta_excluded_options: {}
-      }
     }
   };
+  return withPageTree(page, {
+    constants: { WP_ROCKET_KEY: 'PLANTED_LICENSE', WP_ROCKET_EMAIL: 'PLANTED@a.example' },
+    server_info: { web_server: 'nginx' },
+    imagify: PLANTED_OPTIONS,
+    options: {
+      consumer_key: { option_name: 'consumer_key', get_rocket_option: { value: 'PLANTED_CK' } },
+      secret_key: { option_name: 'secret_key', get_rocket_option: { value: 'PLANTED_SK' } },
+      cdn: { option_name: 'cdn', get_rocket_option: { value: 1 }, filters: {} }
+    }
+  });
 }
 
 describe('redactPageDataForExport', () => {
@@ -117,19 +126,18 @@ describe('redactPageDataForExport', () => {
   });
 
   it('redacts every occurrence of a repeated sensitive key (the memoised rule)', () => {
-    const exported = redactPageDataForExport({
-      ...makeReportData(),
-      diagnoserData: {
-        noRocketData: { a: { apiKey: 'PLANTED_FIRST' }, b: { apiKey: 'PLANTED_SECOND' } },
-        rocketData: null
-      }
-    });
+    const exported = redactPageDataForExport(
+      withPageTree(makeReportData(), {
+        a: { apiKey: 'PLANTED_FIRST' },
+        b: { apiKey: 'PLANTED_SECOND' }
+      })
+    );
     expect(JSON.stringify(exported)).not.toContain(PLANTED);
   });
 
   it('never reads a key of the contract itself as sensitive', () => {
     const contractKeys = [
-      ...'allScriptsLoaded as async_css atf auto_preload_fonts automatic_lazy_rendering bypassAttested cacheMarkerFound cached capturedAt constants content cookieName criticalStyle cookies defer_all_js deferred deferredByWPR deferredScripts delay_js delayed delayedScripts diagnoserData dns_prefetch domains elements excludedReasonsFound external_font_exclusions fdtExcluded filters fonts get_rocket_option headers hints hintsTruncated href image_dimensions images imagify inline inlineCssPresent isMobile lazyload lazyload_css_bg_img lazyload_iframes lazyloadDetected lazyRenderElements lcpComment locationHashes lrc mark minifyAttribute minify_concatenate_js minify_css minify_js mobile_cache name names noRocketData option_name options originalType pageHeaders pageHeadersTruncated php_memory_limit post_meta_excluded_options preconnect_external_domain preconnect_external_domain_elements preconnect_external_domain_exclusions preconnect_external_domains preconnectCount preload_fonts preload_fonts_exclusions preload_links preload_rucss_parameters preload_rucss_tasks preloadedImages preloadedResources present priority_elements_beacon processed_extensions querystrings redacted rel remove_unused_css replaceImage resources rocket_above_the_fold_optimization rocket_cdn rocketData scripts self_hosted_fonts server_info server_load source src status targets timeStamp truncated type undefinedReferencesOnPage user_agent value variant version web_server wp_max_memory_limit wp_memory_limit wpr wpr_diagnoser_version wpr_plugin wprDetections withheld length redaction applied note'.split(
+      ...'allScriptsLoaded as async_css atf auto_preload_fonts automatic_lazy_rendering bypassAttested cacheMarkerFound cached capturedAt content cookieName criticalStyle cookies defer_all_js deferred deferredByWPR deferredScripts delay_js delayed delayedScripts dns_prefetch domains elements excludedReasonsFound external_font_exclusions fdtExcluded filters fonts headers hints hintsTruncated href image_dimensions images inline inlineCssPresent isMobile lazyload lazyload_css_bg_img lazyload_iframes lazyloadDetected lazyRenderElements lcpComment locationHashes lrc mark minifyAttribute minify_concatenate_js minify_css minify_js mobile_cache name names options originalType pageHeaders pageHeadersTruncated preconnect_external_domain preconnect_external_domain_elements preconnect_external_domain_exclusions preconnect_external_domains preconnectCount preload_fonts preload_fonts_exclusions preload_links preloadedImages preloadedResources present priority_elements_beacon processed_extensions redacted rel remove_unused_css replaceImage resources rocket_above_the_fold_optimization rocket_cdn scripts self_hosted_fonts source src status targets timeStamp truncated type undefinedReferencesOnPage value variant version wpr wprDetections withheld length redaction applied note'.split(
         ' '
       )
     ];
@@ -173,11 +181,8 @@ describe('redactPageDataForExport', () => {
       string,
       unknown
     >;
-    const exported = redactPageDataForExport({
-      ...makeReportData(),
-      diagnoserData: { noRocketData: hostile, rocketData: null }
-    });
-    const slot = (exported['diagnoserData'] as { noRocketData: object }).noRocketData;
+    const exported = redactPageDataForExport(withPageTree(makeReportData(), { hostile }));
+    const slot = (exported['pageTree'] as { hostile: object }).hostile;
     expect(Object.getPrototypeOf(slot)).toBe(Object.prototype);
     expect(Object.hasOwn(slot, '__proto__')).toBe(true);
   });

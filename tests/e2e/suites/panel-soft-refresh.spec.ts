@@ -4,9 +4,9 @@
  * place — the content script's sender-tab-checked `notifyPanelReload`
  * starts a refresh flight, the machine swaps the data under the same DOM,
  * and route and focus survive it (the render-level contract's browser
- * twin). The scroll leg rides the
- * 90 px viewport band — the only harness shape where the placeholder body
- * genuinely overflows the content region.
+ * twin). The scroll leg shrinks the window to the 90 px band, where the
+ * Detections body genuinely overflows the content region (asserted before
+ * the swap).
  *
  * The second test is the master-#42 approximation's transport face: with two
  * simulated panel instances (each inspecting its own tab), the OTHER tab's
@@ -135,9 +135,8 @@ test.describe('panel soft refresh (the real push)', () => {
         .poll(async () => await h1(panel), { timeout: 15_000, intervals: [50, 100, 250] })
         .toBe('Detections');
 
-      // The 90 px band is the smallest shape where the placeholder body
-      // genuinely overflows the content region (probe-recorded: 65 px of
-      // body versus a 57 px region window).
+      // At the 90 px band the Detections body overflows the content
+      // region, so a real scroll offset exists to survive the swap.
       await panel.setViewportSize({ width: 700, height: 90 });
       await panel.waitForTimeout(200);
       const precondition = await panel.evaluate((): boolean => {

@@ -82,8 +82,6 @@ export function createPageCommands(deps: PageCommandDeps): PanelCommand[] {
     icon: row.icon,
     hint: row.group,
     keywords: [row.group.toLocaleLowerCase()],
-    disabled: row.reserved ?? false,
-    disabledNote: row.reservedNote,
     run: () => {
       if (deps.currentRoute() === row.id) {
         deps.focusRouteHeading();

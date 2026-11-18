@@ -230,7 +230,6 @@ export function generatePerfFixture(seed = 6_003): FdtData {
     ],
     undefinedReferencesOnPage: [],
     wprDetections: detections,
-    preloadedResources: { present: true, resources: preloaded },
-    diagnoserData: null
+    preloadedResources: { present: true, resources: preloaded }
   };
 }

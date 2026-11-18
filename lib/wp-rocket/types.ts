@@ -616,8 +616,6 @@ export interface FdtData {
   undefinedReferencesOnPage: string[];
   wprDetections: WprDetections;
   preloadedResources: PreloadedResources;
-  /** Set once the diagnoser report was parsed; null components mean unparsable/absent. */
-  diagnoserData: DiagnoserDocData | null;
   /**
    * The page's cookie names (values redacted at capture). Additive: payloads
    * captured before this field existed omit it, and consumers treat its
@@ -698,52 +696,3 @@ export type PanelSearchAction =
       /** The relaying devtools page's inspected tab id (the delivery's scope). */
       tabId: number;
     };
-
-/**
- * Diagnoser report as parsed from the page. Values come from page JSON and
- * are validated structurally on arrival; fields future plugin releases add
- * stay reachable through the index signatures.
- */
-export interface DiagnoserDocData {
-  noRocketData: NoRocketData | Record<string, unknown> | null;
-  rocketData: RocketData | Record<string, unknown> | null;
-}
-
-/** `#wpr-diagnoser-no-rocket-json-data` payload (site + server environment). */
-export interface NoRocketData {
-  wpr_plugin?: Record<string, unknown>;
-  get_rocket_option?: Record<string, unknown>;
-  filters?: Record<string, unknown>;
-  server_info?: {
-    server_load?: unknown;
-    web_server?: unknown;
-    php_memory_limit?: unknown;
-    wp_memory_limit?: unknown;
-    wp_max_memory_limit?: unknown;
-    [key: string]: unknown;
-  };
-  constants?: Record<string, unknown>;
-  /** RUCSS preload task rows (shape varies by plugin version — narrowed at render). */
-  preload_rucss_tasks?: unknown;
-  preload_rucss_parameters?: Record<string, unknown>;
-  querystrings?: Record<string, unknown>;
-  user_agent?: unknown;
-  imagify?: Record<string, unknown>;
-  wpr_diagnoser_version?: unknown;
-  [key: string]: unknown;
-}
-
-/** One diagnoser option row: current value plus how the option behaves. */
-export interface RocketOptionEntry {
-  option_name: string;
-  get_rocket_option: Record<string, unknown>;
-  filters: Record<string, unknown>;
-  [key: string]: unknown;
-}
-
-/** `#wpr-diagnoser-rocket-json-data` payload (per-option state of the site). */
-export interface RocketData {
-  options: Record<string, RocketOptionEntry>;
-  post_meta_excluded_options: Record<string, boolean>;
-  [key: string]: unknown;
-}

@@ -19,11 +19,9 @@
  * window sizes too small for all its rows.
  *
  * One APG nuance, recorded so it is never mistaken for a bug: a disabled
- * menu item (the reserved row) is *skipped* by the items' arrow navigation
- * — Kobalte's collection skips disabled keys while strict APG would keep
- * disabled items focusable. This matches the rail's own native-disabled
- * reserved row (never a tab stop, never selectable, explained by its note
- * and tooltip instead), which is why the divergence is accepted here.
+ * menu item is *skipped* by the items' arrow navigation — Kobalte's
+ * collection skips disabled keys while strict APG would keep disabled items
+ * focusable; a consumer that disables an item must explain it elsewhere.
  *
  * The chrome is declared here (the one surface all menus of the design
  * system share); the row anatomy and data binding live with the consumer —
@@ -58,24 +56,13 @@ export const MENU_CONTENT_CLASSES = cn(
  * One menu item: the 32px row pitch the rail's rows use (well above the
  * 24px hit floor). Kobalte's highlight state (`data-highlighted` — pointer
  * hover and keyboard focus are the same state on a menu) carries the hover
- * surface; the disabled state is the reserved row's muted treatment (the
- * row's description line carries the explaining words).
+ * surface; a disabled item reads muted.
  */
 export const MENU_ITEM_CLASSES =
   'mx-1 flex h-8 min-w-0 cursor-default items-center gap-2 rounded px-2 text-2xs font-medium no-underline outline-none data-highlighted:bg-surface-3 data-disabled:cursor-not-allowed data-disabled:text-fg-muted';
 
-/**
- * A taller variant for items with an inline description line (the
- * reserved row's note reads under its label): same outside anatomy, the
- * note inherits the description slot's own type.
- */
-export const MENU_ITEM_WITH_NOTE_CLASSES = 'min-h-8 h-auto flex-col items-start py-1.5';
-
 /** The item's inner label slot (what Kobalte wires as the item's accessible name). */
 export const MENU_ITEM_LABEL_CLASSES = 'flex min-w-0 flex-1 items-center gap-2 font-medium';
-
-/** The item's description line (always visible, below the label). */
-export const MENU_ITEM_NOTE_CLASSES = 'text-[11px] leading-tight text-fg-muted';
 
 /** The separator between the menu's groups (the rail's hairline grammar). */
 export const MENU_SEPARATOR_CLASSES = 'mx-1 my-1 border-t border-line-2';
@@ -115,6 +102,5 @@ export const Menu = {
   Content: KobalteMenu.Content,
   Item: KobalteMenu.Item,
   ItemLabel: KobalteMenu.ItemLabel,
-  ItemDescription: KobalteMenu.ItemDescription,
   Separator: KobalteMenu.Separator
 } as const;

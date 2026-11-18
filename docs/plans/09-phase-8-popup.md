@@ -2,7 +2,7 @@
 
 ## TLDR
 
-Build the12-parameter optimization popup with exact Apply/Reset URL behavior, accessible switches and truthful initial state. Depends:P1/P3/P5. **Deferred post-release** (owner 2026-11-17): the 12 URL parameters are read only by the Support Diagnoser plugin (none in WP Rocket 3.24.1's code), so the popup returns only with a rebuilt Diagnoser (P7), its URL contract re-verified against it. First release ships **no popup** (scaffold removed pre-release, with the Diagnoser entry). Installed stack/shared UI; no planned dependencies. Mobile-simulation popup row is **withdrawn**, including its obsolete P8.1 suite/dependency.
+Build the12-parameter optimization popup with exact Apply/Reset URL behavior, accessible switches and truthful initial state. Depends:P1/P3/P5. **Deferred post-release** (owner 2026-11-17): the 12 URL parameters are read only by the Support Diagnoser plugin (none in WP Rocket 3.24.1's code), so the popup returns only with a rebuilt Diagnoser (P7), its URL contract re-verified against it. First release ships **no popup** (scaffold removed pre-release 2026-11-17, with the Diagnoser entry): the toolbar button stays declared in `wxt.config.ts` (`action: { default_title }`; badge + action-menu rows). A revival adds `entrypoints/popup/` (WXT then writes `default_popup` into that key), a `popup JS` `scripts/budgets.json` row (≤ 50 KiB raw), and its surface back in AGENTS.md/`docs/ui-ux-bar.md`; the e2e tabless-sender probes use `options.html`. Installed stack/shared UI; no planned dependencies. Mobile-simulation popup row is **withdrawn**, including its obsolete P8.1 suite/dependency.
 
 ## Reference/contract
 

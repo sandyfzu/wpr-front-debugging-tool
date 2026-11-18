@@ -297,7 +297,7 @@ async function scrollbarState(
 test('all built page elements get fixed bars, live palettes and native scrolling', async ({
   extension
 }) => {
-  for (const name of ['panel.html', 'popup.html']) {
+  for (const name of ['panel.html', 'options.html']) {
     const page = await extension.browserContext.newPage();
     await page.goto((await panelPageUrl(extension)).replace('panel.html', name));
     const selector = await addProbe(page);

@@ -1,7 +1,7 @@
 /**
  * The panel nav's browser suite: the icon rail is the form at every width
  * (no morphology switch), real hash links carry `aria-current`, the tooltip
- * wiring holds for anchor rows and the disabled reserved row — and a row's
+ * wiring holds for the anchor rows — and a row's
  * open tooltip never covers its sibling rows (the placement regression the
  * below-floating tooltip had).
  *
@@ -19,7 +19,7 @@
  * focus ring and the harness-resizable thresholds are genuine browser
  * facts.
  *
- * The panel page boots as an extension page (like the popup's suites):
+ * The panel page boots as a plain extension page:
  * with no DevTools window there is no inspected tab, so the store degrades
  * to its recorded error state — itself one of the checked promises — while
  * the nav keeps rendering stateless.
@@ -27,8 +27,8 @@
 import type { Page } from '@playwright/test';
 import { expect, panelPageUrl, test } from '../helpers/extension';
 
-/** The rail row controls' tag/attr selector (anchors + the reserved disabled button). */
-const RAIL_ROW_SELECTOR = 'a[href^="#/"], button[disabled]';
+/** The rail row controls' selector (every row is a hash anchor). */
+const RAIL_ROW_SELECTOR = 'a[href^="#/"]';
 
 /** The overflow trigger's role/name (its tooltip content is attribution). */
 const TRIGGER = { role: 'button' as const, name: 'More pages' };
@@ -59,7 +59,7 @@ async function readRailRows(page: Page): Promise<string[]> {
     const nav = document.querySelector<HTMLElement>('[data-fdt="panel-nav"]');
     if (nav === null) throw new Error('the rail is not mounted');
     return [...nav.querySelectorAll<HTMLElement>(selector)].map(
-      (element) => element.getAttribute('href') ?? 'reserved'
+      (element) => element.getAttribute('href') ?? '(no href)'
     );
   }, RAIL_ROW_SELECTOR);
 }
@@ -81,7 +81,7 @@ async function readRowsInside(page: Page): Promise<boolean> {
 
 /**
  * The registry routes a rail+menu pair must cover, with the rail's expected
- * prefix — `NAV_ROUTES` order (the reserved row reads `reserved`).
+ * prefix — `NAV_ROUTES` order.
  */
 const REGISTRY_ROWS = [
   '#/detections',
@@ -91,7 +91,6 @@ const REGISTRY_ROWS = [
   '#/preloaded-resources',
   '#/headers-cookies',
   '#/undefined-references',
-  'reserved',
   '#/rucss-tester',
   '#/beacon-tester',
   '#/lcp-vitals'
@@ -333,13 +332,6 @@ test.describe('panel nav (icon rail + tooltips)', () => {
 
       await page.keyboard.press('Escape');
       await expect(page.getByRole('tooltip')).toHaveCount(0);
-
-      const reserved = page.getByRole('button', { name: 'Diagnoser' });
-      await expect(reserved).toBeDisabled();
-      await reserved.hover();
-      const note = page.getByRole('tooltip');
-      await expect(note).toBeVisible();
-      expect(await note.textContent()).toContain('Returns with the Diagnoser plugin v2');
     } finally {
       await page.close();
     }
@@ -459,7 +451,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       const menuRows = await page.locator('[data-fdt="nav-overflow-item"]').evaluateAll((items) =>
         items.map((element) => {
           const href = (element as HTMLAnchorElement).getAttribute('href');
-          return href ?? 'reserved';
+          return href ?? '(no href)';
         })
       );
       expect(menuRows).toEqual(REGISTRY_ROWS.slice(railRows.length));
@@ -487,9 +479,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       // The registry prefix that still fits at 200 px decides which hrefs
       // the menu must carry (rail ⊕ menu = the registry).
       const railRows = await readRailRows(page);
-      const menuHrefs = REGISTRY_ROWS.filter(
-        (href) => href !== 'reserved' && !railRows.includes(href)
-      );
+      const menuHrefs = REGISTRY_ROWS.filter((href) => !railRows.includes(href));
 
       const menu = page.locator('[data-fdt="panel-nav-overflow-menu"]');
       await page.getByRole('button', { name: 'More pages' }).click();
@@ -497,16 +487,8 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       for (const href of menuHrefs) {
         await expect(menu.locator(`a[href="${href}"]`)).toBeVisible();
       }
-      // The reserved row, when hidden, stays its disabled explained self
-      // (a menu item div with `aria-disabled`; the note reads its words).
-      const reserved = menu.locator('[data-fdt="nav-overflow-item"][aria-disabled="true"]');
-      if (railRows.includes('reserved')) {
-        expect(await reserved.count()).toBe(0);
-      } else {
-        await expect(reserved.first()).toBeVisible();
-        await expect(reserved.first()).toHaveAttribute('aria-disabled', 'true');
-        await expect(reserved.first()).toContainText('Returns with the Diagnoser plugin v2');
-      }
+      // Every hidden row is a live link: no disabled item in the menu.
+      await expect(menu.locator('[aria-disabled="true"]')).toHaveCount(0);
       await page.keyboard.press('Escape');
       await expect(menu).not.toBeAttached();
 
@@ -704,7 +686,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       // internally (the designed token-thin hairline), every hidden route
       // stays pointer-reachable through that scroll, and the rail's own
       // scroll-free invariant is untouched by the plate's.
-      for (const height of [90, 120, 170, 220, 240, 250, 280, 310]) {
+      for (const height of [90, 120, 170, 220, 240, 250, 260, 275]) {
         await shrinkTo(page, height);
         await page.getByRole('button', { name: 'More pages' }).click();
         const menu = page.locator('[data-fdt="panel-nav-overflow-menu"]');
@@ -713,13 +695,13 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
         expect(reach.plateOverflowY, `plate overflow at ${String(height)}px`).toBe('auto');
         expect(reach.plateScrollbarGutter, `plate gutter at ${String(height)}px`).toBe('auto');
         expect(reach.plateNoHorizontalOverflow).toBe(true);
-        // The clamp state: at 310 the plate fits without biting (its rows
+        // The clamp state: at 275 the plate fits without biting (its rows
         // truly fit; no scrollbar exists then); below, it bites and the
         // scroll carries the tail. The fit line follows the registry's row
-        // count — with eleven rows it sits at 310 px (probed in 5 px steps,
-        // 200–420: 245–275 clamp seven hidden rows in the plate, 280–305
-        // clamp six; 310 fits six; 315 and up hide five or fewer, all fitting).
-        if (height === 310) {
+        // count — with ten rows it sits at 270 px (probed in 5 px steps,
+        // 200–420: 205–240 clamp eight hidden rows in the plate, 245–265
+        // clamp seven; 270–275 fit seven; 280 and up hide six or fewer, all fitting).
+        if (height === 275) {
           expect(reach.plateClamped).toBe(false);
         } else {
           expect(reach.plateClamped, `plate clamped at ${String(height)}px`).toBe(true);
@@ -779,8 +761,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       const menu = page.locator('[data-fdt="panel-nav-overflow-menu"]');
       await expect(menu).toBeVisible();
 
-      // Arrow to the deepest hidden anchor (disabled items are skipped by
-      // Kobalte's collection — the reserved row never takes a step): an
+      // Arrow to the deepest hidden anchor: an
       // ArrowUp from the open lands on the tail item, the one a below-fold
       // keyboard walk must scroll the plate to read.
       const tailHref = await menu
