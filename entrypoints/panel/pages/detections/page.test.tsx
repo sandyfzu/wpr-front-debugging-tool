@@ -4,7 +4,7 @@
  * no tab stop and carry no lift), the status vocabulary, the tooltip
  * subtitles, the summary strip's agreement with the cards, the absence of a
  * duplicate header inventory, `Copy report`, refresh stability (cards keep
- * their DOM and focus), and the
+ * their DOM and focus), the optimization status filter, and the
  * store wiring.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
@@ -19,7 +19,13 @@ import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { CARD_PAGE_LINKS } from './card-presentation';
 import { DNS_PREFETCH_LIMIT, MOBILE_CACHE_LIMIT } from '../../../../lib/detection/hud';
 import { isOptimizationCard } from '../../../../lib/panel/detections-summary';
-import { DETECTIONS_GRID, DETECTIONS_SUBTITLE, DetectionsPage, DetectionsView } from './page';
+import {
+  DETECTIONS_GRID,
+  DETECTIONS_SUBTITLE,
+  DetectionsPage,
+  DetectionsView,
+  SHOW_ALL_OPTIMIZATIONS
+} from './page';
 import { CARD_SURFACE_PAIR, STATUS_CARD_SURFACE } from './status-card';
 
 afterEach(() => {
@@ -368,6 +374,176 @@ describe('DetectionsView', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+/** One status filter chip by id. */
+function chip(id: string): HTMLButtonElement {
+  const found = document.querySelector<HTMLButtonElement>(`[data-fdt-filter-chip="${id}"]`);
+  if (!found) throw new Error(`no chip ${id}`);
+  return found;
+}
+
+/** A chip's visible count. */
+function chipCount(id: string): string | null | undefined {
+  return chip(id).querySelector('[data-fdt-filter-count]')?.textContent;
+}
+
+/** The rendered card ids, in DOM order. */
+function cardIds(): string[] {
+  return cards().map((el) => el.dataset.fdtCardId ?? '');
+}
+
+/** The rendered card ids that are page context (never narrowed). */
+function pageFactIds(): string[] {
+  return cardIds().filter((id) => !isOptimizationCard(id as never));
+}
+
+/** A payload where nothing is active but the plugin and the cache card. */
+function noneActive(): FdtData {
+  const base = makeFdtData();
+  return makeFdtData({
+    pageHeaders: richData().pageHeaders,
+    wprDetections: { ...base.wprDetections, wpr: richData().wprDetections.wpr }
+  });
+}
+
+describe('DetectionsView status filter', () => {
+  it('renders All optimizations / Active / Inactive with counts over the optimization cards', () => {
+    const data = richData();
+    render(() => <DetectionsView data={data} now={NOW} />);
+    const group = screen.getByRole('group', { name: 'Optimization status' });
+    const ids = [...group.querySelectorAll<HTMLElement>('[data-fdt-filter-chip]')].map(
+      (el) => el.dataset.fdtFilterChip
+    );
+    expect(ids).toEqual(['all', 'active', 'inactive']);
+    const items = buildStatusItems(data).filter((item) => isOptimizationCard(item.id));
+    const active = items.filter((item) => item.status === 'active').length;
+    expect(chipCount('all')).toBe(String(items.length));
+    expect(chipCount('active')).toBe(String(active));
+    expect(chipCount('inactive')).toBe(String(items.length - active));
+    expect(chip('all').getAttribute('aria-pressed')).toBe('true');
+    // Not a search: the page stays outside the find protocol.
+    expect(document.querySelector('[data-fdt="detections-controls"] input')).toBeNull();
+    expect(screen.getByRole('group', { name: 'Optimization status' }).textContent).not.toMatch(
+      /enabled|disabled/i
+    );
+  });
+
+  it('narrows only optimization cards; page facts, badges and why stay', () => {
+    const data = richData();
+    render(() => <DetectionsView data={data} now={NOW} />);
+    const facts = pageFactIds();
+    const all = cardIds();
+    const wprNode = card('wpr');
+    fireEvent.click(chip('active'));
+    expect(chip('active').getAttribute('aria-pressed')).toBe('true');
+    expect(pageFactIds()).toEqual(facts);
+    expect(card('wpr')).toBe(wprNode);
+    const activeIds = cardIds().filter((id) => isOptimizationCard(id as never));
+    expect(activeIds).toContain('delay_js');
+    for (const id of activeIds) {
+      expect(card(id).querySelector('[data-fdt="status-badge"]')?.textContent).toBe('Active');
+    }
+    fireEvent.click(chip('inactive'));
+    const inactiveIds = cardIds().filter((id) => isOptimizationCard(id as never));
+    expect(inactiveIds).not.toContain('delay_js');
+    for (const id of inactiveIds) {
+      expect(card(id).querySelector('[data-fdt="status-badge"]')?.textContent).not.toBe('Active');
+    }
+    expect(pageFactIds()).toEqual(facts);
+    fireEvent.click(chip('all'));
+    expect(cardIds()).toEqual(all);
+  });
+
+  it('keeps the summary strip byte-identical under every filter', () => {
+    render(() => <DetectionsView data={richData()} now={NOW} />);
+    const strip = () => document.querySelector('[data-fdt="detections-summary"]')?.outerHTML;
+    const before = strip();
+    expect(before).toContain('data-fdt-summary-headline');
+    for (const id of ['inactive', 'active', 'all']) {
+      fireEvent.click(chip(id));
+      expect(strip()).toBe(before);
+    }
+  });
+
+  it('disables an empty bucket unless it is the selected one', () => {
+    render(() => <DetectionsView data={noneActive()} now={NOW} />);
+    expect(chipCount('active')).toBe('0');
+    expect(chip('active').disabled).toBe(true);
+    expect(chip('all').disabled).toBe(false);
+    expect(chip('inactive').disabled).toBe(false);
+    expect(document.querySelector('[data-fdt="detections-filtered-empty"]')).toBeNull();
+  });
+
+  it('keeps the selection, card nodes and focus across a refresh', () => {
+    const [data, setData] = createSignal(richData());
+    render(() => <DetectionsView data={data()} now={NOW} />);
+    fireEvent.click(chip('active'));
+    const delay = card('delay_js');
+    delay.focus();
+    const chipNode = chip('active');
+    setData(richData({ undefinedReferencesOnPage: ['jQuery'] }));
+    expect(chip('active')).toBe(chipNode);
+    expect(chip('active').getAttribute('aria-pressed')).toBe('true');
+    expect(card('delay_js')).toBe(delay);
+    expect(document.activeElement).toBe(delay);
+  });
+
+  it('keeps a bucket a refresh emptied selected, says so, and leads back to All', () => {
+    const [data, setData] = createSignal(richData());
+    render(() => <DetectionsView data={data()} now={NOW} />);
+    fireEvent.click(chip('active'));
+    const facts = pageFactIds();
+    setData(noneActive());
+    expect(chip('active').getAttribute('aria-pressed')).toBe('true');
+    // The selected chip stays reachable at zero.
+    expect(chip('active').disabled).toBe(false);
+    const empty = document.querySelector('[data-fdt="detections-filtered-empty"]');
+    expect(empty?.textContent).toContain('"Active"');
+    expect(pageFactIds()).toEqual(facts);
+    expect(cardIds().filter((id) => isOptimizationCard(id as never))).toEqual([]);
+    const back = screen.getByRole('button', { name: SHOW_ALL_OPTIMIZATIONS });
+    back.focus();
+    fireEvent.click(back);
+    expect(chip('all').getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelector('[data-fdt="detections-filtered-empty"]')).toBeNull();
+    expect(document.activeElement).toBe(chip('all'));
+    expect(cardIds().length).toBe(buildStatusItems(noneActive()).length);
+  });
+
+  it('copies the same report whatever the filter', async () => {
+    const writeText = vi.fn((): Promise<void> => Promise.resolve());
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    try {
+      const data = richData();
+      render(() => <DetectionsView data={data} now={NOW} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Copy report' }));
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledTimes(1);
+      });
+      cleanup();
+      render(() => <DetectionsView data={data} now={NOW} />);
+      fireEvent.click(chip('active'));
+      fireEvent.click(screen.getByRole('button', { name: 'Copy report' }));
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledTimes(2);
+      });
+      expect(writeText.mock.calls[1]).toEqual(writeText.mock.calls[0]);
+    } finally {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('resets to All on remount', () => {
+    const data = richData();
+    render(() => <DetectionsView data={data} now={NOW} />);
+    fireEvent.click(chip('inactive'));
+    cleanup();
+    render(() => <DetectionsView data={data} now={NOW} />);
+    expect(chip('all').getAttribute('aria-pressed')).toBe('true');
   });
 });
 

@@ -194,6 +194,16 @@ describe('NoMatches', () => {
     expect(screen.queryByRole('button', { name: 'Show all' })).toBeNull();
   });
 
+  it('names the reset button by showAllLabel when given', () => {
+    const showAll = vi.fn();
+    render(() => (
+      <NoMatches chipLabel="Active" onShowAll={showAll} showAllLabel="Show all optimizations" />
+    ));
+    expect(screen.queryByRole('button', { name: 'Show all' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show all optimizations' }));
+    expect(showAll).toHaveBeenCalledOnce();
+  });
+
   it('lets an unbroken long query wrap instead of scrolling sideways', () => {
     render(() => <NoMatches query={'x'.repeat(200)} />);
     expect(document.querySelector('[data-fdt="empty-state"]')?.classList).toContain(
