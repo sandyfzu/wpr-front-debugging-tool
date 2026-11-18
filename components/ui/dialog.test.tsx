@@ -477,3 +477,96 @@ describe('ModalDialog mounted mode (an injected shadow root)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('ModalDialog scrim classes', () => {
+  it('keeps the default scrim as is and merges a caller’s scrim classes last', () => {
+    renderDialog();
+    expect(modalScrim().className).toBe('fixed inset-0 z-40 bg-[var(--scrim)]');
+    cleanup();
+    render(() => (
+      <ModalDialog title="Sheet" onClose={() => undefined} overlayClass="opacity-0">
+        <Button>Only control</Button>
+      </ModalDialog>
+    ));
+    expect(modalScrim().className).toBe('fixed inset-0 z-40 bg-[var(--scrim)] opacity-0');
+  });
+});
+
+describe('ModalDialog controlled mode (`open`)', () => {
+  /**
+   * Report `animationName: none` for every element, as a real browser does
+   * here (no keyframes): the library's presence then unmounts at once on its
+   * own close. The resource-less DOM reports `''`, which reads as animating.
+   */
+  function stubNoAnimation(): void {
+    const real = window.getComputedStyle.bind(window);
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+      const style = real(element, pseudo);
+      return new Proxy(style, {
+        get(target, key) {
+          if (key === 'animationName') return 'none';
+          const value: unknown = Reflect.get(target, key, target);
+          return typeof value === 'function' ? (value as () => unknown).bind(target) : value;
+        }
+      });
+    });
+  }
+
+  /** A dialog the caller never unmounts, so only the library could remove it. */
+  function renderKept(open: boolean | undefined) {
+    const onClose = vi.fn();
+    render(() => (
+      <ModalDialog title="Kept" open={open} onClose={onClose}>
+        <Button>Only control</Button>
+      </ModalDialog>
+    ));
+    return { onClose };
+  }
+
+  it('without `open`, the library still closes itself on a dismissal (every existing surface)', () => {
+    stubNoAnimation();
+    const { onClose } = renderKept(undefined);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(modalScrim()).toBeNull();
+  });
+
+  it('without `open`, never re-arms: a later press on a still-mounted scrim reports nothing', async () => {
+    // Unstubbed style reads as animating, so the closed library keeps the scrim up.
+    const { onClose } = renderKept(undefined);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await armLibrary();
+    expect(modalScrim()).toBeTruthy();
+    pressScrim(modalScrim(), { pointerType: 'mouse', button: 0 });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('with `open`, a dismissal is only a request: the panel and scrim stay mounted', () => {
+    stubNoAnimation();
+    const { onClose } = renderKept(true);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    modalScrim().dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' })
+    );
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('with `open`, reports each later gesture once (re-armed a task after the last one)', async () => {
+    const { onClose } = renderKept(true);
+    await armLibrary();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await armLibrary();
+    // One press both the scrim and the armed library see: still one request.
+    pressScrim(modalScrim(), { pointerType: 'mouse', button: 0 });
+    expect(onClose).toHaveBeenCalledTimes(2);
+    await armLibrary();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(3);
+  });
+});
