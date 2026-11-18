@@ -92,4 +92,8 @@
    * literal at build time, so these are values, never `var()` references. */
   --container-regular: 480px;
   --container-wide: 768px;
+  /* `@split:` — a list's detail moves into a side pane from this content
+   * width. Twin of `DETAIL_PANE_MIN_CONTENT_WIDTH` (lib/panel/detail-layout),
+   * which decides the same rule in script; a test keeps the two equal. */
+  --container-split: 830px;
 }
