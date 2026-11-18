@@ -1,5 +1,18 @@
 import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { createTailwindMerge, getDefaultConfig } from 'tailwind-merge';
+
+/**
+ * `tailwind-merge` taught the theme's own font sizes beyond its defaults:
+ * unknown `text-*` names read as colors, so `text-stat` beside `text-fg-primary`
+ * would be dropped as a conflicting color. `2xs` already parses as a size.
+ * Built with `createTailwindMerge` + a config function (not
+ * `extendTailwindMerge`, whose object form bundles the config merger) so every
+ * bundle using `cn` grows by the two names only.
+ */
+const twMerge = createTailwindMerge(getDefaultConfig, (config) => ({
+  ...config,
+  theme: { ...config.theme, text: [...(config.theme.text ?? []), 'stat', 'tile'] }
+}));
 
 /**
  * Merge conditional class lists into one class string.

@@ -26,6 +26,14 @@ describe('cn', () => {
     expect(cn('shadow-elev-1', 'shadow-elev-2')).toBe('shadow-elev-2');
   });
 
+  it('reads the stat-tile sizes as sizes, never as colors', () => {
+    // Unknown `text-*` names default to the color group, which would drop these.
+    expect(cn('text-stat', 'text-fg-primary')).toBe('text-stat text-fg-primary');
+    expect(cn('text-tile', 'text-status-warn')).toBe('text-tile text-status-warn');
+    expect(cn('text-stat', 'text-tile')).toBe('text-tile');
+    expect(cn('text-xs', 'text-stat')).toBe('text-stat');
+  });
+
   it('handles conditional objects and arrays', () => {
     expect(cn('base', { active: true, hidden: false }, ['x', 'y'])).toBe('base active x y');
   });

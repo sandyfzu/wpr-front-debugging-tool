@@ -58,30 +58,35 @@ export function Card(props: CardProps): JSX.Element {
         props.class
       )}
     >
+      {/* Callback form: a JSX prop is a getter, so reading it again would build it twice. */}
       <Show when={props.header}>
-        <div
-          data-fdt="card-header"
-          class={cn(
-            'flex items-center gap-1.5 px-2.5 py-1.5 border-b',
-            CARD_LEVEL_CLASSES[level()].line
-          )}
-        >
-          {props.header}
-        </div>
+        {(header) => (
+          <div
+            data-fdt="card-header"
+            class={cn(
+              'flex items-center gap-1.5 px-2.5 py-1.5 border-b',
+              CARD_LEVEL_CLASSES[level()].line
+            )}
+          >
+            {header()}
+          </div>
+        )}
       </Show>
       <div data-fdt="card-body" class="p-2.5 text-xs text-fg-primary">
         {props.children}
       </div>
       <Show when={props.footer}>
-        <div
-          data-fdt="card-footer"
-          class={cn(
-            'flex items-center gap-1.5 px-2.5 py-1.5 border-t',
-            CARD_LEVEL_CLASSES[level()].line
-          )}
-        >
-          {props.footer}
-        </div>
+        {(footer) => (
+          <div
+            data-fdt="card-footer"
+            class={cn(
+              'flex items-center gap-1.5 px-2.5 py-1.5 border-t',
+              CARD_LEVEL_CLASSES[level()].line
+            )}
+          >
+            {footer()}
+          </div>
+        )}
       </Show>
     </div>
   );
