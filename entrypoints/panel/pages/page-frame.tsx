@@ -158,6 +158,8 @@ export interface NoMatchesProps {
   onClearSearch?: () => void;
   /** Resets the filter to "all"; `Show all` renders only with this and a non-blank `chipLabel`. */
   onShowAll?: () => void;
+  /** The reset button's label when "Show all" alone would be vague (default "Show all"). */
+  showAllLabel?: string;
   /**
    * The focus target once an action's result removes its focused button
    * (typically: the search field after `clear-search`, the "All" chip after
@@ -241,7 +243,7 @@ export function NoMatches(props: NoMatchesProps): JSX.Element {
         <Show when={canShowAll()}>
           <NoMatchesButton
             action="show-all"
-            label="Show all"
+            label={props.showAllLabel ?? 'Show all'}
             onActivate={() => {
               props.onShowAll?.();
             }}
