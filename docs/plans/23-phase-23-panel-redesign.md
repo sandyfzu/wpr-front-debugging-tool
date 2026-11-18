@@ -185,14 +185,25 @@ Depends: B. Parallel: C.1, C.2, C.4, C.5. Size: S. Done 2026-11-18 (`feat/p23-c3
 - §D (throwaway run): D-1 320/420/760/1280 — `scrollWidth === clientWidth` for document, `main`, tiles (227 px tile at 320); path 32 px = 2 lines. D-2 light + dark, reduced motion → 0 animations. D-6 grep empty. W-2 strings new: "Open in Sources", "Open in new tab", "Open in a new tab", "Couldn't open in Sources", "Open it in a new tab instead.".
 - Budgets: unchanged (unmounted, tree-shaken): panel JS 412.0/600, whole build 2091.8/2160. Gates: compile, lint, format, test (636 files, 15 080 passed), build + build:firefox, check:budgets green.
 
-### P23C.4 — CSS + HTML highlighting
+### P23C.4 — CSS + HTML highlighting — done
 
-Depends: B. Parallel: C.1–C.3, C.5. Size: M. Difficulty: medium.
+Depends: B. Parallel: C.1–C.3, C.5. Size: M. Done 2026-11-18 (`feat/p23-c4-css-html-highlight`). Consumers: E.4 (`lang="html"` served tag), E.5 (`lang="css"`).
 
-- [ ] Add `'css'`, `'html'` to `CODE_BLOCK_LANGS`; import `shiki/langs/css.mjs`, `html.mjs` in `code-block-highlighter.ts`; add to `langs`. Protocol/validation picks them up through the shared table (verify `code-block-worker-protocol.ts`, `code-block.tsx` gates).
-- [ ] Decide bundling by measurement (record both numbers): (a) **bundled** — worker row grows ≈ +119 KB raw/+24 gz → raise per AGENTS; (b) **on demand** — set `vite.worker.format: 'es'` in `wxt.config.ts`, load css/html with `highlighter.loadLanguage(await import(...))` on first use (worker already `type: 'module'`; Firefox ≥ 150 supports module workers — verify on the Firefox build), each grammar chunk gets a `required` budget row wherever today's worker row applies (it has no Firefox variant today — mirror the existing coverage, don't invent rows). `worker.format` is **global**: it also rebuilds the RUCSS build worker (`lib/rucss-tester/build-client.ts`) — re-run its tests, its budget rows (both builds) and `panel-rucss-tester` under (b). Pick (b) if the base worker stays ≤ today, the RUCSS worker still works in both builds, and the first CSS block highlights < 150 ms locally; else (a).
-- [ ] AA token swaps (existing) apply to the new grammars: run highlighter tests with CSS/HTML samples in both themes.
-- [ ] Tests: lang table, CSS/HTML highlight, unknown lang stays plain, 20 000-char cap still plain, timeout path.
+- [x] `CODE_BLOCK_LANGS` = `javascript, json, css, html`; the protocol (`isHighlightRequest`), `CodeBlock`'s guard and the client read the table — no other gate. `GRAMMAR_SOURCES` (highlighter): exhaustive `Record<CodeLanguage, GrammarSource>`, `bundled` (js, json) | `on-demand` (css, html from one chunk `code-block-web-grammars.ts`: html embeds css + js; js is imported back from the worker entry, not duplicated — one evaluation verified in Chromium). `CodeHighlighter.highlight` is now async (one load in flight per language; a failed load logs `[code-highlighter] The <lang> grammar failed to load; the block stays plain.`, answers `{error}` → client `failed` → raw text, no note, next block retries). Unknown language → explicit rejection (own-key check).
+- [x] **Decision: (b) on demand**, `vite.worker.format: 'es'` (`wxt.config.ts`, global). Measured (KiB raw/gz; Chromium, Playwright Chromium 156 headless, median of 10 fresh workers × 2 runs, 5 160-char CSS block):
+
+|               | base worker | grammar chunk | whole build | cold JS block | 1st CSS (warm worker) | 1st CSS (cold worker) | 2nd CSS | 1st HTML |
+| ------------- | ----------- | ------------- | ----------- | ------------- | --------------------- | --------------------- | ------- | -------- |
+| today         | 356.8/73.1  | —             | 2095.1      | —             | —                     | —                     | —       | —        |
+| (a) bundled   | 465.6/96.4  | —             | 2204.0      | 61 ms         | 50 ms                 | 69 ms                 | 9 ms    | 21 ms    |
+| (b) on demand | 357.9/73.5  | 108.0/23.1    | 2204.3      | 59 ms         | 53 ms                 | 72 ms                 | 9 ms    | 23 ms    |
+
+(b) criteria: base worker within today's row (368/75; +1.1 KiB over today's size = loader + failure log, no grammar), first CSS 53 ms < 150, RUCSS worker ES in both builds (4.4/1.9, no imports; `panel-rucss-tester` green). Firefox: static only — BCD module workers + `import()` in workers Firefox 114 ≤ floor 150; MV2 build emits the same ES files (`new Worker(…,{type:'module'})`, same-origin `import()`); a real Firefox run was not possible here → P23.1 owner manual check (already listed).
+
+- [x] AA: the contrast gate scans js + json + css + html scopes; every emittable color passes on both `--surface-1` values without new swaps.
+- Tests: highlighter (hostile CSS/HTML escaped; class tagging, allow-list and root chrome for every language; CSS/HTML equal plain shiki with all grammars; embedded `<style>`/`<script>` colored as their own languages; grammar table; real chunk loads; load-once + concurrent; chunk failure → error response, logged, retry succeeds; empty chunk rejects), protocol (`css`/`html` accepted, `CSS` refused), `CodeBlock` (css/html requested + labeled, `failed` stays plain quietly, 20 000-char cap for html both sides). Changed assertions: `CodeBlock` lang pin `['javascript','json']` → four languages (the set grew by design); "guards a language … with a throw" → `rejects` (highlight is async now: a grammar may need fetching).
+- Budgets: new `required` row `code highlighter CSS + HTML grammars` (Chromium only, as the worker row) 112/24 (108.0/23.1 + ≈ 3 %); whole build 2160 → 2270 (2204.3 + ≈ 3 %; cause: the two grammars). Worker row unchanged.
+- E2e green: `panel-code-rows`, `panel-script-copy`, `panel-script-copy-audit`, `panel-rucss-tester`, `scrollbars`, `panel-boot`.
 
 ### P23C.5 — Bottom sheet
 

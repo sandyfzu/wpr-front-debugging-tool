@@ -179,6 +179,15 @@
     }
   },
   {
+    "surface": "code highlighter CSS + HTML grammars (worker chunk, on demand, panel)",
+    "globs": ["assets/code-block-web-grammars-*.js"],
+    "maxKb": {
+      "raw": 112,
+      "gzip": 24
+    },
+    "required": true
+  },
+  {
     "surface": "RUCSS test build worker (panel)",
     "globs": ["assets/build.worker-*.js"],
     "maxKb": {
@@ -294,7 +303,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 2160
+      "raw": 2270
     }
   }
 ]

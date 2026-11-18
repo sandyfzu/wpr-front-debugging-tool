@@ -1,9 +1,10 @@
 /**
  * The code surface — one component for every rendered source (script
- * excerpts, JSON payloads the *page itself* wants shown as source; structured
- * JSON data goes through `json-value.tsx`, never through a highlighter).
+ * excerpts, stylesheets, served markup, JSON payloads the *page itself*
+ * wants shown as source; structured JSON data goes through `json-value.tsx`,
+ * never through a highlighter).
  *
- * shiki highlights with the javascript+json grammar pair and a light/dark
+ * shiki highlights with the `CODE_BLOCK_LANGS` grammars and a light/dark
  * theme pair whose colors resolve through `light-dark()` — code follows the
  * document palette exactly like the design tokens, with no appearance hook
  * and no re-render on theme switches.
@@ -325,7 +326,7 @@ function resolveChrome(
  * mount (`resolveChrome`), which fails fast on caller bugs.
  *
  * @param props.text The code text.
- * @param props.lang The language (`javascript` | `json`).
+ * @param props.lang The language (one of {@link CODE_BLOCK_LANGS}).
  * @param props.defaultWrap Initial wrap state (toggleable afterwards).
  * @param props.toolbar `false` renders the toolbar-less chrome (default: toolbar).
  * @param props.wrap Consumer-owned, reactive wrap state (toolbar-less requires it).

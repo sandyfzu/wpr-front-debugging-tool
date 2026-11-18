@@ -1,6 +1,6 @@
 /**
  * The code-block language table — the shiki-free declaring site of the
- * code-highlight vocabulary (`javascript` + `json`).
+ * code-highlight vocabulary (`javascript`, `json`, `css`, `html`).
  *
  * It exists so pages and the code block itself can import the vocabulary as
  * **values** without pulling the highlighter module in: the vocabulary lives
@@ -12,8 +12,11 @@
  * round 2026-10-12.
  */
 
-/** The languages registered in the highlighter, one per data kind this tool renders. */
-export const CODE_BLOCK_LANGS = ['javascript', 'json'] as const;
+/**
+ * The languages the highlighter renders, one per data kind this tool shows:
+ * script sources, JSON payloads, stylesheets and served markup (tags).
+ */
+export const CODE_BLOCK_LANGS = ['javascript', 'json', 'css', 'html'] as const;
 
 /** One code-block language. A call-site constant, never page-sourced. */
 export type CodeLanguage = (typeof CODE_BLOCK_LANGS)[number];
