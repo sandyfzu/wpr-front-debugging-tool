@@ -1,9 +1,9 @@
 /**
- * The status bar's aging clock: the reading (`now`) the relative ages and
- * the staleness marker read, advanced by a slow tick **only while page data
- * is loaded and the panel document is visible** — no idle work when the
- * panel is hidden or nothing is loaded, and every armed timer unsubscribes
- * on stop (no leaked timers ride the strip).
+ * The panel's aging clock, shared by the shell chrome and the pages that
+ * show relative times: the reading (`now`) the ages and staleness read,
+ * advanced by a slow tick **only while page data is loaded and the panel
+ * document is visible** — no idle work when the panel is hidden or nothing
+ * is loaded, and every armed timer unsubscribes on stop (no leaked timers).
  *
  * The clock is an inert factory (no Solid effects inside): its loaded state
  * arrives through an explicit call, so the component wires one effect over
