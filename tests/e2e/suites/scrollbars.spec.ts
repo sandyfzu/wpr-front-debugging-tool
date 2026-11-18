@@ -16,8 +16,13 @@ test.afterEach(async ({ extension }) => {
   await resetStoredOptions(extension);
 });
 
-/** Resolved foreground token values; literals pin both palette branches. */
-const THUMB = { light: 'rgb(93, 102, 117)', dark: 'rgb(139, 150, 169)' } as const;
+/**
+ * Resolved `--fg-muted` thumb values; literals pin both palette branches. The
+ * extension pages (panel, options) take the extension-page token block's
+ * light value; injected shadow trees keep the shared one.
+ */
+const PAGE_THUMB = { light: 'rgb(94, 103, 118)', dark: 'rgb(139, 150, 169)' } as const;
+const INJECTED_THUMB = { light: 'rgb(93, 102, 117)', dark: 'rgb(139, 150, 169)' } as const;
 
 /**
  * Exercise native keyboard and wheel scrolling on both axes, without scripted input substitutes.
@@ -307,21 +312,21 @@ test('all built page elements get fixed bars, live palettes and native scrolling
     });
     expect(await scrollbarState(page, selector)).toEqual({
       width: '8px',
-      color: THUMB.light,
+      color: PAGE_THUMB.light,
       overflowX: true,
       overflowY: true
     });
     await page.emulateMedia({ colorScheme: 'dark' });
-    expect((await scrollbarState(page, selector)).color).toContain(THUMB.dark);
+    expect((await scrollbarState(page, selector)).color).toContain(PAGE_THUMB.dark);
     await page.evaluate(() => {
       document.documentElement.setAttribute('data-theme', 'light');
     });
-    expect((await scrollbarState(page, selector)).color).toContain(THUMB.light);
+    expect((await scrollbarState(page, selector)).color).toContain(PAGE_THUMB.light);
     await assertPaintedStableBars(page);
     await page.evaluate(() => {
       document.documentElement.setAttribute('data-theme', 'dark');
     });
-    expect((await scrollbarState(page, selector)).color).toContain(THUMB.dark);
+    expect((await scrollbarState(page, selector)).color).toContain(PAGE_THUMB.dark);
     expect(await page.locator('html').evaluate((el) => getComputedStyle(el).scrollbarWidth)).toBe(
       'auto'
     );
@@ -442,19 +447,21 @@ test('injected bars follow the owned palette and leave host page bars untouched'
   await expect.poll(async () => (await scrollbarState(page, selector)).width).toBe('8px');
   expect(await scrollbarState(page, selector)).toEqual({
     width: '8px',
-    color: THUMB.dark,
+    color: INJECTED_THUMB.dark,
     overflowX: true,
     overflowY: true
   });
   await assertPaintedStableBars(page);
   await page.emulateMedia({ colorScheme: 'light' });
-  expect((await scrollbarState(page, selector)).color).toContain(THUMB.light);
+  expect((await scrollbarState(page, selector)).color).toContain(INJECTED_THUMB.light);
   await assertPaintedStableBars(page);
   await extension.evaluateInWorker(
     () => chrome.storage.sync.set({ options: { appearance: 'dark' } }),
     undefined
   );
-  await expect.poll(async () => (await scrollbarState(page, selector)).color).toContain(THUMB.dark);
+  await expect
+    .poll(async () => (await scrollbarState(page, selector)).color)
+    .toContain(INJECTED_THUMB.dark);
   expect(
     await page.locator('html').evaluate((el) => ({
       width: getComputedStyle(el).scrollbarWidth,

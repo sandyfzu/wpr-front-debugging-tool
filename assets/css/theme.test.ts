@@ -22,12 +22,23 @@ import { parseRules } from './css-rules.fixtures';
  * token may leak through host-page inheritance or silently lose its value.
  */
 
+/** This test's directory: every relative path below resolves against it. */
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Read a repo file.
+ *
+ * @param file The path, relative to this test's directory.
+ * @returns The file's UTF-8 text.
+ */
+function read(file: string): string {
+  return readFileSync(join(HERE, file), 'utf8');
+}
+
 /** The stylesheet text the gate reads: both defining files, in directory order.
  * Rules may move between the files (or new token files join them) without
  * weakening any check below. */
-const css = ['tokens.css', 'theme.css']
-  .map((file) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), file), 'utf8'))
-  .join('\n');
+const css = ['tokens.css', 'theme.css'].map(read).join('\n');
 
 /** A stylesheet `@import` of a local (relative) file — the only graph edges
  * injected stylesheets have. */
@@ -42,7 +53,7 @@ const LOCAL_IMPORT = /@import\s+['"](\.[^'"]+)['"]\s*;/g;
  * @returns One string: the chain's concatenated sources.
  */
 function readInjectedChain(file: string): string {
-  const entry = join(dirname(fileURLToPath(import.meta.url)), file);
+  const entry = join(HERE, file);
   const visited = new Set<string>();
   const sources: string[] = [];
   const visit = (path: string): void => {
@@ -64,20 +75,79 @@ interface PaletteValues {
   light: string;
 }
 
-/** All `light-dark()` tokens in the stylesheet, keyed by plain token name. */
-const tokens: Map<string, PaletteValues> = new Map();
-for (const match of css.matchAll(
-  /--([\w-]+):\s*light-dark\(\s*(#[0-9a-f]{6})\s*,\s*(#[0-9a-f]{6})\s*\)/g
-)) {
-  const [, name, lightValue, darkValue] = match;
-  // `light-dark(lightValue, darkValue)` per CSS Color 5; groups are fixed, so a
-  // full match always has them — skip defensively anyway.
-  if (!name || !lightValue || !darkValue) continue;
-  tokens.set(name, { light: lightValue, dark: darkValue });
+/** Token name → its `light-dark()` pair. */
+type PaletteMap = ReadonlyMap<string, PaletteValues>;
+
+/** One `light-dark(#rrggbb, #rrggbb)` value (light first, per CSS Color 5). */
+const HEX_PAIR = /^light-dark\(\s*(#[0-9a-f]{6})\s*,\s*(#[0-9a-f]{6})\s*\)$/;
+
+/** The shared token block's selectors: page roots, shadow hosts, in-shadow re-declarations. */
+const SHARED_SELECTORS = [':root', ':host', '[data-fdt-tokens]'] as const;
+
+/** The extension-page block's selector: `<html>` of the panel + options documents. */
+const EXTENSION_PAGE_SELECTOR = ":root[data-fdt-surface='extension-page']";
+
+/** Every style rule of the token files, at-rule-wrapped ones included. */
+const allRules = parseRules(css);
+
+/** Every top-level style rule of the token files (at-rule contents excluded). */
+const topLevelRules = allRules.filter((rule) => rule.within.length === 0);
+
+/** The token files' text without comments (which quote declarations as prose). */
+const cssText = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+/** Sources rendered in the panel + options documents (the extension-page palette). */
+const EXTENSION_PAGE_SOURCES = [
+  '../../entrypoints/panel',
+  '../../entrypoints/options',
+  '../../components/ui'
+] as const;
+
+/**
+ * The palette pairs one top-level selector declares, plus its custom
+ * properties that are not hex pairs (the gate cannot check those).
+ *
+ * @param selector The exact (whitespace-normalized) selector.
+ * @returns The pairs by token name and the unparsed custom-property names.
+ */
+function blockTokens(selector: string): { pairs: PaletteMap; unparsed: string[] } {
+  const pairs = new Map<string, PaletteValues>();
+  const unparsed: string[] = [];
+  for (const rule of topLevelRules.filter((candidate) => candidate.selector === selector)) {
+    for (const [property, value] of rule.declarations) {
+      if (!property.startsWith('--')) continue;
+      const [, light, dark] = HEX_PAIR.exec(value) ?? [];
+      if (light === undefined || dark === undefined) unparsed.push(property);
+      else pairs.set(property.slice(2), { light, dark });
+    }
+  }
+  return { pairs, unparsed };
 }
 
-function paletteValues(name: string): PaletteValues {
-  const values = tokens.get(name);
+/** The shared palette: what every surface (injected UIs included) resolves. */
+const shared: PaletteMap = blockTokens('[data-fdt-tokens]').pairs;
+
+/** The extension-page block's own declarations (overrides only). */
+const pageBlock = blockTokens(EXTENSION_PAGE_SELECTOR);
+
+/** The extension pages' palette: the shared values overridden by the page block. */
+const extensionPage: PaletteMap = new Map([...shared, ...pageBlock.pairs]);
+
+/** Both resolved palettes, named for failure messages. */
+const PALETTE_MAPS = [
+  { scope: 'shared', map: shared },
+  { scope: 'extension-page', map: extensionPage }
+] as const;
+
+/**
+ * One token's pair in a resolved palette.
+ *
+ * @param map The resolved palette.
+ * @param name The token name, without `--`.
+ * @throws {@link Error} naming the token when the palette lacks it.
+ */
+function paletteValues(map: PaletteMap, name: string): PaletteValues {
+  const values = map.get(name);
   if (!values) throw new Error(`Palette token --${name} is not defined in the token files`);
   return values;
 }
@@ -139,7 +209,14 @@ const REQUIRED_PAIRS: RequiredPair[] = [
     background: `status-${status}-soft`,
     min: 3
   })),
-  { foreground: 'accent', background: 'surface-2', min: 3 }
+  { foreground: 'accent', background: 'surface-2', min: 3 },
+  // The selected-state tint (selected nav/list row, icon tile) hosts the
+  // row's name, meta and count text and its accent icon.
+  ...['fg-primary', 'fg-secondary', 'fg-muted', 'accent'].map((foreground) => ({
+    foreground,
+    background: 'accent-soft',
+    min: 4.5
+  }))
 ];
 
 describe('contrast math', () => {
@@ -151,17 +228,18 @@ describe('contrast math', () => {
 
 describe('token structure in the token files', () => {
   it('defines every color token as a light-dark() pair', () => {
-    expect(tokens.size).toBeGreaterThan(0);
+    expect(shared.size).toBeGreaterThan(0);
     const colorTokens = [
       ...SURFACES,
       ...['line-0', 'line-1', 'line-2', 'line-3', 'line-4', 'line-strong'],
       ...FOREGROUNDS,
       'on-accent',
       'accent-strong',
+      'accent-soft',
       ...SOFT_BACKGROUNDS
     ];
     for (const name of colorTokens) {
-      expect(tokens.has(name), `--${name} must be a light-dark() pair`).toBe(true);
+      expect(shared.has(name), `--${name} must be a light-dark() pair`).toBe(true);
     }
   });
 
@@ -172,12 +250,12 @@ describe('token structure in the token files', () => {
     for (const [, source, target] of mappings) {
       if (!source || !target)
         throw new Error('A Tailwind mapping entry is missing one of its token names');
-      expect(tokens.has(target), `--${source} points to --${target}, which is not defined`).toBe(
+      expect(shared.has(target), `--${source} points to --${target}, which is not defined`).toBe(
         true
       );
       mappedTargets.add(target);
     }
-    const unmapped = [...tokens.keys()].filter((name) => !mappedTargets.has(name));
+    const unmapped = [...shared.keys()].filter((name) => !mappedTargets.has(name));
     expect(unmapped, 'color tokens must appear in the @theme inline mapping').toEqual([]);
   });
 
@@ -185,7 +263,7 @@ describe('token structure in the token files', () => {
     const pairedForegrounds = new Set(REQUIRED_PAIRS.map((pair) => pair.foreground));
     const pairedBackgrounds = new Set(REQUIRED_PAIRS.map((pair) => pair.background));
     const missing: string[] = [];
-    for (const name of tokens.keys()) {
+    for (const name of shared.keys()) {
       // Decorative hairlines are excluded from the AA pair table by design; every
       // other token must appear as background or text.
       if (name.startsWith('line-')) continue;
@@ -199,19 +277,119 @@ describe('token structure in the token files', () => {
   });
 });
 
+describe('palette blocks (shared + extension-page)', () => {
+  it('declares the same shared palette on every shared selector', () => {
+    // One rule written for page roots, shadow hosts and in-shadow
+    // re-declarations: a selector that drifted out of it would leave that
+    // context on a different (untested) palette.
+    for (const selector of SHARED_SELECTORS) {
+      expect(blockTokens(selector).pairs, selector).toEqual(shared);
+    }
+  });
+
+  it('declares shared tokens only under the shared or extension-page selectors', () => {
+    // Any other rule — another selector, or either block wrapped in an
+    // at-rule — would set a value the maps never see, so the AA gate would
+    // keep testing the old one.
+    const allowed = new Set<string>([...SHARED_SELECTORS, EXTENSION_PAGE_SELECTOR]);
+    const strays = allRules
+      .filter((rule) => rule.within.length > 0 || !allowed.has(rule.selector))
+      .flatMap((rule) =>
+        rule.declarations
+          .filter(([property]) => property.startsWith('--') && shared.has(property.slice(2)))
+          .map(([property]) => `${property} in ${[...rule.within, rule.selector].join(' > ')}`)
+      );
+    expect(strays).toEqual([]);
+  });
+
+  it('writes each shared token once in the shared block, at most once in the page block', () => {
+    // Counted on the raw text so what the rule reader skips (a declaration
+    // directly inside an at-rule such as `@theme`) or collapses (a name
+    // repeated inside one block) still fails.
+    const miscounted = [...shared.keys()].flatMap((name) => {
+      const written = [...cssText.matchAll(new RegExp(`(?<![\\w-])--${name}\\s*:`, 'g'))].length;
+      const expected = pageBlock.pairs.has(name) ? 2 : 1;
+      return written === expected
+        ? []
+        : [`--${name}: written ${String(written)}, expected ${String(expected)}`];
+    });
+    expect(miscounted).toEqual([]);
+  });
+
+  it('declares hex light-dark() pairs only on shared token names', () => {
+    // A new pair outside the shared block would hold a palette value no AA
+    // pair covers.
+    const unknown = [...cssText.matchAll(/(?<![\w-])--([\w-]+)\s*:\s*light-dark\(\s*#/g)]
+      .map(([, name]) => name ?? '')
+      .filter((name) => !shared.has(name));
+    expect(unknown).toEqual([]);
+  });
+
+  it('re-declares only shared tokens in the extension-page block (typo guard)', () => {
+    expect(pageBlock.pairs.size).toBeGreaterThan(0);
+    const unknown = [...pageBlock.pairs.keys()].filter((name) => !shared.has(name));
+    expect(unknown, 'extension-page tokens with no shared declaration').toEqual([]);
+  });
+
+  it('declares only hex light-dark() custom-property pairs in the extension-page block', () => {
+    // Any other value would override a shared pair in the browser while the
+    // AA gate kept testing the shared one; a plain property would restyle the
+    // pages' `<html>` from a block meant to hold only palette overrides.
+    expect(pageBlock.unparsed).toEqual([]);
+    const plain = allRules
+      .filter((rule) => rule.selector === EXTENSION_PAGE_SELECTOR)
+      .flatMap((rule) => rule.declarations.map(([property]) => property))
+      .filter((property) => !property.startsWith('--'));
+    expect(plain).toEqual([]);
+  });
+
+  it('keeps data-fdt-tokens out of the extension documents', () => {
+    const offenders = EXTENSION_PAGE_SOURCES.flatMap((dir) =>
+      readdirSync(join(HERE, dir), { recursive: true, encoding: 'utf8' })
+        // Shipped sources only: a test may name the attribute to assert its absence.
+        .filter((file) => /\.(tsx?|html|css)$/.test(file) && !/\.test\.tsx?$/.test(file))
+        .filter((file) => /data-fdt-tokens|fdtTokens/.test(read(`${dir}/${file}`)))
+        .map((file) => `${dir}/${file}`)
+    );
+    expect(
+      offenders,
+      'data-fdt-tokens re-declares the shared palette on its subtree, undoing the extension-page ' +
+        'palette there: set it only on shadow-root containers in content-script entrypoints. A ' +
+        'components/ui primitive that also renders in an injected UI never hard-codes it — the ' +
+        'injected caller sets it on its own container.'
+    ).toEqual([]);
+  });
+
+  it('pins the extension-page attribute statically on both extension documents', () => {
+    const [, attribute, value] =
+      /^:root\[([\w-]+)='([\w-]+)'\]$/.exec(EXTENSION_PAGE_SELECTOR) ?? [];
+    if (attribute === undefined || value === undefined)
+      throw new Error(`Unexpected extension-page selector: ${EXTENSION_PAGE_SELECTOR}`);
+    for (const page of ['panel', 'options']) {
+      // On `<html>` itself, in the static markup: present before the first
+      // paint, with no script involved.
+      expect(read(`../../entrypoints/${page}/index.html`), page).toMatch(
+        new RegExp(`<html\\b[^>]*\\s${attribute}="${value}"[^>]*>`)
+      );
+    }
+  });
+});
+
 describe('WCAG AA pairs', () => {
-  it('every required pair reaches its ratio in both palettes', () => {
+  it('every required pair reaches its ratio in both palettes, shared and extension-page', () => {
     const failures: string[] = [];
-    for (const palette of ['dark', 'light'] as const) {
-      for (const { foreground, background, min } of REQUIRED_PAIRS) {
-        const ratio = contrastRatio(
-          paletteValues(foreground)[palette],
-          paletteValues(background)[palette]
-        );
-        if (ratio < min) {
-          failures.push(
-            `${palette}: ${foreground} on ${background} = ${ratio.toFixed(2)} < ${String(min)}`
+    for (const { scope, map } of PALETTE_MAPS) {
+      for (const palette of ['dark', 'light'] as const) {
+        for (const { foreground, background, min } of REQUIRED_PAIRS) {
+          const ratio = contrastRatio(
+            paletteValues(map, foreground)[palette],
+            paletteValues(map, background)[palette]
           );
+          if (ratio < min) {
+            failures.push(
+              `${scope} ${palette}: ${foreground} on ${background} = ${ratio.toFixed(2)} < ${String(min)}`
+            );
+          }
         }
       }
     }
@@ -220,10 +398,6 @@ describe('WCAG AA pairs', () => {
 });
 
 describe('accent fill hover/press states', () => {
-  /** Read a repo file relative to this test's directory. */
-  const read = (file: string): string =>
-    readFileSync(join(dirname(fileURLToPath(import.meta.url)), file), 'utf8');
-
   /** `#rrggbb` from 0–255 channels (rounded, clamped — what the browser paints). */
   const toHex = (channels: readonly number[]): string =>
     `#${channels
@@ -238,10 +412,20 @@ describe('accent fill hover/press states', () => {
   const channelsOf = (hex: string): number[] =>
     [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
 
+  /** One resolved palette the derivations run against. */
+  type PaletteScope = (typeof PALETTE_MAPS)[number];
+
+  /** Injected stylesheets render only inside shadow roots: the shared palette. */
+  const SHADOW_SCOPES: readonly PaletteScope[] = PALETTE_MAPS.filter(
+    ({ scope }) => scope === 'shared'
+  );
+
   /** One derived fill: how it is computed from `accent-strong` in a palette. */
   interface DerivedFill {
     name: string;
-    color: (palette: 'dark' | 'light') => string;
+    color: (map: PaletteMap, palette: 'dark' | 'light') => string;
+    /** The palettes the fill renders in (primitives: both; injected sheets: shared). */
+    scopes: readonly PaletteScope[];
     /** A press flash (`:active`): held only while the pointer is down, so it
      * is never what identifies the control — its text still must read. */
     momentary: boolean;
@@ -278,14 +462,14 @@ describe('accent fill hover/press states', () => {
    *
    * @param percent The accent's share, 0–100.
    * @param other The token mixed in.
-   * @returns The palette → `#rrggbb` resolver.
+   * @returns The (palette map, palette) → `#rrggbb` resolver.
    */
   const mixFill =
     (percent: number, other: string) =>
-    (palette: 'dark' | 'light'): string => {
+    (map: PaletteMap, palette: 'dark' | 'light'): string => {
       const weight = percent / 100;
-      const accent = channelsOf(paletteValues('accent-strong')[palette]);
-      const mixed = channelsOf(paletteValues(other)[palette]);
+      const accent = channelsOf(paletteValues(map, 'accent-strong')[palette]);
+      const mixed = channelsOf(paletteValues(map, other)[palette]);
       return toHex(
         accent.map((value, index) => value * weight + (mixed[index] ?? 0) * (1 - weight))
       );
@@ -295,12 +479,14 @@ describe('accent fill hover/press states', () => {
    * The fill `brightness()` paints over the accent (each sRGB channel scaled, clamped).
    *
    * @param factor The brightness factor (1 = unchanged).
-   * @returns The palette → `#rrggbb` resolver.
+   * @returns The (palette map, palette) → `#rrggbb` resolver.
    */
   const brightnessFill =
     (factor: number) =>
-    (palette: 'dark' | 'light'): string =>
-      toHex(channelsOf(paletteValues('accent-strong')[palette]).map((value) => value * factor));
+    (map: PaletteMap, palette: 'dark' | 'light'): string =>
+      toHex(
+        channelsOf(paletteValues(map, 'accent-strong')[palette]).map((value) => value * factor)
+      );
 
   /**
    * Every `color-mix(…)` call in a stylesheet, parentheses balanced.
@@ -337,7 +523,12 @@ describe('accent fill hover/press states', () => {
           return [];
         }
         return [
-          { name: `${file}: ${call}`, momentary: false, color: mixFill(Number(percent), other) }
+          {
+            name: `${file}: ${call}`,
+            momentary: false,
+            color: mixFill(Number(percent), other),
+            scopes: SHADOW_SCOPES
+          }
         ];
       })
   );
@@ -382,7 +573,12 @@ describe('accent fill hover/press states', () => {
           }
           const factor = unit === '%' ? Number(amount) / 100 : Number(amount);
           return [
-            { name, momentary: rule.selector.includes(':active'), color: brightnessFill(factor) }
+            {
+              name,
+              momentary: rule.selector.includes(':active'),
+              color: brightnessFill(factor),
+              scopes: SHADOW_SCOPES
+            }
           ];
         })
       )
@@ -398,7 +594,7 @@ describe('accent fill hover/press states', () => {
 
   /** The `components/ui` primitives that paint the accent fill (found, never listed). */
   const primitiveDir = '../../components/ui';
-  const accentPrimitives = readdirSync(join(dirname(fileURLToPath(import.meta.url)), primitiveDir))
+  const accentPrimitives = readdirSync(join(HERE, primitiveDir))
     .filter((file) => file.endsWith('.tsx') && !file.includes('.test.'))
     .filter((file) => read(`${primitiveDir}/${file}`).includes('bg-accent-strong'));
 
@@ -467,7 +663,9 @@ describe('accent fill hover/press states', () => {
             {
               name,
               momentary: variants.includes('active'),
-              color: brightnessFill(Number(percent) / 100)
+              color: brightnessFill(Number(percent) / 100),
+              // Primitives render on the extension pages and (some) in shadow roots.
+              scopes: PALETTE_MAPS
             }
           ];
         }
@@ -509,12 +707,15 @@ describe('accent fill hover/press states', () => {
     for (const { name, surface } of accentStateHovers) {
       if (!FILL_SURFACES.includes(surface))
         failures.push(`${name}: ${surface} is not a fill surface`);
-      for (const palette of ['dark', 'light'] as const) {
-        const edge = contrastRatio(
-          paletteValues('accent-strong')[palette],
-          paletteValues(surface)[palette]
-        );
-        if (edge < 3) failures.push(`${palette}: ${name} = ${edge.toFixed(2)}`);
+      // Primitives render on the extension pages and (some) in shadow roots.
+      for (const { scope, map } of PALETTE_MAPS) {
+        for (const palette of ['dark', 'light'] as const) {
+          const edge = contrastRatio(
+            paletteValues(map, 'accent-strong')[palette],
+            paletteValues(map, surface)[palette]
+          );
+          if (edge < 3) failures.push(`${scope} ${palette}: ${name} = ${edge.toFixed(2)}`);
+        }
       }
     }
     expect(failures).toEqual([]);
@@ -522,17 +723,20 @@ describe('accent fill hover/press states', () => {
 
   it('keeps on-accent text at 4.5:1 and a hover fill at 3:1 on its surfaces, both palettes', () => {
     const failures: string[] = [];
-    for (const palette of ['dark', 'light'] as const) {
-      for (const derived of [...mixes, ...brightened, ...sheetBrightened]) {
-        const fill = derived.color(palette);
-        const text = contrastRatio(paletteValues('on-accent')[palette], fill);
-        if (text < 4.5)
-          failures.push(`${palette}: on-accent on ${derived.name} = ${text.toFixed(2)}`);
-        if (derived.momentary) continue;
-        for (const surface of FILL_SURFACES) {
-          const edge = contrastRatio(fill, paletteValues(surface)[palette]);
-          if (edge < 3)
-            failures.push(`${palette}: ${derived.name} on ${surface} = ${edge.toFixed(2)}`);
+    for (const derived of [...mixes, ...brightened, ...sheetBrightened]) {
+      for (const { scope, map } of derived.scopes) {
+        for (const palette of ['dark', 'light'] as const) {
+          const where = `${scope} ${palette}`;
+          const fill = derived.color(map, palette);
+          const text = contrastRatio(paletteValues(map, 'on-accent')[palette], fill);
+          if (text < 4.5)
+            failures.push(`${where}: on-accent on ${derived.name} = ${text.toFixed(2)}`);
+          if (derived.momentary) continue;
+          for (const surface of FILL_SURFACES) {
+            const edge = contrastRatio(fill, paletteValues(map, surface)[palette]);
+            if (edge < 3)
+              failures.push(`${where}: ${derived.name} on ${surface} = ${edge.toFixed(2)}`);
+          }
         }
       }
     }

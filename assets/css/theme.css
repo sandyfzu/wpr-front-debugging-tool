@@ -51,6 +51,7 @@
   --color-accent-strong: var(--accent-strong);
   --color-accent-from: var(--accent-from);
   --color-accent-to: var(--accent-to);
+  --color-accent-soft: var(--accent-soft);
 
   --color-status-ok: var(--status-ok);
   --color-status-ok-soft: var(--status-ok-soft);
@@ -79,6 +80,13 @@
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
+
+  /* Stat tiles only (UI/UX bar T-1): the tile's main number and its value
+   * line — the only sizes above the density scale on data surfaces. */
+  --text-stat: 1.25rem;
+  --text-stat--line-height: 1.5rem;
+  --text-tile: 0.9375rem;
+  --text-tile--line-height: 1.25rem;
 
   /* Elevation: the values are the tokens'; this mapping keeps the
    * `shadow-elev-*` utilities generated with the same behavior. */

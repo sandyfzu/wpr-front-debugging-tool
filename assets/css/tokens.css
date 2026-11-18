@@ -107,6 +107,11 @@
   --accent-from: light-dark(#3554e8, #6390ff);
   --accent-to: light-dark(#7c3aed, #a78bfa);
   --on-accent: light-dark(#ffffff, #ffffff);
+  /* `accent-soft`: the selected-state tint (selected nav/list row, icon tile)
+   * under `fg-*`/`accent` text. Only the extension pages paint it today; it is
+   * declared here too so every token the page block below overrides has one
+   * shared definition. */
+  --accent-soft: light-dark(#eceffe, #1c2145);
 
   /* Status vocabulary — shared by panel cards and the on-page strip:
    * `ok` enabled/passing · `error` absent/failed · `warn` degraded/unusual ·
@@ -160,6 +165,37 @@
   --shadow-elev-3:
     0 2px 4px light-dark(rgb(10 14 22 / 12%), rgb(0 0 0 / 30%)),
     0 10px 28px light-dark(rgb(10 14 22 / 16%), rgb(0 0 0 / 45%));
+}
+
+/* ---- Extension-page palette ---------------------------------------------- */
+/* The panel and options documents carry the static
+ * `data-fdt-surface="extension-page"` on `<html>` (in their `index.html`, so
+ * it applies before the first paint) and take these retuned values: calmer
+ * hairlines, clearer surface steps. Injected UIs never match — `:root` never
+ * matches inside a shadow root and a host page's `<html>` never carries the
+ * attribute — so they keep the shared values above. Only shared token names
+ * are re-declared here (the token gate rejects any other), still as
+ * `light-dark()` pairs, so the appearance model above (`[data-theme]` on the
+ * same `<html>`, or the OS scheme for `system`) switches them unchanged.
+ * `fg-muted` keeps its shared dark value: a dimmer one misses AA on
+ * `surface-4`. Never put `data-fdt-tokens` on an element of these documents:
+ * it re-declares the shared values on that subtree, undoing this block (the
+ * token test guards the panel, options and `components/ui` sources). */
+:root[data-fdt-surface='extension-page'] {
+  --surface-0: light-dark(#f1f2f5, #0b0d11);
+  --surface-1: light-dark(#f8f9fb, #0f1217);
+  --surface-2: light-dark(#ffffff, #141820);
+  --surface-3: light-dark(#f2f4f7, #1b2029);
+  --surface-4: light-dark(#e6e9ef, #252c38);
+
+  --line-1: light-dark(#e3e6ec, #1d232c);
+  --line-2: light-dark(#d5d9e2, #283040);
+  --line-3: light-dark(#c3c9d4, #36404f);
+
+  --fg-muted: light-dark(#5e6776, #8b96a9);
+
+  --accent: light-dark(#2f56e8, #8aa4ff);
+  --accent-soft: light-dark(#eceffe, #1c2145);
 }
 
 /* ---- Native scrollbars --------------------------------------------------- */

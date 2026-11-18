@@ -1,7 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-fdt-surface="extension-page">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      `data-fdt-surface="extension-page"` on <html> selects the extension-page
+      palette in the token stylesheet; it is static markup so it holds from the
+      first paint and combines with the boot's `data-theme` on the same element.
+    -->
     <!--
       The WPR FDT devtools panel page (the `WPR FDT` panel's target, registered
       by the devtools entrypoint). Palette-before-first-paint is applied by the

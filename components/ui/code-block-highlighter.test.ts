@@ -152,18 +152,24 @@ const AA_TEXT = 4.5;
 
 /**
  * The code block's surface (`bg-surface-1` on its container, pinned in
- * `code-block.test.tsx`) per palette, read from the real token file.
+ * `code-block.test.tsx`) per palette, read from the real token file: every
+ * `--surface-1` pair it declares (the shared block and the extension-page
+ * block the panel resolves), so the gate holds wherever the block renders.
  */
-const CODE_SURFACE = ((): { light: string; dark: string } => {
+const CODE_SURFACES = ((): { light: string[]; dark: string[] } => {
   const css = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), '../../assets/css/tokens.css'),
     'utf8'
   );
-  const match = /--surface-1:\s*light-dark\(\s*(#[0-9a-f]{6})\s*,\s*(#[0-9a-f]{6})\s*\)/.exec(css);
-  if (match?.[1] === undefined || match[2] === undefined) {
+  const pairs = [
+    ...css.matchAll(/--surface-1:\s*light-dark\(\s*(#[0-9a-f]{6})\s*,\s*(#[0-9a-f]{6})\s*\)/g)
+  ].flatMap(([, light, dark]) =>
+    light === undefined || dark === undefined ? [] : [{ light, dark }]
+  );
+  if (pairs.length === 0) {
     throw new Error('--surface-1 is not a light-dark(#hex, #hex) pair in tokens.css');
   }
-  return { light: match[1], dark: match[2] };
+  return { light: pairs.map(({ light }) => light), dark: pairs.map(({ dark }) => dark) };
 })();
 
 /**
@@ -248,8 +254,8 @@ function emittedColors(
 describe('real highlighter — contrast on the code surface (WCAG AA)', () => {
   const emitted = grammarScopes([...javascript, ...json]);
   const cases = [
-    { palette: 'light', theme: githubLight, name: THEME_PAIR.light, surface: CODE_SURFACE.light },
-    { palette: 'dark', theme: githubDark, name: THEME_PAIR.dark, surface: CODE_SURFACE.dark }
+    { palette: 'light', theme: githubLight, name: THEME_PAIR.light, surfaces: CODE_SURFACES.light },
+    { palette: 'dark', theme: githubDark, name: THEME_PAIR.dark, surfaces: CODE_SURFACES.dark }
   ] as const;
 
   it('reads real grammar scopes and the themes the loader registers', () => {
@@ -262,8 +268,16 @@ describe('real highlighter — contrast on the code surface (WCAG AA)', () => {
   it.each(cases)('every emittable $palette token color is ≥ 4.5:1 on --surface-1', (entry) => {
     const colors = emittedColors(entry.theme, COLOR_REPLACEMENTS[entry.name], emitted);
     expect(colors.size).toBeGreaterThan(5);
+    expect(entry.surfaces.length, 'shared + extension-page surface-1').toBe(2);
     const failing = [...colors]
-      .map(([color, origin]) => ({ color, origin, ratio: contrastRatio(color, entry.surface) }))
+      .flatMap(([color, origin]) =>
+        entry.surfaces.map((surface) => ({
+          color,
+          origin,
+          surface,
+          ratio: contrastRatio(color, surface)
+        }))
+      )
       .filter(({ ratio }) => ratio < AA_TEXT);
     expect(failing).toEqual([]);
   });
