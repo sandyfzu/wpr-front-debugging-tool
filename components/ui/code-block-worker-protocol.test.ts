@@ -13,6 +13,9 @@ describe('isHighlightRequest', () => {
   it.each([
     [{ id: 1, code: 'x', lang: 'javascript' }, true],
     [{ id: 7, code: '', lang: 'json' }, true],
+    [{ id: 2, code: 'a {}', lang: 'css' }, true],
+    [{ id: 3, code: '<a>', lang: 'html' }, true],
+    [{ id: 1, code: 'x', lang: 'CSS' }, false],
     [{ id: 0, code: 'x', lang: 'javascript' }, false],
     [{ id: -1, code: 'x', lang: 'javascript' }, false],
     [{ id: 1.5, code: 'x', lang: 'javascript' }, false],

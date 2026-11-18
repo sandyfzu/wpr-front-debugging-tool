@@ -61,6 +61,11 @@ export default defineConfig({
   modules: ['@wxt-dev/module-solid'],
   vite: () => ({
     plugins: [tailwindcss(), extensionApiBeforeMessaging()],
+    // Workers build as ES modules (Vite's default `iife` cannot split code):
+    // the code highlighter's worker fetches its CSS/HTML grammar chunk on the
+    // first block that needs it. Every worker is spawned `type: 'module'`
+    // (module workers and `import()` in them: Chromium 80+, Firefox 114+).
+    worker: { format: 'es' },
     resolve: {
       // Every runtime `browser` (ours, WXT's, its storage's) comes from
       // `@wxt-dev/browser`, whose lookup a page's DOM can forge in a content

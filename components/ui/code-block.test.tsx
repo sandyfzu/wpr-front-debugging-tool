@@ -213,8 +213,8 @@ describe('CodeBlock', () => {
   });
 
   it('rejects a language outside the registered set (fail fast)', () => {
-    // The hook contract list is pinned itself: javascript + json is the whole set.
-    expect(CODE_BLOCK_LANGS).toEqual(['javascript', 'json']);
+    // The hook contract list is pinned itself: these four are the whole set.
+    expect(CODE_BLOCK_LANGS).toEqual(['javascript', 'json', 'css', 'html']);
     expect(() => render(() => <CodeBlock text="x" lang={'perl' as never} />)).toThrow(
       /unsupported language/
     );
@@ -764,6 +764,73 @@ describe('CodeBlock — worker highlighting', () => {
     render(() => <CodeBlock text="a" lang="javascript" loadHighlighter={stubLoader()} />);
     expect(document.querySelector('[data-fdt-code-block-plain]')).toBeNull();
   });
+
+  it.each(['css', 'html'] as const)(
+    'requests a %s block in its own language and labels it so',
+    async (lang) => {
+      const gate = manualGate();
+      render(() => (
+        <CodeBlock
+          text="a { color: red; }"
+          lang={lang}
+          createObserver={() => gate}
+          loadHighlighter={stubLoader()}
+        />
+      ));
+      expect(screen.getByText(lang)).toBeTruthy();
+      gate.fires();
+      await vi.waitFor(() => {
+        expect(document.querySelector(`[data-local-lang="${lang}"]`)).toBeTruthy();
+      });
+    }
+  );
+
+  it('keeps a stylesheet block plain and quiet when its grammar fails (no dead end)', async () => {
+    const gate = manualGate();
+    const loader = asyncLoader();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    render(() => (
+      <CodeBlock
+        text="a { color: red; }"
+        lang="css"
+        createObserver={() => gate}
+        loadHighlighter={loader.load}
+      />
+    ));
+    gate.fires();
+    await vi.waitFor(() => {
+      expect(loader.requests).toHaveLength(1);
+    });
+    loader.requests[0]?.fail('failed');
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalled();
+    });
+    expect(controls().fallback?.textContent).toBe('a { color: red; }');
+    expect(document.querySelector('[data-fdt-code-block-plain]')).toBeNull();
+    warn.mockRestore();
+  });
+
+  it.each([
+    [HIGHLIGHT_MAX_CHARS, 1],
+    [HIGHLIGHT_MAX_CHARS + 1, 0]
+  ])(
+    'requests markup of %i chars %i time(s) (the cap applies to every language)',
+    async (size, asked) => {
+      const gate = manualGate();
+      const loader = asyncLoader();
+      render(() => (
+        <CodeBlock
+          text={'<a>'.padEnd(size, 'x')}
+          lang="html"
+          createObserver={() => gate}
+          loadHighlighter={loader.load}
+        />
+      ));
+      gate.fires();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(loader.requests).toHaveLength(asked);
+    }
+  );
 });
 
 describe('CodeBlock — clip reporting', () => {
