@@ -2,7 +2,7 @@
 
 ## TLDR
 
-Real-site verification (former P14.6) is post-release [P22](./22-phase-22-post-release-real-site.md); order P5J (closed)→popup + Diagnoser-entry removal (done 2026-11-17)→P15; P7/P8 post-release (owner 2026-11-17). Never imply a real-site pass before P22 runs. P15 closes every required promise across browsers, not just compile/build. No implementation/commit/tag/push/publication authorized merely by this checklist.
+Real-site verification (former P14.6) is post-release [P22](./22-phase-22-post-release-real-site.md); order P5J (closed)→popup + Diagnoser-entry removal (done 2026-11-17)→P23 panel redesign→P15; P7/P8 post-release (owner 2026-11-17). Never imply a real-site pass before P22 runs. P15 closes every required promise across browsers, not just compile/build. No implementation/commit/tag/push/publication authorized merely by this checklist.
 
 ## P14.6 external-site track — moved
 
