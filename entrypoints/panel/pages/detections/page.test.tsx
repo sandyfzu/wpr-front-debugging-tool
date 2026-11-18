@@ -15,6 +15,7 @@ import { buildStatusItems } from '../../../../lib/panel/detections-view-model';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { makeFdtData } from '../../state/fixtures';
 import type { DataState } from '../../state/fdt-state-machine';
+import { createDetectionsLayout, DetectionsLayoutContext } from '../../state/detections-layout';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { CARD_PAGE_LINKS } from './card-presentation';
 import { DNS_PREFETCH_LIMIT, MOBILE_CACHE_LIMIT } from '../../../../lib/detection/hud';
@@ -423,8 +424,11 @@ describe('DetectionsView status filter', () => {
     expect(chipCount('active')).toBe(String(active));
     expect(chipCount('inactive')).toBe(String(items.length - active));
     expect(chip('all').getAttribute('aria-pressed')).toBe('true');
-    // Not a search: the page stays outside the find protocol.
-    expect(document.querySelector('[data-fdt="detections-controls"] input')).toBeNull();
+    // Not a search: the page stays outside the find protocol (the layout
+    // choice's radios are the row's only inputs).
+    expect(
+      document.querySelector('[data-fdt="detections-controls"] input:not([type="radio"])')
+    ).toBeNull();
     expect(screen.getByRole('group', { name: 'Optimization status' }).textContent).not.toMatch(
       /enabled|disabled/i
     );
@@ -576,7 +580,9 @@ describe('DetectionsPage (store wiring)', () => {
     });
     render(() => (
       <FdtDataContext.Provider value={store}>
-        <DetectionsPage />
+        <DetectionsLayoutContext.Provider value={createDetectionsLayout()}>
+          <DetectionsPage />
+        </DetectionsLayoutContext.Provider>
       </FdtDataContext.Provider>
     ));
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Detections');

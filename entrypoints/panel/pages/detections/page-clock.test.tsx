@@ -8,6 +8,7 @@ import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
+import { createDetectionsLayout, DetectionsLayoutContext } from '../../state/detections-layout';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 
 const clock = vi.hoisted(() => ({ setLoaded: vi.fn(), stop: vi.fn(), created: 0 }));
@@ -38,7 +39,9 @@ describe('DetectionsPage clock', () => {
     };
     const view = render(() => (
       <FdtDataContext.Provider value={store}>
-        <DetectionsPage />
+        <DetectionsLayoutContext.Provider value={createDetectionsLayout()}>
+          <DetectionsPage />
+        </DetectionsLayoutContext.Provider>
       </FdtDataContext.Provider>
     ));
     expect(clock.created).toBe(1);
