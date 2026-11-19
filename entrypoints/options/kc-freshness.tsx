@@ -14,7 +14,6 @@
 import type { JSX } from 'solid-js';
 import { createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import { Show } from 'solid-js';
-import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Skeleton } from '../../components/ui/skeleton';
 import { toast } from '../../components/ui/toast-store';
@@ -23,6 +22,9 @@ import { knownConflictsStore, type KnownConflictsMeta } from '../../lib/storage/
 import { sendMessage } from '../../lib/messaging';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import { createLogger } from '../../lib/logger';
+import { cn } from '../../utils/cn';
+import { SectionCard } from './section-card';
+import { OPTION_ROW } from './row-look';
 
 const log = createLogger('options');
 
@@ -184,17 +186,16 @@ export function KnownConflictsFreshness(props: KnownConflictsFreshnessProps): JS
   };
 
   return (
-    <Card
-      level={1}
+    <SectionCard
+      headingHook="kc-heading"
+      title={KC_CARD_TITLE}
+      description={KC_CARD_DESCRIPTION}
       class={props.class}
-      header={
-        <div data-fdt="kc-heading" class="flex flex-col gap-0.5">
-          <h2 class="text-sm font-medium text-fg-primary">{KC_CARD_TITLE}</h2>
-          <p class="text-2xs text-fg-secondary">{KC_CARD_DESCRIPTION}</p>
-        </div>
-      }
     >
-      <div data-fdt="kc-freshness-row" class="flex flex-wrap items-center justify-between gap-2">
+      <div
+        data-fdt="kc-freshness-row"
+        class={cn('flex flex-wrap items-center justify-between gap-2', OPTION_ROW)}
+      >
         <Show
           when={!reading()}
           fallback={
@@ -231,6 +232,6 @@ export function KnownConflictsFreshness(props: KnownConflictsFreshnessProps): JS
           </Button>
         </Show>
       </div>
-    </Card>
+    </SectionCard>
   );
 }
