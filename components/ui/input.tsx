@@ -1,6 +1,6 @@
 /**
- * The panel's text field — the filter bars' search and the tool forms'
- * fields. A native `<input>` in the search-field look (28 px, the 7 px control
+ * The panel's text field — the list search field's and the tool forms'
+ * input. A native `<input>` in the search-field look (28 px, the 7 px control
  * corner, a raised fill) so every field looks, measures and focuses
  * identically across the panel and options.
  */

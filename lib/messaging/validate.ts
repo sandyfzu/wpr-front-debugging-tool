@@ -310,8 +310,8 @@ export function parseDbUpdateResult(input: unknown): DbUpdateResult | null {
  * Validate KnownConflict rows (the committed seed or a fetched DB update).
  *
  * @returns The rows, or null when any entry lacks name/url, carries wrong
- *   field types, or exceeds the caps — the DB is checked as a unit so P2's
- *   updater can reject a corrupt fetch wholesale instead of storing partial
+ *   field types, or exceeds the caps — the DB is checked as a unit so the
+ *   background updater can reject a corrupt fetch wholesale instead of storing partial
  *   rows. Unknown extra fields are tolerated (not rejected, not carried): a
  *   future DB version may add fields without breaking this reader, and the
  *   fresh rebuilt rows stay the canonical shape.

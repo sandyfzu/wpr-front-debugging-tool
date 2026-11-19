@@ -1,29 +1,28 @@
 /**
- * The calm variant of the panel's filter/search/list body (`FilteredList`
- * with `variant: 'calm'`): calm rows (no frame, no hairlines, 4 px apart), a
- * column header that stays above the scroller, today's chips **or** the
- * combinable facets, and — when the page declares a detail — the
- * master–detail (`./master-detail`).
+ * The panel's filter/search/list body (the list kit): calm rows (no frame,
+ * no hairlines, 4 px apart), a column header that stays above the scroller,
+ * the combinable facets or the search field alone, and — when the page
+ * declares a detail — the master–detail (`./master-detail`).
  *
  * State matrix:
  * - **empty** (no rows): the caller's empty view, no controls;
- * - **filtered-empty**: `NoMatches` naming the chip or the facet values and
- *   the query, with the one-click ways back (`Clear filters` clears facets
- *   and search);
+ * - **filtered-empty**: `NoMatches` naming the facet values and the query,
+ *   with the one-click ways back (`Clear filters` clears facets and search);
  * - **populated**: the virtualized list, plus the side pane or the drill
  *   detail for a selection (listed / no longer listed / no longer on the page).
  *
- * Search and find as in the default variant: one store, two inputs; the
- * find's cursor marks and scrolls the current row; a find event in the drill
- * detail returns to the list first. A refresh keeps the query, filters,
- * selection and scroll (the body stays mounted; rows reconcile by key).
+ * Search and find: one store (`useSearch`), two inputs (the field and the
+ * DevTools find bar); the find's cursor marks and scrolls the current row; a
+ * find event in the drill detail returns to the list first. A refresh keeps
+ * the query, filters, selection and scroll (the body stays mounted; rows
+ * reconcile by key).
  *
  * The root is its own `@container` and the measured box: rows' tier
  * variants, the facet fold and the pane/drill rule all read one width.
  */
 import type { Accessor, JSX } from 'solid-js';
 import { createMemo, createSignal, Show } from 'solid-js';
-import { FilterBar } from '../../../../components/ui/filter-bar';
+import { SearchField } from '../../../../components/ui/search-field';
 import {
   VirtualList,
   type VirtualItem,
@@ -31,6 +30,7 @@ import {
 } from '../../../../components/ui/virtual-list';
 import {
   applyFacets,
+  defineFacets,
   facetCounts,
   selectedFacets,
   type FacetCounts,
@@ -38,13 +38,7 @@ import {
   type FacetSet
 } from '../../../../lib/panel/resource-facets';
 import {
-  filterAndSearch,
-  filterCounts,
-  type ResourcePageDefinition
-} from '../../../../lib/panel/resources-view-model';
-import {
   countLabel,
-  defaultChipId,
   fallbackRowKey,
   normalizeQuery,
   reconcileList,
@@ -57,7 +51,7 @@ import { cn } from '../../../../utils/cn';
 import { bindSearchField } from '../../state/search-field';
 import { useSearch } from '../../state/use-fdt-data';
 import { createCurrentMatch } from '../current-match';
-import { NoMatches, PAGE_CANVAS, PAGE_FILL_SCROLLER, type NoMatchesAction } from '../page-frame';
+import { NoMatches, PAGE_CANVAS, PAGE_FILL_SCROLLER } from '../page-frame';
 import { createResultsAnnouncement } from '../results-announcement';
 import { createContentWidth } from './content-width';
 import { FacetBar } from './facet-bar';
@@ -71,29 +65,16 @@ import {
 } from './list-row';
 import { pressOpensRow } from './list-keys';
 import { createMasterDetail, DetailPane, DrillDetail, type ListDetail } from './master-detail';
-import { buildFilterChips, narrowingChipLabel } from './resource-list-view';
 
-/** Today's single-select chips as the calm list's filter input. */
-export interface CalmChipInput<Row, Id extends string> {
-  /** The list's chips + searched field. */
-  readonly definition: ResourcePageDefinition<Row, Id>;
-  readonly facets?: never;
-  readonly searchField?: never;
-}
+/** A search-only list's facets: none (the search alone narrows). */
+const NO_FACETS: FacetSet<unknown, never> = defineFacets<unknown, never>([]);
 
-/** Combinable facets as the calm list's filter input. */
-export interface CalmFacetInput<Row, Id extends string> {
-  /** The list's facets. */
-  readonly facets: FacetSet<Row, Id>;
-  /** The searched field (the page's existing `…_RESOURCES.searchField`). */
+/** The list's props. */
+export interface CalmFilteredListProps<Row, Id extends string> {
+  /** The list's facets; omitted = a search-only list (the field alone, no facet bar). */
+  readonly facets?: FacetSet<Row, Id>;
+  /** The searched field (the page's own searched-field rule). */
   readonly searchField: (row: Row) => string;
-  readonly definition?: never;
-}
-
-/** Everything the calm variant takes beside its filter input. */
-export interface CalmListBaseProps<Row> {
-  /** Selects this variant. */
-  readonly variant: 'calm';
   /** Every row (reactive: a refresh swaps it). */
   readonly rows: readonly Row[];
   /**
@@ -135,87 +116,23 @@ export interface CalmListBaseProps<Row> {
   readonly createVirtualizer?: VirtualizerFactory;
 }
 
-/** The calm variant's props: the base plus exactly one filter input. */
-export type CalmFilteredListProps<Row, Id extends string> = CalmListBaseProps<Row> &
-  (CalmChipInput<Row, Id> | CalmFacetInput<Row, Id>);
-
-/** What the list's filtered-empty view names and offers. */
-interface Narrowing {
-  /** The selected chip's label (chip input). */
-  readonly chipLabel?: string;
-  /** The narrowing facet values' labels (facet input). */
-  readonly filterLabels?: readonly string[];
-}
-
-/** One filter input's live state, as the list renders it. */
-interface CalmFilter<Row> {
-  /** The rows the filter + query keep, in list order. */
+/** The facets' live state, as the list renders it. */
+interface FacetFilter<Row, Id extends string> {
+  /** The rows the facets + query keep, in list order. */
   readonly visible: Accessor<readonly Row[]>;
-  /** The selection (an announcement trigger). */
-  readonly selection: Accessor<unknown>;
-  /** What narrows besides the query (the filtered-empty sentence). */
-  readonly narrowing: Accessor<Narrowing>;
-  /** Whether a filter narrows (besides the query). */
+  /** The narrowing values' labels (the filtered-empty sentence). */
+  readonly labels: Accessor<readonly string[]>;
+  /** Whether a facet narrows (besides the query). */
   readonly narrowed: Accessor<boolean>;
-  /** Back to "all" / no facet. */
-  reset(): void;
-}
-
-/** The chip input's state. */
-interface ChipFilter<Row, Id extends string> extends CalmFilter<Row> {
-  readonly kind: 'chips';
-  readonly allChip: Id;
-  /** Whether the bar shows chips (a list with one chip has nothing to pick). */
-  readonly hasChips: boolean;
-  readonly chips: Accessor<ReturnType<typeof buildFilterChips>>;
-  readonly selected: Accessor<Id>;
-  select(id: Id): void;
-}
-
-/** The facet input's state. */
-interface FacetFilter<Row, Id extends string> extends CalmFilter<Row> {
-  readonly kind: 'facets';
-  readonly facets: FacetSet<Row, Id>;
   readonly picks: Accessor<FacetSelection<Id>>;
   readonly counts: Accessor<FacetCounts<Id>>;
   pick(next: FacetSelection<Id>): void;
+  /** Back to no facet. */
+  reset(): void;
 }
 
 /**
- * The chip input: one selected chip (today's model), counts per chip.
- *
- * @param definition The list's chips.
- * @param rows The reconciled rows.
- * @param query The normalized committed query.
- * @returns The filter state.
- */
-function createChipFilter<Row, Id extends string>(
-  definition: ResourcePageDefinition<Row, Id>,
-  rows: Accessor<readonly Row[]>,
-  query: Accessor<string>
-): ChipFilter<Row, Id> {
-  const allChip = defaultChipId(definition);
-  const [selected, setSelected] = createSignal<Id>(allChip);
-  const counts = createMemo(() => filterCounts(rows(), definition));
-  const chips = createMemo(() => buildFilterChips(definition, counts(), selected()));
-  const visible = createMemo(() => filterAndSearch(rows(), definition, selected(), query()));
-  return {
-    kind: 'chips',
-    allChip,
-    hasChips: definition.filters.length > 1,
-    selected,
-    select: (id) => setSelected(() => id),
-    chips,
-    visible,
-    selection: selected,
-    narrowing: () => ({ chipLabel: narrowingChipLabel(definition, selected()) }),
-    narrowed: () => selected() !== allChip,
-    reset: () => setSelected(() => allChip)
-  };
-}
-
-/**
- * The facet input: one value per facet, standard faceted counts, one pass.
+ * The facets: one value per facet, standard faceted counts, one pass.
  *
  * @param facets The list's facets.
  * @param field The searched field.
@@ -235,21 +152,18 @@ function createFacetFilter<Row, Id extends string>(
   const counts = createMemo(() => facetCounts(rows(), facets, picks(), search()));
   const visible = createMemo(() => applyFacets(rows(), facets, picks(), search()));
   return {
-    kind: 'facets',
-    facets,
     picks,
     pick: (next) => setPicks(() => next),
     counts,
     visible,
-    selection: picks,
-    narrowing: () => ({ filterLabels: labels() }),
+    labels,
     narrowed: () => labels().length > 0,
     reset: () => setPicks(() => noFacetSelection<Id>())
   };
 }
 
 /**
- * Render the calm list body.
+ * Render the list body.
  *
  * @param props See {@link CalmFilteredListProps}.
  */
@@ -273,14 +187,11 @@ export function CalmFilteredList<Row, Id extends string>(
       ),
     []
   );
-  // The input is static per list (a page passes a module constant).
-  const filter: ChipFilter<Row, Id> | FacetFilter<Row, Id> =
-    // eslint-disable-next-line solid/reactivity -- read once on purpose: a list's filter input is a module constant
-    props.facets === undefined
-      ? // eslint-disable-next-line solid/reactivity -- as above
-        createChipFilter(props.definition, rows, query)
-      : // eslint-disable-next-line solid/reactivity -- as above
-        createFacetFilter(props.facets, props.searchField, rows, query);
+  // The facets and the searched field are static per list (a page passes module constants).
+  // eslint-disable-next-line solid/reactivity -- read once on purpose: a list's facets are a module constant
+  const facets: FacetSet<Row, Id> | undefined = props.facets;
+  // eslint-disable-next-line solid/reactivity -- read once on purpose: as above
+  const filter = createFacetFilter(facets ?? NO_FACETS, props.searchField, rows, query);
   const visible = filter.visible;
   const visibleIds = createMemo(() => visible().map((row) => props.rowKey(row)));
   const allIds = createMemo(() => rows().map((row) => props.rowKey(row)));
@@ -329,14 +240,8 @@ export function CalmFilteredList<Row, Id extends string>(
     rows,
     visible,
     noun,
-    actions: [filter.selection, query]
+    actions: [filter.picks, query]
   });
-
-  /** Where focus lands once a `NoMatches` way back removes its button. */
-  const focusAfter = (action: NoMatchesAction): HTMLElement | null | undefined =>
-    action === 'show-all' && filter.kind === 'chips'
-      ? controls?.querySelector<HTMLElement>(`[data-fdt-filter-chip="${filter.allChip}"]`)
-      : searchInput();
 
   const estimate = (index: number): number => {
     const row = visible()[index];
@@ -347,13 +252,13 @@ export function CalmFilteredList<Row, Id extends string>(
   };
 
   const searchField = (): JSX.Element => (
-    <FilterBar
-      searchQuery={field.value()}
-      onSearchChange={(raw) => {
+    <SearchField
+      value={field.value()}
+      onValueChange={(raw) => {
         field.input(raw);
       }}
-      searchLabel={props.searchLabel}
-      searchPlaceholder={props.searchPlaceholder}
+      label={props.searchLabel}
+      placeholder={props.searchPlaceholder}
     />
   );
 
@@ -384,37 +289,14 @@ export function CalmFilteredList<Row, Id extends string>(
           >
             {/* Esc in the field is the binding's rule; the ref targets the way-back focus. */}
             <div ref={controls} onKeyDown={field.onKeyDown}>
-              <Show
-                when={filter.kind === 'facets' ? filter : undefined}
-                fallback={
-                  <Show when={filter.kind === 'chips' ? filter : undefined}>
-                    {(chips) => (
-                      <FilterBar
-                        chips={chips().hasChips ? chips().chips() : []}
-                        selected={chips().selected()}
-                        onSelect={(value) => {
-                          // Chip values are the definition's own ids (the bar echoes them back).
-                          chips().select(value as Id);
-                        }}
-                        filterLabel={`Filter ${props.listLabel.toLowerCase()}`}
-                        searchQuery={field.value()}
-                        onSearchChange={(raw) => {
-                          field.input(raw);
-                        }}
-                        searchLabel={props.searchLabel}
-                        searchPlaceholder={props.searchPlaceholder}
-                      />
-                    )}
-                  </Show>
-                }
-              >
-                {(facets) => (
+              <Show when={facets} fallback={searchField()}>
+                {(set) => (
                   <FacetBar
-                    facets={facets().facets}
-                    selection={facets().picks()}
-                    counts={facets().counts()}
+                    facets={set()}
+                    selection={filter.picks()}
+                    counts={filter.counts()}
                     onChange={(next) => {
-                      facets().pick(next);
+                      filter.pick(next);
                     }}
                     compact={compact()}
                     search={searchField()}
@@ -430,16 +312,13 @@ export function CalmFilteredList<Row, Id extends string>(
               fallback={
                 <div class={cn(PAGE_FILL_SCROLLER, 'grid place-items-center')}>
                   <NoMatches
-                    {...filter.narrowing()}
+                    filterLabels={filter.labels()}
                     query={query()}
                     onClearSearch={() => {
                       field.clear();
                     }}
-                    onShowAll={() => {
-                      filter.reset();
-                    }}
-                    onClearFilters={filter.kind === 'facets' ? clearAll : undefined}
-                    focusAfter={focusAfter}
+                    onClearFilters={clearAll}
+                    focusAfter={searchInput}
                   />
                 </div>
               }

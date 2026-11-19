@@ -41,6 +41,7 @@ import {
 import { hostLayerText, type StatusItem } from './detections-view-model';
 import { STATUS_LABELS, summarizeFdtData, type DetectionsSummary } from './detections-summary';
 import { REDACTED, redactHeaderValue, redactUrl } from '../redaction/rule';
+import { WPR_NOT_DETECTED } from './wpr-evidence';
 
 /** The report's provenance, read by the caller (keeps the builder pure). */
 export interface SupportReportContext {
@@ -225,7 +226,7 @@ function summaryLines(summary: DetectionsSummary): string[] {
     ? summary.wpr.version === null
       ? 'Detected (version not available)'
       : `Detected, version ${codeSpan(summary.wpr.version)}`
-    : 'Not detected';
+    : WPR_NOT_DETECTED;
   const lines = [`- **WP Rocket:** ${wpr}`];
   if (summary.cache.kind !== 'not-applicable') {
     lines.push(`- **Page cache:** ${cacheCopy(summary.cache).report}`);

@@ -3,10 +3,10 @@
  * throw naming them), AND-combined facets + toggles, the shared search rule,
  * standard faceting counts (checked against a brute-force reference over
  * every selection), the one-pass cost bound via call counts at 5 000 rows,
- * lifting over a wrapping row, and the shared parity checks themselves.
+ * lifting over a wrapping row, and the shared facet checks themselves.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { chipParityMismatches, exclusivityViolations } from './facet-parity.fixtures';
+import { exclusivityViolations, selectionMismatches } from './facet-checks.fixtures';
 import {
   ANY_VALUE,
   TOGGLE_VALUE,
@@ -22,7 +22,6 @@ import {
   type FacetSelection,
   type FacetSet
 } from './resource-facets';
-import type { ResourcePageDefinition } from './resources-view-model';
 
 /** A toy row: three dimensions and a searched name. */
 interface Toy {
@@ -384,32 +383,35 @@ describe('liftFacets', () => {
   });
 });
 
-describe('the parity checks (they must be able to fail)', () => {
+describe('the facet checks (they must be able to fail)', () => {
   const rows = toys(18);
-  const CHIPS: ResourcePageDefinition<Toy, 'all' | 'red' | 'shiny'> = {
-    filters: [
-      { id: 'all', label: 'All', predicate: () => true },
-      { id: 'red', label: 'Red', predicate: (row) => row.color === 'red' },
-      { id: 'shiny', label: 'Shiny', predicate: (row) => row.shiny }
-    ],
-    searchField: (row) => row.name
-  };
+  const name = (row: Toy): string => row.name;
+  /** The toys each selection keeps: red = every third from 0, shiny = the first nine. */
+  const CASES = {
+    any: { selection: {}, rows: [...Array(18).keys()] },
+    red: { selection: { color: 'red' }, rows: [0, 3, 6, 9, 12, 15] },
+    shiny: { selection: { shiny: TOGGLE_VALUE }, rows: [0, 1, 2, 3, 4, 5, 6, 7, 8] }
+  } as const;
 
-  it('passes a faithful mapping, with and without a query', () => {
-    const mapping = { all: {}, red: { color: 'red' }, shiny: { shiny: TOGGLE_VALUE } } as const;
-    expect(chipParityMismatches(rows, CHIPS, TOY_FACETS, mapping)).toEqual([]);
-    expect(chipParityMismatches(rows, CHIPS, TOY_FACETS, mapping, 'alpha')).toEqual([]);
+  it('passes a faithful case table, with and without a query', () => {
+    expect(selectionMismatches(rows, TOY_FACETS, name, CASES)).toEqual([]);
+    // "-alpha" names every fourth toy: the expected rows narrow with the query.
+    expect(selectionMismatches(rows, TOY_FACETS, name, CASES, 'ALPHA')).toEqual([]);
   });
 
-  it('reports a wrong mapping and a chip selecting no fixture row', () => {
-    const mapping = { all: {}, red: { color: 'blue' }, shiny: { shiny: TOGGLE_VALUE } } as const;
-    expect(chipParityMismatches(rows, CHIPS, TOY_FACETS, mapping)).toEqual([
-      'chip "red" (query ""): the facets select other rows (chip 6, facets 6)'
+  it('reports a wrong case, under a query too, and a case keeping no fixture row', () => {
+    const wrong = { red: { selection: { color: 'blue' }, rows: [0, 3, 6, 9, 12, 15] } } as const;
+    expect(selectionMismatches(rows, TOY_FACETS, name, wrong)).toEqual([
+      '"red" (query ""): kept [1, 4, 7, 10, 13, 16], expected [0, 3, 6, 9, 12, 15]'
     ]);
-    const unshiny = rows.map((row) => ({ ...row, shiny: false }));
-    expect(chipParityMismatches(unshiny, CHIPS, TOY_FACETS, mapping)).toContain(
-      'chip "shiny" selects no fixture row'
-    );
+    expect(selectionMismatches(rows, TOY_FACETS, name, wrong, 'alpha')).toEqual([
+      '"red" (query "alpha"): kept [4, 16], expected [0, 12]'
+    ]);
+    const empty = { none: { selection: { color: 'red' }, rows: [] } } as const;
+    expect(selectionMismatches(rows, TOY_FACETS, name, empty)).toEqual([
+      '"none" keeps no fixture row',
+      '"none" (query ""): kept [0, 3, 6, 9, 12, 15], expected []'
+    ]);
   });
 
   it('reports rows matching two values of a choice facet', () => {

@@ -1,7 +1,7 @@
 /**
  * The Stylesheets page's row shape and style states — the one declaring
- * site of what each state means, read by both the row chips and the filter
- * chips (a filter selects exactly the rows that show its chip). Only states WP Rocket's own
+ * site of what each state means, read by both the row chips and the facet
+ * values (a value selects exactly the rows that show its chip). Only states WP Rocket's own
  * markup proves get one: the reserved ids of the styles it prints, the
  * stamps on the links it rewrote.
  *

@@ -604,7 +604,7 @@ describe('detectLazyload', () => {
     // whole element — an offline-test limitation, not target-engine
     // behavior; some fixture pages contain such code (minified controllers,
     // the PSI shell), so their per-check COUNTS reflect the runner's parse.
-    // P15's scripted real-browser protocol is the absolute re-verification.
+    // The release gate's scripted real-browser protocol is the absolute re-verification.
     const swallowed = page(
       '<body><script>for(var k=0;k<3;k++){}</script><img data-lazy-src="/a.jpg"></body>'
     );

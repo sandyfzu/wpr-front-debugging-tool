@@ -1,10 +1,10 @@
 /**
- * Render suite of the list kit's calm variant (`FilteredList` with
- * `variant: 'calm'`) on the page harness: both filter inputs, the facet bar
- * in both tiers + its sheet, filtered-empty, the master–detail in both
- * layouts (keys, focus, scroll restore, presence), refresh with a selection,
- * the gone / unlisted states, find in a drill, compact stacking — and the
- * default variant left exactly as it was.
+ * Render suite of the list kit (`CalmFilteredList`) on the page harness:
+ * the facet input and the search-only one, the facet bar in both tiers + its
+ * sheet, filtered-empty, the master–detail in both layouts (keys, focus,
+ * scroll restore, presence), refresh with a selection, the gone / unlisted
+ * states, find in a drill and compact stacking. Search wiring, find, refresh
+ * reuse and the empty state: `calm-list-search.test.tsx`.
  */
 import { cleanup, fireEvent, screen, within } from '@solidjs/testing-library';
 import type { JSX } from 'solid-js';
@@ -14,7 +14,6 @@ import type { VirtualItem, VirtualizerFactory } from '../../../../components/ui/
 import {
   buildLazyloadRows,
   LAZYLOAD_PAGE_FACETS,
-  LAZYLOAD_PAGE_RESOURCES,
   type LazyloadImageResource
 } from '../../../../lib/panel/resources-view-model';
 import { FDT_EXCLUDED_RESOURCE } from '../../../../lib/wp-rocket/constants';
@@ -23,9 +22,8 @@ import { makeFdtData, makeLazyImage } from '../../state/fixtures';
 import { SEARCH_DEBOUNCE_MS } from '../../state/search';
 import { useFdtData } from '../../state/use-fdt-data';
 import { PageFrame } from '../page-frame';
-import type { CalmFilteredListProps } from './calm-list';
+import { CalmFilteredList, type CalmFilteredListProps } from './calm-list';
 import { installFakeResizeObserver, type FakeResizeObservers } from './fake-resize-observer';
-import { FilteredList } from './filtered-list';
 import { ListRow, ListRowHead, type ListRowColumns } from './list-row';
 import type { ListDetail } from './master-detail';
 import { renderPage, renderWindowedRows, type PageHarness } from './page-harness';
@@ -79,7 +77,7 @@ const DETAIL: ListDetail<Row> = {
 
 /** Options of the fixture page. */
 interface PageOptions {
-  readonly input?: 'facets' | 'chips';
+  readonly input?: 'facets' | 'search';
   readonly detail?: boolean;
 }
 
@@ -122,7 +120,6 @@ function calmListProps(
   options: PageOptions
 ): CalmFilteredListProps<Row, string> {
   const base = {
-    variant: 'calm' as const,
     get rows() {
       return rows();
     },
@@ -144,17 +141,14 @@ function calmListProps(
       />
     ),
     detail: options.detail === false ? undefined : DETAIL,
+    searchField: (row: Row) => row.src,
     get createVirtualizer() {
       return props.createVirtualizer;
     }
   };
   // mergeProps keeps the getters live (an object spread would snapshot `rows`).
-  const chipList = mergeProps(base, { definition: LAZYLOAD_PAGE_RESOURCES });
-  const facetList = mergeProps(base, {
-    facets: LAZYLOAD_PAGE_FACETS,
-    searchField: (row: Row) => row.src
-  });
-  return options.input === 'chips' ? chipList : facetList;
+  const faceted = mergeProps(base, { facets: LAZYLOAD_PAGE_FACETS });
+  return options.input === 'search' ? base : faceted;
 }
 
 /**
@@ -168,7 +162,7 @@ function calmPage(options: PageOptions = {}) {
     const list = calmListProps(useImageRows(), props, options);
     return (
       <PageFrame id="lazyload" title="Images" fill>
-        <FilteredList {...list} />
+        <CalmFilteredList {...list} />
       </PageFrame>
     );
   };
@@ -286,60 +280,17 @@ function twoListPage() {
       <PageFrame id="lazyload" title="Images" fill>
         <Show when={firstShown()}>
           <div data-fdt-test="first">
-            <FilteredList {...first} />
+            <CalmFilteredList {...first} />
           </div>
         </Show>
         <div data-fdt-test="second">
-          <FilteredList {...second} />
+          <CalmFilteredList {...second} />
         </div>
       </PageFrame>
     );
   }
   return { Page: TwoLists, setFirstShown };
 }
-
-describe('the default variant is untouched', () => {
-  it('renders the framed, hairline list with no calm hooks, with or without `variant: default`', () => {
-    /** Today's page body, with the variant prop given or not. */
-    function DefaultPage(props: { explicit: boolean; createVirtualizer?: VirtualizerFactory }) {
-      const store = useFdtData();
-      const rows = createMemo(() => {
-        const state = store.state();
-        return state.status === 'ready' ? buildLazyloadRows(state.data.wprDetections.lazyload) : [];
-      });
-      return (
-        <PageFrame id="lazyload" title="Images" fill>
-          <FilteredList
-            variant={props.explicit ? 'default' : undefined}
-            definition={LAZYLOAD_PAGE_RESOURCES}
-            rows={rows()}
-            sameRow={(a, b) => a.src === b.src}
-            empty={<p>No images</p>}
-            noun={{ one: 'image', other: 'images' }}
-            listLabel="Images"
-            searchLabel="Search image URLs"
-            searchPlaceholder="Search…"
-            estimateSize={() => 40}
-            renderRow={(row) => <span data-fdt="resource-name">{row.src}</span>}
-            createVirtualizer={props.createVirtualizer}
-          />
-        </PageFrame>
-      );
-    }
-    const implicit = renderPage((p) => <DefaultPage explicit={false} {...p} />, withImages(IMAGES));
-    const implicitHtml = implicit.root.innerHTML;
-    cleanup();
-    const explicit = renderPage((p) => <DefaultPage explicit {...p} />, withImages(IMAGES));
-    expect(explicit.root.innerHTML).toBe(implicitHtml);
-    const scroller = explicit.root.querySelector('[data-fdt="virtual-list"]') as HTMLElement;
-    expect(scroller.className).toContain('rounded-md border border-line-1 bg-surface-1');
-    const rows = explicit.root.querySelectorAll<HTMLElement>('[data-fdt="resource-row"]');
-    expect(rows[0]?.className).not.toContain('border-t');
-    expect(rows[1]?.className).toContain('border-t border-line-1');
-    expect(explicit.root.querySelector('[data-fdt="calm-list"]')).toBeNull();
-    expect(explicit.root.querySelector('[data-fdt-row-open]')).toBeNull();
-  });
-});
 
 describe('calm rows', () => {
   it('lists every row on a calm frame: no hairlines, 4 px virtual gap, the caps head above the scroller', () => {
@@ -539,21 +490,33 @@ describe('facets compact (Filters button + sheet)', () => {
   });
 });
 
-describe('chips input on the calm frame', () => {
-  it('keeps today’s single-select chips and their Show all way back', () => {
-    const { root } = mount(600, { input: 'chips' });
+describe('search-only input (no facets)', () => {
+  it('shows the search field alone and narrows by the query, Clear search the way back', () => {
+    const { root } = mount(600, { input: 'search' });
     expect(root.querySelector('[data-fdt="facet-bar"]')).toBeNull();
-    const chip = root.querySelector<HTMLButtonElement>('[data-fdt-filter-chip="excluded"]');
-    if (chip === null) throw new Error('no chip');
-    fireEvent.click(chip);
-    expect(names(root)).toEqual(['excluded.jpg']);
-    fireEvent.input(screen.getByRole('searchbox', { name: 'Search image URLs' }), {
-      target: { value: 'hero' }
-    });
+    expect(root.querySelector('[role="group"]')).toBeNull();
+    expect(root.querySelector('[data-fdt="facet-filters-button"]')).toBeNull();
+    const field = screen.getByRole<HTMLInputElement>('searchbox', { name: 'Search image URLs' });
+    expect(field.closest('[data-fdt="search-field"]')).not.toBeNull();
+    fireEvent.input(field, { target: { value: 'hero' } });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
-    expect(screen.getByText('Nothing in "Excluded" matches "hero".')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Show all' }));
     expect(names(root)).toEqual(['hero.webp']);
+    fireEvent.input(field, { target: { value: 'zzz' } });
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(screen.getByText('Nothing matches "zzz".')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    const clear = screen.getByRole('button', { name: 'Clear search' });
+    clear.focus();
+    fireEvent.click(clear);
+    expect(names(root)).toHaveLength(5);
+    expect(document.activeElement).toBe(field);
+  });
+
+  it('keeps the field alone on a compact list: no Filters button', () => {
+    const { root } = mount(400, { input: 'search' });
+    expect(root.querySelector('[data-fdt="facet-filters-button"]')).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Search image URLs' })).toBeTruthy();
+    expect(names(root)).toHaveLength(5);
   });
 });
 

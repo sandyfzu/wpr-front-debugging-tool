@@ -1,28 +1,35 @@
 /**
  * The Stylesheets page's rows: the Critical placement (live row / snapshot
  * row / never both / nowhere without the snapshot fact / never on a cut
- * list), the copied fields and searched text, and the page's filters (a
- * filter selects exactly the rows showing its chip).
+ * list), the copied fields and searched text, and the page's facets (a
+ * value selects exactly the rows showing its chip).
  */
 import { describe, expect, it } from 'vitest';
-import { chipParityMismatches, exclusivityViolations } from './facet-parity.fixtures';
+import {
+  exclusivityViolations,
+  selectionMismatches,
+  type SelectionCase
+} from './facet-checks.fixtures';
 import { applyFacets, facetCounts, type FacetSelection } from './resource-facets';
-import { filterCounts } from './resources-view-model';
 import { ALL, MINIFIED, inline, link, rows, statesOf } from './stylesheet.fixtures';
 import {
   CRITICAL_SNAPSHOT_ROW_ID,
   CSS_PAGE_FACETS,
-  CSS_PAGE_RESOURCES,
   buildStylesheetRows,
-  type CssFacetId,
-  type CssFilterId
+  cssStyleSearchField,
+  type CssFacetId
 } from './stylesheet-rows';
 import {
   LAZYLOAD_BG_CONTAINER_ID,
   LAZYLOAD_BG_EXCLUSION_ID,
   RUCSS_USED_CSS_ID
 } from '../wp-rocket/constants';
-import { CSS_STYLE_STATES, NO_STYLESHEET_PAGE_FACTS, type CssStyleResource } from './style-states';
+import {
+  CSS_STYLE_STATES,
+  NO_STYLESHEET_PAGE_FACTS,
+  type CssStateId,
+  type CssStyleResource
+} from './style-states';
 
 describe('buildStylesheetRows — Critical placement', () => {
   it('puts the chip on the live style when the page still has it (no snapshot row)', () => {
@@ -97,8 +104,18 @@ describe('buildStylesheetRows — fields and search', () => {
   });
 });
 
-describe('CSS_PAGE_RESOURCES', () => {
-  it('has a filter per state, each selecting exactly the rows showing that chip', () => {
+/** Each style state → the facet selection that keeps its rows (a value of WP Rocket CSS, or a toggle). */
+const STATE_SELECTIONS: Readonly<Record<CssStateId, FacetSelection<CssFacetId>>> = {
+  critical: { 'rocket-css': 'critical' },
+  rucss: { 'rocket-css': 'rucss' },
+  'lazy-bg': { 'rocket-css': 'lazy-bg' },
+  async: { async: 'yes' },
+  minified: { minified: 'yes' },
+  font: { font: 'yes' }
+};
+
+describe('the state values', () => {
+  it('has a value per state, labeled as its chip, each keeping exactly the rows showing that chip', () => {
     const built = rows([
       inline({ id: 'wpr-usedcss' }),
       inline({ id: 'wpr-lazyload-bg-container' }),
@@ -106,33 +123,38 @@ describe('CSS_PAGE_RESOURCES', () => {
       link({ hostedFont: true }),
       link()
     ]);
+    const labels = new Map(
+      CSS_PAGE_FACETS.facets.flatMap((facet) =>
+        facet.values.map((value) => [facet.kind === 'toggle' ? facet.id : value.id, value.label])
+      )
+    );
     for (const state of CSS_STYLE_STATES) {
-      const filter = CSS_PAGE_RESOURCES.filters.find((row) => row.id === state.id);
-      expect(filter?.label, state.id).toBe(state.label);
-      expect(built.filter((row) => filter?.predicate(row) === true)).toEqual(
-        built.filter((row) => statesOf(row).includes(state.id))
-      );
+      expect(labels.get(state.id), state.id).toBe(state.label);
+      expect(
+        applyFacets(built, CSS_PAGE_FACETS, STATE_SELECTIONS[state.id], {
+          field: cssStyleSearchField,
+          query: ''
+        })
+      ).toEqual(built.filter((row) => statesOf(row).includes(state.id)));
     }
   });
 
-  it('counts every chip from one pass, the snapshot row as an inline style', () => {
-    expect(
-      filterCounts(
-        rows([link({ href: MINIFIED, rocketAsync: true }), inline({ id: 'wpr-usedcss' })]),
-        CSS_PAGE_RESOURCES
-      )
-    ).toEqual({
-      all: 3,
-      critical: 1,
-      rucss: 1,
-      'lazy-bg': 0,
-      async: 1,
-      minified: 1,
-      font: 0,
-      inline: 2,
-      external: 1
+  it('counts every value from one pass, the snapshot row as an inline style; the field is the content', () => {
+    const counts = facetCounts(
+      rows([link({ href: MINIFIED, rocketAsync: true }), inline({ id: 'wpr-usedcss' })]),
+      CSS_PAGE_FACETS,
+      {},
+      { field: cssStyleSearchField, query: '' }
+    );
+    expect(counts.matched).toBe(3);
+    expect(counts.byFacet).toEqual({
+      type: { any: 3, inline: 2, external: 1 },
+      'rocket-css': { any: 3, critical: 1, rucss: 1, 'lazy-bg': 0 },
+      async: { any: 3, yes: 1 },
+      minified: { any: 3, yes: 1 },
+      font: { any: 3, yes: 0 }
     });
-    expect(CSS_PAGE_RESOURCES.searchField(rows([link()])[1] as CssStyleResource)).toBe(
+    expect(cssStyleSearchField(rows([link()])[1] as CssStyleResource)).toBe(
       'https://s.test/plain.css'
     );
   });
@@ -162,17 +184,19 @@ describe('CSS_PAGE_FACETS', () => {
     ...rows([link(), inline({ preview: '.cdn{}' })])
   ];
 
-  /** Old Stylesheets chip → its one facet selection (every chip reachable as one selection). */
-  const CSS_CHIP_MAP: Record<CssFilterId, FacetSelection<CssFacetId>> = {
-    all: {},
-    critical: { 'rocket-css': 'critical' },
-    rucss: { 'rocket-css': 'rucss' },
-    'lazy-bg': { 'rocket-css': 'lazy-bg' },
-    async: { async: 'yes' },
-    minified: { minified: 'yes' },
-    font: { font: 'yes' },
-    inline: { type: 'inline' },
-    external: { type: 'external' }
+  /** Each single value (and no selection) → the {@link STYLES} it keeps. */
+  const CSS_CASES: Readonly<Record<string, SelectionCase<CssFacetId>>> = {
+    any: { selection: {}, rows: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
+    // Both Critical placements: the live style and the second list's snapshot row.
+    critical: { selection: { 'rocket-css': 'critical' }, rows: [5, 11] },
+    // A link wearing the reserved id is no used-CSS style.
+    rucss: { selection: { 'rocket-css': 'rucss' }, rows: [6] },
+    'lazy-bg': { selection: { 'rocket-css': 'lazy-bg' }, rows: [7, 8] },
+    async: { selection: { async: 'yes' }, rows: [2, 4] },
+    minified: { selection: { minified: 'yes' }, rows: [1, 2] },
+    font: { selection: { font: 'yes' }, rows: [3, 4] },
+    inline: { selection: { type: 'inline' }, rows: [5, 6, 7, 8, 10, 11, 13] },
+    external: { selection: { type: 'external' }, rows: [0, 1, 2, 3, 4, 9, 12] }
   };
 
   it('holds both Critical placements in the fixture', () => {
@@ -182,10 +206,10 @@ describe('CSS_PAGE_FACETS', () => {
     ]);
   });
 
-  it('reaches every chip as one selection with the same rows (with and without a query)', () => {
+  it('keeps exactly its rows under each single value (with and without a query)', () => {
     for (const query of ['', 'cdn', 'WPR-']) {
       expect(
-        chipParityMismatches(STYLES, CSS_PAGE_RESOURCES, CSS_PAGE_FACETS, CSS_CHIP_MAP, query)
+        selectionMismatches(STYLES, CSS_PAGE_FACETS, cssStyleSearchField, CSS_CASES, query)
       ).toEqual([]);
     }
   });

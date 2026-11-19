@@ -14,7 +14,6 @@ import {
   listCutNote,
   sameStyleRow,
   sameStyleView,
-  sizeShare,
   styleFacts,
   styleKind,
   styleRowKeys,
@@ -171,16 +170,6 @@ describe('styleRowViews', () => {
     ]);
     expect(views.map((view) => view.size)).toEqual(['10K', '2.5K', '1', undefined, undefined]);
     expect(views.map((view) => view.sizeShare)).toEqual([1, 0.5, 0.02, undefined, undefined]);
-  });
-});
-
-describe('sizeShare', () => {
-  it('is the square root of the share, floored at 2 %, capped at 1, none when empty or without a max', () => {
-    expect(sizeShare(25, 100)).toBe(0.5);
-    expect(sizeShare(1, 10_000)).toBe(0.02);
-    expect(sizeShare(0, 100)).toBeUndefined();
-    expect(sizeShare(200, 100)).toBe(1);
-    expect(sizeShare(5, 0)).toBeUndefined();
   });
 });
 

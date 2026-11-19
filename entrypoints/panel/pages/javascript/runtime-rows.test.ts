@@ -6,7 +6,7 @@
  * view (kind, clipped URL, whole and kept code, copy, facts, language, code note).
  */
 import { describe, expect, it } from 'vitest';
-import { exclusivityViolations } from '../../../../lib/panel/facet-parity.fixtures';
+import { exclusivityViolations } from '../../../../lib/panel/facet-checks.fixtures';
 import { applyFacets, facetCounts } from '../../../../lib/panel/resource-facets';
 import { FIELD_MAX, FULL_TEXT_MAX } from '../../../../lib/script-runtime/classify';
 import type { LiveScriptRecord } from '../../../../lib/script-runtime/read-live';

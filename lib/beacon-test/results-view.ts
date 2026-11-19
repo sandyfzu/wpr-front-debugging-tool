@@ -8,8 +8,12 @@
  * (plus an occurrence for duplicates) — a run's rows never change while
  * listed (a new run replaces the list), so the key only has to be unique.
  */
-import { choiceFacet, defineFacets, type FacetSet } from '../panel/resource-facets';
-import type { ResourceFilterRow, ResourcePageDefinition } from '../panel/resources-view-model';
+import {
+  choiceFacet,
+  defineFacets,
+  type FacetSet,
+  type FacetValue
+} from '../panel/resource-facets';
 import type { AboveTheFoldCandidate, FeatureList, PictureSource } from './results';
 
 /** The beacon's label for the largest candidate (its LCP). */
@@ -203,11 +207,8 @@ export function lazyRenderRows(list: FeatureList<string> | null): readonly LazyR
   return list.items.map((hash, id) => ({ id, key: keyOf(hash), hash }));
 }
 
-/** The above-the-fold list's chip ids. */
-export type AboveTheFoldFilterId = 'all' | 'lcp' | 'above-the-fold';
-
-/** The label chips past "All" — declared once (chip bar + facet). */
-const LABEL_CHIPS: readonly ResourceFilterRow<AboveTheFoldRow, AboveTheFoldFilterId>[] = [
+/** The label facet's values, one per label the beacon writes. */
+const LABEL_VALUES: readonly FacetValue<AboveTheFoldRow>[] = [
   { id: 'lcp', label: 'LCP', predicate: (row) => row.label === LCP_LABEL },
   {
     id: 'above-the-fold',
@@ -216,23 +217,27 @@ const LABEL_CHIPS: readonly ResourceFilterRow<AboveTheFoldRow, AboveTheFoldFilte
   }
 ];
 
-/** The above-the-fold list's chips (by the beacon's label) and searched text (every value shown). */
-export const ABOVE_THE_FOLD_LIST: ResourcePageDefinition<AboveTheFoldRow, AboveTheFoldFilterId> = {
-  filters: [{ id: 'all', label: 'All', predicate: () => true }, ...LABEL_CHIPS],
-  searchField: (row) => `${row.url}\n${row.kind}\n${row.label}\n${row.detail}`
-};
+/**
+ * The above-the-fold list's searched text: every value its row and detail show.
+ *
+ * @param row The row.
+ * @returns The searched text.
+ */
+export function aboveTheFoldSearchField(row: AboveTheFoldRow): string {
+  return `${row.url}\n${row.kind}\n${row.label}\n${row.detail}`;
+}
 
 /** The above-the-fold list's facet ids. */
 export type AboveTheFoldFacetId = 'label';
 
 /**
- * The above-the-fold list's facets: one label per record, so one choice
- * (value ids = the chip ids); a label a newer beacon sends shows under Any only.
+ * The above-the-fold list's facets: one label per record, so one choice; a
+ * label a newer beacon sends shows under Any only.
  */
 export const ABOVE_THE_FOLD_FACETS: FacetSet<AboveTheFoldRow, AboveTheFoldFacetId> = defineFacets<
   AboveTheFoldRow,
   AboveTheFoldFacetId
->([choiceFacet('label', 'Label', LABEL_CHIPS)]);
+>([choiceFacet('label', 'Label', LABEL_VALUES)]);
 
 /** The lazy-render list's facets: none (search only). */
 export const LAZY_RENDER_FACETS: FacetSet<LazyRenderRow, never> = defineFacets<
@@ -240,11 +245,15 @@ export const LAZY_RENDER_FACETS: FacetSet<LazyRenderRow, never> = defineFacets<
   never
 >([]);
 
-/** The lazy-render list: no chips, the hash searched. */
-export const LAZY_RENDER_LIST: ResourcePageDefinition<LazyRenderRow, 'all'> = {
-  filters: [{ id: 'all', label: 'All', predicate: () => true }],
-  searchField: (row) => row.hash
-};
+/**
+ * The lazy-render list's searched text: the element hash.
+ *
+ * @param row The row.
+ * @returns The searched text.
+ */
+export function lazyRenderSearchField(row: LazyRenderRow): string {
+  return row.hash;
+}
 
 /**
  * Whether two same-key rows show the same thing (a refresh keeps the row).

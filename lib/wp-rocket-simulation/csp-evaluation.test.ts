@@ -1,7 +1,7 @@
 /**
- * The CSP evaluator against every browser receipt: the P21B probe table
+ * The CSP evaluator against every browser receipt: the probe table
  * (16 policies), its 4 audit pages and precedence/fix-round pages, and
- * the P21H probes (spec facts checked in Chromium 156 + Firefox 155) —
+ * the real-runtime probes (spec facts checked in Chromium 156 + Firefox 155) —
  * one row each, per browser engine.
  */
 import { createHash } from 'node:crypto';
@@ -34,7 +34,7 @@ interface Delayed {
 const PROBE: Delayed = { text: "document.documentElement.dataset.probe='1'" };
 /** The probe, nonce'd (the receipts' "N page"). */
 const PROBE_N: Delayed = { ...PROBE, nonce: NONCE };
-/** The P21H probe page's four delayed inline scripts, in order. */
+/** The real-runtime probe page's four delayed inline scripts, in order. */
 const P1: Delayed = { text: "document.documentElement.dataset.inl1='1'" };
 const PN: Delayed = { text: "document.documentElement.dataset.inlN='1'", nonce: NONCE };
 const P2: Delayed = { text: "document.documentElement.dataset.inl2='1'" };
@@ -119,8 +119,8 @@ function verdict(page: Page, browser: SimulationCspBrowser): Expected {
 /** A receipt row: the page, then the verdict per engine. */
 type Row = readonly [name: string, page: Page, chromium: Expected, firefox: Expected];
 
-/** The P21B probe table: 16 policies (one row per page; `<h>` = the runtime's hash, N = nonce). */
-const P21B_TABLE: readonly Row[] = [
+/** The probe table: 16 policies (one row per page; `<h>` = the runtime's hash, N = nonce). */
+const POLICY_PROBES: readonly Row[] = [
   ['none', {}, [], []],
   ["H script-src 'self'", { headers: ["script-src 'self'"] }, 'blocked', 'blocked'],
   [
@@ -251,8 +251,8 @@ const P21B_TABLE: readonly Row[] = [
   ]
 ];
 
-/** The P21H probes (Chromium 156 + Firefox 155, real runtime, four delayed inline scripts). */
-const P21H_PROBES: readonly Row[] = [
+/** The real-runtime probes (Chromium 156 + Firefox 155, real runtime, four delayed inline scripts). */
+const RUNTIME_PROBES: readonly Row[] = [
   [
     "'strict-dynamic' 'unsafe-inline' ('unsafe-inline' ignored: runtime blocked)",
     { headers: ["script-src 'strict-dynamic' 'unsafe-inline'"] },
@@ -573,7 +573,7 @@ const P21H_PROBES: readonly Row[] = [
 ];
 
 describe('evaluateSimulationCsp — receipt rows', () => {
-  for (const [name, page, chromium, firefox] of [...P21B_TABLE, ...P21H_PROBES]) {
+  for (const [name, page, chromium, firefox] of [...POLICY_PROBES, ...RUNTIME_PROBES]) {
     it(`${name} — Chromium`, () => {
       expect(verdict(page, 'chromium')).toEqual(chromium);
     });

@@ -33,7 +33,7 @@
  *   unanswered tab-targeted send into its own "No response" error, and the
  *   unit-test double rejects with "No listeners available". Push senders
  *   `.catch` that expected case (see `./no-receiver`). **Window-bridge sends
- *   behave differently: with no receiver they never settle** — P4's
+ *   behave differently: with no receiver they never settle** — the world
  *   bootstrap owns that (listen before the page sends; the isolated side
  *   acknowledges).
  * - **Pushes from content scripts must be checked by the receiving tab on

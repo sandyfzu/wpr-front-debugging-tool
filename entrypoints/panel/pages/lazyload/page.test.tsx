@@ -3,8 +3,8 @@
  * the source legend, rows (file name, URL preview, state chips by source),
  * facets and search, the detail (chips, the URL's tile, the lazyloaded
  * fact, the exclusion reasons only while lazyload runs), refreshes keeping
- * facets/query/selection by content key, and the empty state. The default
- * list body's own behavior is pinned by `filtered-list.test.tsx`.
+ * facets/query/selection by content key, and the empty state. The list
+ * kit's own behavior is pinned by `calm-list.test.tsx` + `calm-list-search.test.tsx`.
  */
 import { cleanup, fireEvent, screen, within } from '@solidjs/testing-library';
 import type { JSX } from 'solid-js';

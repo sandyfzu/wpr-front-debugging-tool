@@ -155,7 +155,6 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
         notes={notes()}
       />
       <CalmFilteredList
-        variant="calm"
         rows={views()}
         rowKey={(view) => view.key}
         sameRow={sameImageRowView}

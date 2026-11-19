@@ -10,7 +10,7 @@ import { LAZYLOAD_IMAGE_STATES, type LazyloadStateId } from '../../../../lib/pan
 import { liftFacets, type FacetSet } from '../../../../lib/panel/resource-facets';
 import {
   LAZYLOAD_PAGE_FACETS,
-  LAZYLOAD_PAGE_RESOURCES,
+  lazyloadImageSearchField,
   type LazyloadFacetId,
   type LazyloadImageResource
 } from '../../../../lib/panel/resources-view-model';
@@ -217,7 +217,7 @@ export const LAZYLOAD_VIEW_FACETS: FacetSet<LazyloadRowView, LazyloadFacetId> = 
  * @param view The row view.
  */
 export function lazyloadSearchField(view: LazyloadRowView): string {
-  return LAZYLOAD_PAGE_RESOURCES.searchField(view.row);
+  return lazyloadImageSearchField(view.row);
 }
 
 /** The detail's caps kind label. */

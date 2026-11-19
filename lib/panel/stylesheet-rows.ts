@@ -1,9 +1,9 @@
 /**
  * The Stylesheets page's rows: the classification of the page's stylesheet
  * inventory (with the one Critical placement rule) into the row shape
- * `./style-states` declares, and the page's filter pattern — the shared
- * resource-list pattern (`./resources-view-model`) over those rows — and its
- * facets (`./resource-facets`). Imported by the lazily loaded page only.
+ * `./style-states` declares, its searched field and its facets
+ * (`./resource-facets`, values shared with `./resources-view-model`).
+ * Imported by the lazily loaded page only.
  */
 import type { PageStylesheetsReply } from '../messaging/page-stylesheets';
 import { CRITICAL_CSS_STYLE_ID } from '../wp-rocket/constants';
@@ -14,12 +14,7 @@ import {
   type Facet,
   type FacetSet
 } from './resource-facets';
-import {
-  EXTERNAL_TYPE_FILTER,
-  INLINE_TYPE_FILTER,
-  stateFilter,
-  type ResourcePageDefinition
-} from './resources-view-model';
+import { EXTERNAL_TYPE_VALUE, INLINE_TYPE_VALUE, stateValue } from './resources-view-model';
 import { styleIdentity } from './style-identity';
 import {
   NO_STYLESHEET_PAGE_FACTS,
@@ -31,24 +26,15 @@ import {
   type StylesheetPageFacts
 } from './style-states';
 
-/** The Stylesheets page's chip ids, in render order. */
-export type CssFilterId = 'all' | CssStateId | 'inline' | 'external';
-
-/** The Stylesheets page's pattern: every style state (chip order), then the type chips. */
-export const CSS_PAGE_RESOURCES: ResourcePageDefinition<CssStyleResource, CssFilterId> = {
-  filters: [
-    { id: 'all', label: 'Show all', predicate: () => true },
-    stateFilter(cssStyleState('critical')),
-    stateFilter(cssStyleState('rucss')),
-    stateFilter(cssStyleState('lazy-bg')),
-    stateFilter(cssStyleState('async')),
-    stateFilter(cssStyleState('minified')),
-    stateFilter(cssStyleState('font')),
-    INLINE_TYPE_FILTER,
-    EXTERNAL_TYPE_FILTER
-  ],
-  searchField: (row) => row.content
-};
+/**
+ * The Stylesheets page's searched field: an inline style's CSS start, a link's URL.
+ *
+ * @param row The row.
+ * @returns The searched text.
+ */
+export function cssStyleSearchField(row: CssStyleResource): string {
+  return row.content;
+}
 
 /** The Stylesheets page's facet ids, in render order. */
 export type CssFacetId = 'type' | 'rocket-css' | 'async' | 'minified' | 'font';
@@ -65,7 +51,7 @@ function stateToggle(id: Extract<CssStateId, CssFacetId>): Facet<CssStyleResourc
 }
 
 /**
- * The Stylesheets page's facets (value ids = the chip ids): Type splits
+ * The Stylesheets page's facets (value ids = the style state ids): Type splits
  * every style in two. The three styles WP Rocket prints itself (Critical,
  * RUCSS, Lazy BG) are inline styles told apart by their reserved id — one
  * row holds at most one — so they are one choice. The link states (Async,
@@ -75,11 +61,11 @@ export const CSS_PAGE_FACETS: FacetSet<CssStyleResource, CssFacetId> = defineFac
   CssStyleResource,
   CssFacetId
 >([
-  choiceFacet('type', 'Type', [INLINE_TYPE_FILTER, EXTERNAL_TYPE_FILTER]),
+  choiceFacet('type', 'Type', [INLINE_TYPE_VALUE, EXTERNAL_TYPE_VALUE]),
   choiceFacet('rocket-css', 'WP Rocket CSS', [
-    stateFilter(cssStyleState('critical')),
-    stateFilter(cssStyleState('rucss')),
-    stateFilter(cssStyleState('lazy-bg'))
+    stateValue(cssStyleState('critical')),
+    stateValue(cssStyleState('rucss')),
+    stateValue(cssStyleState('lazy-bg'))
   ]),
   stateToggle('async'),
   stateToggle('minified'),

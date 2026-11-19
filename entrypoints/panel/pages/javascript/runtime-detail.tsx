@@ -23,7 +23,7 @@ import {
 } from '../../../../lib/script-runtime/outcome-view';
 import type { LiveScriptRecord } from '../../../../lib/script-runtime/read-live';
 import type { OpenResource } from '../open-resource';
-import { CodeSection, FactList } from '../resource-list/detail-section';
+import { CodeSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
 import { SourceLink } from '../resource-list/source-link';
 import type { CodeBlockSeams } from './code-seams';
 import {
@@ -77,7 +77,7 @@ export function RuntimeDetail(props: RuntimeDetailProps): JSX.Element {
   const facts = createMemo(() => runtimeFacts(script()));
   return (
     <div data-fdt="runtime-detail" data-fdt-runtime-detail class="@container/detail min-w-0">
-      <div class="grid min-w-0 gap-3.5 @regular/detail:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @regular/detail:items-start">
+      <div class={DETAIL_COLUMNS}>
         <div class="flex min-w-0 flex-col gap-3.5">
           <div class="flex min-w-0 flex-col gap-1.5">
             <RuntimeStateLine script={script()} />

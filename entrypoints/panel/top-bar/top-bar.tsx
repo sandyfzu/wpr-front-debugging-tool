@@ -52,7 +52,7 @@ import { FoldPart, REAL_FOLD_SEAMS, createTopBarFold, type TopBarFoldSeams } fro
 import { TopBarMenu } from './overflow-menu';
 import { createPageAddress } from './page-address';
 import { REFRESH_LABEL, refreshControl } from './refresh';
-import { topBarSegments, type TopBarSegments } from './selectors';
+import { STATUS_UNAVAILABLE, topBarSegments, type TopBarSegments } from './selectors';
 
 const log = createLogger('panel');
 
@@ -123,7 +123,7 @@ function safeSegments(read: () => TopBarSegments): Accessor<TopBarSegments | nul
 function StatusUnavailable(): JSX.Element {
   return (
     <span class={ANSWER}>
-      <span class="text-fg-muted">Status unavailable</span>
+      <span class="text-fg-muted">{STATUS_UNAVAILABLE}</span>
     </span>
   );
 }

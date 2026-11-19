@@ -7,7 +7,7 @@
  * brand, nav, top bar and overlay layer accept interaction); *first
  * data state* is the boot flight's first settle — `ready` **or** `error`, a
  * genuine answer in both arms. The cold-start measure spans script start →
- * first data state; it is ≤ 500 ms on the P5.1 browser harness (the budget
+ * first data state; it is ≤ 500 ms on the browser cold-start harness (the budget
  * table's typed timing row, asserted by the harness spec that reads these
  * entries) — "faster than the tool it replaces" is a measured gate, not a
  * claim.

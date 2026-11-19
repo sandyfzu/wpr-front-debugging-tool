@@ -1,8 +1,8 @@
 /**
  * The word rows and views: the row identity, the view per answer (verdict
  * included), the count column, the preview line (names, the
- * "+N more" fold, verdict words), the detail's kind label, the searched field,
- * the one-chip filter input and the copy action per URL class.
+ * "+N more" fold, verdict words), the detail's kind label, the searched field
+ * and the copy action per URL class.
  */
 import { describe, expect, it } from 'vitest';
 import type { ScriptOrigin } from '../../../../lib/panel/undefined-refs';
@@ -10,7 +10,6 @@ import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/co
 import {
   INLINE_DEFINITION_LABEL,
   PREVIEW_DEFINITIONS,
-  WORD_LIST,
   definitionCopy,
   definitionLabel,
   wordDefinitionCount,
@@ -137,12 +136,6 @@ describe('wordKind and the searched field', () => {
   it('searches the word as shown (the sentinel as its message)', () => {
     expect(wordSearchField(wordRow('jQuery'))).toBe('jQuery');
     expect(wordSearchField(wordRow(UNDEFINED_REFERENCE_EXTERNAL_ERROR))).toBe('Script error.');
-  });
-
-  it('filters through one identity chip that keeps every row', () => {
-    expect(WORD_LIST.filters.map((filter) => filter.id)).toEqual(['all']);
-    expect(WORD_LIST.filters[0]?.predicate(wordRow('a'))).toBe(true);
-    expect(WORD_LIST.searchField).toBe(wordSearchField);
   });
 });
 

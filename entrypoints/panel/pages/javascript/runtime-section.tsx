@@ -268,7 +268,6 @@ function RuntimeList(props: RuntimeListProps): JSX.Element {
       {/* The list reconciles by key: an unchanged script keeps its row, a
           changed one updates its open detail in place (S-2). */}
       <CalmFilteredList
-        variant="calm"
         rows={rows()}
         rowKey={(row) => row.key}
         sameRow={sameRuntimeRow}

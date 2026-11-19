@@ -65,12 +65,15 @@ export const RESULT_PREVIEW: readonly (readonly [label: string, value: string])[
   ['Applied', 'Used CSS, live on the page']
 ];
 
+/** The action that lists the page's styles (a recovery here, the inventory's first step there). */
+export const INSPECT_STYLES_LABEL = 'Inspect page styles';
+
 /** The recoveries' button labels. */
 export const RECOVERY_LABELS: Readonly<Record<RucssRecovery, string>> = {
   retry: 'Run again',
   'reload-page': 'Reload page',
   'review-patterns': 'Review patterns',
-  'inspect-styles': 'Inspect page styles'
+  'inspect-styles': INSPECT_STYLES_LABEL
 };
 
 /** An applied run's counts. */

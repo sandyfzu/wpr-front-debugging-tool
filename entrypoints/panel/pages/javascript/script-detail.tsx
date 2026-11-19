@@ -23,9 +23,10 @@ import type {
   ServedScriptTagError
 } from '../../../../lib/messaging/served-script-tag';
 import type { OpenResource } from '../open-resource';
-import { CodeSection, FactList } from '../resource-list/detail-section';
+import { CodeSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
 import { createOnDemand, type OnDemandState } from '../resource-list/on-demand';
 import { SourceLink } from '../resource-list/source-link';
+import { READ_FAILURE_NOTES } from '../resource-list/top-frame-reader';
 import { StateChips } from '../resource-list/state-chip-list';
 import { splitStateChips } from '../resource-list/state-chips';
 import type { CodeBlockSeams } from './code-seams';
@@ -67,9 +68,7 @@ export const SERVED_TAG_NOTES: Readonly<
   gone: 'The page changed since this list was read — refresh to read its tag.',
   'not-kept': "Not kept: this page's script tags exceed the capture budget.",
   'not-ready': 'The page could not answer yet — refresh to try again.',
-  'invalid-request': 'The page refused the request — refresh to try again.',
-  unreachable: 'The page did not answer — refresh to try again.',
-  unreadable: 'The page answered something unreadable — refresh to try again.',
+  ...READ_FAILURE_NOTES,
   'no-snapshot': 'This page data carries no capture to read the tag from — refresh the panel.'
 };
 
@@ -99,7 +98,7 @@ export function ScriptDetail(props: ScriptDetailProps): JSX.Element {
   const facts = createMemo(() => scriptFacts(props.view()));
   return (
     <div data-fdt="script-detail" class="@container/detail min-w-0">
-      <div class="grid min-w-0 gap-3.5 @regular/detail:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @regular/detail:items-start">
+      <div class={DETAIL_COLUMNS}>
         <div class="flex min-w-0 flex-col gap-3.5">
           <ChipLine view={props.view()} />
           <Show when={props.view().row.type === 'external'}>

@@ -3,7 +3,7 @@
  *
  * Declared once here (never re-typed in a second primitive) so interactive
  * surfaces cannot drift apart on their focus treatment. Primitives are styled
- * exclusively through Tailwind utilities over the P0 tokens — no hardcoded
+ * exclusively through Tailwind utilities over the design tokens — no hardcoded
  * palette colors, so both palettes come free through the `light-dark()` tokens.
  */
 
@@ -12,7 +12,7 @@
  *
  * An accent outline ring that only appears for keyboard focus
  * (`:focus-visible`), never stealing pointer users' clicks visuals; the accent
- * token is the P0-verified 3:1 non-text indicator across all surfaces.
+ * token is the contrast-gated 3:1 non-text indicator across all surfaces.
  */
 export const FOCUS_RING =
   'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent';

@@ -72,6 +72,7 @@ import { contentCaptures, scriptListCut } from './capture-bounds';
 import type { CodeBlockSeams } from './code-seams';
 import type { RuntimeStatesSectionProps } from './runtime-section';
 import { ScriptDetail } from './script-detail';
+import { SCRIPT_KIND_LABELS, SCRIPT_URL_COPY_LABEL } from '../resource-list/script-words';
 import { reconcileRowViews } from './script-identity';
 import {
   JS_CHIP_SOURCES,
@@ -266,7 +267,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
       if (view.row.content === '') return undefined;
       return {
         text: view.row.content,
-        label: 'Script URL',
+        label: SCRIPT_URL_COPY_LABEL,
         loadText,
         loadFailure: SOURCE_READ_REMEDY
       };
@@ -274,7 +275,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
     if (!bounded && view.row.content.trim() === '') return undefined;
     return {
       text: view.row.content,
-      label: 'Inline script',
+      label: SCRIPT_KIND_LABELS.inline,
       loadText,
       loadFailure: SOURCE_READ_REMEDY
     };
@@ -317,7 +318,6 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
                 </p>
               </Show>
               <CalmFilteredList
-                variant="calm"
                 rows={views()}
                 rowKey={(view) => view.key}
                 // Reconciled upstream: an unchanged script keeps its very view object.
