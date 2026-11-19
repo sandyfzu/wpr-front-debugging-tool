@@ -30,7 +30,7 @@ import {
 import { countLabel, formatCompactCount, formatCount } from '../../../../utils/format-count';
 import type { AskRunState } from '../ask-run';
 import type { DetailFact } from '../resource-list/detail-section';
-import { resourceName, urlPreview } from '../resource-list/resource-list-view';
+import { urlPreview } from '../resource-list/resource-list-view';
 import {
   CALM_VISIBLE_STATE_CHIPS,
   splitStateChips,
@@ -38,6 +38,7 @@ import {
   type StateChipSplit
 } from '../resource-list/state-chips';
 import type { StateSource } from '../resource-list/state-sources';
+import { EMPTY_STYLE_PREVIEW, mediaDetail, styleName } from '../resource-list/style-words';
 
 /** The rows' noun. */
 export const STYLE_NOUN = { one: 'style', other: 'styles' } as const;
@@ -149,12 +150,6 @@ export function styleRowKeys(rows: readonly CssStyleResource[]): string[] {
   });
 }
 
-/** A link without an address (its name). */
-export const NO_HREF_NAME = 'No stylesheet address';
-
-/** An inline style's preview when it holds no CSS. */
-export const EMPTY_STYLE_PREVIEW = 'Empty';
-
 /**
  * What the snapshot-only critical row says in place of CSS (its preview and
  * its detail). Neutral: WP Rocket's on-load removal is the usual cause, not
@@ -165,35 +160,6 @@ export const CRITICAL_SNAPSHOT_NOTE = 'No longer on the page';
 /** The snapshot row's detail: where it comes from and why it has no CSS. */
 export const CRITICAL_SNAPSHOT_DETAIL =
   "Captured from the served HTML — its CSS isn't kept. WP Rocket usually removes this style once the stylesheets have loaded; a page script or a RUCSS test can remove it too.";
-
-/**
- * A row's name.
- *
- * @param row The classified style.
- * @param inlineOrdinal Its 1-based position among inline styles.
- * @returns The name and whether it is an identifier (mono).
- */
-export function styleName(
-  row: CssStyleResource,
-  inlineOrdinal: number
-): { name: string; mono: boolean } {
-  if (row.type === 'external') return { name: resourceName(row.href) || NO_HREF_NAME, mono: false };
-  const identity = styleIdentity({ id: row.elementId, className: row.className });
-  if (identity !== '') return { name: identity, mono: true };
-  return { name: `Inline style #${String(inlineOrdinal)}`, mono: false };
-}
-
-/**
- * The media words a row shows: none for no media or `all` (the default
- * every page writes — noise on most rows), the attribute's own words otherwise.
- *
- * @param media The element's media attribute.
- * @returns E.g. `media: print`, or null.
- */
-export function mediaDetail(media: string): string | null {
-  const value = media.trim();
-  return value === '' || value.toLowerCase() === 'all' ? null : `media: ${value}`;
-}
 
 /**
  * A row's preview line: the media first when it says anything ("media:
@@ -242,7 +208,15 @@ export function styleRowViews(rows: readonly CssStyleResource[]): StyleRowView[]
   return rows.map((row, index) => {
     if (row.type === 'inline') inline += 1;
     const chips = styleStateChips(row);
-    const { name, mono } = styleName(row, inline);
+    const { name, mono } = styleName(
+      {
+        kind: row.type === 'external' ? 'link' : 'inline',
+        id: row.elementId,
+        className: row.className,
+        href: row.href
+      },
+      inline
+    );
     const sized = row.type === 'inline' && row.source === 'live';
     return {
       row,

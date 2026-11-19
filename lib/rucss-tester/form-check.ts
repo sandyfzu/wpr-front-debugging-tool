@@ -60,6 +60,18 @@ export function checkExcludeLines(text: string): readonly RucssLineProblem[] {
 }
 
 /**
+ * How many distinct patterns the problems name: a repeated line is one
+ * pattern to fix, as the field's pattern count dedupes it (one count
+ * beside the other never reads "1 pattern · 2 invalid patterns").
+ *
+ * @param problems {@link checkExcludeLines}' problems.
+ * @returns The distinct invalid lines.
+ */
+export function countInvalidPatterns(problems: readonly RucssLineProblem[]): number {
+  return new Set(problems.map((problem) => problem.line)).size;
+}
+
+/**
  * Read one pair, as a run applies it (search compiled with `g`).
  *
  * @param pair The pair as typed.

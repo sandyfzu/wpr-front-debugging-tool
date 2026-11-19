@@ -28,12 +28,8 @@ import { createOnDemand } from '../resource-list/on-demand';
 import { SourceLink } from '../resource-list/source-link';
 import { StateChips } from '../resource-list/state-chip-list';
 import { splitStateChips } from '../resource-list/state-chips';
-import {
-  CRITICAL_SNAPSHOT_DETAIL,
-  NO_HREF_NAME,
-  styleFacts,
-  type StyleRowView
-} from './style-view';
+import { NO_HREF_NAME } from '../resource-list/style-words';
+import { CRITICAL_SNAPSHOT_DETAIL, styleFacts, type StyleRowView } from './style-view';
 
 /** Props of {@link StyleDetail}. */
 export interface StyleDetailProps {

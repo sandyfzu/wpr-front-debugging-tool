@@ -10,11 +10,8 @@ import type { CssStyleResource } from '../../../../lib/panel/style-states';
 import type { AskRunState, ShownAnswer } from '../ask-run';
 import {
   CRITICAL_SNAPSHOT_NOTE,
-  EMPTY_STYLE_PREVIEW,
-  NO_HREF_NAME,
   SNAPSHOT_ROW_KEY,
   listCutNote,
-  mediaDetail,
   sameStyleRow,
   sameStyleView,
   sizeShare,
@@ -27,6 +24,7 @@ import {
   stylesheetsView,
   type StylesheetsOutcome
 } from './style-view';
+import { EMPTY_STYLE_PREVIEW, NO_HREF_NAME } from '../resource-list/style-words';
 
 /** A classified row with overrides. */
 function row(overrides: Partial<CssStyleResource> = {}): CssStyleResource {
@@ -216,15 +214,6 @@ describe('styleRowKeys', () => {
     ] as const) {
       expect(styleRowKeys([{ ...base, ...change }])[0], JSON.stringify(change)).not.toBe(key);
     }
-  });
-});
-
-describe('mediaDetail', () => {
-  it('hides no media and the default all, names anything else', () => {
-    expect(mediaDetail('')).toBeNull();
-    expect(mediaDetail(' ALL ')).toBeNull();
-    expect(mediaDetail('print')).toBe('media: print');
-    expect(mediaDetail(' (max-width: 600px) ')).toBe('media: (max-width: 600px)');
   });
 });
 
