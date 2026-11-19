@@ -110,3 +110,24 @@
    * which decides the same rule in script; a test keeps the two equal. */
   --container-split: 830px;
 }
+
+/* ---- Reduced motion: extension pages ------------------------------------- */
+/* `tokens.css` collapses every animation and transition to 0.01ms for every
+ * surface. A collapsed run still paints its first keyframe (or its
+ * `@starting-style` value) for a frame or two, so a page entrance under
+ * reduced motion would flash its `from` state (opacity 0, 4 px down) once.
+ * Only the extension pages (panel, options) load this file, so here the
+ * motion is dropped outright: no animation or transition is ever created,
+ * the first painted frame is the final state and `getAnimations()` stays
+ * empty. Durations keep the tokens' collapse (timers derived from computed
+ * durations still read ≈ 0). Injected UIs import `tokens.css` directly and
+ * keep its collapse unchanged. */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-name: none !important;
+    transition-property: none !important;
+  }
+}

@@ -51,6 +51,7 @@ import { createLogger } from '../../../../lib/logger';
 import type { DetectionsSummary } from '../../../../lib/panel/detections-summary';
 import { WPR_NOT_DETECTED } from '../../../../lib/panel/wpr-evidence';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
+import { cn } from '../../../../utils/cn';
 import { formatCount } from '../../../../utils/format-count';
 import type { CacheAnswerTone } from '../../top-bar/selectors';
 import {
@@ -490,17 +491,39 @@ function OverviewGrid(props: OverviewTilesProps): JSX.Element {
 
 /**
  * The overview's loading shape — the same grid and cells, one placeholder
- * per tile — for the shell's boot skeleton (a real wait only).
+ * tile per tile (a raised card holding the score's ring and lines, or a
+ * tile's label / value / note lines) — for the shell's boot skeleton (a
+ * real wait only).
  *
  * @returns The placeholder grid.
  */
 export function OverviewSkeleton(): JSX.Element {
   return (
     <div data-fdt="detections-overview-skeleton" class={OVERVIEW_GRID}>
-      <Skeleton class={`h-18 w-full ${SCORE_CELL}`} />
-      <Skeleton class="h-18 w-full" />
-      <Skeleton class="h-18 w-full" />
-      <Skeleton class="h-18 w-full" />
+      <div data-fdt="overview-tile-skeleton" class={cn(TILE_CELL, SCORE_CELL)}>
+        <Card class="min-w-0">
+          <div class="flex min-h-18 items-center gap-3">
+            <Skeleton class="size-11 max-w-full shrink-0 rounded-full" />
+            <div class="flex min-w-0 flex-1 flex-col gap-2">
+              <Skeleton class="h-4 w-20 max-w-full rounded-full" />
+              <Skeleton class="h-2.5 w-36 max-w-full rounded-full" />
+            </div>
+          </div>
+        </Card>
+      </div>
+      <For each={[0, 1, 2]}>
+        {() => (
+          <div data-fdt="overview-tile-skeleton" class={TILE_CELL}>
+            <Card class="min-w-0">
+              <div class="flex min-h-18 flex-col gap-2">
+                <Skeleton class="h-2.5 w-20 max-w-full rounded-full" />
+                <Skeleton class="h-4 w-28 max-w-full rounded-full" />
+                <Skeleton class="h-2.5 w-36 max-w-full rounded-full" />
+              </div>
+            </Card>
+          </div>
+        )}
+      </For>
     </div>
   );
 }

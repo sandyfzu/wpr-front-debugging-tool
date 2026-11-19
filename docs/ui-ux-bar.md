@@ -38,7 +38,7 @@
 - **M-3 Everything else is instant:** hover/press colors (no primitive transitions them), data swaps (filter, search, refresh), counts (no tweening), expand/collapse heights, sidebar fold/unfold (no width animation, M-4).
 - **M-4 Properties.** Animate `opacity`/`transform` only (plus `box-shadow`/`border-color` for the lift); never `height`/`max-height`/`width`/`top`/`margin`.
 - **M-5 Bans.** Per-row/per-index entrances (virtual rows remount on scroll — any row fade, `MOTION_REVEAL` included, replays on every scroll); stagger; `transition-all`; infinite loops except during a real wait (shipped: `Skeleton`'s pulse, `Button`'s busy spinner, the inspector strip's scanning pulse); JS `scrollIntoView`/`scrollTo` with `behavior: 'smooth'` (the reduced-motion reset cannot reach an explicit JS option — use the default or `block: 'nearest'`).
-- **M-6 Reduced motion.** `prefers-reduced-motion: reduce` is collapsed globally by `tokens.css` (shadow roots included via `:host`); surfaces verify it, never re-implement it, and never encode state in a transition (reduced motion must not strand a container).
+- **M-6 Reduced motion.** `prefers-reduced-motion: reduce` is collapsed globally by `tokens.css` (shadow roots included via `:host`); the extension pages (panel, options) also drop every animation and transition there (`theme.css`: `animation-name`/`transition-property: none`), so an entrance never paints its `from` frame and `getAnimations()` stays empty — injected UIs keep the token collapse unchanged. Surfaces verify it, never re-implement it, and never encode state in a transition (reduced motion must not strand a container).
 
 ## S — States (no dead ends `UX-D9`, no theater `UX-D6`)
 
@@ -113,3 +113,4 @@
 - 2026-11-18 — `L-1` top bar: the measured whole-or-gone fold (fixed drop order into "⋯") replaces shrink-to-stub answers; 760 px threshold unchanged — supervisor, P23D.1 audit round 2.
 - 2026-11-18 — `L-1` top bar: the cap exception stated (WP Rocket label 12rem, server 18rem — raised from 14rem so a common "Apache/x (Debian) · PHP/x" pair shows whole — address 16rem); no threshold moved — supervisor, P23D.1 round-2 audit fixes.
 - 2026-11-19 — `M-2` drops the whole-card link hover lift (`MOTION_LIFT`): no panel card is a link any more (Detections entries carry their own page link) — P23F.2 audit.
+- 2026-11-19 — `M-6` extension pages drop animations/transitions under reduced motion (a 0.01 ms run still painted its `from` frame once, measured in Chromium); injected UIs unchanged — P23H.2.

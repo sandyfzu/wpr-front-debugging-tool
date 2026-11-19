@@ -10,6 +10,7 @@ import type { JSX } from 'solid-js';
 import { createSignal, Show } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ROUTE_HEADING_SELECTOR } from '../palette/focus';
+import type { RouteId } from '../routes';
 import {
   NO_MATCHES_QUERY_MAX,
   NoMatches,
@@ -108,6 +109,26 @@ describe('PageFrame', () => {
     const kids = [...frameBody().children];
     expect(kids[0]?.getAttribute('data-fdt')).toBe('page-header');
     expect(kids.slice(1).map((el) => el.textContent)).toEqual(['first', 'second']);
+  });
+
+  it('ties `actions` to the route registry at compile time', () => {
+    // Type-level pins (`pnpm compile` checks them): each line stops compiling
+    // — failing the build on the unused directive — once the route list and
+    // a page's actions slot drift apart.
+    // Widened on purpose: a `RouteId`-typed const would narrow to its literal.
+    const loose = 'javascript' as RouteId;
+    render(() => (
+      <>
+        {/* @ts-expect-error a header-action route must pass its actions */}
+        <PageFrame id="headers-cookies" title="Headers & Cookies" />
+        {/* @ts-expect-error a route outside the list cannot take actions */}
+        <PageFrame id="javascript" title="JavaScript" actions={<span />} />
+        {/* A route known only as some RouteId (the shell's frames) may do either. */}
+        <PageFrame id={loose} title="Loose" actions={<span />} />
+        <PageFrame id={loose} title="Loose" />
+      </>
+    ));
+    expect(document.querySelectorAll('[data-fdt-page]')).toHaveLength(4);
   });
 
   it('fill mode makes the frame an at-least-full-height column for one flex scroller', () => {

@@ -6,6 +6,7 @@
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ErrorState } from './error-state';
+import { STATE_ICON_SIZE_CLASSES, STATE_ICON_TONE_CLASSES } from './state-icon';
 
 afterEach(() => {
   cleanup();
@@ -52,5 +53,20 @@ describe('ErrorState', () => {
     expect(heading.classList).toContain('text-base');
     expect(heading.classList).not.toContain('sr-only');
     expect(screen.getByRole('alert').contains(heading)).toBe(true);
+  });
+
+  it('leads with the error tile: 36 px in a section, 44 px when it owns the page', () => {
+    render(() => <ErrorState onRetry={() => undefined} />);
+    const inline = document.querySelector('[data-fdt="error-state"] [data-fdt="state-icon"]');
+    for (const token of [...STATE_ICON_TONE_CLASSES.error.split(' '), STATE_ICON_SIZE_CLASSES.md]) {
+      expect(inline?.classList).toContain(token);
+    }
+    expect(inline?.querySelector('svg')?.getAttribute('width')).toBe('16');
+    expect(screen.getByText("Couldn't load this view").className).toContain('font-semibold');
+    cleanup();
+    render(() => <ErrorState pageHeading onRetry={() => undefined} />);
+    const page = document.querySelector('[data-fdt="error-state"] [data-fdt="state-icon"]');
+    expect(page?.classList).toContain(STATE_ICON_SIZE_CLASSES.lg);
+    expect(page?.querySelector('svg')?.getAttribute('width')).toBe('22');
   });
 });

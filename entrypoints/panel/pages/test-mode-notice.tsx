@@ -14,6 +14,7 @@ import { STATUS_SOFT_CLASSES, STATUS_TEXT_CLASSES } from '../../../components/ui
 import { RUCSS_TEST_MODE_SENTENCE, RUCSS_TEST_MODE_TAG } from '../../../lib/rucss-tester/test-mode';
 import type { RucssTestModeFact } from '../../../lib/wp-rocket/types';
 import { cn } from '../../../utils/cn';
+import { NOTICE_FRAME, NOTICE_ICON_SIZE } from './outcome-notice';
 
 /** Props of {@link TestModeNotice}. */
 export interface TestModeNoticeProps {
@@ -35,14 +36,15 @@ export function TestModeNotice(props: TestModeNoticeProps): JSX.Element {
       <div
         data-fdt="test-mode-notice"
         class={cn(
-          'flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md px-2.5 py-2',
+          'flex flex-wrap items-center gap-x-3 gap-y-1.5',
+          NOTICE_FRAME,
           STATUS_SOFT_CLASSES.warn
         )}
       >
-        <p class="flex min-w-0 flex-1 basis-56 items-start gap-1.5 text-xs text-fg-primary">
+        <p class="flex min-w-0 flex-1 basis-56 items-start gap-2 text-xs text-fg-primary">
           <TestTubeDiagonal
-            size={14}
-            class={cn('mt-px shrink-0', STATUS_TEXT_CLASSES.warn)}
+            size={NOTICE_ICON_SIZE}
+            class={cn('shrink-0', STATUS_TEXT_CLASSES.warn)}
             aria-hidden="true"
           />
           <span>

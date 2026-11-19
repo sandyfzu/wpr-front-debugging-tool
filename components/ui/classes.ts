@@ -29,8 +29,9 @@ export const DISABLED = 'disabled:opacity-50 disabled:cursor-not-allowed';
 /*
  * Motion — the three sanctioned Tailwind-surface moments beyond the page
  * entrance (the panel's `.fdt-page` keyframe). Token-driven only, so the
- * global `prefers-reduced-motion` collapse in `tokens.css` reaches them with
- * no per-surface code. Everything else (hover/press colors, data swaps,
+ * global `prefers-reduced-motion` rules reach them with no per-surface code
+ * (`tokens.css` collapses them everywhere; `theme.css`, the extension pages'
+ * layer, drops them outright). Everything else (hover/press colors, data swaps,
  * counts, height changes) is instant by design.
  */
 
@@ -52,3 +53,13 @@ export const MOTION_REVEAL =
  */
 export const MOTION_TURN =
   'transition-transform duration-[var(--motion-fast)] ease-[var(--ease-standard)]';
+
+/**
+ * A key chip (`<kbd>`): a quiet hairline box in the sans stack at meta size.
+ * One look for every place the panel names a key — the top bar's palette
+ * hint, the palette's key footer, the shortcuts overlay — so keys read the
+ * same wherever they are taught. Callers add tone or font overrides through
+ * `cn` (the overlay's keys column reads `fg-primary`).
+ */
+export const KEY_CHIP =
+  'inline-flex items-center gap-0.5 rounded-sm border border-line-2 bg-surface-1 px-1 font-sans text-2xs text-fg-muted';

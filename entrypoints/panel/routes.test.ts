@@ -6,7 +6,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { NavLiveState } from './routes';
-import { DEFAULT_ROUTE, NAV_GROUPS, NAV_ROUTES, ROUTE_IDS, navRoute } from './routes';
+import {
+  DEFAULT_ROUTE,
+  HEADER_ACTION_ROUTES,
+  NAV_GROUPS,
+  NAV_ROUTES,
+  ROUTE_IDS,
+  hasHeaderActions,
+  navRoute
+} from './routes';
 import { PAGES } from './pages';
 import { makeDelayScript, makeFdtData, makeLazyImage } from './state/fixtures';
 import { HEADER_NOUN, SCRIPT_NOUN } from '../../lib/detection/count-nouns';
@@ -20,6 +28,16 @@ function liveStateOf(
   expect(selector, `${id} carries its selector`).toBeDefined();
   return selector ? selector(data) : null;
 }
+
+describe('HEADER_ACTION_ROUTES', () => {
+  it('names exactly the routes whose page header has actions', () => {
+    expect([...HEADER_ACTION_ROUTES].sort()).toEqual(['detections', 'headers-cookies']);
+  });
+
+  it.each(ROUTE_IDS)('%s: hasHeaderActions answers its list membership', (id) => {
+    expect(hasHeaderActions(id)).toBe(id === 'detections' || id === 'headers-cookies');
+  });
+});
 
 describe('NAV_ROUTES', () => {
   it('lists the ten rows in the journey order', () => {

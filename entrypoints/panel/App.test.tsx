@@ -30,7 +30,7 @@ import { DATA_UNAVAILABLE_TITLE } from './data-unavailable';
 import type { PanelReceivers } from './state/edges';
 import { makeFdtData, makeHardReloadBudget } from './state/fixtures';
 import { PAGES } from './pages';
-import { ROUTE_IDS } from './routes';
+import { navRoute, ROUTE_IDS } from './routes';
 
 /** One page load's worth of valid data. */
 const pageData = (): FdtData => makeFdtData({ allScriptsLoaded: false });
@@ -137,15 +137,25 @@ describe('PanelApp boot states', () => {
       const placeholders = document.querySelectorAll(
         '[data-fdt-page="fetching"] [data-fdt="skeleton"]'
       );
-      // Three page bars everywhere; Detections adds its overview's four tile placeholders.
+      // The destination's own shape (its nav group's); only Detections carries
+      // its overview's four tile placeholders.
+      const shape = document.querySelector('[data-fdt-page="fetching"] [data-fdt="route-loading"]');
+      expect(shape?.getAttribute('data-fdt-loading-shape')).toBe(navRoute(id)?.group);
       const overview = document.querySelector(
         '[data-fdt-page="fetching"] [data-fdt="detections-overview-skeleton"]'
       );
       expect(overview !== null).toBe(id === 'detections');
-      expect(placeholders).toHaveLength(id === 'detections' ? 7 : 3);
-      expect(overview?.querySelectorAll('[data-fdt="skeleton"]').length ?? 0).toBe(
+      expect(overview?.querySelectorAll('[data-fdt="overview-tile-skeleton"]').length ?? 0).toBe(
         id === 'detections' ? 4 : 0
       );
+      // The header reserves the landed header's lines: the subtitle always (every
+      // page has one), the actions cluster only where the page renders one.
+      const header = document.querySelector('[data-fdt-page="fetching"] [data-fdt="page-header"]');
+      expect(header?.querySelector('[data-fdt="loading-subtitle"]')).not.toBeNull();
+      expect(
+        header?.querySelectorAll(':scope > .ms-auto > [data-fdt="skeleton"]').length ?? 0
+      ).toBe(id === 'detections' || id === 'headers-cookies' ? 1 : 0);
+      expect(placeholders.length).toBeGreaterThan(0);
       for (const placeholder of placeholders) {
         if (!placeholder.classList.contains('w-full'))
           expect(placeholder.classList).toContain('max-w-full');
@@ -159,6 +169,10 @@ describe('PanelApp boot states', () => {
       expect(
         screen.getByRole('heading', { level: 1, name: "Couldn't load page data" })
       ).toBeTruthy();
+      // The error replaces the page: framed as a page-level state.
+      expect(
+        document.querySelector('[data-fdt="page-state-card"] [data-fdt="error-state"]')
+      ).not.toBeNull();
       shell.data.retry();
       assertCanvas();
       expect(screen.getAllByRole('heading')).toHaveLength(1);
@@ -176,6 +190,7 @@ describe('PanelApp boot states', () => {
     render(() => <PanelApp search={shell.search} data={shell.data} />);
     const view = document.querySelector('[data-fdt="data-unavailable"]');
     expect(view).not.toBeNull();
+    expect(view?.closest('[data-fdt="page-state-card"]')).not.toBeNull();
     expect(screen.getByRole('heading', { level: 1, name: DATA_UNAVAILABLE_TITLE })).toBeTruthy();
     expect(view?.textContent).toContain(NO_PAGE_TRANSPORT_REASON);
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
@@ -281,6 +296,31 @@ describe('PanelApp boot states', () => {
       expect(screen.getByRole('heading', { name: 'Detections' })).toBeTruthy();
     });
     expect(shell.requests()).toBe(2);
+  });
+
+  it('starts every page-level view swap at the top of the content region', async () => {
+    const shell = makeShell();
+    render(() => <PanelApp search={shell.search} data={shell.data} />);
+    const content = document.querySelector('[data-fdt="panel-content"]') as HTMLElement;
+    shell.fail(new Error('Could not establish connection. Receiving end does not exist.'));
+    await waitFor(() => {
+      expect(screen.getByText("Couldn't load page data")).toBeTruthy();
+    });
+    // The error view scrolled to its Retry (a short panel): Retry swaps in the
+    // loading page, which must not inherit that offset.
+    content.scrollTop = 101;
+    shell.data.retry();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Loading page data' })).toBeTruthy();
+    });
+    expect(content.scrollTop).toBe(0);
+    // Loading → page lands the route at its top too.
+    content.scrollTop = 60;
+    shell.settle(pageData());
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Detections' })).toBeTruthy();
+    });
+    expect(content.scrollTop).toBe(0);
   });
 });
 
@@ -783,6 +823,9 @@ describe('unmount + crash boundaries', () => {
       // The card explains the recovery, not the raw failure:
       expect(screen.getAllByRole('heading')).toHaveLength(1);
       expect(screen.getByRole('heading', { level: 1, name: 'The panel came apart' })).toBeTruthy();
+      expect(
+        document.querySelector('[data-fdt="page-state-card"] [data-fdt="error-state"]')
+      ).not.toBeNull();
       expect(screen.getByText(/Reloading the panel restores it/)).toBeTruthy();
       expect(screen.queryByText('boom — a body bug')).toBeNull();
       expect(document.querySelector('[data-fdt="page-body"]')?.classList).toContain('max-w-7xl');

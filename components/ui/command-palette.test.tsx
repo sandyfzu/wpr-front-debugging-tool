@@ -12,11 +12,18 @@
  * geometry (the resource-less DOM gives none).
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
-import { Show, createSignal } from 'solid-js';
+import { Show, createSignal, type JSX } from 'solid-js';
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import Rocket from 'lucide-solid/icons/rocket';
 import Zap from 'lucide-solid/icons/zap';
-import { CommandPalette, type PaletteCommand } from './command-palette';
+import { FOCUS_RING } from './classes';
+import {
+  CommandPalette,
+  PALETTE_LOOKS,
+  type CommandPaletteVariant,
+  type PaletteCommand
+} from './command-palette';
+import { cn } from '../../utils/cn';
 
 afterEach(() => {
   cleanup();
@@ -68,6 +75,8 @@ interface PaletteHarness {
  */
 async function mountPalette(options?: {
   rows?: readonly PaletteCommand[];
+  variant?: CommandPaletteVariant;
+  footer?: JSX.Element;
 }): Promise<PaletteHarness> {
   const onRun = vi.fn();
   const onClose = vi.fn();
@@ -78,6 +87,8 @@ async function mountPalette(options?: {
       filter={filter}
       onRun={onRun}
       onClose={onClose}
+      variant={options?.variant}
+      footer={options?.footer}
     />
   ));
   await waitFor(() => {
@@ -119,6 +130,112 @@ describe('CommandPalette structure', () => {
   it('autofocuses the palette field, inside the dialog', async () => {
     await mountPalette();
     expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+  });
+});
+
+describe('CommandPalette looks', () => {
+  /**
+   * The shipped markup's classes, verbatim (copied from the released palette,
+   * never derived from the module under test): the on-page palette renders
+   * this look (its own stylesheet keys on the hooks), so the default must
+   * never move — any added, dropped or reordered class fails here.
+   */
+  const SHIPPED = {
+    plate: 'pt-1.5',
+    root: 'flex min-h-0 flex-1 flex-col gap-1',
+    fieldFrame: null,
+    field:
+      'h-8 w-full shrink-0 rounded border border-line-3 bg-surface-2 px-2 text-xs text-fg-primary placeholder:text-fg-muted hover:border-line-2',
+    list: 'max-h-72 overflow-y-auto rounded p-1',
+    row: 'flex h-7 w-full cursor-pointer select-none items-center gap-2 rounded px-2 text-left text-xs text-fg-secondary no-underline data-highlighted:bg-surface-3 data-highlighted:text-fg-primary data-disabled:cursor-not-allowed data-disabled:text-fg-muted',
+    rowIcon: 'shrink-0 text-fg-muted',
+    hint: 'shrink-0 text-2xs',
+    empty: 'px-2 py-1.5 text-xs text-fg-muted'
+  };
+
+  /** The released dialog plate's classes (the palette's plate merges `pt-1.5` onto them). */
+  const SHIPPED_DIALOG_PLATE =
+    'fixed left-1/2 top-16 z-50 flex max-h-[calc(100dvh-5rem)] w-[min(30rem,calc(100%-1.5rem))] -translate-x-1/2 flex-col rounded-lg border border-line-2 bg-surface-2 shadow-elev-3 pt-1.5';
+
+  it('pins the default look to the shipped classes, part by part', () => {
+    expect({ ...PALETTE_LOOKS.default }).toStrictEqual(SHIPPED);
+  });
+
+  it('renders the shipped look by default: bare field first, shipped classes everywhere', async () => {
+    const { field } = await mountPalette();
+    const palette = document.querySelector('[data-fdt="palette"]');
+    expect(palette?.className).toBe(SHIPPED.root);
+    expect(palette?.firstElementChild).toBe(field);
+    expect(field.className).toBe(cn(SHIPPED.field, FOCUS_RING));
+    expect(screen.getByRole('dialog').className).toBe(SHIPPED_DIALOG_PLATE);
+    expect(document.querySelector('[role="listbox"]')?.className).toBe(
+      cn(SHIPPED.list, 'flex-1 min-h-0')
+    );
+    const row = document.querySelector('[data-fdt="palette-command"]');
+    expect(row?.className).toBe(cn(SHIPPED.row, FOCUS_RING));
+    // The icon library prefixes its own `lucide*` classes; the rest is the look's, verbatim.
+    const iconClasses = (row?.querySelector('svg')?.getAttribute('class') ?? '')
+      .split(' ')
+      .filter((token) => !token.startsWith('lucide'));
+    expect(iconClasses.join(' ')).toBe(SHIPPED.rowIcon);
+    expect(row?.querySelector('[data-fdt="palette-command-hint"]')?.className).toBe(SHIPPED.hint);
+    // The dialog keeps its shipped look too.
+    expect(document.querySelector('[data-fdt="dialog-title"]')?.className).toBe('sr-only');
+  });
+
+  it('panel look: the field leads with its search icon above a hairline', async () => {
+    const { field } = await mountPalette({ variant: 'panel' });
+    const palette = document.querySelector('[data-fdt="palette"]');
+    expect(palette?.className).toBe(PALETTE_LOOKS.panel.root);
+    const frame = palette?.firstElementChild;
+    expect(frame?.className).toBe(PALETTE_LOOKS.panel.fieldFrame);
+    expect(frame?.contains(field)).toBe(true);
+    expect(frame?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(field.className).toBe(cn(PALETTE_LOOKS.panel.field, FOCUS_RING));
+    expect(field.classList).toContain('rounded-control');
+    // The field keeps every combobox fact in its frame.
+    expect(field.getAttribute('role')).toBe('combobox');
+    expect(document.activeElement).toBe(field);
+    expect(screen.getByRole('dialog').className).not.toContain('pt-1.5');
+  });
+
+  it('panel look: rows tint the highlight in the accent, hints stay muted', async () => {
+    await mountPalette({ variant: 'panel' });
+    const rows = [...document.querySelectorAll<HTMLElement>('[data-fdt="palette-command"]')];
+    expect(rows[0]?.className).toBe(cn(PALETTE_LOOKS.panel.row, FOCUS_RING));
+    expect(rows[0]?.classList).toContain('data-highlighted:bg-accent-soft');
+    expect(rows[0]?.hasAttribute('data-highlighted')).toBe(true);
+    expect(rows[0]?.querySelector('svg')?.getAttribute('class')).toContain(
+      'group-data-highlighted:text-accent'
+    );
+    for (const row of rows) {
+      expect(row.querySelector('[data-fdt="palette-command-hint"]')?.className).toBe(
+        PALETTE_LOOKS.panel.hint
+      );
+      // The eliding name span keeps its shape in both looks.
+      expect(row.querySelector('.truncate')?.className).toBe('min-w-0 flex-1 truncate');
+    }
+  });
+
+  it('panel look: the no-match line is centered, and the footer renders under the list', async () => {
+    const { field } = await mountPalette({
+      variant: 'panel',
+      footer: <div data-probe-footer>Keys</div>
+    });
+    fireEvent.input(field, { target: { value: 'zzz' } });
+    await waitFor(() => {
+      expect(document.querySelector('[data-fdt="palette-empty"]')?.className).toBe(
+        PALETTE_LOOKS.panel.empty
+      );
+    });
+    const footer = document.querySelector('[data-probe-footer]');
+    expect(footer?.previousElementSibling?.getAttribute('data-fdt')).toBe('palette');
+  });
+
+  it('pins both looks to token classes (no literal colors, no transitions)', () => {
+    for (const look of Object.values(PALETTE_LOOKS)) {
+      expect(Object.values(look).join(' ')).not.toMatch(/#|rgb|transition/);
+    }
   });
 });
 

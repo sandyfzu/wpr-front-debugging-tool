@@ -16,7 +16,7 @@ describe('Skeleton', () => {
     const skeleton = document.querySelector<HTMLElement>('[data-fdt="skeleton"]');
     expect(skeleton).toBeTruthy();
     expect(skeleton?.className).toContain('animate-pulse');
-    expect(skeleton?.className).toContain('bg-surface-3');
+    expect(skeleton?.className).toContain('bg-surface-4');
     expect(skeleton?.className).toContain('h-3');
   });
 

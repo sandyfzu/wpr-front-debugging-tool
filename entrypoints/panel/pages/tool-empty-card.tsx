@@ -45,11 +45,8 @@ export function ToolEmptyCard(props: ToolEmptyCardProps): JSX.Element {
       <div data-fdt={props.hook} class="flex flex-col items-center gap-3">
         <EmptyState
           class={cn('gap-2', preview() !== undefined && 'pb-0')}
-          icon={
-            <span class="grid size-11 place-items-center rounded-lg bg-accent-soft text-accent">
-              <Dynamic component={props.icon} size={22} aria-hidden="true" />
-            </span>
-          }
+          look="tool"
+          icon={<Dynamic component={props.icon} size={22} aria-hidden="true" />}
           title={props.title}
           description={props.description}
           action={props.action}

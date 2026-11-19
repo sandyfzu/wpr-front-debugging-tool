@@ -11,8 +11,11 @@ import { cn } from '../../utils/cn';
 export type PageHeaderProps = {
   /** The page title (`h1`); the shell focuses it on route switches. */
   title: string;
-  /** The one-line "what am I looking at" beneath the title. */
-  subtitle?: string;
+  /**
+   * The one-line "what am I looking at" beneath the title — its text, or a
+   * loading header's placeholder for it.
+   */
+  subtitle?: JSX.Element;
   /** The actions cluster (buttons, copy controls) aligned to the title row. */
   actions?: JSX.Element;
   /** Extra classes on the block, merged last so callers win. */
@@ -30,7 +33,7 @@ export type PageHeaderProps = {
  * (transparent) outline for the system's palette to take over.
  *
  * @param props.title The page title, rendered as the page's single `h1`.
- * @param props.subtitle The intro line under the title (optional).
+ * @param props.subtitle The intro line under the title, or its placeholder (optional).
  * @param props.actions The actions cluster for the title row (optional).
  * @param props.class Extra classes on the block.
  */
@@ -48,9 +51,9 @@ export function PageHeader(props: PageHeaderProps): JSX.Element {
         {props.title}
       </h1>
       <Show when={props.subtitle}>
-        <span data-fdt-page-subtitle class="text-xs text-fg-secondary">
+        <div data-fdt-page-subtitle class="text-xs text-fg-secondary">
           {props.subtitle}
-        </span>
+        </div>
       </Show>
       <div class="ms-auto flex items-center gap-1.5">{props.actions}</div>
     </div>
