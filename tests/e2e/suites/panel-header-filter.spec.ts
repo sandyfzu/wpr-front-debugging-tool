@@ -1,6 +1,5 @@
 /**
- * P6G.8 Headers evidence polish (07-phase-6-panel-pages.md receipt): the
- * Headers & Cookies page's name filter over a real capture — the field
+ * The Headers & Cookies page's name filter over a real capture — the field
  * narrows by header and cookie names only (a value-naming query never
  * matches), section badges restate the matching counts, the shared count
  * line announces the commit and stays quiet on refresh, Esc and the

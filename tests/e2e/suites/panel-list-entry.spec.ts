@@ -501,10 +501,10 @@ test('a flooded captured headers list still enters and walks out cleanly', async
     const alignedIndex = await alignDeepScroll(panel, ROUTES.headers, 60);
     const all = panel.locator(ROUTES.headers).getByRole('button', { name: 'All headers' });
     await all.focus();
-    // Two real focusables live between the page action and the list since
-    // P6G.8's name filter: the fetched stamp's tooltip trigger and the
-    // filter's search field. Each takes one press as an intermediate stop
-    // (no rows walked into, no residue), and the third press is the entry.
+    // Two real focusables live between the page action and the list: the
+    // fetched stamp's tooltip trigger and the name filter's search field.
+    // Each takes one press as an intermediate stop (no rows walked into, no
+    // residue), and the third press is the entry.
     await panel.keyboard.press('Tab');
     expect((await readEntry(panel, ROUTES.headers)).row).toBeNull();
     expect(await inertCount(panel)).toBe(0);

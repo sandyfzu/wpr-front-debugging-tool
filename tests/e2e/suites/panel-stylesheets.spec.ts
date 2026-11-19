@@ -12,6 +12,10 @@
  * with or without a detail open. A reload of the inspected page re-reads on
  * its own.
  *
+ * Round 1b — a page WP Rocket serves but whose styles carry no state: the
+ * info note says so (naming the style features that are off, linking
+ * Detections), and the detail's Format re-flows the shown CSS and back.
+ *
  * Round 2 — D-7: a generated page with 5,000 styles (the list cut at its
  * 2,000-entry cap, said so) stays inside the long-task (none > 50 ms) and
  * TBT (< 200 ms) budget through a facet change, a typed search, opening a
@@ -298,5 +302,43 @@ test('5,000 styles: a capped, virtualized list inside the long-task and TBT budg
     await panel.close();
     await fixture.page.close();
     await extension.browserContext.unroute(PERF_PATTERN);
+  }
+});
+
+test('a page whose styles WP Rocket left alone says so; Format re-flows the shown CSS', async ({
+  extension
+}) => {
+  const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/versionless.html', {
+    bootHash: '#/stylesheets'
+  });
+  try {
+    const page = panel.locator('[data-fdt-page="stylesheets"]');
+    const note = page.locator('[data-fdt="stylesheets-unchanged"]');
+    await expect(note).toContainText('No stylesheet shows a WP Rocket change.');
+    await expect(note).toContainText('Minify CSS files');
+    await expect(note.getByRole('link', { name: 'See Detections' })).toHaveAttribute(
+      'href',
+      '#/detections'
+    );
+    const row = page.locator('[data-fdt="stylesheet-row"]', { hasText: '#plain-theme' });
+    const detail = await openScriptDetail(panel, row);
+    const css = detail.locator('[data-fdt="style-css"] [data-fdt-code-content]');
+    await expect(css).toHaveText('.plain{color:red;margin:0 auto}.plain b{font-weight:600}');
+    const format = detail.getByRole('button', { name: 'Format' });
+    await format.click();
+    await expect(format).toHaveAttribute('aria-pressed', 'true');
+    // Exact text (line breaks and indents included), not whitespace-normalized.
+    await expect
+      .poll(() => css.textContent())
+      .toBe('.plain {\n  color:red;\n  margin:0 auto\n}\n.plain b {\n  font-weight:600\n}');
+    await format.click();
+    await expect(css).toHaveText('.plain{color:red;margin:0 auto}.plain b{font-weight:600}');
+    // The note leaves with the list's owner: Detections is one click away.
+    await closeScriptDetail(panel);
+    await note.getByRole('link', { name: 'See Detections' }).click();
+    await expect(panel.locator('[data-fdt-page="detections"]')).toBeVisible();
+  } finally {
+    await panel.close();
+    await fixture.page.close();
   }
 });

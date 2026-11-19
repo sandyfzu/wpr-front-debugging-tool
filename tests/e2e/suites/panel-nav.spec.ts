@@ -513,7 +513,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
 
       // A hidden route navigates: the menu closes and the hash swaps. The
       // standalone harness's data path settles at the recorded error state
-      // (no content script answers the runtime broadcast — the P5I-verified
+      // (no content script answers the runtime broadcast — a verified
       // transport reason), so no page h1 renders here; the route's own
       // marker is honest anyway: reopening the menu shows the navigated row
       // with `aria-current="page"`.
@@ -580,7 +580,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
 
       // Enter on the focused item navigates; the selection closes the menu.
       // The standalone harness's data path settles at the recorded error
-      // state (no content script answers the broadcast — the P5I-verified
+      // state (no content script answers the broadcast — a verified
       // transport reason), so the selection's own fact is the hash landing
       // plus the reopened menu's `aria-current` on that row.
       const target = await menu

@@ -780,6 +780,7 @@ describe('TopBar (measured fold)', () => {
           }
         };
       },
+      watchContent: () => () => undefined,
       read: (elements) => {
         if (elements.start === null || elements.menu === null) return null;
         const widths: Partial<Record<TopBarFoldPart, number>> = {};

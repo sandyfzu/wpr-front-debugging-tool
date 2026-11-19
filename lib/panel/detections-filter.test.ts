@@ -12,9 +12,11 @@ import {
   DETECTION_FILTER_LABEL,
   DETECTION_FILTERS,
   detectionFilterLabel,
+  detectionSearchField,
   filterStatusItems,
   matchesDetectionFilter,
   optimizationCounts,
+  searchStatusItems,
   statusBucket,
   type DetectionFilterId
 } from './detections-filter';
@@ -180,5 +182,38 @@ describe('optimizationCounts', () => {
     expect(off).toContain('defer_all_js');
     expect(ids(filterStatusItems(items, 'active'))).toContain('lazyload');
     expect(buildStatusItems(data)).toEqual(items);
+  });
+});
+
+describe('searchStatusItems', () => {
+  const NAMED: readonly StatusItem[] = [
+    item('wpr', 'active', { name: 'WP Rocket' }),
+    item('server', 'active', { name: 'Server' }),
+    item('delay_js', 'active', { name: 'Delay JavaScript execution' }),
+    item('defer_all_js', 'unknown', { name: 'Load JavaScript deferred' }),
+    item('remove_unused_css', 'collecting', { name: 'Remove Unused CSS' })
+  ];
+
+  it('searches the row name only', () => {
+    expect(detectionSearchField(NAMED[2] as StatusItem)).toBe('Delay JavaScript execution');
+    const subtitled = item('lazyload', 'active', { name: 'LazyLoad', subtitle: 'JavaScript' });
+    expect(searchStatusItems([subtitled], 'javascript')).toEqual([]);
+  });
+
+  it('keeps the matches in render order, case-insensitively, page-context rows included', () => {
+    expect(ids(searchStatusItems(NAMED, 'javascript'))).toEqual(['delay_js', 'defer_all_js']);
+    expect(ids(searchStatusItems(NAMED, 'ER'))).toEqual(['server', 'defer_all_js']);
+    expect(ids(searchStatusItems(NAMED, 'rocket'))).toEqual(['wpr']);
+  });
+
+  it('returns the list itself for a blank query, and nothing for a miss', () => {
+    expect(searchStatusItems(NAMED, '')).toBe(NAMED);
+    expect(searchStatusItems(NAMED, 'zzz')).toEqual([]);
+  });
+
+  it('narrows on top of the status filter', () => {
+    expect(ids(searchStatusItems(filterStatusItems(NAMED, 'active'), 'javascript'))).toEqual([
+      'delay_js'
+    ]);
   });
 });

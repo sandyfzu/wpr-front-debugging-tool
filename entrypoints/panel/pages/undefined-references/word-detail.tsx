@@ -23,6 +23,7 @@ import type { ScriptOrigin } from '../../../../lib/panel/undefined-refs';
 import { cn } from '../../../../utils/cn';
 import { countNoun } from '../../../../utils/format-count';
 import type { OpenResource } from '../open-resource';
+import { DetailSection } from '../resource-list/detail-section';
 import { SourceLink } from '../resource-list/source-link';
 import { COMBINED_EXCLUSION_NOTE, ExclusionCopyButton } from './copy-exclusion';
 import { displayWord, isSingleLetterWord, splitScriptUrl, verdictText } from './model';
@@ -171,17 +172,14 @@ export function WordDetail(props: WordDetailProps): JSX.Element {
       </Show>
       <Switch>
         <Match when={verdict().kind === 'found'}>
-          <section data-fdt="word-definitions" class="flex min-w-0 flex-col gap-1.5">
-            <h3 class="text-2xs font-semibold tracking-wide text-fg-muted uppercase">
-              Possible definitions
-            </h3>
+          <DetailSection title="Possible definitions" hook="word-definitions">
             <DefinitionList
               word={props.view().word}
               definitions={definitions()}
               pageOrigin={props.pageOrigin()}
               openResource={props.openResource}
             />
-          </section>
+          </DetailSection>
         </Match>
         <Match when={verdict().kind === 'hidden'}>
           <p data-fdt="word-explanation" class={BODY_NOTE}>

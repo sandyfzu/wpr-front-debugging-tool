@@ -17,6 +17,7 @@ import { StatusBadge } from '../../../components/ui/status-badge';
 import { Tooltip } from '../../../components/ui/tooltip';
 import { WPR_NOT_DETECTED } from '../../../lib/panel/wpr-evidence';
 import { cn } from '../../../utils/cn';
+import { routeHref } from '../router';
 import { FOLD_ELIDE_MARK, FoldPart, type TopBarFoldControl } from './fold';
 import type { FreshnessSegmentView, SegmentId, TopBarSegments } from './selectors';
 import { cacheAnswerTone, STALE_WINDOW_MINUTES } from './selectors';
@@ -84,9 +85,9 @@ function PillText(props: { class?: string; children: JSX.Element }): JSX.Element
  * as text until a page owns it (never a control that goes nowhere).
  */
 export const ANSWER_TARGETS: Record<Exclude<SegmentId, 'freshness'>, string> = {
-  wpr: '#/detections',
-  cache: '#/detections',
-  platform: '#/detections'
+  wpr: routeHref('detections'),
+  cache: routeHref('detections'),
+  platform: routeHref('detections')
 };
 
 /**

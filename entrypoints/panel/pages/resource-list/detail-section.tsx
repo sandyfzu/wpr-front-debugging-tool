@@ -1,7 +1,7 @@
 /**
  * A detail view's building blocks — the titled section (a script's source,
- * a style's CSS) and the facts list — shared, so every list's detail reads
- * the same.
+ * a style's CSS, a word's definitions) and the facts list — shared, so
+ * every list's detail reads the same.
  */
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
@@ -58,14 +58,15 @@ export function FactList(props: { facts: readonly DetailFact[]; hook: string }):
 }
 
 /**
- * A titled code section: caps heading (+ a muted aside) over its content.
+ * A titled detail section (a script's source, a style's CSS, a word's
+ * possible definitions): caps heading (+ a muted aside) over its content.
  *
  * @param props.title The heading.
  * @param props.aside The muted text after it ("12 lines").
  * @param props.hook The section's `data-fdt` hook.
  * @param props.children The section body.
  */
-export function CodeSection(props: {
+export function DetailSection(props: {
   title: string;
   aside?: string;
   hook: string;

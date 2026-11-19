@@ -30,6 +30,17 @@ export function parseHashRoute(hash: string): RouteId | null {
   return isRouteId(id) ? id : null;
 }
 
+/**
+ * A route's link target, for plain `<a href>` anchors (the router follows
+ * the hash they write).
+ *
+ * @param id The route.
+ * @returns `#/<route-id>`.
+ */
+export function routeHref(id: RouteId): string {
+  return HASH_PREFIX + id;
+}
+
 /** The subset of `window` the router touches (tests hand a location stub). */
 export interface HashRouterHost {
   readonly location: Pick<Location, 'hash'>;
@@ -67,7 +78,7 @@ export function createHashRoute(host: HashRouterHost = window): HashRouter {
   return {
     route,
     navigate: (to) => {
-      host.location.hash = HASH_PREFIX + to;
+      host.location.hash = routeHref(to);
     },
     stop: () => {
       host.removeEventListener('hashchange', onHashChange);

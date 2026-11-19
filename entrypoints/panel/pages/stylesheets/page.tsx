@@ -18,6 +18,8 @@
  * - **filtered-empty** / **populated** — the calm list's (`NoMatches` with
  *   the ways back; the list and the selected row's detail);
  * - **capped** — the page has more styles than one read lists: a muted note;
+ * - **unchanged** — WP Rocket is proven but no listed style carries one of
+ *   its states: an info note naming the style features that are off;
  * - **refreshing** — Refresh busy, the list stays; a refresh that missed
  *   says so above the kept list.
  * A Refresh (or a payload refresh) keeps the facets, the query, unchanged
@@ -28,9 +30,11 @@ import type { Accessor, JSX } from 'solid-js';
 import { createMemo, Match, Show, Switch } from 'solid-js';
 import Code from 'lucide-solid/icons/code';
 import FileCode from 'lucide-solid/icons/file-code';
+import Info from 'lucide-solid/icons/info';
 import Palette from 'lucide-solid/icons/palette';
 import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import { Button } from '../../../../components/ui/button';
+import { FOCUS_RING } from '../../../../components/ui/classes';
 import { EmptyState } from '../../../../components/ui/empty-state';
 import { ErrorState } from '../../../../components/ui/error-state';
 import { Skeleton } from '../../../../components/ui/skeleton';
@@ -42,6 +46,7 @@ import {
   type StyleSourceRequest,
   type StyleSourceResult
 } from '../../../../lib/messaging/style-source';
+import { buildStatusItems, type StatusItem } from '../../../../lib/panel/detections-view-model';
 import { countLabel } from '../../../../lib/panel/list-behavior';
 import { buildStylesheetRows } from '../../../../lib/panel/stylesheet-rows';
 import {
@@ -50,6 +55,8 @@ import {
   stylesheetPageFacts,
   type StylesheetPageFacts
 } from '../../../../lib/panel/style-states';
+import { cn } from '../../../../utils/cn';
+import { routeHref } from '../../router';
 import { useFdtData } from '../../state/use-fdt-data';
 import { PAGE_ASK_MISS_COPY } from '../page-ask-miss';
 import type { CodeBlockSeams } from '../javascript/code-seams';
@@ -77,7 +84,9 @@ import {
   styleKind,
   styleRowViews,
   styleSearchField,
-  type StyleRowView
+  unchangedStylesNotice,
+  type StyleRowView,
+  type UnchangedStylesNotice
 } from './style-view';
 
 const log = createLogger('stylesheets');
@@ -136,6 +145,14 @@ export function StylesheetsPage(props: StylesheetsPageProps): JSX.Element {
     undefined,
     { equals: sameStylesheetPageFacts }
   );
+  // The Detections cards the unchanged note names the off features from
+  // (null before data): the note reads the verdicts that page shows.
+  const cards = createMemo((): readonly StatusItem[] | null => {
+    const state = store.state();
+    return state.status === 'ready' || state.status === 'refreshing'
+      ? buildStatusItems(state.data)
+      : null;
+  });
   const failedMiss = () => {
     const view = read.view();
     return view.status === 'failed' ? view.miss : undefined;
@@ -170,6 +187,7 @@ export function StylesheetsPage(props: StylesheetsPageProps): JSX.Element {
             <StylesheetsList
               reply={view().reply}
               facts={facts()}
+              cards={cards()}
               refreshing={view().refreshing}
               refreshMiss={view().refreshMiss}
               onRefresh={read.refresh}
@@ -185,10 +203,52 @@ export function StylesheetsPage(props: StylesheetsPageProps): JSX.Element {
   );
 }
 
+/** The note's link to the page that explains each feature's verdict. */
+const DETECTIONS_LINK = cn(
+  '-mx-1 inline-flex min-h-6 items-center rounded-sm px-1 text-2xs font-medium whitespace-nowrap text-accent no-underline hover:underline',
+  FOCUS_RING
+);
+
+/**
+ * The info note over a list WP Rocket left unchanged: what the rows show,
+ * the features that are off, and the way to their verdicts.
+ *
+ * @param props.notice The note's words.
+ */
+function UnchangedStylesNote(props: { notice: UnchangedStylesNotice }): JSX.Element {
+  return (
+    <div
+      data-fdt="stylesheets-unchanged"
+      class="flex items-start gap-2 rounded-lg bg-status-info-soft px-3 py-2"
+    >
+      <Info size={14} class="mt-0.5 shrink-0 text-status-info" aria-hidden="true" />
+      {/* The link sits beside the text while the text keeps 16rem, else it
+          wraps under it (a narrow panel would squeeze the text to a sliver). */}
+      <div class="flex min-w-0 flex-1 flex-wrap items-start gap-x-2">
+        <p class="min-w-0 grow basis-64 py-0.5 text-xs text-fg-primary">
+          <span class="font-semibold">{props.notice.title}</span>
+          <Show when={props.notice.detail}>
+            {(detail) => <span class="text-fg-secondary"> {detail()}</span>}
+          </Show>
+        </p>
+        <a
+          href={routeHref('detections')}
+          data-fdt="stylesheets-unchanged-link"
+          class={DETECTIONS_LINK}
+        >
+          See Detections
+        </a>
+      </div>
+    </div>
+  );
+}
+
 /** Props of {@link StylesheetsList}. */
 interface StylesheetsListProps extends StylesheetsListSeams {
   reply: PageStylesheetsReply;
   facts: StylesheetPageFacts;
+  /** The page's Detections cards (null before data): the unchanged note's input. */
+  cards: readonly StatusItem[] | null;
   refreshing: boolean;
   refreshMiss: keyof typeof PAGE_ASK_MISS_COPY | null;
   onRefresh: () => void;
@@ -206,6 +266,7 @@ function StylesheetsList(props: StylesheetsListProps): JSX.Element {
     styleRowViews(buildStylesheetRows(props.reply, props.facts))
   );
   const cut = createMemo(() => listCutNote(props.reply));
+  const unchanged = createMemo(() => unchangedStylesNotice(props.reply, views(), props.cards));
   const openResource =
     // eslint-disable-next-line solid/reactivity -- read once on purpose: the seam is fixed per page
     props.openResource === undefined ? openResourceCapability(browser) : props.openResource;
@@ -274,7 +335,7 @@ function StylesheetsList(props: StylesheetsListProps): JSX.Element {
     <>
       <div
         data-fdt="stylesheets-summary"
-        class="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-line-1 bg-surface-1 px-2.5 py-1.5"
+        class="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-line-1 bg-surface-2 px-2.5 py-1.5"
       >
         <span data-fdt="stylesheets-total" class="text-xs text-fg-secondary tabular-nums">
           {countLabel(views().length, STYLE_NOUN, cut() !== null)}
@@ -307,6 +368,7 @@ function StylesheetsList(props: StylesheetsListProps): JSX.Element {
           )}
         </Show>
       </div>
+      <Show when={unchanged()}>{(notice) => <UnchangedStylesNote notice={notice()} />}</Show>
       <CalmFilteredList
         rows={views()}
         rowKey={(view) => view.key}

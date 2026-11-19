@@ -1,5 +1,5 @@
 /**
- * The Beacon Tester page over a real run (P14C C1): the panel asks the
+ * The Beacon Tester page over a real run: the panel asks the
  * fixture tab to run WP Rocket's beacon — the runner injected on demand —
  * and renders each outcome: the desktop viewport bail at WP Rocket's
  * 1600 × 700 defaults (the fixture window is 1280 × 800), then, with lower
@@ -8,8 +8,8 @@
  * is screenshotted in both palettes at the compact floor and a wide size
  * (no horizontal overflow at either).
  *
- * The beacon instructions card over the local WordPress site's beacon page
- * (P14.5C.5): the summary matches the page's own config, the three groups,
+ * The beacon instructions card over the local WordPress site's beacon page:
+ * the summary matches the page's own config, the three groups,
  * the raw JSON and its copy (no request field), every width, both palettes
  * and reduced motion, a reload keeping the view, and a navigation to a page
  * without the beacon reading "No longer on the page" until dismissed.

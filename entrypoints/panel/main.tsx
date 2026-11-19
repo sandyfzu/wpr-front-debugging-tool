@@ -21,7 +21,7 @@ import { render } from 'solid-js/web';
 import { onUncaughtError, onUnhandledRejection } from '../../lib/uncaught-errors';
 import { createLogger } from '../../lib/logger';
 import { releaseThemeLock } from '../../lib/appearance/appearance';
-import { bootPanelAppearance } from './boot-appearance';
+import { bootAppearance } from '../../components/boot-appearance';
 import { bootNavPin } from './nav/nav-pin';
 import { panelColdStart } from './cold-start';
 import './style.css';
@@ -55,7 +55,7 @@ async function boot(mountPoint: HTMLElement): Promise<void> {
   // sidebar pin is read, concurrently, before the render; neither leg
   // rejects — each logs and degrades on its own.
   const [appearance, navPin] = await Promise.all([
-    bootPanelAppearance(document.documentElement, log),
+    bootAppearance(document.documentElement, log),
     bootNavPin(log)
   ]);
 

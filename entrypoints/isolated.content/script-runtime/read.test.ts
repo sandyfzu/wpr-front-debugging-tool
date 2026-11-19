@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SCRIPT_RUNTIME_LIMITS } from '../../../lib/messaging/script-runtime';
 import { FIELD_MAX, FULL_TEXT_MAX, PREVIEW_MAX } from '../../../lib/script-runtime/classify';
 import { capText } from '../../../utils/cap-text';
-import { readLiveScripts, scriptFacts, trimmedPrefix } from './read';
+import { answerBaseUrl, readLiveScripts, scriptFacts, trimmedPrefix } from './read';
 
 afterEach(() => {
   document.head.innerHTML = '';
@@ -125,11 +125,31 @@ describe('scriptFacts', () => {
   });
 });
 
+describe('answerBaseUrl', () => {
+  it('sends the base whole up to the field cap, null one code point past it', () => {
+    const base = (points: number): string => `https://a.test/${'😀'.repeat(points - 15)}`;
+    expect(Array.from(base(FIELD_MAX))).toHaveLength(FIELD_MAX);
+    expect(answerBaseUrl(base(FIELD_MAX))).toBe(base(FIELD_MAX));
+    expect(answerBaseUrl(base(FIELD_MAX + 1))).toBeNull();
+    expect(answerBaseUrl('https://a.test/shop/')).toBe('https://a.test/shop/');
+  });
+
+  it('never sends a long page base clipped (relative URLs then stay as written)', () => {
+    const base = document.createElement('base');
+    base.href = `https://a.test/${'x'.repeat(FIELD_MAX)}/`;
+    document.head.append(base);
+    expect(document.baseURI.length).toBeGreaterThan(FIELD_MAX);
+    expect(readLiveScripts(document).baseUrl).toBeNull();
+  });
+});
+
 describe('readLiveScripts', () => {
   it('reads the live DOM afresh each time, writing nothing', () => {
     const element = script({ type: 'rocketlazyloadscript', 'data-rocket-src': 'a.js' });
     const before = element.outerHTML;
     expect(readLiveScripts(document).scripts[0]).toMatchObject({ status: null, src: null });
+    // The page's base rides along (relative URLs resolve in the panel).
+    expect(readLiveScripts(document).baseUrl).toBe(document.baseURI);
     expect(element.outerHTML).toBe(before);
     expect(Object.keys(element)).toEqual([]);
     // The delay runtime ran the script: type restored, URL moved, status set.

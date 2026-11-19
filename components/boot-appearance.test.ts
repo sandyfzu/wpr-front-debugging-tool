@@ -1,14 +1,14 @@
 /**
- * The panel boot's appearance leg: the menu's value tracks the stored
+ * The extension pages' boot appearance leg: the followed value tracks the stored
  * choice (the read, then every write), a failed read degrades to System
  * yet still follows later writes (document + menu), a failed re-arm is
  * logged, and the paint lock releases in every arm — the leg never rejects.
  */
 import { describe, expect, it, vi, type Mock } from 'vitest';
-import type { Logger } from '../../lib/logger';
-import type { AppearanceSource } from '../../lib/appearance/appearance';
-import { FALLBACK, type StoredOptions } from '../../lib/storage/options';
-import { bootPanelAppearance } from './boot-appearance';
+import type { Logger } from '../lib/logger';
+import type { AppearanceSource } from '../lib/appearance/appearance';
+import { FALLBACK, type StoredOptions } from '../lib/storage/options';
+import { bootAppearance } from './boot-appearance';
 
 /** Whole-shape options with one choice. */
 function optionsWith(appearance: StoredOptions['appearance']): StoredOptions {
@@ -50,11 +50,11 @@ function fakeSource(
   };
 }
 
-describe('bootPanelAppearance', () => {
+describe('bootAppearance', () => {
   it('feeds the menu the stored choice, then every write; the lock releases', async () => {
     const root = document.createElement('div');
     const source = fakeSource(optionsWith('dark'));
-    const appearance = await bootPanelAppearance(root, tracedLog(), source);
+    const appearance = await bootAppearance(root, tracedLog(), source);
     expect(appearance()).toBe('dark');
     expect(root.getAttribute('data-theme')).toBe('dark');
     expect(root.getAttribute('data-theme-lock')).toBe('done');
@@ -68,7 +68,7 @@ describe('bootPanelAppearance', () => {
     const root = document.createElement('div');
     const log = tracedLog();
     const source = fakeSource(new Error('Extension context invalidated'));
-    const appearance = await bootPanelAppearance(root, log, source);
+    const appearance = await bootAppearance(root, log, source);
     expect(appearance()).toBe('system');
     expect(root.hasAttribute('data-theme')).toBe(false); // the token default paints
     expect(root.getAttribute('data-theme-lock')).toBe('done');
@@ -91,7 +91,7 @@ describe('bootPanelAppearance', () => {
         return () => undefined;
       }
     };
-    const appearance = await bootPanelAppearance(root, log, source);
+    const appearance = await bootAppearance(root, log, source);
     expect(appearance()).toBe('system');
     expect(root.getAttribute('data-theme-lock')).toBe('done');
     expect(log.warn).toHaveBeenCalledTimes(2);

@@ -6,10 +6,15 @@
  * soft refresh keeping the segment — including a refresh that empties the
  * selected bucket (the filtered-empty line and its way back to All, focus
  * on the All segment) — at 320 and 1280 px, both palettes, reduced motion.
+ * Plus the feature search: it narrows every row by name on top of the
+ * status, takes the DevTools find's deliveries (marked + in view, next
+ * step), keeps its query across a soft refresh, and a miss lands on the
+ * filtered-empty view whose Clear search returns to the field.
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test, ORIGIN_A } from '../helpers/extension';
-import { openPanelForFixture } from '../helpers/panel-data';
+import { openPanelForFixture, relaySearchAction } from '../helpers/panel-data';
+import { settleFrames } from '../helpers/frames';
 
 /** Row ids that describe the page, never an optimization (they never narrow). */
 const PAGE_FACT_IDS = [
@@ -174,3 +179,67 @@ for (const colorScheme of ['light', 'dark'] as const) {
     }
   });
 }
+
+test('the feature search narrows by name, joins the find and survives a soft refresh', async ({
+  extension
+}) => {
+  const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
+  try {
+    const root = panel.locator('[data-fdt-page="detections"]');
+    const field = root.getByRole('searchbox', { name: 'Filter features' });
+    await awaitStrip(panel, 'WP Rocket 3.20.1');
+    const every = await cardIds(panel);
+    /** The rendered rows' names. */
+    const names = (): Promise<string[]> => root.locator('[data-fdt-card-name]').allTextContents();
+    expect(every.length).toBeGreaterThan(3);
+
+    for (const width of [320, 1280]) {
+      await panel.setViewportSize({ width, height: 800 });
+      await settleFrames(panel);
+      await field.fill('lazyload');
+      // Every row left names the query (case-insensitive), page facts included.
+      await expect.poll(async () => (await cardIds(panel)).length).toBeLessThan(every.length);
+      for (const name of await names()) expect(name.toLowerCase()).toContain('lazyload');
+      await expect.poll(async () => await scrollsSideways(panel)).toBe(false);
+      await field.fill('');
+      await expect.poll(async () => await cardIds(panel)).toEqual(every);
+    }
+
+    // The DevTools find drives the same query: the field adopts it, the first
+    // match is marked and in view, a next step moves the mark.
+    await relaySearchAction(extension, {
+      action: 'performSearch',
+      query: 'a',
+      tabId: fixture.tabId
+    });
+    await expect(field).toHaveValue('a');
+    const marked = root.locator('[data-fdt-entry-id][aria-current="true"]');
+    await expect(marked).toHaveCount(1);
+    await expect(marked).toBeInViewport();
+    const first = await marked.getAttribute('data-fdt-entry-id');
+    await relaySearchAction(extension, { action: 'nextSearchResult', tabId: fixture.tabId });
+    await expect(marked).not.toHaveAttribute('data-fdt-entry-id', first ?? '');
+
+    // A soft refresh keeps the query and the narrowed rows.
+    await field.fill('lazyload');
+    await expect.poll(async () => (await cardIds(panel)).length).toBeLessThan(every.length);
+    const narrowed = await cardIds(panel);
+    await fixture.page.reload({ waitUntil: 'load' });
+    await awaitStrip(panel, 'WP Rocket 3.20.1');
+    await expect(field).toHaveValue('lazyload');
+    await expect.poll(async () => await cardIds(panel)).toEqual(narrowed);
+
+    // A miss: the filtered-empty view, and Clear search lands back in the field.
+    await field.fill('no such feature');
+    const empty = root.locator('[data-fdt="detections-filtered-empty"]');
+    await expect(empty).toContainText('no such feature');
+    await empty.getByRole('button', { name: 'Clear search' }).click();
+    await expect(empty).toHaveCount(0);
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue('');
+    await expect.poll(async () => await cardIds(panel)).toEqual(every);
+  } finally {
+    await panel.close();
+    await fixture.page.close();
+  }
+});

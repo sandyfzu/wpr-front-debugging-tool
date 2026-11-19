@@ -64,12 +64,32 @@ function scripts(): LiveScriptRecord[] {
  * @param list The scripts.
  */
 function keys(list: readonly LiveScriptRecord[]): string[] {
-  return runtimeRows(list).map((row) => row.key);
+  return runtimeRows(list, null).map((row) => row.key);
 }
 
 describe('runtimeRows', () => {
+  it('resolves each URL against the page base for the source tile; inline rows have none', () => {
+    const rows = runtimeRows(
+      [
+        liveScript({ src: 'js/app.js?ver=2' }),
+        liveScript({ src: '//cdn.test/lib.js' }),
+        liveScript({ src: 'javascript:void(0)' }),
+        liveScript({ text: 'boot();' })
+      ],
+      'https://a.test/shop/'
+    );
+    expect(rows.map((row) => row.url)).toEqual([
+      'https://a.test/shop/js/app.js?ver=2',
+      'https://cdn.test/lib.js',
+      null,
+      null
+    ]);
+    // Without a base, a relative URL stays unresolved (the tile shows it as text).
+    expect(runtimeRows([liveScript({ src: 'js/app.js' })], null)[0]?.url).toBeNull();
+  });
+
   it('names URLs by file and inline scripts by ordinal, in document order', () => {
-    expect(runtimeRows(scripts()).map((row) => row.name)).toEqual([
+    expect(runtimeRows(scripts(), null).map((row) => row.name)).toEqual([
       'main.js',
       'x.js',
       'Inline script 1',
@@ -119,7 +139,7 @@ describe('runtimeRows', () => {
   });
 
   it('previews the URL without its scheme, else the code, else the empty words; #id first', () => {
-    const rows = runtimeRows(scripts());
+    const rows = runtimeRows(scripts(), null);
     expect(rows[0]?.preview).toBe('a.test/wp-content/themes/t/main.js?ver=1');
     expect(rows[2]?.preview).toBe('#boot · pending();');
     expect(runtimePreview(liveScript())).toBe(EMPTY_CODE_COPY);
@@ -130,7 +150,7 @@ describe('runtimeRows', () => {
 });
 
 describe('RUNTIME_FACETS', () => {
-  const rows = runtimeRows(scripts());
+  const rows = runtimeRows(scripts(), null);
   const search = (query: string) => ({ field: runtimeSearchField, query });
 
   it('narrows by source and state together, with the search', () => {
@@ -193,15 +213,15 @@ describe('RUNTIME_FACETS', () => {
 
 describe('outsideFilterCounts', () => {
   it('counts the skipped and unknown scripts', () => {
-    expect(outsideFilterCounts(runtimeRows(scripts()))).toEqual({ skipped: 1, unknown: 1 });
+    expect(outsideFilterCounts(runtimeRows(scripts(), null))).toEqual({ skipped: 1, unknown: 1 });
     expect(outsideFilterCounts([])).toEqual({ skipped: 0, unknown: 0 });
   });
 });
 
 describe('sameRuntimeRow', () => {
   it('holds for an identical re-read and breaks on any shown field', () => {
-    const [a] = runtimeRows(scripts());
-    const [b] = runtimeRows(scripts());
+    const [a] = runtimeRows(scripts(), null);
+    const [b] = runtimeRows(scripts(), null);
     if (a === undefined || b === undefined) throw new Error('fixture');
     expect(sameRuntimeRow(a, b)).toBe(true);
     const variants: Partial<LiveScriptRecord>[] = [
@@ -228,7 +248,7 @@ describe('sameRuntimeRow', () => {
 });
 
 describe('detail view', () => {
-  const [theme, , inline, , jsonLd] = runtimeRows(scripts());
+  const [theme, , inline, , jsonLd] = runtimeRows(scripts(), null);
   if (theme === undefined || inline === undefined || jsonLd === undefined) {
     throw new Error('fixture');
   }
@@ -272,12 +292,15 @@ describe('detail view', () => {
       label: 'Script URL'
     });
     expect(runtimeCopy(inline)).toEqual({ text: 'pending();', label: 'Inline script' });
-    const rows = runtimeRows([
-      liveScript({ text: 'start…' }, true),
-      liveScript({ text: 'x'.repeat(FULL_TEXT_MAX + 1) }),
-      liveScript(),
-      liveScript({ src: `https://a.test/${'p'.repeat(FIELD_MAX)}.js` })
-    ]);
+    const rows = runtimeRows(
+      [
+        liveScript({ text: 'start…' }, true),
+        liveScript({ text: 'x'.repeat(FULL_TEXT_MAX + 1) }),
+        liveScript(),
+        liveScript({ src: `https://a.test/${'p'.repeat(FIELD_MAX)}.js` })
+      ],
+      null
+    );
     expect(rows.map((row) => runtimeCopy(row))).toEqual([
       { text: 'start', label: PARTIAL_CODE_COPY_LABEL },
       { text: 'x'.repeat(FULL_TEXT_MAX), label: PARTIAL_CODE_COPY_LABEL },

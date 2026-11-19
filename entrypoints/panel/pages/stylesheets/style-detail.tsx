@@ -4,14 +4,17 @@
  * (links: Open in Sources / new tab, nothing fetched), the facts its element
  * carries, and an inline style's full CSS — highlighted up to the code
  * block's limit, plain past it, shown in part past the render cap, cut at
- * the page's read cap (each said so). The snapshot-only critical row says why it has no CSS and never asks.
+ * the page's read cap (each said so), with a Format toggle that re-flows
+ * the shown text for reading (copies keep the served CSS). The
+ * snapshot-only critical row says why it has no CSS and never asks.
  *
  * The CSS is read on open from the list's snapshot; a refresh re-reads it
  * while the text already shown stays (no flash). Each read state is drawn:
  * waiting (a skeleton), answered, or missing (one muted line saying why).
  */
 import type { Accessor, JSX } from 'solid-js';
-import { Match, Show, Switch, createMemo } from 'solid-js';
+import { Match, Show, Switch, createMemo, createSignal } from 'solid-js';
+import { Button } from '../../../../components/ui/button';
 import { CodeBlock, HIGHLIGHT_MAX_CHARS } from '../../../../components/ui/code-block';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import { PAGE_STYLE_LIMITS } from '../../../../lib/messaging/page-styles';
@@ -21,9 +24,10 @@ import {
 } from '../../../../lib/messaging/style-source';
 import { cutToUnits } from '../../../../utils/cap-text';
 import { formatCount } from '../../../../utils/format-count';
+import { formatCss } from '../../../../utils/format-css';
 import type { CodeBlockSeams } from '../javascript/code-seams';
 import type { OpenResource } from '../open-resource';
-import { CodeSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
+import { DetailSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
 import { createOnDemand } from '../resource-list/on-demand';
 import { SourceLink } from '../resource-list/source-link';
 import { READ_FAILURE_NOTES } from '../resource-list/top-frame-reader';
@@ -74,6 +78,35 @@ export const STYLE_DISPLAY_CUT_NOTE = `Showing the first ${formatCount(STYLE_DIS
 
 /** The note under CSS too large to highlight (the block shows it plain). */
 export const STYLE_PLAIN_NOTE = `Over ${formatCount(HIGHLIGHT_MAX_CHARS)} characters: shown as plain text, without highlighting.`;
+
+/** The CSS block's toggle: re-flow the shown CSS one declaration per line. */
+export const FORMAT_CSS_LABEL = 'Format';
+
+/** What the CSS block shows of a style's text. */
+export interface CssDisplay {
+  /** The shown text: the served CSS, or its formatted form, within the render cap. */
+  readonly text: string;
+  /** Whether the render cap hid part of it (the note says Copy takes the rest). */
+  readonly cut: boolean;
+}
+
+/**
+ * The shown CSS: the served text, or — formatted — the re-flow of the part
+ * the render cap shows, capped again (formatting adds line breaks and
+ * indents), so the work and the rendered size stay bounded by the cap.
+ *
+ * @param css The style's CSS as read.
+ * @param formatted Whether the Format toggle is on.
+ * @returns The text to show and whether the cap hid part of the CSS.
+ */
+export function cssDisplay(css: string, formatted: boolean): CssDisplay {
+  const served = cutToUnits(css, STYLE_DISPLAY_MAX_CHARS);
+  const cutServed = served.length < css.length;
+  if (!formatted) return { text: served, cut: cutServed };
+  const reflowed = formatCss(served);
+  const text = cutToUnits(reflowed, STYLE_DISPLAY_MAX_CHARS);
+  return { text, cut: cutServed || text.length < reflowed.length };
+}
 
 /**
  * Render one style's detail body.
@@ -190,8 +223,10 @@ function InlineCss(props: {
     const value = shown();
     return value.kind === 'note' ? value.note : null;
   };
+  // Per detail: a new row opens served, as the page sent it.
+  const [formatted, setFormatted] = createSignal(false);
   return (
-    <CodeSection title="CSS" hook="style-css">
+    <DetailSection title="CSS" hook="style-css">
       <Switch>
         <Match when={shown().kind === 'waiting'}>
           <Skeleton class="h-16 w-full" />
@@ -204,43 +239,60 @@ function InlineCss(props: {
           )}
         </Match>
         <Match when={text()}>
-          {(css) => (
-            <Show
-              when={css().text.trim() !== ''}
-              fallback={
-                <p data-fdt="style-css-empty" class="text-2xs text-fg-muted">
-                  This style holds no CSS.
-                </p>
-              }
-            >
-              <CodeBlock
-                text={cutToUnits(css().text, STYLE_DISPLAY_MAX_CHARS)}
-                lang="css"
-                label={INLINE_CSS_LABEL}
-                class="min-w-0"
-                loadHighlighter={props.codeBlock?.loadHighlighter}
-                createObserver={props.codeBlock?.createObserver}
-                watchOverflow={props.codeBlock?.watchOverflow}
-              />
-              <Show when={css().text.length > HIGHLIGHT_MAX_CHARS}>
-                <p data-fdt="style-css-plain" class="text-2xs text-fg-muted">
-                  {STYLE_PLAIN_NOTE}
-                </p>
+          {(css) => {
+            const display = createMemo(() => cssDisplay(css().text, formatted()));
+            return (
+              <Show
+                when={css().text.trim() !== ''}
+                fallback={
+                  <p data-fdt="style-css-empty" class="text-2xs text-fg-muted">
+                    This style holds no CSS.
+                  </p>
+                }
+              >
+                <CodeBlock
+                  text={display().text}
+                  lang="css"
+                  label={INLINE_CSS_LABEL}
+                  class="min-w-0"
+                  loadHighlighter={props.codeBlock?.loadHighlighter}
+                  createObserver={props.codeBlock?.createObserver}
+                  watchOverflow={props.codeBlock?.watchOverflow}
+                  actions={
+                    <Button
+                      type="button"
+                      data-fdt="style-css-format"
+                      variant="ghost"
+                      size="sm"
+                      aria-pressed={formatted()}
+                      onClick={() => setFormatted((on) => !on)}
+                      class="min-h-6 px-1.5 text-2xs"
+                    >
+                      {FORMAT_CSS_LABEL}
+                    </Button>
+                  }
+                />
+                {/* The block's own verdict reads the shown text: so does its note. */}
+                <Show when={display().text.length > HIGHLIGHT_MAX_CHARS}>
+                  <p data-fdt="style-css-plain" class="text-2xs text-fg-muted">
+                    {STYLE_PLAIN_NOTE}
+                  </p>
+                </Show>
+                <Show when={display().cut}>
+                  <p data-fdt="style-css-shown-cut" class="text-2xs text-fg-muted">
+                    {STYLE_DISPLAY_CUT_NOTE}
+                  </p>
+                </Show>
+                <Show when={css().truncated}>
+                  <p data-fdt="style-css-cut" class="text-2xs text-fg-muted">
+                    {STYLE_SOURCE_CUT_NOTE}
+                  </p>
+                </Show>
               </Show>
-              <Show when={css().text.length > STYLE_DISPLAY_MAX_CHARS}>
-                <p data-fdt="style-css-shown-cut" class="text-2xs text-fg-muted">
-                  {STYLE_DISPLAY_CUT_NOTE}
-                </p>
-              </Show>
-              <Show when={css().truncated}>
-                <p data-fdt="style-css-cut" class="text-2xs text-fg-muted">
-                  {STYLE_SOURCE_CUT_NOTE}
-                </p>
-              </Show>
-            </Show>
-          )}
+            );
+          }}
         </Match>
       </Switch>
-    </CodeSection>
+    </DetailSection>
   );
 }

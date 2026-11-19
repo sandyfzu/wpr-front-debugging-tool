@@ -6,19 +6,17 @@
  *    uncaught error here is ours);
  * 2. the stored appearance resolves onto `<html>` *before* the app renders —
  *    combined with `index.html`'s paint lock the first painted frame is the
- *    resolved palette (a failed read paints the token default instead, never
- *    a wrong or stuck-hidden page);
+ *    resolved palette (a failed read paints the token default instead and
+ *    still follows later writes, never a wrong or stuck-hidden page);
  * 3. the Solid app mounts and its model takes over, handed the stored
  *    choice the follow reports (one subscription feeds the palette, the
  *    appearance row and the app bar's menu).
  */
-import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { onUncaughtError, onUnhandledRejection } from '../../lib/uncaught-errors';
 import { createLogger } from '../../lib/logger';
-import { applyStoredAppearance, releaseThemeLock } from '../../lib/appearance/appearance';
-import { FALLBACK } from '../../lib/storage/options';
-import type { Appearance } from '../../utils/theme';
+import { releaseThemeLock } from '../../lib/appearance/appearance';
+import { bootAppearance } from '../../components/boot-appearance';
 import './style.css';
 import App from './App';
 
@@ -37,23 +35,10 @@ if (!root) throw new Error('#root element missing from options/index.html');
  * frame, only the release does, in the resolved palette.
  */
 async function boot(mountPoint: HTMLElement): Promise<void> {
-  // The choice the document follows: the read, then every validated write.
-  const [storedAppearance, setStoredAppearance] = createSignal<Appearance>(FALLBACK.appearance);
-  try {
-    // The follow handle lives for the page's lifetime (tokens.css resolves a
-    // stored `system` through the OS media query; the page's own writes and
-    // other surfaces' writes re-apply through the armed watch).
-    await applyStoredAppearance(document.documentElement, undefined, (appearance) => {
-      setStoredAppearance(appearance);
-    });
-  } catch (cause) {
-    log.warn(
-      "Stored appearance could not be read — following the system scheme (the token stylesheet's default)",
-      cause instanceof Error ? { message: cause.message } : cause
-    );
-  } finally {
-    releaseThemeLock(document.documentElement);
-  }
+  // The choice the document follows: the read, then every validated write
+  // (a failed read still follows later writes — this page's own pick
+  // included). The leg never rejects and releases the lock in every arm.
+  const storedAppearance = await bootAppearance(document.documentElement, log);
 
   // The product name + version come from the manifest at boot — never a
   // re-typed constant — and the h1 reads the plural name the browser shows.

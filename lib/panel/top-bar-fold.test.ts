@@ -117,6 +117,22 @@ describe('foldTopBar (compact bar)', () => {
     expect(foldTopBar(input(49, { compact: true })).inline).toEqual([]);
   });
 
+  it('folds the brand before a pill elides (long pills overflow a 320 px bar)', () => {
+    // The pills' natural widths exceed the slot: the room is negative. The
+    // brand goes, whether it was laid out inline before or not.
+    const brandInline: TopBarFold = {
+      inline: ['brand'],
+      folded: ['address', 'server', 'cacheAge', 'freshness'],
+      menu: true
+    };
+    for (const previous of [null, brandInline])
+      expect(foldTopBar(input(-81, { compact: true, previous }))).toEqual({
+        inline: [],
+        folded: ['address', 'server', 'cacheAge', 'freshness', 'brand'],
+        menu: true
+      });
+  });
+
   it('folds the four secondaries by rule even with room for every part', () => {
     // 1000 px fits all five: only the rule, never the room, folds these.
     expect(foldTopBar(input(1000, { compact: true }))).toEqual({

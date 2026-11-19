@@ -3,7 +3,8 @@
  * a row renderer): a calm row's name (a link's file name, an inline style's
  * `#id.class` or its ordinal), its preview line (what a keep rule matches:
  * the identity and the full stylesheet URL, or the CSS start — the media
- * leading when it says anything), an inline style's character count, and the "Test
+ * leading when it says anything), an inline style's character count with
+ * its size bar (shared scale with the Stylesheets page), and the "Test
  * result" chip on the style a test injected.
  */
 import type { PageStyleEntry } from '../../../../lib/messaging/page-styles';
@@ -21,6 +22,7 @@ import {
   EMPTY_STYLE_PREVIEW,
   mediaDetail,
   NO_HREF_NAME,
+  sizeShare,
   styleName
 } from '../resource-list/style-words';
 
@@ -50,6 +52,8 @@ export interface InventoryRowView {
   readonly preview: string;
   /** An inline style's characters (compact), else undefined (a link's are never read). */
   readonly size: string | undefined;
+  /** An inline style's size bar share (0–1) against the list's largest inline style. */
+  readonly sizeShare: number | undefined;
   /** The row's chips. */
   readonly chips: StateChipSplit;
 }
@@ -77,8 +81,13 @@ function joinPreview(parts: readonly string[]): string {
  *
  * @param entry The entry.
  * @param inlineOrdinal Its 1-based position among inline styles (the name of an anonymous one).
+ * @param maxInlineChars The list's largest inline style (its characters; the size bar's scale).
  */
-export function inventoryRowView(entry: PageStyleEntry, inlineOrdinal: number): InventoryRowView {
+export function inventoryRowView(
+  entry: PageStyleEntry,
+  inlineOrdinal: number,
+  maxInlineChars: number
+): InventoryRowView {
   const { name, mono } = styleName(entry, inlineOrdinal);
   const media = mediaDetail(entry.media) ?? '';
   const chips = isTestResult(entry) ? RESULT_CHIPS : NO_STATE_CHIPS;
@@ -94,6 +103,7 @@ export function inventoryRowView(entry: PageStyleEntry, inlineOrdinal: number): 
         entry.href === '' ? NO_HREF_NAME : entry.href
       ]),
       size: undefined,
+      sizeShare: undefined,
       chips
     };
   }
@@ -103,6 +113,7 @@ export function inventoryRowView(entry: PageStyleEntry, inlineOrdinal: number): 
     monoName: mono,
     preview: joinPreview([media, entry.preview === '' ? EMPTY_STYLE_PREVIEW : entry.preview]),
     size: formatCompactCount(entry.chars),
+    sizeShare: sizeShare(entry.chars, maxInlineChars),
     chips
   };
 }
@@ -114,9 +125,13 @@ export function inventoryRowView(entry: PageStyleEntry, inlineOrdinal: number): 
  * @returns One view per entry.
  */
 export function inventoryRowViews(styles: readonly PageStyleEntry[]): InventoryRowView[] {
+  const max = styles.reduce(
+    (largest, entry) => (entry.kind === 'inline' ? Math.max(largest, entry.chars) : largest),
+    0
+  );
   let inline = 0;
   return styles.map((entry) => {
     if (entry.kind === 'inline') inline += 1;
-    return inventoryRowView(entry, inline);
+    return inventoryRowView(entry, inline, max);
   });
 }

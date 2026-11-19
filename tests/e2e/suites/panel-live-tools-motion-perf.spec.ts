@@ -1,5 +1,5 @@
 /**
- * Live tools in Chromium: themes, motion and perf (P14.1 box 4).
+ * Live tools in Chromium: themes, motion and perf.
  *
  * - Themes: the three live-tool surfaces (Beacon Tester, LCP & Vitals, the
  *   JavaScript page's Runtime states) render each palette from the tokens —

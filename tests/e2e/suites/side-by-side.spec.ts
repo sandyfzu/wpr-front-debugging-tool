@@ -9,10 +9,10 @@
  *
  * Context-menu CLICKS stay manual: native browser menus are not
  * Playwright-reachable (the right click opens OS-level chrome). The click
- * dispatch tree is unit-pinned (P2), the PSI entry URL construction by the
- * P3 URL unit suite; the open itself is asserted here over the same SW
+ * dispatch tree is unit-pinned, the PSI entry URL construction by the
+ * URL unit suite; the open itself is asserted here over the same SW
  * message that click sends. The manual remainder is recorded in
- * tests/e2e/README.md and in the phase docs.
+ * tests/e2e/README.md.
  */
 
 import type { Page } from '@playwright/test';

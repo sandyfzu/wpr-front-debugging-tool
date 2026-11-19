@@ -1,5 +1,5 @@
 /**
- * Runtime states against WP Rocket's real Delay JS runtime (P14.1 box 3), on
+ * Runtime states against WP Rocket's real Delay JS runtime, on
  * the docker WordPress site (Delay JS on, the bootstrap baseline). The
  * suite's page carries a missing theme file, a plugin file that runs, an
  * inline script and JSON-LD; WordPress adds its own core module and inline

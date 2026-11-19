@@ -83,7 +83,7 @@ const SKIPPED = liveScript({ type: DELAYED, src: 'https://cdn.test/old.js', stat
 
 /** A read of these scripts. */
 function readOf(scripts: readonly LiveScriptRecord[], total = scripts.length): LiveScriptsOutcome {
-  return { kind: 'read', scripts, total, truncated: total > scripts.length };
+  return { kind: 'read', scripts, total, truncated: total > scripts.length, baseUrl: null };
 }
 
 /** Let queued promise callbacks run. */
@@ -323,6 +323,41 @@ describe('RuntimeStatesSection', () => {
     // No inline code: no code section.
     expect(pane.querySelector('[data-fdt="runtime-code"]')).toBeNull();
     expect(within(pane).getByRole('button', { name: 'Script URL — copy' })).toBeTruthy();
+  });
+
+  it('keeps a row’s badges on one line: the group leaves a compact row, never the detail', async () => {
+    renderSection({ openResource: null });
+    await settle();
+    layOut();
+    const rowLine = document.querySelector<HTMLElement>(
+      '[data-fdt="runtime-row"] [data-fdt-runtime-state]'
+    );
+    expect(rowLine?.className).toContain('flex-nowrap');
+    expect(rowLine?.lastElementChild?.className).toContain('@max-regular:hidden');
+    open('x.js');
+    const detailLine = shownDetail().querySelector<HTMLElement>(
+      '[data-fdt-runtime-detail] [data-fdt-runtime-state]'
+    );
+    expect(detailLine?.className).toContain('flex-wrap');
+    expect(detailLine?.lastElementChild?.className ?? '').not.toContain('hidden');
+  });
+
+  it('resolves a relative URL against the page base: the tile opens it', async () => {
+    const relative = liveScript({ src: 'js/rel.js?ver=3' });
+    renderSection({
+      openResource: () => Promise.resolve(),
+      read: () => Promise.resolve({ ...readOf([relative]), baseUrl: 'https://a.test/shop/' })
+    });
+    await settle();
+    layOut();
+    open('rel.js');
+    const pane = shownDetail();
+    expect(pane.querySelector('[data-fdt="source-link-open"]')?.textContent).toContain(
+      'Open in Sources'
+    );
+    expect(pane.querySelector('[data-fdt="source-link"]')?.textContent).toContain(
+      'a.test/shop/js/rel.js'
+    );
   });
 
   it('opens inline code: facts, all the code kept (JSON-LD as data), its notes, a partial copy named so', async () => {

@@ -9,9 +9,9 @@
  * import graph (fetch/parse/eval) completes BEFORE the entry body's first
  * statement — the script-start mark — so that pre-span cost is visible only
  * in that mark's absolute `startTime`, not in this span; a pre-mark ceiling
- * is a candidate addition for the P5.1 execution, not planned budget work
- * today. The storage appearance read and the boot flight sit inside the
- * span, on the same chromium the harness loads the extension in.
+ * is a possible future budget, not budgeted today. The storage appearance
+ * read and the boot flight sit inside the span, on the same chromium the
+ * harness loads the extension in.
  *
  * Settle leg, pinned with its transport fact: the harness drives the panel
  * as a standalone extension page — `devtools.inspectedWindow.tabId` does not
@@ -239,8 +239,8 @@ test.describe('panel cold start (the timing row)', () => {
           errorShown: document.body.textContent.includes("Couldn't load page data"),
           // The pre-span cost the budgeted span does not cover: the ESM graph
           // evaluation (fetch/parse/eval) completes BEFORE the script-start
-          // mark; its absolute startTime discloses it (the P5I audit's
-          // candidate disclosure for the ready leg, recorded, never ceiling-ed).
+          // mark; its absolute startTime discloses it (recorded for
+          // the ready leg, never ceiling-ed).
           scriptStartAbsolute:
             (
               performance.getEntriesByName('wpr-fdt:panel:script-start', 'mark')[0] as

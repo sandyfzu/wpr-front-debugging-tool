@@ -1,5 +1,5 @@
 /**
- * P4.3 suite 5 — the admin-bar improvement on real wp-admin pages.
+ * The admin-bar improvement on real wp-admin pages.
  *
  * The option-on admin bar carries the "WPR D-bugger" entry exactly once,
  * with the admin base derived from WP Rocket's own bar anchor (this install

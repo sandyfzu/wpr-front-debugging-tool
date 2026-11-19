@@ -19,7 +19,8 @@ import {
   DetectionsLayoutContext,
   type DetectionsLayoutStore
 } from '../../state/detections-layout';
-import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
+import { createSearchStore } from '../../state/search';
+import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
 import {
   CARDS_BODY,
   DETECTIONS_CONTROLS,
@@ -373,9 +374,11 @@ describe('DetectionsPage layout session', () => {
     render(() => (
       <FdtDataContext.Provider value={readyStore()}>
         <DetectionsLayoutContext.Provider value={layout}>
-          <Show when={mounted()}>
-            <DetectionsPage />
-          </Show>
+          <SearchContext.Provider value={createSearchStore()}>
+            <Show when={mounted()}>
+              <DetectionsPage />
+            </Show>
+          </SearchContext.Provider>
         </DetectionsLayoutContext.Provider>
       </FdtDataContext.Provider>
     ));

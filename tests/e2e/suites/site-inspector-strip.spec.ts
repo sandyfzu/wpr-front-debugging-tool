@@ -1,5 +1,5 @@
 /**
- * P12A suite — the on-page detection widget over the real docker site.
+ * The on-page detection widget over the real docker site.
  *
  * The chip mounts by default for the site's origin (the fresh-install
  * shape: origins without an entry follow the global default-on state) and
@@ -1891,7 +1891,7 @@ siteTest.describe('site detection widget', () => {
         // The drop's raw entry (rank included): any later save re-stamps it.
         const dropEntry = await storedWidgetEntry(extension);
 
-        // Second drag: Escape mid-press cancels (P12A.5's recorded semantics),
+        // Second drag: Escape mid-press cancels,
         // the release stays a click and is suppressed — the card never opens.
         await pill.hover();
         await page.mouse.down();

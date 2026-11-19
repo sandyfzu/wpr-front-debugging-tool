@@ -422,6 +422,33 @@ describe('CodeBlock', () => {
   });
 });
 
+describe('CodeBlock — toolbar actions', () => {
+  it('places consumer actions before the Wrap toggle, and drops them with the toolbar', () => {
+    render(() => (
+      <CodeBlock
+        text="a{}"
+        lang="json"
+        createObserver={() => manualGate()}
+        actions={<button type="button">Format</button>}
+      />
+    ));
+    const buttons = [...document.querySelectorAll('button')].map((button) => button.textContent);
+    expect(buttons).toEqual(['Format', 'Wrap']);
+    cleanup();
+    render(() => (
+      <CodeBlock
+        text="a{}"
+        lang="json"
+        toolbar={false}
+        wrap={false}
+        createObserver={() => manualGate()}
+        actions={<button type="button">Format</button>}
+      />
+    ));
+    expect(document.querySelectorAll('button')).toHaveLength(0);
+  });
+});
+
 describe('CodeBlock — toolbar-less chrome', () => {
   it('renders no toolbar chrome and no note strip by default', () => {
     render(() => (

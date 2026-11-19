@@ -6,7 +6,7 @@
  * hash change).
  */
 import { describe, expect, it } from 'vitest';
-import { createHashRoute, parseHashRoute } from './router';
+import { createHashRoute, parseHashRoute, routeHref } from './router';
 import type { HashRouterHost } from './router';
 
 /**
@@ -29,6 +29,13 @@ function fakeHost(initialHash = ''): HashRouterHost & { hashChange(): void } {
   };
   return host;
 }
+
+describe('routeHref', () => {
+  it('writes the hash the parser reads back', () => {
+    expect(routeHref('detections')).toBe('#/detections');
+    expect(parseHashRoute(routeHref('stylesheets'))).toBe('stylesheets');
+  });
+});
 
 describe('parseHashRoute', () => {
   it('reads the seeded hash form', () => {

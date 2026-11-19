@@ -546,6 +546,36 @@ test.describe('panel top bar', () => {
     }
   });
 
+  test('pills that arrive after a 320 px boot fold the brand before they elide', async ({
+    extension
+  }) => {
+    // Booted at 320 px: the first fold is decided over the placeholders,
+    // then the data swaps them for the two longest pills inside a row that
+    // already fills its slot — a change no box size reports by itself.
+    const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/versionless.html', {
+      viewport: { width: 320, height: 700 }
+    });
+    try {
+      const bar = panel.locator('[data-fdt="panel-top-bar"]');
+      await expect(bar).toContainText('Cache not detected', { timeout: 15_000 });
+      await settleFrames(panel);
+      await settleFrames(panel);
+      const labels = await panel.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('[data-fdt-fold-elide]')].map((label) => ({
+          text: label.textContent,
+          elided: label.scrollWidth > label.clientWidth
+        }))
+      );
+      expect(labels.map((label) => label.text)).toEqual(['WP Rocket', 'Cache not detected']);
+      // The pills cannot both fit at 320 px: the brand is gone first.
+      expect(labels.some((label) => label.elided)).toBe(true);
+      expect((await readFold(panel)).folded).toContain('brand');
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+
   test('Refresh re-reads the page: the freshness re-stamps through the data machine', async ({
     extension
   }) => {

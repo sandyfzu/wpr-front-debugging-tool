@@ -215,7 +215,7 @@
  * the pseudo-elements in Chromium, restoring the expanding overlay scrollbar.
  * Keep geometry identical at rest/hover/drag; only overflowing axes paint bars.
  * Do not reserve gutters globally: menus and non-scrolling nested panes would
- * otherwise pay for empty tracks. ScrollArea owns its stable layout gutter. */
+ * otherwise pay for empty tracks. */
 @supports selector(::-webkit-scrollbar) {
   * {
     scrollbar-width: auto;

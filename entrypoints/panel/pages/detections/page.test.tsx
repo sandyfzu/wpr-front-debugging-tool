@@ -21,7 +21,8 @@ import {
   DetectionsLayoutContext,
   type DetectionsLayoutStore
 } from '../../state/detections-layout';
-import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
+import { createSearchStore, SEARCH_DEBOUNCE_MS, type SearchStore } from '../../state/search';
+import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { CARD_PAGE_LINKS } from './card-presentation';
 import { DNS_PREFETCH_LIMIT, MOBILE_CACHE_LIMIT } from '../../../../lib/detection/hud';
 import { isOptimizationCard } from '../../../../lib/panel/detections-summary';
@@ -30,6 +31,7 @@ import { CARDS_BODY } from './entry-layout';
 import {
   DETECTIONS_SUBTITLE,
   DetectionsPage,
+  DETECTIONS_SEARCH,
   DetectionsView,
   filterOptions,
   SHOW_ALL_OPTIMIZATIONS
@@ -491,10 +493,14 @@ describe('DetectionsView status filter', () => {
     expect(segment('all').checked).toBe(true);
     // The segmented look, not the tiles.
     expect(group.className).toContain('bg-surface-3');
-    // Not a search: the page stays outside the find protocol (radios only).
+    // The status filter is radios only; the page's one text input is its
+    // search field, a separate control (the find protocol's field).
+    expect(group.querySelector('input:not([type="radio"])')).toBeNull();
     expect(
-      document.querySelector('[data-fdt="detections-controls"] input:not([type="radio"])')
-    ).toBeNull();
+      [
+        ...document.querySelectorAll('[data-fdt="detections-controls"] input:not([type="radio"])')
+      ].map((input) => input.getAttribute('type'))
+    ).toEqual(['search']);
     expect(group.textContent).not.toMatch(/enabled|disabled/i);
   });
 
@@ -643,6 +649,128 @@ describe('DetectionsView status filter', () => {
   });
 });
 
+describe('DetectionsView search', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** Type into the page's field and let the store commit. */
+  function type(text: string): void {
+    fireEvent.input(screen.getByRole('searchbox', { name: DETECTIONS_SEARCH.label }), {
+      target: { value: text }
+    });
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+  }
+
+  /** The name of a row of `data`. */
+  function nameOf(data: FdtData, id: string): string {
+    const found = buildStatusItems(data).find((item) => item.id === id);
+    if (found === undefined) throw new Error(`no row ${id}`);
+    return found.name;
+  }
+
+  /** Render with a given store and layout. */
+  function show(search: SearchStore, data = richData(), layout = listLayout()): void {
+    render(() => <DetectionsView layoutStore={layout} data={data} now={NOW} search={search} />);
+  }
+
+  it('narrows every row by name, page facts included, on top of the status filter', () => {
+    vi.useFakeTimers();
+    const data = richData();
+    show(createSearchStore(), data);
+    const field = screen.getByRole('searchbox', { name: DETECTIONS_SEARCH.label });
+    expect(field.getAttribute('placeholder')).toBe(DETECTIONS_SEARCH.placeholder);
+    type(nameOf(data, 'delay_js').toUpperCase());
+    expect(cardIds()).toEqual(['delay_js']);
+    type('server');
+    expect(cardIds()).toEqual(['server']);
+    pick('active');
+    type(nameOf(data, 'lazyload'));
+    expect(cardIds()).toEqual(['lazyload']);
+    type('');
+    expect(cardIds().length).toBeGreaterThan(2);
+  });
+
+  it('narrows the Grouped layout, dropping the groups left empty', () => {
+    vi.useFakeTimers();
+    const data = richData();
+    show(createSearchStore(), data, createDetectionsLayout());
+    const groupsBefore = document.querySelectorAll('[data-fdt="detections-group"]').length;
+    type(nameOf(data, 'delay_js'));
+    expect(cardIds()).toEqual(['delay_js']);
+    expect(document.querySelectorAll('[data-fdt="detections-group"]')).toHaveLength(1);
+    expect(groupsBefore).toBeGreaterThan(1);
+  });
+
+  it('says when nothing matches, and Clear search brings every row back to the field', () => {
+    vi.useFakeTimers();
+    show(createSearchStore());
+    const all = cardIds();
+    pick('active');
+    type('no such feature');
+    const empty = document.querySelector('[data-fdt="detections-filtered-empty"]');
+    expect(empty?.textContent).toContain('no such feature');
+    expect(cardIds()).toEqual([]);
+    // Both ways back: the search and the picked status.
+    expect(screen.getByRole('button', { name: SHOW_ALL_OPTIMIZATIONS })).toBeTruthy();
+    const clear = screen.getByRole('button', { name: 'Clear search' });
+    clear.focus();
+    fireEvent.click(clear);
+    expect(document.querySelector('[data-fdt="detections-filtered-empty"]')).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole('searchbox', { name: DETECTIONS_SEARCH.label })
+    );
+    pick('all');
+    expect(cardIds()).toEqual(all);
+  });
+
+  it('joins the find: reports the rendered matches, marks and scrolls the cursor’s row', () => {
+    vi.useFakeTimers();
+    const scrolled: string[] = [];
+    vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      scrolled.push(this.dataset.fdtEntryId ?? '');
+    });
+    const search = createSearchStore();
+    show(search);
+    // The DevTools find bar's delivery: the field adopts it, the rows narrow.
+    search.perform('a');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    const matches = cardIds();
+    expect(search.matchCount()).toBe(matches.length);
+    expect(
+      screen.getByRole<HTMLInputElement>('searchbox', { name: DETECTIONS_SEARCH.label }).value
+    ).toBe('a');
+    const marked = (): string[] =>
+      [...document.querySelectorAll<HTMLElement>('[data-fdt-entry-id][aria-current="true"]')].map(
+        (item) => item.dataset.fdtEntryId ?? ''
+      );
+    expect(marked()).toEqual([matches[0]]);
+    expect(scrolled).toEqual([matches[0]]);
+    search.advance(1);
+    expect(marked()).toEqual([matches[1]]);
+    expect(scrolled).toEqual([matches[0], matches[1]]);
+  });
+
+  it('keeps the query and the narrowed rows across a refresh', () => {
+    vi.useFakeTimers();
+    const [data, setData] = createSignal(richData());
+    const search = createSearchStore();
+    render(() => (
+      <DetectionsView layoutStore={listLayout()} data={data()} now={NOW} search={search} />
+    ));
+    const name = nameOf(richData(), 'delay_js');
+    type(name);
+    const row = card('delay_js');
+    setData(richData({ undefinedReferencesOnPage: ['jQuery'] }));
+    expect(cardIds()).toEqual(['delay_js']);
+    expect(card('delay_js')).toBe(row);
+    expect(search.query()).toBe(name);
+  });
+});
+
 describe('DetectionsPage (store wiring)', () => {
   /**
    * A minimal store over one state signal, plus the setter that drives it.
@@ -673,7 +801,9 @@ describe('DetectionsPage (store wiring)', () => {
     render(() => (
       <FdtDataContext.Provider value={store}>
         <DetectionsLayoutContext.Provider value={listLayout()}>
-          <DetectionsPage />
+          <SearchContext.Provider value={createSearchStore()}>
+            <DetectionsPage />
+          </SearchContext.Provider>
         </DetectionsLayoutContext.Provider>
       </FdtDataContext.Provider>
     ));

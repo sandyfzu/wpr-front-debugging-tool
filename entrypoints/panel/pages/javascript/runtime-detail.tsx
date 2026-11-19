@@ -23,8 +23,9 @@ import {
 } from '../../../../lib/script-runtime/outcome-view';
 import type { LiveScriptRecord } from '../../../../lib/script-runtime/read-live';
 import type { OpenResource } from '../open-resource';
-import { CodeSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
+import { DetailSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
 import { SourceLink } from '../resource-list/source-link';
+import { cn } from '../../../../utils/cn';
 import type { CodeBlockSeams } from './code-seams';
 import {
   EMPTY_CODE_COPY,
@@ -41,18 +42,26 @@ import { countLines, lineCount } from './script-view';
  * Carries the state and group as data attributes (the harness reads them).
  *
  * @param props.script The record.
+ * @param props.row The list row's form: one line — a compact list (a
+ *   phone-width panel) shows the state alone, the group staying in the
+ *   detail and the Source facet, so the badges never wrap onto a second line.
  */
-export function RuntimeStateLine(props: { script: LiveScriptRecord }): JSX.Element {
+export function RuntimeStateLine(props: { script: LiveScriptRecord; row?: boolean }): JSX.Element {
   return (
     <span
-      class="flex min-w-0 flex-wrap items-center gap-1"
+      class={cn(
+        'flex min-w-0 items-center gap-1',
+        props.row === true ? 'flex-nowrap' : 'flex-wrap'
+      )}
       data-fdt-runtime-state={props.script.state}
       data-fdt-runtime-group={props.script.group}
     >
-      <StatusBadge kind={RUNTIME_STATE_TONES[props.script.state]} icon>
+      <StatusBadge kind={RUNTIME_STATE_TONES[props.script.state]} icon class="shrink-0">
         {RUNTIME_STATE_LABELS[props.script.state]}
       </StatusBadge>
-      <Badge variant="outline">{RUNTIME_GROUP_LABELS[props.script.group]}</Badge>
+      <Badge variant="outline" class={props.row === true ? '@max-regular:hidden' : undefined}>
+        {RUNTIME_GROUP_LABELS[props.script.group]}
+      </Badge>
     </span>
   );
 }
@@ -86,8 +95,10 @@ export function RuntimeDetail(props: RuntimeDetailProps): JSX.Element {
             </p>
           </div>
           <Show when={script().sourceKind === 'url'}>
+            {/* The resolved address when the page's base gives one (a relative
+                URL then opens too); else the URL as captured (shown as text). */}
             <SourceLink
-              url={script().source}
+              url={props.row().url ?? script().source}
               clipped={urlClipped(script())}
               openResource={props.openResource}
             />
@@ -115,7 +126,7 @@ function RuntimeCode(props: { row: RuntimeRow; codeBlock?: CodeBlockSeams }): JS
   const note = createMemo(() => runtimeCodeNote(script()));
   return (
     <Show when={script().fullText !== '' || script().sourceKind !== 'url'}>
-      <CodeSection
+      <DetailSection
         title="Code"
         hook="runtime-code"
         aside={script().fullText === '' ? undefined : lineCount(countLines(script().fullText))}
@@ -146,7 +157,7 @@ function RuntimeCode(props: { row: RuntimeRow; codeBlock?: CodeBlockSeams }): JS
             )}
           </Show>
         </Show>
-      </CodeSection>
+      </DetailSection>
     </Show>
   );
 }

@@ -1,6 +1,5 @@
 /**
- * P6.1 browser acceptance — the source-build parity round (row 1 of
- * 07-phase-6-panel-pages.md).
+ * Panel browser acceptance — the source-build parity round.
  *
  * The port and the source extension's own build are installed in two
  * separate Chromium contexts (one unpacked extension per context) and both
@@ -485,7 +484,7 @@ sourceTest.describe('source-build parity over one served fixture', () => {
           // the critical-images card's subtitle follows the port's dedicated
           // family model (the preload count is the applied evidence, so it
           // states the count — the source's own rendering says "Beacon
-          // detected" for that evidence; the recorded P1.1 delta).
+          // detected" for that evidence; a deliberate delta).
           if (sourceCard.name === 'Cached') {
             expect(portCard?.subtitle ?? '', 'the cached card ages its stamp').toMatch(
               /^Generated \d+ (?:s|min|h|d) ago$/

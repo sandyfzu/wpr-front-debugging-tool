@@ -1,8 +1,8 @@
 /**
- * P4.3 suite 1 — Header capture over real main-frame responses (the
+ * Header capture over real main-frame responses (the
  * permanent pin).
  *
- * The P2 audit caught the capture glue dead ONCE (a built worker that never
+ * An audit caught the capture glue dead ONCE (a built worker that never
  * called the capture store — invisible to every unit gate). This suite is
  * the deliberate re-run of that BLOCKER check against real site navigations:
  * if the glue ever unwires again, the content script's served `pageHeaders`
@@ -36,8 +36,8 @@ test.describe('site header capture', () => {
       pageHeaders: { name: string; value?: string; redacted?: true; cookieName?: string }[] | null;
     } | null>(sitePage.tabId, 'getFdtData');
     const siteRows = siteFdt?.pageHeaders;
-    expect(siteRows, 'the site page served captured header rows (the P2 BLOCKER pin)').toBeTruthy();
-    expect(Array.isArray(siteRows), 'the served shape is the P1 row-pair array').toBe(true);
+    expect(siteRows, 'the site page served captured header rows (the dead-glue pin)').toBeTruthy();
+    expect(Array.isArray(siteRows), 'the served shape is the row-pair array').toBe(true);
     expect(siteRows?.length ?? 0).toBeGreaterThan(0);
     for (const row of siteRows ?? []) {
       // A withheld row (capture-time redaction) carries `redacted` and,

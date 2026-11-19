@@ -40,6 +40,7 @@ import { DOUBLE_WINDOW_ROWS, renderPage, type PageHarness } from '../resource-li
 import { createTopFrameReader } from '../resource-list/top-frame-reader';
 import { StylesheetsPage, STYLESHEETS_SUBTITLE, type StylesheetsPageProps } from './page';
 import {
+  FORMAT_CSS_LABEL,
   STYLE_DISPLAY_CUT_NOTE,
   STYLE_DISPLAY_MAX_CHARS,
   STYLE_PLAIN_NOTE,
@@ -522,6 +523,53 @@ describe('StylesheetsPage — chips', () => {
   });
 });
 
+describe('StylesheetsPage — unchanged note', () => {
+  /** The note's text (null while none). */
+  function note(): string | null {
+    return document.querySelector('[data-fdt="stylesheets-unchanged"]')?.textContent ?? null;
+  }
+
+  it('says no style shows a change, names the off features and links Detections', async () => {
+    renderStylesheets([reply([link(), inline()])], { initial: data({ minifyCss: false }) });
+    await settle();
+    expect(note()).toContain('No stylesheet shows a WP Rocket change.');
+    // No generator meta decided the rows: Self-host Google Fonts reads unknown
+    // on its Detections card, so the note leaves it out.
+    expect(note()).toContain(
+      'Optimize CSS delivery, Minify CSS files and LazyLoad CSS backgrounds are off.'
+    );
+    expect(note()).not.toContain('Self-host Google Fonts');
+    const detections = screen.getByRole('link', { name: 'See Detections' });
+    expect(detections.getAttribute('href')).toBe('#/detections');
+  });
+
+  it('leaves once a row shows a state (a payload refresh flips a fact), and stays away on an empty page or without WP Rocket', async () => {
+    const page = renderStylesheets([reply([link({ href: MINIFIED })])], {
+      initial: data({ minifyCss: false })
+    });
+    await settle();
+    expect(note()).not.toBeNull();
+    page.refresh(data({ minifyCss: true }));
+    await settle();
+    expect(note()).toBeNull();
+    cleanup();
+    renderStylesheets([reply([])]);
+    await settle();
+    expect(note()).toBeNull();
+    cleanup();
+    renderStylesheets([reply([link()])], { initial: data({ wpr: false, minifyCss: false }) });
+    await settle();
+    expect(note()).toBeNull();
+  });
+
+  it('stays away while the list is cut (a style past the cut may show a change)', async () => {
+    renderStylesheets([reply([link(), inline()], 3)], { initial: data({ minifyCss: false }) });
+    await settle();
+    expect(screen.getByText('Showing the first 2 of 3 styles.')).toBeTruthy();
+    expect(note()).toBeNull();
+  });
+});
+
 describe('StylesheetsPage — facets and search', () => {
   it('filters on every facet value, combined, and searches URLs, ids and CSS', async () => {
     vi.useFakeTimers();
@@ -589,6 +637,25 @@ describe('StylesheetsPage — detail', () => {
     );
     expect(pane().querySelector('[data-fdt="style-css-plain"]')).toBeNull();
     expect(pane().querySelector('[data-fdt="style-css-cut"]')).toBeNull();
+  });
+
+  it('formats the shown CSS on demand and back, the copy still taking the served text', async () => {
+    const css = '.a{color:red;margin:0}';
+    renderStylesheets([reply([inline({ id: 'theme', chars: css.length })])], {
+      seams: { readStyleChunk: cssReads({ 0: css }).read }
+    });
+    await settle();
+    open('#theme');
+    await vi.waitFor(() => {
+      expect(shownCss()).toBe(css);
+    });
+    const format = within(pane()).getByRole('button', { name: FORMAT_CSS_LABEL });
+    expect(format.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(format);
+    expect(format.getAttribute('aria-pressed')).toBe('true');
+    expect(shownCss()).toBe('.a {\n  color:red;\n  margin:0\n}');
+    fireEvent.click(format);
+    expect(shownCss()).toBe(css);
   });
 
   it('shows a skeleton while the CSS is on its way, never an empty block', async () => {

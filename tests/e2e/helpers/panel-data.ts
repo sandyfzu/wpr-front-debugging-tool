@@ -165,6 +165,12 @@ export interface OpenPanelOptions {
     readonly reducedMotion?: 'reduce' | 'no-preference';
   };
   /**
+   * The panel page's viewport, set BEFORE it navigates: the shell boots at
+   * this width (its first layout and every width rule start there), never
+   * resized into it. Omitted, the context default applies.
+   */
+  readonly viewport?: { readonly width: number; readonly height: number };
+  /**
    * An init script evaluated on the panel page after the devtools stamp
    * but before its module graph — the smoothest window into a phase the
    * page's own boot belongs to (the perf suite installs its PerformanceObserver
@@ -222,6 +228,7 @@ export async function openPanelForFixture(
       colorScheme: options.emulation.colorScheme,
       reducedMotion: options.emulation.reducedMotion ?? 'no-preference'
     });
+  if (options.viewport !== undefined) await panel.setViewportSize(options.viewport);
   // Before any module script, so the accessor's feature-detection reads the
   // stamped id at its first read (the boot flight's timing).
   await panel.addInitScript(devtoolsShim(fixture.tabId, options.inspect, options.openResource));

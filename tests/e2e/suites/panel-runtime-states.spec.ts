@@ -1,5 +1,5 @@
 /**
- * The JavaScript page's Runtime states section over a real page (P14C C3):
+ * The JavaScript page's Runtime states section over a real page:
  * the section's chunk loads on its tab, reads the fixture tab's live script
  * elements and classifies them — delayed scripts pending before any
  * interaction, a plain script and JSON-LD not delayed, a nomodule fallback

@@ -1,6 +1,5 @@
 /**
- * P9.1 — the options page's deferred §D legs from the P9B audit, plus the
- * page's keyboard/audit floor:
+ * The options page's §D legs, plus the page's keyboard/audit floor:
  *
  * - **D-1 width walk** (the options tab's L-2 floor ≥ 320 px): at 320/480/
  *   768/1280 the document never scrolls horizontally (`scrollWidth ===

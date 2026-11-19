@@ -19,6 +19,13 @@
  * selected bucket a refresh emptied stays selected and says so, with the way
  * back to All.
  *
+ * The search ("Filter features…") narrows every row by its name on top of
+ * the status filter. It is the panel's one search store, so the DevTools
+ * find bar drives it too: the rendered rows are the match set, the find's
+ * cursor marks one and scrolls it into view; a refresh keeps the query. A
+ * query that hides every row lands on the shared filtered-empty view with
+ * its ways back (Clear search, and Show all when a status is picked).
+ *
  * The layout choice (shell-session, offered from the regular tier up):
  * Grouped (default) puts the rows under WP Rocket's settings sections, each
  * with its "N of M optimizations active", and leaves the facts the tiles
@@ -35,9 +42,20 @@
  * page edit.
  */
 import type { JSX } from 'solid-js';
-import { createComputed, createMemo, createSignal, For, onCleanup, Show } from 'solid-js';
+import {
+  createComputed,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  Show,
+  untrack
+} from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { ChoiceGroup, type ChoiceOption } from '../../../../components/ui/choice-group';
+import { SearchField } from '../../../../components/ui/search-field';
 import { SOURCE_COPY } from '../../../../lib/detection/hud';
 import {
   DETECTION_FILTER_LABEL,
@@ -45,6 +63,7 @@ import {
   detectionFilterLabel,
   filterStatusItems,
   optimizationCounts,
+  searchStatusItems,
   type DetectionFilterId
 } from '../../../../lib/panel/detections-filter';
 import {
@@ -54,8 +73,10 @@ import {
   type DetectionGroup
 } from '../../../../lib/panel/detections-groups';
 import { summarizeFdtData } from '../../../../lib/panel/detections-summary';
+import { normalizeQuery } from '../../../../lib/panel/list-behavior';
 import type { StatusItem, StatusItemId } from '../../../../lib/panel/detections-view-model';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
+import { cn } from '../../../../utils/cn';
 import {
   createDetectionsLayout,
   DETECTION_LAYOUTS,
@@ -63,8 +84,11 @@ import {
   useDetectionsLayout,
   type DetectionsLayoutStore
 } from '../../state/detections-layout';
-import { useFdtData } from '../../state/use-fdt-data';
+import { createSearchStore, type SearchStore } from '../../state/search';
+import { bindSearchField } from '../../state/search-field';
+import { useFdtData, useSearch } from '../../state/use-fdt-data';
 import { createAgingClock, realAgingClockDeps } from '../../state/aging-clock';
+import { createCurrentMatch, CURRENT_MATCH_ROW } from '../current-match';
 import { NoMatches, PageFrame } from '../page-frame';
 import { inspectedReloadAction } from '../reload-inspected';
 import { createContentWidth } from '../resource-list/content-width';
@@ -99,6 +123,15 @@ export const LAYOUT_CONTROL_LABEL = 'Detection layout';
 
 /** The filtered-empty view's reset label ("Show all" alone would not say of what). */
 export const SHOW_ALL_OPTIMIZATIONS = 'Show all optimizations';
+
+/** The search field's name and placeholder. */
+export const DETECTIONS_SEARCH = { label: 'Filter features', placeholder: 'Filter features…' };
+
+/**
+ * The search's slot in the control row: a full line below the regular tier,
+ * a bounded field pushed to the row's end (before the layout choice) there.
+ */
+const SEARCH_SLOT = 'min-w-0 basis-full @regular:ms-auto @regular:basis-60';
 
 /**
  * The status filter's segments: the declared filters with their counts. An
@@ -135,14 +168,45 @@ export interface DetectionsViewProps {
    * Absent: a store local to this mount, starting `grouped`.
    */
   layoutStore?: DetectionsLayoutStore;
+  /**
+   * The panel's search store (the field and the DevTools find bar share it);
+   * the route body passes the shell's. Absent: a store local to this mount.
+   */
+  search?: SearchStore;
 }
 
-/** What every entry renderer reads: rows by id and the clock. */
+/** What every entry renderer reads: rows by id, the clock and the find's mark. */
 interface EntrySource {
   /** The current row of an id (undefined once a refresh removed it). */
   readonly row: (id: StatusItemId) => StatusItem | undefined;
   /** The page clock reading. */
   readonly now: () => number;
+  /** Whether the find's cursor names this row. */
+  readonly current: (id: StatusItemId) => boolean;
+}
+
+/**
+ * One row's list item: the entry, marked while the find's cursor names it
+ * (the shared marker plus `aria-current`).
+ *
+ * @param props.id The row's id (its `data-fdt-entry-id`, the scroll target).
+ * @param props.current Whether the find names it.
+ * @param props.children The entry.
+ */
+function EntryItem(props: {
+  id: StatusItemId;
+  current: boolean;
+  children: JSX.Element;
+}): JSX.Element {
+  return (
+    <li
+      data-fdt-entry-id={props.id}
+      aria-current={props.current ? 'true' : undefined}
+      class={cn('flex min-w-0 rounded-lg', props.current && CURRENT_MATCH_ROW)}
+    >
+      {props.children}
+    </li>
+  );
 }
 
 /**
@@ -187,7 +251,7 @@ function GroupSection(props: { group: DetectionGroup; source: EntrySource }): JS
           {(id) => (
             <Show when={props.source.row(id)}>
               {(item) => (
-                <li class="flex min-w-0">
+                <EntryItem id={id} current={props.source.current(id)}>
                   <StatusCard
                     item={item()}
                     linkTo={CARD_PAGE_LINKS.get(id)}
@@ -195,7 +259,7 @@ function GroupSection(props: { group: DetectionGroup; source: EntrySource }): JS
                     layout="grouped"
                     showSource={showsOwnSource(item(), props.group.evidenceNorm)}
                   />
-                </li>
+                </EntryItem>
               )}
             </Show>
           )}
@@ -227,7 +291,12 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
   createComputed(() => {
     setOptions(reconcile(filterOptions(counts(), filter()), { key: 'value' }));
   });
-  const shown = createMemo(() => filterStatusItems(items(), filter()));
+  // Read once: the store is a per-mount input (the shell provides one).
+  // eslint-disable-next-line solid/reactivity
+  const search = props.search ?? createSearchStore();
+  const field = bindSearchField(search);
+  const query = createMemo(() => normalizeQuery(search.query()));
+  const shown = createMemo(() => searchStatusItems(filterStatusItems(items(), filter()), query()));
   // The ids are strings, so `For` keeps each row's DOM across refreshes and
   // filter changes (a fresh item object per push would otherwise remount every row).
   const ids = createMemo(() => shown().map((item) => item.id));
@@ -236,7 +305,7 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
   const groupIds = createMemo(() => groups().map((group) => group.id));
   const groupById = createMemo(() => new Map(groups().map((group) => [group.id, group])));
   // Only a refresh can empty the selected bucket (an empty segment is not selectable).
-  const filteredEmpty = (): boolean => filter() !== 'all' && counts()[filter()] === 0;
+  const bucketEmptied = (): boolean => filter() !== 'all' && counts()[filter()] === 0;
   const summary = () => model().summary;
   // Read once: the store is a per-mount input, never swapped while mounted.
   // eslint-disable-next-line solid/reactivity
@@ -248,8 +317,45 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
     const current = layout();
     return current === 'grouped' ? undefined : current;
   };
-  const source: EntrySource = { row: (id) => byId().get(id), now: () => props.now };
+  // The rendered rows in render order (Grouped renders by group, and leaves
+  // the facts the tiles state to them): the find's match set.
+  const renderedIds = createMemo((): readonly StatusItemId[] =>
+    flatLayout() === undefined
+      ? groups().flatMap((group) => group.items.map((item) => item.id))
+      : ids()
+  );
+  const match = createCurrentMatch(search, () => renderedIds().length);
+  const currentId = createMemo(() => {
+    const index = match.current();
+    return index === null ? null : (renderedIds()[index] ?? null);
+  });
+  // A query hiding every row (a bucket a refresh emptied keeps the context rows).
+  const searchEmpty = (): boolean => query() !== '' && renderedIds().length === 0;
+  const filteredEmpty = (): boolean => bucketEmptied() || searchEmpty();
+  const source: EntrySource = {
+    row: (id) => byId().get(id),
+    now: () => props.now,
+    current: (id) => currentId() === id
+  };
   let filterRef: HTMLDivElement | undefined;
+  let searchRef: HTMLDivElement | undefined;
+  let bodyRef: HTMLDivElement | undefined;
+  // The find's steps scroll their row into view (nearest edge); geometry
+  // changes never do (the request's own contract), nor does the mount.
+  createEffect(
+    on(
+      match.request,
+      (request) => {
+        if (request === null) return;
+        const id = untrack(renderedIds)[request.index];
+        if (id === undefined) return;
+        bodyRef
+          ?.querySelector<HTMLElement>(`[data-fdt-entry-id="${id}"]`)
+          ?.scrollIntoView({ block: 'nearest' });
+      },
+      { defer: true }
+    )
+  );
 
   return (
     <PageFrame
@@ -278,6 +384,22 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
             aria-label={DETECTION_FILTER_LABEL}
           />
         </div>
+        {/* Esc in the field is the binding's rule; the ref targets the way-back focus. */}
+        <div
+          ref={searchRef}
+          data-fdt="detections-search"
+          class={SEARCH_SLOT}
+          onKeyDown={field.onKeyDown}
+        >
+          <SearchField
+            value={field.value()}
+            onValueChange={(raw) => {
+              field.input(raw);
+            }}
+            label={DETECTIONS_SEARCH.label}
+            placeholder={DETECTIONS_SEARCH.placeholder}
+          />
+        </div>
         <ChoiceGroup
           variant="segmented"
           options={DETECTION_LAYOUTS}
@@ -292,11 +414,17 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
       <Show when={filteredEmpty()}>
         <div data-fdt="detections-filtered-empty" class={blockClass(undefined, layout())}>
           <NoMatches
-            chipLabel={detectionFilterLabel(filter())}
+            chipLabel={filter() === 'all' ? undefined : detectionFilterLabel(filter())}
             onShowAll={() => setFilter('all')}
             showAllLabel={SHOW_ALL_OPTIMIZATIONS}
-            focusAfter={() =>
-              filterRef?.querySelector<HTMLElement>('[data-fdt-choice-value="all"] input')
+            query={query()}
+            onClearSearch={() => {
+              field.clear();
+            }}
+            focusAfter={(action) =>
+              action === 'clear-search'
+                ? searchRef?.querySelector<HTMLElement>('input[type="search"]')
+                : filterRef?.querySelector<HTMLElement>('[data-fdt-choice-value="all"] input')
             }
           />
         </div>
@@ -305,6 +433,7 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
         when={flatLayout()}
         fallback={
           <div
+            ref={bodyRef}
             data-fdt="detections-grid"
             data-fdt-layout="grouped"
             role="group"
@@ -322,29 +451,31 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
         }
       >
         {(flat) => (
-          <ul
-            data-fdt="detections-grid"
-            data-fdt-layout={flat()}
-            aria-label="Detection results"
-            class={flatBodyClass(flat())}
-          >
-            <For each={ids()}>
-              {(id) => (
-                <Show when={source.row(id)}>
-                  {(item) => (
-                    <li class="flex min-w-0">
-                      <StatusCard
-                        item={item()}
-                        linkTo={CARD_PAGE_LINKS.get(id)}
-                        now={props.now}
-                        layout={flat()}
-                      />
-                    </li>
-                  )}
-                </Show>
-              )}
-            </For>
-          </ul>
+          <div ref={bodyRef} class="contents">
+            <ul
+              data-fdt="detections-grid"
+              data-fdt-layout={flat()}
+              aria-label="Detection results"
+              class={flatBodyClass(flat())}
+            >
+              <For each={ids()}>
+                {(id) => (
+                  <Show when={source.row(id)}>
+                    {(item) => (
+                      <EntryItem id={id} current={source.current(id)}>
+                        <StatusCard
+                          item={item()}
+                          linkTo={CARD_PAGE_LINKS.get(id)}
+                          now={props.now}
+                          layout={flat()}
+                        />
+                      </EntryItem>
+                    )}
+                  </Show>
+                )}
+              </For>
+            </ul>
+          </div>
         )}
       </Show>
     </PageFrame>
@@ -361,6 +492,7 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
 export function DetectionsPage(): JSX.Element {
   const store = useFdtData();
   const layoutStore = useDetectionsLayout();
+  const search = useSearch();
   const clock = createAgingClock(realAgingClockDeps());
   // The shell mounts page bodies only over loaded data.
   clock.setLoaded(true);
@@ -379,6 +511,7 @@ export function DetectionsPage(): JSX.Element {
           now={clock.now()}
           reloadInspectedPage={inspectedReloadAction(browser)}
           layoutStore={layoutStore}
+          search={search}
         />
       )}
     </Show>

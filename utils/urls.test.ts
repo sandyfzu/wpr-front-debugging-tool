@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { PLACEHOLDER_BASE_URL, isHttpOrigin, isHttpUrl, parseHttpUrl, parseUrl } from './urls';
+import {
+  PLACEHOLDER_BASE_URL,
+  isHttpOrigin,
+  isHttpUrl,
+  parseHttpUrl,
+  parseUrl,
+  resolveHttpUrl
+} from './urls';
 
 describe('parseUrl', () => {
   it('parses absolute URLs', () => {
@@ -40,6 +47,25 @@ describe('parseHttpUrl', () => {
     ]) {
       expect(parseHttpUrl(raw), raw).toBeNull();
     }
+  });
+});
+
+describe('resolveHttpUrl', () => {
+  const BASE = 'https://a.test/shop/page/?x=1';
+  it('resolves relative, root-relative and protocol-relative URLs against the base', () => {
+    expect(resolveHttpUrl('js/a.js?ver=1', BASE)).toBe('https://a.test/shop/page/js/a.js?ver=1');
+    expect(resolveHttpUrl('/wp-content/a.js', BASE)).toBe('https://a.test/wp-content/a.js');
+    expect(resolveHttpUrl('//cdn.test/a.js', BASE)).toBe('https://cdn.test/a.js');
+    expect(resolveHttpUrl('http://b.test/a.js', BASE)).toBe('http://b.test/a.js');
+  });
+
+  it('refuses other schemes, an unusable base and unparsable input', () => {
+    expect(resolveHttpUrl('javascript:alert(1)', BASE)).toBeNull();
+    expect(resolveHttpUrl('data:text/javascript,1', BASE)).toBeNull();
+    expect(resolveHttpUrl('a.js', null)).toBeNull();
+    expect(resolveHttpUrl('a.js', 'about:blank')).toBeNull();
+    expect(resolveHttpUrl('a.js', 'not a url')).toBeNull();
+    expect(resolveHttpUrl('http://[bad', BASE)).toBeNull();
   });
 });
 

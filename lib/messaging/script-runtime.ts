@@ -42,6 +42,12 @@ export interface ScriptRuntimeReply {
   readonly scripts: readonly LiveScriptFacts[];
   /** All `<script>` elements on the page at the read. */
   readonly total: number;
+  /**
+   * The page's base URL (`document.baseURI`) the scripts' relative URLs
+   * resolve against: null when it is longer than the field cap (never sent
+   * clipped), absent from an answer that carried none.
+   */
+  readonly baseUrl?: string | null;
 }
 
 /** An attribute value's unit cap. */
@@ -101,9 +107,11 @@ function parseScript(input: unknown): LiveScriptFacts | null {
  * @returns The reply, rebuilt, or null on any violation.
  */
 export function parseScriptRuntimeReply(input: unknown): ScriptRuntimeReply | null {
-  if (!isRecord(input) || !hasOnlyKeys(input, ['scripts', 'total'])) return null;
+  if (!isRecord(input) || !hasOnlyKeys(input, ['scripts', 'total', 'baseUrl'])) return null;
   const rawScripts = ownValue(input, 'scripts');
   const total = ownValue(input, 'total');
+  const baseUrl = ownValue(input, 'baseUrl');
+  if (baseUrl !== undefined && !isNullableString(baseUrl, FIELD_UNITS)) return null;
   if (!Array.isArray(rawScripts) || rawScripts.length > SCRIPT_RUNTIME_LIMITS.scripts) return null;
   if (typeof total !== 'number' || !Number.isSafeInteger(total) || total < rawScripts.length) {
     return null;
@@ -114,5 +122,6 @@ export function parseScriptRuntimeReply(input: unknown): ScriptRuntimeReply | nu
     if (script === null) return null;
     scripts.push(script);
   }
-  return { scripts: Object.freeze(scripts), total };
+  const reply = { scripts: Object.freeze(scripts), total };
+  return typeof baseUrl === 'string' ? { ...reply, baseUrl } : reply;
 }

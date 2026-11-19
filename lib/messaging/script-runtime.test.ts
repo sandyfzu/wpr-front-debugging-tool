@@ -33,6 +33,17 @@ describe('parseScriptRuntimeReply', () => {
     expect(parseScriptRuntimeReply(reply)).toEqual(reply);
   });
 
+  it('keeps the page base when sent, tolerates its absence, refuses a junk one', () => {
+    const reply = { scripts: [SCRIPT], total: 1, baseUrl: 'https://a.test/shop/' };
+    expect(parseScriptRuntimeReply(reply)).toEqual(reply);
+    expect(parseScriptRuntimeReply({ scripts: [SCRIPT], total: 1, baseUrl: null })).toEqual({
+      scripts: [SCRIPT],
+      total: 1
+    });
+    expect(parseScriptRuntimeReply({ ...reply, baseUrl: 7 })).toBeNull();
+    expect(parseScriptRuntimeReply({ ...reply, baseUrl: 'x'.repeat(FIELD_MAX * 4) })).toBeNull();
+  });
+
   it('accepts strings capped at the classifier’s caps, astral characters included', () => {
     const field = capText('😀'.repeat(FIELD_MAX + 1), FIELD_MAX);
     const text = capText('😀'.repeat(FULL_TEXT_MAX + 1), FULL_TEXT_MAX);

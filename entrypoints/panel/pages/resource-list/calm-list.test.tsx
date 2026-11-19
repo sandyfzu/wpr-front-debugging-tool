@@ -676,6 +676,12 @@ describe('drill-in (content < the split width)', () => {
     expect(view.hasAttribute('inert')).toBe(true);
     expect(document.activeElement).toBe(within(drill).getByRole('button', { name: 'Images' }));
     expect(drill.querySelector('[data-fdt="drill-position"]')?.textContent).toBe('2 of 5');
+    // A long Back label elides (whole in its title); "n of m" never gives.
+    const back = drill.querySelector<HTMLElement>('[data-fdt="drill-back"]');
+    expect(back?.title).toBe('Images');
+    expect(back?.className).toContain('min-w-0');
+    expect(back?.querySelector('span.truncate')?.textContent).toBe('Images');
+    expect(drill.querySelector('[data-fdt="drill-position"]')?.className).toContain('shrink-0');
     expect(presence.detailOpen()).toBe(true);
     fireEvent.click(within(drill).getByRole('button', { name: 'Next image' }));
     expect(drill.querySelector('h2')?.textContent).toBe('excluded.jpg');

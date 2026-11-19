@@ -586,9 +586,16 @@ describe('RucssTesterPage — page styles', () => {
     expect(rows[0]?.querySelector('[data-fdt="list-row-preview"]')?.textContent).toBe(
       '#theme-css · https://a.test/theme.css'
     );
+    // Static rows: the full line (the URL a keep pattern matches) on hover.
+    expect(rows[0]?.querySelector('[data-fdt="list-row-preview"]')?.getAttribute('title')).toBe(
+      '#theme-css · https://a.test/theme.css'
+    );
     // A link's characters are never read: its size cell stays empty.
     expect(rows[0]?.querySelector('[data-fdt="list-row-size"]')).toBeNull();
     expect(rows[1]?.querySelector('[data-fdt="list-row-size"]')?.textContent).toBe('7');
+    // The inline style draws the Stylesheets page's size bar (the list's largest: full).
+    expect(rows[0]?.querySelector('[data-fdt="list-row-size-bar"]')).toBeNull();
+    expect(rows[1]?.querySelector('[data-fdt="list-row-size-bar"]')).not.toBeNull();
     const chip = rows[1]?.querySelector('[data-fdt="state-chip"]');
     expect(chip?.getAttribute('data-fdt-state')).toBe('test-result');
     expect(chip?.getAttribute('data-fdt-source')).toBe('simulated');

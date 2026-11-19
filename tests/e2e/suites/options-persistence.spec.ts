@@ -1,5 +1,5 @@
 /**
- * P9.1 — the options page's storage persistence suite.
+ * The options page's storage persistence suite.
  *
  * The choices made on the REAL page (its switches + the appearance tri-state)
  * must land on the real `sync:options` item through the model's Save, survive
@@ -11,8 +11,8 @@
  * the same vocabulary the unit tier pins), the real storage item read back
  * from the service worker, and the toast region.
  *
- * The save window's read-modify-write race (the P9B receipt's open
- * disposition) is protocol-level and NOT re-tested here: this suite's
+ * The save window's read-modify-write race (a known open edge) is
+ * protocol-level and NOT re-tested here: this suite's
  * concurrent-writer leg writes while the page is idle (outside the save's
  * flight), the only shape a browser suite can order deterministically.
  */

@@ -68,7 +68,7 @@ export function ResourceSummary(props: ResourceSummaryProps): JSX.Element {
   return (
     <div
       data-fdt={`${hooks()}-summary`}
-      class="flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-md border border-line-1 bg-surface-1 px-2.5 py-1.5 text-xs"
+      class="flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg border border-line-1 bg-surface-2 px-2.5 py-1.5 text-xs"
     >
       {/* Flat items, so a compact strip wraps into two lines, never three. */}
       <span class="me-0.5 font-medium text-fg-primary">{props.featureLabel}</span>

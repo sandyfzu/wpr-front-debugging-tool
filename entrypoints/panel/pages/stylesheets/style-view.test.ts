@@ -11,6 +11,7 @@ import type { AskRunState, ShownAnswer } from '../ask-run';
 import {
   CRITICAL_SNAPSHOT_NOTE,
   SNAPSHOT_ROW_KEY,
+  isListCut,
   listCutNote,
   sameStyleRow,
   sameStyleView,
@@ -21,8 +22,13 @@ import {
   styleSearchField,
   styleStateChips,
   stylesheetsView,
+  unchangedStylesNotice,
+  UNCHANGED_STYLES_TITLE,
   type StylesheetsOutcome
 } from './style-view';
+import { buildStatusItems, type StatusItem } from '../../../../lib/panel/detections-view-model';
+import { emptyDetections, makeReportData } from '../../../../lib/panel/support-report.fixtures';
+import type { BuilderFact, FeatureEvidenceSource } from '../../../../lib/wp-rocket/types';
 import { EMPTY_STYLE_PREVIEW, NO_HREF_NAME } from '../resource-list/style-words';
 
 /** A classified row with overrides. */
@@ -338,5 +344,120 @@ describe('stylesheetsView', () => {
       status: 'failed',
       miss: 'timeout'
     });
+  });
+});
+
+describe('unchangedStylesNotice', () => {
+  /** A style row's detection fields: presence, the deciding evidence, the builder's fact. */
+  type Row = { present?: boolean; source?: FeatureEvidenceSource; builder?: BuilderFact };
+  type StyleRows = Partial<
+    Record<
+      | 'remove_unused_css'
+      | 'async_css'
+      | 'minify_css'
+      | 'lazyload_css_bg_img'
+      | 'self_hosted_fonts',
+      Row
+    >
+  >;
+  /** A meta that refuted the row (decided off): never an unknown verdict. */
+  const OFF: Row = { present: false, source: 'meta' };
+  /** A row WP Rocket applied on the page. */
+  const ON: Row = { present: true, source: 'footprint' };
+  const ALL_OFF: StyleRows = {
+    remove_unused_css: OFF,
+    async_css: OFF,
+    minify_css: OFF,
+    lazyload_css_bg_img: OFF,
+    self_hosted_fonts: OFF
+  };
+
+  /**
+   * The Detections cards of a page with WP Rocket proven (or not) and the
+   * given style rows — built by the cards' own builder, so the note is
+   * checked against the verdicts Detections shows.
+   */
+  function cards(rows: StyleRows = ALL_OFF, wpr = true): StatusItem[] {
+    const detections = emptyDetections();
+    detections.wpr.present = wpr;
+    for (const [id, fields] of Object.entries(rows) as [keyof StyleRows, Row][]) {
+      Object.assign(detections[id], fields);
+    }
+    return buildStatusItems(makeReportData({ wprDetections: detections }));
+  }
+  const plain = styleRowViews([row(), row({ id: 1, href: 'https://s.test/b.css' })]);
+  /** The whole list read (total = listed; only the counts matter). */
+  const whole: Pick<PageStylesheetsReply, 'styles' | 'total'> = {
+    styles: new Array(plain.length).fill(null) as never,
+    total: plain.length
+  };
+
+  it('names every style feature whose card says off when no row carries a state', () => {
+    expect(unchangedStylesNotice(whole, plain, cards())).toEqual({
+      title: UNCHANGED_STYLES_TITLE,
+      detail:
+        'Optimize CSS delivery, Minify CSS files, LazyLoad CSS backgrounds and Self-host Google Fonts are off.'
+    });
+  });
+
+  it('never names a feature its card shows unknown (a generator meta without features)', () => {
+    // No row decided by the meta: Self-host Google Fonts cannot prove absence.
+    const undecided = cards({});
+    expect(undecided.find((card) => card.id === 'self_hosted_fonts')?.status).toBe('unknown');
+    expect(unchangedStylesNotice(whole, plain, undecided)?.detail).toBe(
+      'Optimize CSS delivery, Minify CSS files and LazyLoad CSS backgrounds are off.'
+    );
+  });
+
+  it('names only the features that are off (one: "is off"; none: no detail)', () => {
+    expect(
+      unchangedStylesNotice(
+        whole,
+        plain,
+        cards({ ...ALL_OFF, async_css: ON, lazyload_css_bg_img: ON, self_hosted_fonts: ON })
+      )?.detail
+    ).toBe('Minify CSS files is off.');
+    expect(
+      unchangedStylesNotice(
+        whole,
+        plain,
+        cards({
+          remove_unused_css: ON,
+          minify_css: ON,
+          lazyload_css_bg_img: ON,
+          self_hosted_fonts: ON
+        })
+      )
+    ).toEqual({ title: UNCHANGED_STYLES_TITLE, detail: null });
+  });
+
+  it('names a served feature the Exclusion Builder turned off in this tab (the card counts it off)', () => {
+    const onAll: StyleRows = {
+      remove_unused_css: ON,
+      lazyload_css_bg_img: ON,
+      self_hosted_fonts: ON
+    };
+    const builderOff = cards({ ...onAll, minify_css: { ...ON, builder: { off: 'feature' } } });
+    expect(unchangedStylesNotice(whole, plain, builderOff)?.detail).toBe(
+      'Minify CSS files is off.'
+    );
+    const excluded = cards({ ...onAll, minify_css: { ...ON, builder: { excluded: 2 } } });
+    expect(unchangedStylesNotice(whole, plain, excluded)?.detail).toBeNull();
+  });
+
+  it('stays away while the list is cut (a style past the cut may show a change)', () => {
+    expect(isListCut(whole)).toBe(false);
+    expect(isListCut({ ...whole, total: whole.total + 1 })).toBe(true);
+    expect(unchangedStylesNotice({ ...whole, total: whole.total + 1 }, plain, cards())).toBeNull();
+    // The cut line and the note never speak together.
+    expect(listCutNote({ ...whole, total: whole.total + 1 })).not.toBeNull();
+  });
+
+  it('stays away when a row carries a state, the list is empty, WP Rocket is not proven or data is missing', () => {
+    const changed = styleRowViews([row(), row({ id: 1, minified: true })]);
+    expect(unchangedStylesNotice(whole, changed, cards())).toBeNull();
+    expect(unchangedStylesNotice({ styles: [], total: 0 }, [], cards())).toBeNull();
+    expect(unchangedStylesNotice(whole, plain, cards(ALL_OFF, false))).toBeNull();
+    expect(unchangedStylesNotice(whole, plain, null)).toBeNull();
   });
 });
