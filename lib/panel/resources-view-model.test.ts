@@ -68,6 +68,7 @@ describe('buildScriptRows', () => {
         fdtExcluded: null,
         minified: false,
         combined: false,
+        minifyAttribute: false,
         originalType: null
       },
       {
@@ -80,9 +81,18 @@ describe('buildScriptRows', () => {
         fdtExcluded: null,
         minified: false,
         combined: false,
+        minifyAttribute: false,
         originalType: null
       }
     ]);
+  });
+
+  it("carries the tag's minify stamp apart from the page-proven Minified state", () => {
+    const [row] = buildScriptRows(
+      scripts([{ inline: false, src: '/a.js', minifyAttribute: true }])
+    );
+    expect(row?.minifyAttribute).toBe(true);
+    expect(row?.minified).toBe(false);
   });
 
   it('a record without its content/src reads as an empty searched field', () => {

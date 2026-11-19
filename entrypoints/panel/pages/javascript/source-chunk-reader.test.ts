@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TabAsks } from '../../../../lib/messaging/tab-asks';
 import { relayTabAsks } from '../../../../lib/messaging/tab-relay-client';
-import { SOURCE_CHUNK_TIMEOUT_MS, createSourceChunkReader } from './source-chunk-reader';
+import {
+  SOURCE_CHUNK_TIMEOUT_MS,
+  createServedTagReader,
+  createSourceChunkReader
+} from './source-chunk-reader';
 
 const REQUEST = { snapshotId: '0123456789abcdef0123456789abcdef', scriptIndex: 1, offset: 0 };
 
@@ -11,6 +15,7 @@ function asksAnswering(answer: Promise<unknown>): TabAsks {
     processPageData: vi.fn(() => Promise.resolve(true)),
     getFdtData: vi.fn(() => Promise.resolve(null)),
     getScriptSourceChunk: vi.fn(() => answer),
+    getServedScriptTag: vi.fn(() => answer),
     startRucssTest: vi.fn(() => Promise.resolve(null)),
     applyRucssTest: vi.fn(() => Promise.resolve(null)),
     runBeaconTest: vi.fn(() => Promise.resolve(null)),
@@ -79,5 +84,40 @@ describe('createSourceChunkReader', () => {
       })(REQUEST)
     ).rejects.toBe(miss);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('createServedTagReader', () => {
+  const TAG = { snapshotId: REQUEST.snapshotId, scriptIndex: 2 };
+
+  it('asks the served tag from the inspected tab, directly and over the relay', async () => {
+    const asks = asksAnswering(Promise.resolve({ status: 'gone' }));
+    const read = createServedTagReader({ asks: () => asks, inspectedTabId: () => 6 });
+    await expect(read(TAG)).resolves.toEqual({ status: 'gone' });
+    expect(asks.getServedScriptTag).toHaveBeenCalledWith(6, TAG);
+    expect(asks.getScriptSourceChunk).not.toHaveBeenCalled();
+    const send = vi.fn(() => Promise.resolve({ ok: true, answer: { status: 'gone' } }));
+    await createServedTagReader({ asks: () => relayTabAsks(send), inspectedTabId: () => 6 })(TAG);
+    expect(send).toHaveBeenCalledWith({ tabId: 6, ask: 'getServedScriptTag', payload: TAG });
+  });
+
+  it('names its own action when it cannot read or times out', async () => {
+    vi.useFakeTimers();
+    await expect(
+      createServedTagReader({ asks: () => null, inspectedTabId: () => 6 })(TAG)
+    ).rejects.toThrow('This panel cannot reach the page for the served tag.');
+    await expect(
+      createServedTagReader({
+        asks: () => asksAnswering(Promise.resolve(null)),
+        inspectedTabId: () => null
+      })(TAG)
+    ).rejects.toThrow('No inspected tab for the served tag.');
+    const never = createServedTagReader({
+      asks: () => asksAnswering(new Promise(() => undefined)),
+      inspectedTabId: () => 6,
+      timeoutMs: 10
+    })(TAG).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(await never).toEqual(new Error('Served tag read timed out.'));
   });
 });

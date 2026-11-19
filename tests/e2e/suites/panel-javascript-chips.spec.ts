@@ -5,17 +5,25 @@
  *
  * - root- and protocol-relative bundle URLs read Combined (resolved before
  *   the bundle-shape test, as the detection pass resolves served URLs);
- * - a classic original type (`text/javascript`) shows no detail, a 64-char
- *   one with no break opportunity does — and wraps inside the page at 320 px
- *   instead of pushing it sideways.
+ * - a classic original type (`text/javascript`) leads no row preview, a
+ *   64-char one with no break opportunity does — the row's preview truncates
+ *   inside the page and the detail's "Original type" fact wraps inside it at
+ *   320 px instead of pushing it sideways.
  *
  * And each chip's source on `fixtures/javascript/sources.html` (Delay JS,
  * Defer JS and Minify JS declared): WP Rocket's states, the FDT's exclusion
- * and the page's own defer each read by their look, under one legend — at
- * 320 px nothing scrolls sideways, in both themes.
+ * and the page's own defer each read by their look, under one legend — a row
+ * shows two chips and folds the rest into "+N", its detail lists them all —
+ * at 320 px nothing scrolls sideways, in both themes.
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import {
+  closeScriptDetail,
+  facetCount,
+  openScriptDetail,
+  scriptRow
+} from '../helpers/javascript-page';
 import { expectSystemPalette, resetStoredOptions } from '../helpers/options';
 import { openPanelForFixture } from '../helpers/panel-data';
 
@@ -23,17 +31,26 @@ import { openPanelForFixture } from '../helpers/panel-data';
 const LONG_TYPE = 'xlongoriginaltypewithoutanybreakopportunityatallabcdefghijklmnop';
 
 /**
- * The row whose URL contains a text.
+ * The row whose name or URL preview contains a text.
  *
  * @param panel The panel page.
  * @param text The text.
  * @returns The row locator.
  */
 function rowWith(panel: Page, text: string): Locator {
-  return panel.locator('[data-fdt="script-row"]', { hasText: text });
+  return scriptRow(panel, text);
 }
 
-test('relative bundle URLs read Combined; the original type hides when classic and wraps at 320 px', async ({
+/**
+ * An element's right edge (px, viewport space).
+ *
+ * @param element The element.
+ */
+async function rightEdge(element: Locator): Promise<number> {
+  return await element.evaluate((node) => node.getBoundingClientRect().right);
+}
+
+test('relative bundle URLs read Combined; a classic original type leads no preview, a long one wraps in the detail at 320 px', async ({
   extension
 }) => {
   const { panel, fixture } = await openPanelForFixture(extension, '/javascript/chips.html', {
@@ -53,15 +70,17 @@ test('relative bundle URLs read Combined; the original type hides when classic a
         'Combined'
       ]);
     }
-    await expect(
-      panel.locator('[data-fdt-filter-chip="combined"] [data-fdt-filter-count]')
-    ).toHaveText('2');
+    // The File facet's Combined segment counts both bundles.
+    await expect(facetCount(panel, 'combined')).toHaveText('2');
 
-    await expect(
-      rowWith(panel, 'classic-type.js').locator('[data-fdt="script-original-type"]')
-    ).toHaveCount(0);
-    const detail = rowWith(panel, 'long-type.js').locator('[data-fdt="script-original-type"]');
-    await expect(detail).toHaveText(`type: ${LONG_TYPE}`);
+    // A classic original type leads no preview; the long one leads its row's.
+    const preview = (name: string): Locator =>
+      rowWith(panel, name).locator('[data-fdt="list-row-preview"]');
+    await expect(preview('classic-type.js')).not.toContainText('text/javascript');
+    await expect(preview('classic-type.js')).toContainText('/javascript/classic-type.js');
+    await expect(preview('long-type.js')).toHaveText(
+      new RegExp(`^${LONG_TYPE} · .*/javascript/long-type\\.js$`)
+    );
 
     const root = panel.locator('[data-fdt-page="javascript"]');
     for (const width of [320, 480, 1280]) {
@@ -71,11 +90,25 @@ test('relative bundle URLs read Combined; the original type hides when classic a
           message: `javascript must fit at ${String(width)}px`
         })
         .toBe(0);
-      const pageRight = await root.evaluate((element) => element.getBoundingClientRect().right);
-      const detailRight = await detail.evaluate((element) => element.getBoundingClientRect().right);
-      expect(detailRight, `type detail inside the page at ${String(width)}px`).toBeLessThanOrEqual(
-        pageRight + 0.5
-      );
+      const pageRight = await rightEdge(root);
+      expect(
+        await rightEdge(preview('long-type.js')),
+        `type preview inside the page at ${String(width)}px`
+      ).toBeLessThanOrEqual(pageRight + 0.5);
+      // The detail names the whole type and wraps it inside the page.
+      const detail = await openScriptDetail(panel, rowWith(panel, 'long-type.js'));
+      const fact = detail.locator('[data-fdt="script-facts"] dd', { hasText: LONG_TYPE });
+      await expect(fact).toHaveText(LONG_TYPE);
+      await expect
+        .poll(() => root.evaluate((element) => element.scrollWidth - element.clientWidth), {
+          message: `javascript with the detail open must fit at ${String(width)}px`
+        })
+        .toBe(0);
+      expect(
+        await rightEdge(fact),
+        `type fact inside the page at ${String(width)}px`
+      ).toBeLessThanOrEqual(pageRight + 0.5);
+      await closeScriptDetail(panel);
     }
   } finally {
     await panel.close();
@@ -111,13 +144,23 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await expectSystemPalette(panel, colorScheme);
       await panel.setViewportSize({ width: 1280, height: 1200 });
       await expect(panel.locator('[data-fdt="script-row"]')).toHaveCount(3);
-      expect(await chipSources(rowWith(panel, 'navigation.min.js'))).toEqual([
+      // A row shows its first two chips and folds the rest into "+N" — here
+      // WP Rocket's Minified, so the fold carries WP Rocket's look.
+      const navigation = rowWith(panel, 'navigation.min.js');
+      expect(await chipSources(navigation)).toEqual(['Delayed/wp-rocket', 'Deferred/wp-rocket']);
+      const overflow = navigation.locator('[data-fdt="state-chip-overflow"]');
+      await expect(overflow).toHaveText('+1');
+      await expect(overflow).toHaveAttribute('data-fdt-hides-wp-rocket', '');
+      expect(await chipSources(rowWith(panel, 'deferred-two.js'))).toEqual(['Excluded/excluded']);
+      expect(await chipSources(rowWith(panel, 'deferred-one.js'))).toEqual(['Deferred/page']);
+      // Its detail lists every chip with its source.
+      const detail = await openScriptDetail(panel, navigation);
+      expect(await chipSources(detail.locator('[data-fdt="script-detail-chips"]'))).toEqual([
         'Delayed/wp-rocket',
         'Deferred/wp-rocket',
         'Minified/wp-rocket'
       ]);
-      expect(await chipSources(rowWith(panel, 'deferred-two.js'))).toEqual(['Excluded/excluded']);
-      expect(await chipSources(rowWith(panel, 'deferred-one.js'))).toEqual(['Deferred/page']);
+      await closeScriptDetail(panel);
       // Every chip names its source and feature on hover.
       await expect(
         rowWith(panel, 'navigation.min.js').locator('[data-fdt-state="delayed"] [title]')
@@ -135,7 +178,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
         .toBe(0);
       const pageRight = await root.evaluate((element) => element.getBoundingClientRect().right);
       const rights = await panel
-        .locator('[data-fdt="state-chip"] [data-fdt="badge"], [data-fdt="state-source-legend"] > *')
+        .locator(
+          '[data-fdt="state-chip"] [data-fdt="badge"], [data-fdt="state-chip-overflow"] [data-fdt="badge"], [data-fdt="state-source-legend"] > *'
+        )
         .evaluateAll((elements) =>
           elements.map((element) => element.getBoundingClientRect().right)
         );

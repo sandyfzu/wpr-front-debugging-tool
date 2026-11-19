@@ -13,6 +13,7 @@
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import { facetCount } from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
 
 /** The section's required label. */
@@ -118,7 +119,7 @@ test('reads the live script states, before and after a real interaction', async 
 
     // The served view still lists the snapshot detection parsed at load: three delayed.
     await panel.getByRole('tab', { name: 'Delay & defer' }).click();
-    await expect(panel.locator('[data-fdt-filter-chip="delayed"]')).toContainText('3');
+    await expect(facetCount(panel, 'delayed')).toHaveText('3');
   } finally {
     await panel.close();
     await fixture.page.close();

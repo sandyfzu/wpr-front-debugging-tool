@@ -52,6 +52,7 @@ import type { KnownConflict } from '../storage/known-conflicts';
 import type { ChordPlatform } from '../storage/palette-chord-platform';
 import type { DeviceSimState, DeviceSimUpdate } from '../device-simulation/state';
 import type { ScriptSourceRequest, ScriptSourceReply } from './script-source';
+import type { ServedScriptTagReply, ServedScriptTagRequest } from './served-script-tag';
 import type { DbUpdateResult, DetectionSummary } from './validate';
 import type {
   ExclusionApplyReply,
@@ -95,6 +96,8 @@ export interface ProtocolMap {
   getFdtData(): FdtData | null;
   /** Panel → tab: bounded read from the exact immutable script capture. */
   getScriptSourceChunk(data: ScriptSourceRequest): ScriptSourceReply;
+  /** Panel → tab: one captured script's served opening tag (same snapshot). */
+  getServedScriptTag(data: ServedScriptTagRequest): ServedScriptTagReply;
   /** Extension page → tab content script: the served detections alone. */
   getWprDetections(): WprDetections | null;
   /** Content script → devtools (push, sender-tab checked): reload the panel. */

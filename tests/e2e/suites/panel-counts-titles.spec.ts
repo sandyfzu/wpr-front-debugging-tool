@@ -1,7 +1,14 @@
-/** Grouped chip names and bounded titles over real captured inventories. */
+/**
+ * Grouped filter names and bounded titles over real captured inventories: the
+ * Lazyload and Preloaded pages' chips; the JavaScript page's facets (the
+ * Delay facet's "Any" segment counts every row), its rows' bounded name
+ * titles and its detail's source-link tile and copy.
+ */
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import type { Locator } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import { facetSegment, openScriptDetail, scriptRows } from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
 import { resetStoredOptions } from '../helpers/options';
 
@@ -20,6 +27,43 @@ const AXE_SOURCE = readFileSync(
 
 /** Full URL exceeds the title limit but remains below capture's URL limit. */
 const LONG_URL = `https://example.test/${'x'.repeat(400)}.js?exact=%20#tail`;
+
+/** The capped title of {@link LONG_URL}. */
+const LONG_TITLE = `${LONG_URL.slice(0, 300)}…`;
+
+/** The long URL's file name (the JavaScript row's name). */
+const LONG_NAME = `${'x'.repeat(400)}.js`;
+
+/** The capped title of {@link LONG_NAME}. */
+const LONG_NAME_TITLE = `${LONG_NAME.slice(0, 300)}…`;
+
+/**
+ * The search field's and its row's widths, plus the 20 rem cap (rem resolves
+ * against the root font size, not the field's own `text-xs`, so a density
+ * move fails as the changed cap, not as a stale pixel count). The JavaScript
+ * page's row is its facet bar, whose compact form keeps the Filters button
+ * beside the field (its width + the bar's gap are reported as `beside`).
+ *
+ * @param root The page root.
+ */
+async function searchGeometry(
+  root: Locator
+): Promise<{ row: number; field: number; cap: number; beside: number } | null> {
+  return await root.evaluate((page) => {
+    const bar =
+      page.querySelector('[data-fdt="facet-bar"]') ?? page.querySelector('[data-fdt="filter-bar"]');
+    const input = page.querySelector<HTMLInputElement>('input[type="search"]');
+    if (!(bar instanceof HTMLElement) || !(input instanceof HTMLInputElement)) return null;
+    const filters = bar.querySelector('[data-fdt="facet-filters-button"]');
+    const gap = parseFloat(getComputedStyle(bar.firstElementChild ?? bar).columnGap) || 0;
+    return {
+      row: bar.clientWidth,
+      field: input.getBoundingClientRect().width,
+      cap: parseFloat(getComputedStyle(document.documentElement).fontSize) * 20,
+      beside: filters === null ? 0 : filters.getBoundingClientRect().width + gap
+    };
+  });
+}
 
 /**
  * Build inert inventories without remote requests or a large committed fixture.
@@ -70,20 +114,50 @@ test('keeps grouped names, bounded titles and full copy/link values on all list 
           location.hash = `#/${id}`;
         }, id);
         const root = panel.locator(`[data-fdt-page="${id}"]`);
-        const chip = root.locator('[data-fdt-filter-chip="all"]');
-        await expect(chip).toHaveAccessibleName(/5,000 matching$/);
-        await expect(chip.locator('[data-fdt-filter-count]')).toHaveText('5,000');
-        await expect(chip).toHaveAttribute('aria-pressed', 'true');
-        const link = root.locator('[data-fdt="external-link"]').first();
-        await expect(link).toHaveAttribute('href', LONG_URL);
-        await expect(link.locator('.truncate')).toHaveAttribute(
-          'title',
-          `${LONG_URL.slice(0, 300)}…`
-        );
-        await expect(link.locator('.truncate')).toHaveText(LONG_URL);
+        const scripts = id === 'javascript';
+        // The "all rows" filter: the chips' Show all, or the Delay facet's Any.
+        const chip = scripts
+          ? facetSegment(root, 'any', 'Delay')
+          : root.locator('[data-fdt-filter-chip="all"]');
+        if (scripts) {
+          await expect(chip.locator('input')).toHaveAccessibleName(/5,000$/);
+          await expect(chip.locator('[data-fdt-choice-count]')).toHaveText('5,000');
+          await expect(chip.locator('input')).toBeChecked();
+          // The row's name is the file name, its title bounded.
+          const name = scriptRows(root).first().locator('[data-fdt="list-row-name"]');
+          await expect(name).toHaveText(LONG_NAME);
+          await expect(name).toHaveAttribute('title', LONG_NAME_TITLE);
+        } else {
+          await expect(chip).toHaveAccessibleName(/5,000 matching$/);
+          await expect(chip.locator('[data-fdt-filter-count]')).toHaveText('5,000');
+          await expect(chip).toHaveAttribute('aria-pressed', 'true');
+          const link = root.locator('[data-fdt="external-link"]').first();
+          await expect(link).toHaveAttribute('href', LONG_URL);
+          await expect(link.locator('.truncate')).toHaveAttribute('title', LONG_TITLE);
+          await expect(link.locator('.truncate')).toHaveText(LONG_URL);
+        }
         for (const width of [320, 480, 768, 1280]) {
           await panel.setViewportSize({ width, height: 800 });
-          await expect(chip).toBeVisible();
+          // The list's tier follows its measured width (a resize observer):
+          // two frames let the measure land before the tier is read.
+          await panel.evaluate(
+            () =>
+              new Promise<void>((done) => {
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(() => {
+                    done();
+                  });
+                });
+              })
+          );
+          // A compact facet bar folds its facets into the Filters button.
+          const compactFacets =
+            scripts &&
+            (await root.locator('[data-fdt="facet-bar"]').getAttribute('data-fdt-compact')) !==
+              null;
+          await expect(
+            compactFacets ? root.locator('[data-fdt="facet-filters-button"]') : chip
+          ).toBeVisible();
           await expect
             .poll(() => root.evaluate((element) => element.scrollWidth - element.clientWidth), {
               message: `${id} must fit at ${String(width)}px`
@@ -91,42 +165,39 @@ test('keeps grouped names, bounded titles and full copy/link values on all list 
             .toBe(0);
           if (width === 320 || width === 1280) {
             // The shared filter field: bounded to 20 rem from the regular
-            // tier, full row below it — no per-page width cap, real geometry.
-            const sample = await root.evaluate((page) => {
-              const bar = page.querySelector('[data-fdt="filter-bar"]');
-              const input = page.querySelector<HTMLInputElement>('input[type="search"]');
-              if (!(bar instanceof HTMLElement) || !(input instanceof HTMLInputElement)) {
-                return null;
-              }
-              return {
-                row: bar.clientWidth,
-                field: input.getBoundingClientRect().width,
-                // The tier cap is 20 rem; rem resolves against the root font
-                // size (not the field's own — that is the 0.75 rem `text-xs`
-                // token), so the cap is derived from it and a density move
-                // fails as the changed cap, not as a stale pixel count.
-                cap: parseFloat(getComputedStyle(document.documentElement).fontSize) * 20
-              };
-            });
+            // tier, its full row below it (beside the Filters button on a
+            // compact facet bar) — no per-page width cap, real geometry.
+            const sample = await searchGeometry(root);
             if (sample === null) throw new Error('filter bar or search field missing');
             if (width === 1280) {
               expect(sample.field).toBeLessThanOrEqual(sample.cap + 1);
               expect(sample.field).toBeLessThan(sample.row - 10);
             } else {
-              expect(sample.field).toBeGreaterThanOrEqual(sample.row - 2);
+              expect(sample.field).toBeGreaterThanOrEqual(sample.row - sample.beside - 2);
             }
           }
         }
-        // Route focus lands on h1; native Tab enters the first grouped chip
+        // Route focus lands on h1; native Tab enters the first grouped filter
         // (on JavaScript after its view tabs: the selected tab is one stop).
         await root.getByRole('heading', { level: 1 }).focus();
-        if (id === 'javascript') {
+        if (scripts) {
           await panel.keyboard.press('Tab');
           await expect(root.getByRole('tab', { selected: true })).toBeFocused();
         }
         await panel.keyboard.press('Tab');
-        await expect(chip).toBeFocused();
-        const copy = root.getByRole('button', { name: /URL.*— copy$/ }).first();
+        await expect(scripts ? chip.locator('input') : chip).toBeFocused();
+        let copy = root.getByRole('button', { name: /URL.*— copy$/ }).first();
+        if (scripts) {
+          // The full URL and its copy live in the row's detail.
+          const detail = await openScriptDetail(panel, scriptRows(root).first());
+          const tile = detail.locator('[data-fdt="source-link-open"]');
+          await expect(tile).toHaveAttribute('title', LONG_TITLE);
+          await expect(detail.locator('[data-fdt="source-link"] a[href]').first()).toHaveAttribute(
+            'href',
+            LONG_URL
+          );
+          copy = detail.getByRole('button', { name: 'Script URL — copy' });
+        }
         await panel.evaluate(() => navigator.clipboard.writeText('not copied'));
         await copy.press('Enter');
         await expect
@@ -191,12 +262,13 @@ test('keeps grouped names, bounded titles and full copy/link values on all list 
     const jsRoot = panel.locator('[data-fdt-page="javascript"]');
     const searchField = jsRoot.locator('input[type="search"]');
     await searchField.fill('example.test/4');
-    const status = jsRoot.locator('[data-fdt="script-results-status"]');
+    const status = jsRoot.locator('[data-fdt="resource-results-status"]');
     await expect(status).toHaveText(/Showing \d[\d,]* of 5,000 scripts/);
     await searchField.press('Escape');
     await expect(searchField).toHaveValue('');
     await expect(status).toHaveText('Showing all 5,000 scripts');
-    await expect(jsRoot.locator('[data-fdt-filter-chip][aria-pressed="true"]')).toBeVisible();
+    // The facets are untouched by the field's Esc: every one still on Any.
+    await expect(facetSegment(jsRoot, 'any', 'Delay').locator('input')).toBeChecked();
   } finally {
     await panel.close();
     await fixture.page.close();

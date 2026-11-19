@@ -1,21 +1,19 @@
 /**
  * The JavaScript page's pure view layer: everything the page derives from the
- * classified script rows before rendering — state chips, the inline-code
- * shape (line count, expandability, collapsed preview), row-height seeds,
- * chip states and the expanded-row bookkeeping. No DOM, no Solid: the page
- * wraps these in one memo chain and the rows only read the results.
+ * classified script rows before rendering — the calm row's name, one-line
+ * preview, size and state chips, the detail's facts and code language, and
+ * the facets over row views. No DOM, no Solid: the page wraps these in one
+ * memo chain and the rows only read the results.
  */
-import { pruneKeyedFlags } from '../../../../lib/panel/list-behavior';
-import type { FilterChip } from '../../../../components/ui/filter-bar';
 import type { StatusKind } from '../../../../components/ui/status-badge';
-import type {
-  JsFilterId,
-  JsScriptResource,
-  ResourceFilterRow,
-  ResourcePageDefinition
+import type { CodeLanguage } from '../../../../components/ui/code-block-langs';
+import {
+  JS_PAGE_FACETS,
+  JS_PAGE_RESOURCES,
+  type JsFacetId,
+  type JsScriptResource
 } from '../../../../lib/panel/resources-view-model';
-import { JS_PAGE_RESOURCES } from '../../../../lib/panel/resources-view-model';
-import { buildFilterChips } from '../../../../lib/panel/list-behavior';
+import { liftFacets, type FacetSet } from '../../../../lib/panel/resource-facets';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import {
   JS_SCRIPT_STATES,
@@ -24,16 +22,35 @@ import {
   type JsStateId,
   type ScriptSimulation
 } from '../../../../lib/panel/script-states';
-import { countLabel, formatCount, type CountNoun } from '../../../../utils/format-count';
-import { isBlankScriptType, isClassicScriptType } from '../../../../utils/script-type';
 import {
+  FDT_EXCLUDED_RESOURCE,
+  MINIFY_ATTRIBUTE,
+  MINIFY_ATTRIBUTE_VALUE,
+  WPR_DEFER_ATTRIBUTE
+} from '../../../../lib/wp-rocket/constants';
+import type { SimulationFact } from '../../../../lib/wp-rocket/types';
+import {
+  countLabel,
+  formatCompactCount,
+  formatCompactFloor,
+  formatCount,
+  type CountNoun
+} from '../../../../utils/format-count';
+import {
+  isBlankScriptType,
+  isClassicScriptType,
+  isJsonScriptType
+} from '../../../../utils/script-type';
+import { parseHttpUrl } from '../../../../utils/urls';
+import { resourceName } from '../resource-list/resource-list-view';
+import {
+  CALM_VISIBLE_STATE_CHIPS,
   simulatableSource,
   splitStateChips,
   type StateChip,
   type StateChipSplit
 } from '../resource-list/state-chips';
 import { STATE_SOURCES, type StateSource } from '../resource-list/state-sources';
-import type { SimulationFact } from '../../../../lib/wp-rocket/types';
 
 /** A summary-strip state: its words and its vocabulary kind. */
 export interface ScriptBadge {
@@ -41,44 +58,10 @@ export interface ScriptBadge {
   readonly kind: StatusKind;
 }
 
-/** The collapsed code area shows exactly this many code lines. */
-export const COLLAPSED_CODE_LINES = 3;
-
-/**
- * Per-line cap of the collapsed preview. The collapsed block shows three
- * visual lines at most: at the widest panel a wrapped mono line holds ≈ 200
- * chars, so three of them ≈ 600 — the cap never shortens what is visible,
- * while a minified one-line bundle is not shipped to the highlighter until
- * expanded. A cut line shows a muted `…` drawn after it by the code block
- * (outside the text: never highlighted, selected or copied), and the toggle
- * reads "Show full lines".
- */
-export const PREVIEW_LINE_CHARS = 750;
-
-/** The shape of an inline script's code, derived once per row. */
-export interface InlineCode {
-  /** Visual line count (a single trailing line break adds no line). */
-  readonly lines: number;
-  /**
-   * Whether the text alone makes the toggle useful: more lines than the
-   * collapsed block shows, or a preview line cut at its cap. (The row also
-   * offers it when the block reports its clamp clipping — a wrapped line.)
-   */
-  readonly expandable: boolean;
-  /** The text the collapsed block renders and highlights. */
-  readonly preview: string;
-  /** A preview line was cut at {@link PREVIEW_LINE_CHARS}. */
-  readonly lineCut: boolean;
-  /** The preview lines (0-based) cut at {@link PREVIEW_LINE_CHARS}, for their `…` mark. */
-  readonly cutLines: readonly number[];
-  /** Blank source (empty or whitespace only): nothing to show or copy. */
-  readonly blank: boolean;
-}
-
 /**
  * How much of an inline script's text the capture delivered (the payload's
  * size caps clip one long script, and a list-wide budget leaves later
- * scripts empty once spent).
+ * scripts empty once spent). An external row's URL can be `clipped` too.
  */
 export type ContentCapture = 'complete' | 'clipped' | 'not-captured';
 
@@ -90,18 +73,16 @@ export interface ScriptRowView {
    * document position, so a script added above shifts nothing.
    */
   readonly key: string;
-  /** A DOM-id-safe form of {@link ScriptRowView.key}. */
-  readonly domId: string;
   /** The classified script (its `id` is the position at build time only). */
   readonly row: JsScriptResource;
-  /** How much inline text was captured (`complete` for external rows). */
+  /** How much text (or URL) was captured. */
   readonly capture: ContentCapture;
-  /** The row's state chips, split for rendering. */
-  readonly chips: StateChipSplit;
-  /** A delayed row's original-type detail ("type: module"), else `null`. */
-  readonly typeDetail: string | null;
-  /** Inline scripts only; `null` for external ones. */
-  readonly code: InlineCode | null;
+  /** Every state chip, most important first (the detail shows them all). */
+  readonly chips: readonly StateChip[];
+  /** The row's chips, split for the calm row (two, then "+N"). */
+  readonly rowChips: StateChipSplit;
+  /** The one-line preview: type prefix, then the collapsed code or the URL. */
+  readonly preview: string;
 }
 
 /** The sources a JavaScript row's chips can show — all four (the page's legend). */
@@ -159,7 +140,7 @@ const JS_CHIP_DISPLAY: Readonly<Record<JsStateId, ChipDisplay>> = {
 /**
  * The state chips of one script row, most important first (the shared
  * state table's order); negative states ("not delayed") are no chips — the
- * filters keep them.
+ * facets keep them.
  *
  * @param row The classified script.
  * @param simulation The features a verified simulation, not WP Rocket, ran
@@ -183,34 +164,19 @@ export function scriptStateChips(
 }
 
 /**
- * The row's chips, split for rendering (at most three, then "+N").
+ * The script's own type when it is worth reading: a delayed script's
+ * original `type` (what Delay JS restores — `module`, `importmap`…). None,
+ * a blank one, or a classic JavaScript MIME type runs as an ordinary classic
+ * script, so naming it is noise. Only delayed rows carry it: the inventory
+ * records no `type` for the others (their detail reads it from the served tag).
  *
  * @param row The classified script.
- * @param simulation See {@link scriptStateChips}.
+ * @returns The type, or `null`.
  */
-export function scriptChipSplit(
-  row: JsScriptResource,
-  simulation: ScriptSimulation = NO_SCRIPT_SIMULATION
-): StateChipSplit {
-  return splitStateChips(scriptStateChips(row, simulation));
-}
-
-/** Hover text of the original-type detail. */
-export const ORIGINAL_TYPE_TITLE = `The script's own type, restored when ${getRealOptionName('delay_js')} runs it`;
-
-/**
- * The detail a delayed row shows for its original `type` ("type: module").
- * Only a type worth reading shows: none, a blank one, or a classic
- * JavaScript MIME type (`text/javascript`, most delayed rows) runs the script
- * as an ordinary classic script, so naming it is noise.
- *
- * @param row The classified script.
- * @returns The detail text, or `null` when the type says nothing new.
- */
-export function originalTypeDetail(row: JsScriptResource): string | null {
+export function notableScriptType(row: JsScriptResource): string | null {
   const type = row.originalType;
   if (type === null || isBlankScriptType(type) || isClassicScriptType(type)) return null;
-  return `type: ${type}`;
+  return type;
 }
 
 /**
@@ -248,67 +214,233 @@ export function countLines(text: string): number {
   return lines;
 }
 
+/** The preview line's length cap (a row shows one truncating line; the rest is the detail's). */
+export const PREVIEW_CHARS = 200;
+
+/** One whitespace character (the set `\s` matches). */
+const WHITESPACE = /\s/;
+
 /**
- * The text the collapsed block renders: the first {@link COLLAPSED_CODE_LINES}
- * lines, each cut at {@link PREVIEW_LINE_CHARS}. Highlighting tokenizes left
- * to right, so the visible lines color as in the full text, while the
- * highlighter never sees the hidden bulk of a large script.
+ * Collapse a text's whitespace runs to single spaces and keep its first
+ * {@link PREVIEW_CHARS} chars, scanning only as far as it keeps (a 512 KB
+ * bundle costs a preview, not a pass). Never ends on half a surrogate pair.
  *
- * @param text The full source text.
- * @returns The preview and whether a line was cut at the cap (the text
- *   itself when nothing is cut).
+ * @param text The source text.
+ * @returns The collapsed, trimmed preview.
  */
-export function collapsedPreview(text: string): {
-  preview: string;
-  lineCut: boolean;
-  cutLines: number[];
-} {
-  const kept: string[] = [];
-  const cutLines: number[] = [];
-  let start = 0;
-  let lineCut = false;
-  let moreLines = false;
-  while (kept.length < COLLAPSED_CODE_LINES) {
-    const end = text.indexOf('\n', start);
-    const line = end === -1 ? text.slice(start) : text.slice(start, end);
-    if (line.length > PREVIEW_LINE_CHARS) {
-      lineCut = true;
-      cutLines.push(kept.length);
-      kept.push(line.slice(0, PREVIEW_LINE_CHARS));
-    } else {
-      kept.push(line);
+export function collapsedPreview(text: string): string {
+  let out = '';
+  let pendingSpace = false;
+  for (let at = 0; at < text.length && out.length < PREVIEW_CHARS; at += 1) {
+    const char = text.charAt(at);
+    if (WHITESPACE.test(char)) {
+      pendingSpace = out !== '';
+      continue;
     }
-    if (end === -1) break;
-    start = end + 1;
-    if (kept.length === COLLAPSED_CODE_LINES && start < text.length) moreLines = true;
+    if (pendingSpace) {
+      out += ' ';
+      pendingSpace = false;
+    }
+    out += char;
   }
-  return { preview: lineCut || moreLines ? kept.join('\n') : text, lineCut, cutLines };
+  const end = Math.min(out.length, PREVIEW_CHARS);
+  const last = out.charCodeAt(end - 1);
+  return out.slice(0, last >= 0xd800 && last <= 0xdbff ? end - 1 : end);
 }
 
 /**
- * Derive an inline script's code shape.
+ * An external script's preview: its URL without the scheme (host, path,
+ * query — the part that tells two files apart), or the raw text when it is
+ * no http(s) URL.
  *
- * @param text The inline source.
- * @returns Its line count, expandability, collapsed preview and blankness.
+ * @param url The captured URL.
  */
-export function inlineCode(text: string): InlineCode {
-  const lines = countLines(text);
-  const { preview, lineCut, cutLines } = collapsedPreview(text);
-  const blank = text.trim() === '';
+export function urlPreview(url: string): string {
+  const parsed = parseHttpUrl(url);
+  if (parsed === null) return url;
+  return `${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
+/** The preview's words for an inline row with no code to show. */
+export const NO_CODE_PREVIEW: Readonly<Record<'blank' | 'not-captured', string>> = {
+  blank: 'Empty inline script',
+  'not-captured': 'Content not captured (size budget)'
+};
+
+/**
+ * A row's one-line preview: the notable type first (`module · …`), then the
+ * collapsed inline code or the external URL; an inline row with no text says
+ * why (blank script vs. text the size budget left out).
+ *
+ * @param row The classified script.
+ * @param capture How much text was captured.
+ */
+export function scriptPreview(row: JsScriptResource, capture: ContentCapture): string {
+  const type = notableScriptType(row);
+  const body =
+    row.type === 'external'
+      ? urlPreview(row.content)
+      : capture === 'not-captured'
+        ? NO_CODE_PREVIEW['not-captured']
+        : row.content.trim() === ''
+          ? NO_CODE_PREVIEW.blank
+          : collapsedPreview(row.content);
+  return type === null ? body : `${type} · ${body}`;
+}
+
+/**
+ * Build one row's view.
+ *
+ * @param row The classified script.
+ * @param key The row's key.
+ * @param capture How much text was captured.
+ * @param simulation The features a verified simulation ran on the page.
+ */
+export function scriptRowView(
+  row: JsScriptResource,
+  key: string,
+  capture: ContentCapture = 'complete',
+  simulation: ScriptSimulation = NO_SCRIPT_SIMULATION
+): ScriptRowView {
+  const chips = scriptStateChips(row, simulation);
   return {
-    lines,
-    expandable: !blank && (lines > COLLAPSED_CODE_LINES || lineCut),
-    preview,
-    lineCut,
-    cutLines,
-    blank
+    key,
+    row,
+    capture,
+    chips,
+    rowChips: splitStateChips(chips, CALM_VISIBLE_STATE_CHIPS),
+    preview: scriptPreview(row, capture)
   };
 }
 
+/** The row's name when an external script's `src` is empty. */
+export const EMPTY_SRC_NAME = 'Empty src attribute';
+
 /**
- * The text an expanded block renders: the whole source, or — past what the
- * code block highlights (`HIGHLIGHT_MAX_CHARS`) — its first that many chars,
- * so expanding a 500 KB bundle mounts a bounded block (highlighted, too)
+ * A row's name: an external script's file name (the Network panel's
+ * "Name"), or "Inline script #n" by its position among inline scripts.
+ *
+ * @param view The row view.
+ * @param inlineOrdinal The row's 1-based position among inline scripts.
+ */
+export function scriptName(view: ScriptRowView, inlineOrdinal: number): string {
+  if (view.row.type === 'inline') return `Inline script #${String(inlineOrdinal)}`;
+  return resourceName(view.row.content) || EMPTY_SRC_NAME;
+}
+
+/**
+ * The detail's caps kind label.
+ *
+ * @param view The row view.
+ */
+export function scriptKind(view: ScriptRowView): string {
+  return view.row.type === 'inline' ? 'Inline script' : 'External script';
+}
+
+/**
+ * The size cell: an inline script's character count, compact ("18.6K"),
+ * a rounded-down floor ("≥ 524.2K") when the capture clipped it; nothing for an external
+ * script (never fetched) or text the budget left out.
+ *
+ * @param view The row view.
+ * @returns The cell text, or `undefined` for an empty cell.
+ */
+export function scriptSize(view: ScriptRowView): string | undefined {
+  if (view.row.type === 'external' || view.capture === 'not-captured') return undefined;
+  const chars = view.row.content.length;
+  return view.capture === 'clipped' ? `≥ ${formatCompactFloor(chars)}` : formatCompactCount(chars);
+}
+
+/** Characters, in their two count forms. */
+const CHARACTER_NOUN: CountNoun = { one: 'character', other: 'characters' };
+
+/** Code lines, in their two count forms. */
+const LINE_NOUN: CountNoun = { one: 'line', other: 'lines' };
+
+/**
+ * Count phrase for code lines ("1 line", "1,040 lines").
+ *
+ * @param count The number of lines.
+ */
+export function lineCount(count: number): string {
+  return countLabel(count, LINE_NOUN);
+}
+
+/** One fact of the detail's attribute list. */
+export interface ScriptFact {
+  readonly label: string;
+  readonly value: string;
+  /** The value is markup or an identifier (rendered mono). */
+  readonly mono: boolean;
+}
+
+/**
+ * The detail's facts — only the ones that hold: the delay and defer markers,
+ * the original type, the minify stamp, the local exclusion marker, and an
+ * inline script's size (floored when clipped).
+ *
+ * @param view The row view.
+ * @returns The facts, in reading order.
+ */
+export function scriptFacts(view: ScriptRowView): ScriptFact[] {
+  const { row } = view;
+  const facts: ScriptFact[] = [];
+  if (row.delayed) facts.push({ label: 'Delayed', value: 'Delay JS type', mono: false });
+  if (row.originalType !== null)
+    facts.push({ label: 'Original type', value: row.originalType, mono: true });
+  if (row.deferred) facts.push({ label: 'Defer', value: 'defer', mono: true });
+  if (row.deferredByWPR)
+    facts.push({ label: 'WP Rocket defer', value: WPR_DEFER_ATTRIBUTE, mono: true });
+  if (row.minifyAttribute)
+    facts.push({
+      label: 'Minify stamp',
+      value: `${MINIFY_ATTRIBUTE}="${MINIFY_ATTRIBUTE_VALUE}"`,
+      mono: true
+    });
+  if (row.fdtExcluded !== null)
+    facts.push({
+      label: 'FDT exclusion',
+      value: `${FDT_EXCLUDED_RESOURCE}="${row.fdtExcluded}"`,
+      mono: true
+    });
+  if (row.type === 'inline' && view.capture !== 'not-captured') {
+    const size = countLabel(row.content.length, CHARACTER_NOUN);
+    facts.push({
+      label: 'Size',
+      value: view.capture === 'clipped' ? `≥ ${size} (clipped)` : size,
+      mono: false
+    });
+  }
+  return facts;
+}
+
+/**
+ * The language an inline script's code highlights as: JSON when its
+ * effective type declares JSON (a delayed script's original type, else the
+ * served `type`), else JavaScript. `undefined` while the type is still
+ * unknown (an undelayed script before its served tag answers).
+ *
+ * @param row The classified script.
+ * @param served The served tag's `type`: a string, `null` (none), or
+ *   `undefined` (not known — still asking, or the read failed).
+ * @param settled Whether the served-tag read is over (a failed read falls
+ *   back to JavaScript instead of waiting forever).
+ */
+export function scriptCodeLanguage(
+  row: JsScriptResource,
+  served: string | null | undefined,
+  settled: boolean
+): CodeLanguage | undefined {
+  if (row.delayed)
+    return row.originalType !== null && isJsonScriptType(row.originalType) ? 'json' : 'javascript';
+  if (served === undefined) return settled ? 'javascript' : undefined;
+  return served !== null && isJsonScriptType(served) ? 'json' : 'javascript';
+}
+
+/**
+ * The text a detail's code block renders: the whole source, or — past what
+ * the code block highlights (`HIGHLIGHT_MAX_CHARS`) — its first that many
+ * chars, so a 500 KB bundle mounts a bounded block (highlighted, too)
  * instead of the whole text. Never cuts a surrogate pair; copy keeps using
  * the full source.
  *
@@ -324,27 +456,12 @@ export function expandedText(source: string, max: number): { text: string; cut: 
 }
 
 /**
- * The note under an expanded block that shows only the start of its script.
+ * The note under a block that shows only the start of its script.
  *
  * @param max The render limit.
  */
 export function expandedCutNote(max: number): string {
   return `Showing the first ${formatCount(max)} characters — copy gets the full script.`;
-}
-
-/**
- * The collapse toggle's words: how much a click reveals — "Show all 40
- * lines", "Show full lines" when the preview cut long lines (each marked
- * by a `…` outside the code), or "Expand" when the clamp hides a wrapped
- * line.
- *
- * @param code The script's code shape.
- * @param expanded Whether the code is expanded.
- */
-export function codeToggleLabel(code: InlineCode, expanded: boolean): string {
-  if (expanded) return 'Collapse';
-  if (code.lines > COLLAPSED_CODE_LINES) return `Show all ${lineCount(code.lines)}`;
-  return code.lineCut ? 'Show full lines' : 'Expand';
 }
 
 /** Whether two classified scripts carry the same data (position ignored). */
@@ -358,105 +475,23 @@ export function sameScript(a: JsScriptResource, b: JsScriptResource): boolean {
     a.fdtExcluded === b.fdtExcluded &&
     a.minified === b.minified &&
     a.combined === b.combined &&
+    a.minifyAttribute === b.minifyAttribute &&
     a.originalType === b.originalType
   );
 }
 
-/**
- * The JavaScript page's filter/search pattern over row views — the shared
- * definition's chips and searched field, lifted through `view.row` (labels
- * and predicates stay declared once, in the shared table).
- */
-export const JS_VIEW_RESOURCES: ResourcePageDefinition<ScriptRowView, JsFilterId> = {
-  filters: JS_PAGE_RESOURCES.filters.map(
-    (filter): ResourceFilterRow<ScriptRowView, JsFilterId> => ({
-      id: filter.id,
-      label: filter.label,
-      predicate: (view) => filter.predicate(view.row)
-    })
-  ),
-  searchField: (view) => JS_PAGE_RESOURCES.searchField(view.row)
-};
+/** The page's facets over row views (labels and predicates stay declared once, in the shared table). */
+export const JS_VIEW_FACETS: FacetSet<ScriptRowView, JsFacetId> = liftFacets(
+  JS_PAGE_FACETS,
+  (view: ScriptRowView) => view.row
+);
 
 /**
- * The chip bar's data. A chip with nothing to select is disabled (no
- * dead-end click) — except the "all" chip and the selected chip: a refresh
- * that empties the selected filter keeps it selected (and reachable) so the
- * list can say so and offer the way back.
- *
- * @param filters The page's chip rows, in render order.
- * @param counts Rows per chip id.
- * @param selected The selected chip id.
- * @returns The chips for `FilterBar`.
- */
-export function buildChips(
-  filters: readonly Pick<ResourceFilterRow<never, JsFilterId>, 'id' | 'label'>[],
-  counts: Readonly<Record<JsFilterId, number>>,
-  selected: JsFilterId
-): FilterChip[] {
-  return buildFilterChips({ filters }, counts, selected);
-}
-
-/** Seed heights (px) for rows not measured yet — measurement corrects them. */
-export const ROW_ESTIMATES = {
-  /** External row at regular width: name line + URL line (states stack below when compact). */
-  external: 55,
-  /** Inline row without code to show (blank source). */
-  inlineBlank: 57,
-  /** Inline row, collapsed: caption/chips line, three code lines, toggle. */
-  inlineCollapsed: 145,
-  /** Inline row with three lines or fewer and no toggle. */
-  inlineShort: 115
-} as const;
-
-/**
- * Estimate a row's height before it is measured.
+ * The searched field of a row view: an external script's URL, an inline
+ * script's code (the shared definition's field).
  *
  * @param view The row view.
- * @returns The seed height in px.
  */
-export function estimateRowSize(view: ScriptRowView): number {
-  if (view.code === null) return ROW_ESTIMATES.external;
-  if (view.code.blank) return ROW_ESTIMATES.inlineBlank;
-  return view.code.expandable ? ROW_ESTIMATES.inlineCollapsed : ROW_ESTIMATES.inlineShort;
-}
-
-/**
- * {@link pruneKeyedFlags} over this page's script rows (keyed by script identity).
- *
- * @param states The flags to prune.
- * @param previous The row views the flags were set on.
- * @param next The refreshed row views.
- * @returns `states` itself when nothing was dropped, else the kept keys.
- */
-export function pruneRowFlags(
-  states: ReadonlySet<string>,
-  previous: readonly ScriptRowView[],
-  next: readonly ScriptRowView[]
-): ReadonlySet<string> {
-  return pruneKeyedFlags(states, previous, next, (view) => view.key);
-}
-
-/** Code lines, in their two count forms. */
-const LINE_NOUN: CountNoun = { one: 'line', other: 'lines' };
-
-/**
- * Count phrase for code lines ("1 line", "1,040 lines").
- *
- * @param count The number of lines.
- */
-export function lineCount(count: number): string {
-  return countLabel(count, LINE_NOUN);
-}
-
-/**
- * The inline-code row's caption: the code's language, then the line count
- * (`javascript · 3 lines`). The block's toolbar is gone in the compact rows,
- * so the row carries this one muted caption instead — one fact, no chrome.
- *
- * @param lang The code's language (the block's `lang`).
- * @param lines The line count.
- */
-export function codeCaption(lang: string, lines: number): string {
-  return `${lang} · ${lineCount(lines)}`;
+export function scriptSearchField(view: ScriptRowView): string {
+  return JS_PAGE_RESOURCES.searchField(view.row);
 }

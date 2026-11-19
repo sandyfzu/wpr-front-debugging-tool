@@ -28,10 +28,16 @@ describe('relayTabAsks — requests', () => {
     await asks.processPageData(3);
     await asks.getFdtData(3);
     await asks.getScriptSourceChunk(3, CHUNK);
+    await asks.getServedScriptTag(3, { snapshotId: CHUNK.snapshotId, scriptIndex: 1 });
     expect(send.requests).toEqual([
       { tabId: 3, ask: 'processPageData' },
       { tabId: 3, ask: 'getFdtData' },
-      { tabId: 3, ask: 'getScriptSourceChunk', payload: CHUNK }
+      { tabId: 3, ask: 'getScriptSourceChunk', payload: CHUNK },
+      {
+        tabId: 3,
+        ask: 'getServedScriptTag',
+        payload: { snapshotId: CHUNK.snapshotId, scriptIndex: 1 }
+      }
     ]);
   });
 

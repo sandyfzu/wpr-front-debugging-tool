@@ -61,8 +61,8 @@ describe('rowGrid', () => {
     );
   });
 
-  it('spells the size and states tracks the head shares (4rem, 10rem)', () => {
-    expect(rowGrid('two', BOTH)).toContain('@regular:grid-cols-[minmax(0,1fr)_4rem_10rem]');
+  it('spells the size and states tracks the head shares (4rem, 14rem)', () => {
+    expect(rowGrid('two', BOTH)).toContain('@regular:grid-cols-[minmax(0,1fr)_4rem_14rem]');
   });
 });
 
@@ -72,7 +72,7 @@ describe('calmRowEstimate', () => {
     expect(calmRowEstimate('one', false, true)).toBe(CALM_ROW_ESTIMATES.oneLine);
     expect(calmRowEstimate('one', true, false)).toBe(CALM_ROW_ESTIMATES.twoLine);
     expect(calmRowEstimate('two', true, true)).toBe(CALM_ROW_ESTIMATES.stacked);
-    expect(CALM_ROW_ESTIMATES).toEqual({ twoLine: 58, oneLine: 36, stacked: 84 });
+    expect(CALM_ROW_ESTIMATES).toEqual({ twoLine: 58, oneLine: 36, stacked: 78 });
   });
 });
 

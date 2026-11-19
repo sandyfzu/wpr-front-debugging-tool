@@ -57,7 +57,7 @@ import { cn } from '../../../../utils/cn';
 import { bindSearchField } from '../../state/search-field';
 import { useSearch } from '../../state/use-fdt-data';
 import { createCurrentMatch } from '../current-match';
-import { NoMatches, PAGE_FILL_SCROLLER, type NoMatchesAction } from '../page-frame';
+import { NoMatches, PAGE_CANVAS, PAGE_FILL_SCROLLER, type NoMatchesAction } from '../page-frame';
 import { createResultsAnnouncement } from '../results-announcement';
 import { createContentWidth } from './content-width';
 import { FacetBar } from './facet-bar';
@@ -374,10 +374,13 @@ export function CalmFilteredList<Row, Id extends string>(
           <div
             data-fdt="calm-list-view"
             data-fdt-view-enter={md.returned() && !md.drillOpen() ? '' : undefined}
-            // The drill detail lays over the list, which stays laid out (its
-            // scroll position and virtual window survive) but hidden and inert.
+            // The drill detail covers the list (an opaque overlay), which stays
+            // laid out (its scroll position and virtual window survive) and
+            // inert. Never hidden by `visibility`: under reduced motion every
+            // property change runs as a near-zero transition, and a list still
+            // `hidden` while Back hands focus to its row drops that focus.
             inert={md.drillOpen()}
-            class={cn('flex min-h-0 flex-1 flex-col gap-3', md.drillOpen() && 'invisible')}
+            class="flex min-h-0 flex-1 flex-col gap-3"
           >
             {/* Esc in the field is the binding's rule; the ref targets the way-back focus. */}
             <div ref={controls} onKeyDown={field.onKeyDown}>
@@ -459,7 +462,13 @@ export function CalmFilteredList<Row, Id extends string>(
                     getItemKey={(index) => visibleIds()[index] ?? fallbackRowKey(index)}
                     createVirtualizer={props.createVirtualizer}
                     scrollTo={md.scroll.request}
-                    class="min-h-0 flex-1"
+                    // Opaque in the canvas's own color (no visible change): the
+                    // scroller then backs its whole scrolled extent, so overscan
+                    // rows past its visible window resolve their text background
+                    // to it — over a transparent scroller they sit on the shell,
+                    // whose box ends at the viewport, and contrast checks report
+                    // them undeterminable.
+                    class={cn('min-h-0 flex-1', PAGE_CANVAS)}
                   >
                     {(item) => <CalmRow item={item} />}
                   </VirtualList>

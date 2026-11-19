@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isBlankScriptType, isClassicScriptType } from './script-type';
+import { isBlankScriptType, isClassicScriptType, isJsonScriptType } from './script-type';
 
 describe('isClassicScriptType', () => {
   it.each([
@@ -52,5 +52,31 @@ describe('isBlankScriptType', () => {
   it('does not hold once anything else remains', () => {
     expect(isBlankScriptType(' module ')).toBe(false);
     expect(isBlankScriptType(' ')).toBe(false);
+  });
+});
+
+describe('isJsonScriptType', () => {
+  it.each([
+    'application/json',
+    'application/ld+json',
+    ' Application/LD+JSON ',
+    'application/json; charset=utf-8',
+    'importmap',
+    'speculationrules',
+    'text/json'
+  ])('reads %j as JSON', (type) => {
+    expect(isJsonScriptType(type)).toBe(true);
+  });
+
+  it.each([
+    '',
+    '  ',
+    'module',
+    'text/javascript',
+    'rocketlazyloadscript',
+    'jsonp',
+    'text/x-json-ish'
+  ])('reads %j as not JSON', (type) => {
+    expect(isJsonScriptType(type)).toBe(false);
   });
 });

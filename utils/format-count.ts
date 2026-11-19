@@ -57,3 +57,40 @@ export function countLabel(count: number, noun: CountNoun, partial = false): str
 export function countNoun(count: number, noun: CountNoun): string {
   return count === 1 ? noun.one : noun.other;
 }
+
+/** Compact notation, one fraction digit at most ("742", "18.6K", "1.2M"). */
+const COMPACT_OPTIONS: Intl.NumberFormatOptions = {
+  notation: 'compact',
+  maximumFractionDigits: 1
+};
+
+/** Shared compact formatter, rounding to nearest. */
+const COMPACT_FORMAT = new Intl.NumberFormat('en-US', COMPACT_OPTIONS);
+
+/** Compact formatter rounding down, so a floor never reads above its count. */
+const COMPACT_FLOOR_FORMAT = new Intl.NumberFormat('en-US', {
+  ...COMPACT_OPTIONS,
+  roundingMode: 'floor'
+});
+
+/**
+ * Format a non-negative count compactly, for narrow cells ("18.6K").
+ *
+ * @param count The count.
+ * @returns The compact figure, without a noun.
+ */
+export function formatCompactCount(count: number): string {
+  return COMPACT_FORMAT.format(count);
+}
+
+/**
+ * Format a lower bound compactly, rounded down ("524.2K" for 524,288,
+ * "999.9K" for 999,960): a figure shown after "≥" must never exceed the
+ * count it bounds, which nearest rounding would.
+ *
+ * @param count The non-negative lower bound.
+ * @returns The compact figure, without a noun or the "≥" mark.
+ */
+export function formatCompactFloor(count: number): string {
+  return COMPACT_FLOOR_FORMAT.format(count);
+}

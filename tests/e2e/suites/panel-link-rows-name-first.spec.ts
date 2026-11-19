@@ -2,16 +2,19 @@
  * Resource rows lead with the file name on real Chromium: at a 320 px panel
  * (the narrowest supported) in both palettes, every URL row on the
  * JavaScript, Stylesheets and Lazyload pages shows its file name whole —
- * not cut by the row, inside the page — while the full URL stays the row's
- * link (its `title` carrying it) beneath, and the page never scrolls
- * sideways; at a regular-tier 768 px width the settled names stay whole too.
- * The palette check reads the rendered `color-scheme` (no stored Dark/Light
- * override), not just the emulated media. The fixture's URLs are deliberately
- * deep so the URL line itself truncates long before its file name: what a
- * bare URL row would hide.
+ * not cut by the row, inside the page — while the full URL stays one step
+ * away: the Stylesheets and Lazyload rows' link (its `title` carrying it)
+ * beneath, the JavaScript row's URL preview beneath and its detail's
+ * source-link tile (href + `title`); the page never scrolls sideways; at a
+ * regular-tier 768 px width the settled names stay whole too. The palette
+ * check reads the rendered `color-scheme` (no stored Dark/Light override),
+ * not just the emulated media. The fixture's URLs are deliberately deep so
+ * the URL line itself truncates long before its file name: what a bare URL
+ * row would hide.
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import { closeScriptDetail, openScriptDetail } from '../helpers/javascript-page';
 import { expectSystemPalette, resetStoredOptions } from '../helpers/options';
 import { openPanelForFixture } from '../helpers/panel-data';
 
@@ -19,24 +22,43 @@ import { openPanelForFixture } from '../helpers/panel-data';
 const DEEP =
   'https://example.test/wp-content/plugins/a-plugin-with-a-rather-long-directory-name/assets';
 
-/** Each page under test: its route, its row hook and the file names its rows must show. */
+/**
+ * Each page under test: its route, its row hook, its rows' name hook, the
+ * file names its rows must show, and where the full URL lives — the row's
+ * own link, or (a calm row: the row opens its detail) the detail's tile.
+ */
 const PAGES = [
   {
     route: 'javascript',
-    row: '[data-fdt="script-row"][data-fdt-script-type="external"]',
-    names: ['frontend.min.js', 'vendor.js']
+    row: '[data-fdt="script-row"]',
+    name: '[data-fdt="list-row-name"]',
+    names: ['frontend.min.js', 'vendor.js'],
+    url: 'detail'
   },
   {
     route: 'stylesheets',
     row: '[data-fdt="stylesheet-row"]:has([data-fdt="resource-name"])',
-    names: ['style.min.css', 'print.css']
+    name: '[data-fdt="resource-name"]',
+    names: ['style.min.css', 'print.css'],
+    url: 'row'
   },
   {
     route: 'lazyload',
     row: '[data-fdt="resource-link"]',
-    names: ['hero-photo.jpg']
+    name: '[data-fdt="resource-name"]',
+    names: ['hero-photo.jpg'],
+    url: 'row'
   }
 ] as const;
+
+/**
+ * The file name's pattern at the end of a URL path (before its query/hash).
+ *
+ * @param name The file name.
+ */
+function fileUrlPattern(name: string): RegExp {
+  return new RegExp(`/${name.replaceAll('.', '\\.')}`);
+}
 
 /** The fixture: deep-path scripts (one delayed), stylesheets (one print-only) and an image. */
 function nameFirstPage(): string {
@@ -163,7 +185,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await expect(rows).toHaveCount(target.names.length);
         for (const [index, expected] of target.names.entries()) {
           const row = rows.nth(index);
-          const name = row.locator('[data-fdt="resource-name"]');
+          const name = row.locator(target.name);
           await expect(name).toHaveText(expected);
           await expect(name).toBeVisible();
           const fit = await nameFit(page, name);
@@ -171,14 +193,25 @@ for (const colorScheme of ['light', 'dark'] as const) {
           expect(fit.overflow, `${target.route} ${expected} inside the page`).toBeLessThanOrEqual(
             0.5
           );
-          // The full URL is still the row's link, its preview on the text's title.
-          const link = row.getByRole('link');
-          await expect(link).toHaveAttribute(
-            'href',
-            new RegExp(`/${expected.replaceAll('.', '\\.')}`)
-          );
-          const title = await link.locator('[title]').getAttribute('title');
-          expect(title?.startsWith(DEEP)).toBe(true);
+          if (target.url === 'row') {
+            // The full URL is still the row's link, its preview on the text's title.
+            const link = row.getByRole('link');
+            await expect(link).toHaveAttribute('href', fileUrlPattern(expected));
+            const title = await link.locator('[title]').getAttribute('title');
+            expect(title?.startsWith(DEEP)).toBe(true);
+          } else {
+            // The URL previews beneath the name (scheme dropped); the full URL
+            // is the detail's source-link tile: its href and its title.
+            await expect(row.locator('[data-fdt="list-row-preview"]')).toContainText(
+              DEEP.replace('https://', '')
+            );
+            const detail = await openScriptDetail(panel, row);
+            const link = detail.locator('[data-fdt="source-link"] a[href]').first();
+            await expect(link).toHaveAttribute('href', fileUrlPattern(expected));
+            const tile = detail.locator('[data-fdt="source-link-open"]');
+            expect((await tile.getAttribute('title'))?.startsWith(DEEP)).toBe(true);
+            await closeScriptDetail(panel);
+          }
         }
         await expect
           .poll(() => page.evaluate((element) => element.scrollWidth - element.clientWidth), {
@@ -193,7 +226,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         const rows = page.locator(target.row);
         await expect(rows).toHaveCount(target.names.length);
         for (const [index, expected] of target.names.entries()) {
-          const name = rows.nth(index).locator('[data-fdt="resource-name"]');
+          const name = rows.nth(index).locator(target.name);
           await expect(name).toBeVisible();
           await expect
             .poll(() => settledName(name), { message: `${target.route} ${expected} at 768 px` })

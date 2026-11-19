@@ -56,6 +56,38 @@ describe('processSerializedPage', () => {
     );
   });
 
+  it("keeps each script's served tag at the record's document position", async () => {
+    const html =
+      '<!doctype html><html><head><script type="rocketlazyloadscript" data-rocket-src="/a.js" defer></script>' +
+      '<script type="application/ld+json">{"a":1}</script></head><body><script src="/b.js" data-minify="1"></script></body></html>';
+    const result = await processSerializedPage(html);
+    const scripts = result.detections.delay_js.scripts;
+    expect(result.servedScriptTags).toHaveLength(scripts.length);
+    expect(scripts.map((script) => script.src ?? null)).toEqual(['/a.js', null, '/b.js']);
+    expect(result.servedScriptTags).toEqual([
+      {
+        tag: '<script type="rocketlazyloadscript" data-rocket-src="/a.js" defer>',
+        type: 'rocketlazyloadscript'
+      },
+      { tag: '<script type="application/ld+json">', type: 'application/ld+json' },
+      { tag: '<script src="/b.js" data-minify="1">', type: null }
+    ]);
+  });
+
+  it('keeps one bounded served tag per script of a real corpus page', async () => {
+    const result = await processSerializedPage(fixture('me-home-cached.html'));
+    const scripts = result.detections.delay_js.scripts;
+    expect(result.servedScriptTags).toHaveLength(scripts.length);
+    for (const [index, kept] of result.servedScriptTags.entries()) {
+      expect(kept?.tag.startsWith('<script')).toBe(true);
+      // A delayed record's tag carries its Delay JS type; a src record names its URL.
+      const record = scripts[index];
+      if (record?.delayed === true) expect(kept?.type).toMatch(/lazyloadscript/u);
+      if (record?.src !== undefined && record.src.length < 200 && !record.delayed)
+        expect(kept?.tag).toContain(`src="${record.src.replaceAll('&', '&amp;')}"`);
+    }
+  });
+
   it('shares one parsed tree across every consumer (no re-parse per pass)', async () => {
     // The timing budget rides on this: parsePage runs once, and the engine,
     // the preloaded-resources check and the version read all read the same

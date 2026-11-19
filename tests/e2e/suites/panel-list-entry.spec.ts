@@ -21,8 +21,8 @@ const AXE_SOURCE = readFileSync(
 /**
  * Build an inventory fixture without remote requests: enough scripts and
  * lazyload images for a multi-thousand-pixel deep scroll. Every sixth script
- * is an inline delay script with code, so any deep band holds a
- * variable-height (expandable) row; the rest are external markers.
+ * is an inline delay script with code, so any deep band mixes inline and
+ * external rows; the rest are external markers.
  * @returns The fixture HTML.
  */
 function inventoryPage(): string {
@@ -305,7 +305,26 @@ test('backward entry from below the list targets the last visible row', async ({
     await panel.emulateMedia({ reducedMotion: 'reduce' });
     await panel.setViewportSize({ width: 1280, height: 800 });
     await expect(panel.locator(ROUTES.javascript)).toBeVisible();
+    // The focus lives below the list; a backward entry press must enter at
+    // the last visible row, never at the bottom-overscan cluster the natural
+    // navigation prefers. The shell has no focusable after the page canvas
+    // (its answers live in the top bar, above it), so a focusable sentinel
+    // right after the rail-and-content row stands in for "Shift+Tab from
+    // below the list". It takes layout height (the content row shrinks), so
+    // it goes in first and the list is aligned and measured with it there.
+    await panel.evaluate(() => {
+      const row = document.querySelector('[data-fdt="panel-content"]')?.parentElement;
+      if (row === null || row === undefined) throw new Error('content row not mounted');
+      const sentinel = document.createElement('button');
+      sentinel.type = 'button';
+      sentinel.dataset.e2eBelowList = '';
+      sentinel.textContent = 'below the list';
+      row.after(sentinel);
+    });
     await alignDeepScroll(panel, ROUTES.javascript, 150);
+    // Focused before the measure: a focus that scrolls anything is measured too.
+    const below = panel.locator('[data-e2e-below-list]');
+    await below.focus();
     const before = await panel.evaluate(
       (sel) =>
         (document.querySelector(`${sel} [data-fdt="virtual-list"]`) as HTMLElement).scrollTop,
@@ -330,23 +349,6 @@ test('backward entry from below the list targets the last visible row', async ({
       if (last === null) throw new Error('no band row rendered');
       return last;
     }, ROUTES.javascript);
-    // The focus lives below the list; a backward entry press must enter at
-    // the last visible row, never at the bottom-overscan cluster the natural
-    // navigation prefers. The shell has no focusable after the page canvas
-    // (its answers live in the top bar, above it), so a focusable sentinel
-    // right after the rail-and-content row stands in for "Shift+Tab from
-    // below the list".
-    await panel.evaluate(() => {
-      const row = document.querySelector('[data-fdt="panel-content"]')?.parentElement;
-      if (row === null || row === undefined) throw new Error('content row not mounted');
-      const sentinel = document.createElement('button');
-      sentinel.type = 'button';
-      sentinel.dataset.e2eBelowList = '';
-      sentinel.textContent = 'below the list';
-      row.after(sentinel);
-    });
-    const below = panel.locator('[data-e2e-below-list]');
-    await below.focus();
     await panel.keyboard.press('Shift+Tab');
     const entry = await readEntry(panel, ROUTES.javascript);
     expectVisibleEntry(entry);
@@ -361,7 +363,7 @@ test('backward entry from below the list targets the last visible row', async ({
   }
 });
 
-test('variable heights and an expanded code row keep the entry geometry honest', async ({
+test('a real row remeasure (compact rows stack their chips) keeps the entry geometry honest', async ({
   extension
 }) => {
   await serveEntryFixture(extension);
@@ -372,42 +374,30 @@ test('variable heights and an expanded code row keep the entry geometry honest',
     await panel.emulateMedia({ reducedMotion: 'reduce' });
     await panel.setViewportSize({ width: 1280, height: 800 });
     await expect(panel.locator(ROUTES.javascript)).toBeVisible();
+    // Variable heights for real: narrowed to the compact tier, every row
+    // stacks its chips onto a third line, so each rendered row remeasures
+    // (taller) while the list sits deep — the virtualizer's offsets move
+    // under the band, the work the entry geometry must stay honest through.
+    await alignDeepScroll(panel, ROUTES.javascript, 150);
+    // Every row carries a chip (all delayed), so any rendered row tells the height.
+    const rowHeight = (): Promise<number> =>
+      panel
+        .locator(`${ROUTES.javascript} [data-fdt="virtual-list"] [data-index]`)
+        .first()
+        .evaluate((row) => row.getBoundingClientRect().height);
+    const regularHeight = await rowHeight();
+    await panel.setViewportSize({ width: 420, height: 800 });
+    const bar = panel.locator(`${ROUTES.javascript} [data-fdt="facet-bar"]`);
+    await expect(bar).toHaveAttribute('data-fdt-compact', '');
+    await expect.poll(rowHeight).toBeGreaterThan(regularHeight);
     const alignedIndex = await alignDeepScroll(panel, ROUTES.javascript, 150);
-    // A variable-height row must live in the settled band: the fixture
-    // plants an inline delay script (code-bearing, toggleable) every sixth
-    // row, so the rendered window at the band top holds one. Expanding it at
-    // or below the band top cannot adjust the scroll upward (only rows above
-    // the viewport do that), so the entry geometry stays meaningful.
-    const expandIndex = await panel.evaluate(
-      ({ sel, from }: { sel: string; from: string }) => {
-        const scroller = document.querySelector(`${sel} [data-fdt="virtual-list"]`);
-        if (!(scroller instanceof HTMLElement)) throw new Error('list not mounted');
-        const rows = Array.from(scroller.querySelectorAll<HTMLElement>('[data-index]'))
-          .map((row) => ({ element: row, index: Number(row.dataset.index) }))
-          .filter((row) => row.index >= Number(from))
-          .sort((left, right) => left.index - right.index);
-        const expandable = rows.find(
-          (row) => row.element.querySelector('[data-fdt="script-code-toggle"]') !== null
-        );
-        if (expandable === undefined) throw new Error('no code row at the band');
-        return String(expandable.index);
-      },
-      { sel: ROUTES.javascript, from: alignedIndex }
-    );
-    const target = panel.locator(`${ROUTES.javascript} [data-index="${expandIndex}"]`);
-    const toggle = target.locator('[data-fdt="script-code-toggle"]').first();
-    const collapsed = await target.evaluate((row) => row.getBoundingClientRect().height);
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await expect
-      .poll(() => target.evaluate((row) => row.getBoundingClientRect().height))
-      .toBeGreaterThan(collapsed);
     const before = await panel.evaluate(
       (sel) =>
         (document.querySelector(`${sel} [data-fdt="virtual-list"]`) as HTMLElement).scrollTop,
       ROUTES.javascript
     );
-    await panel.locator(`${ROUTES.javascript} input[type="search"]`).focus();
+    // The compact bar's last control before the list is its Filters button.
+    await bar.locator('[data-fdt="facet-filters-button"]').focus();
     await panel.keyboard.press('Tab');
     const entry = await readEntry(panel, ROUTES.javascript);
     expectVisibleEntry(entry, true);

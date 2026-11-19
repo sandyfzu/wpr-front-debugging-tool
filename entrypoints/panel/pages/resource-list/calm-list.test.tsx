@@ -353,6 +353,8 @@ describe('calm rows', () => {
     ]);
     const scroller = root.querySelector('[data-fdt="virtual-list"]') as HTMLElement;
     expect(scroller.className).not.toMatch(/border|rounded-md/u);
+    // Opaque in the shell's canvas color: it backs its overscan rows' text.
+    expect(scroller.className).toContain('bg-surface-0');
     for (const row of root.querySelectorAll<HTMLElement>('[data-fdt="resource-row"]')) {
       expect(row.className).not.toContain('border-t');
       expect(row.className).toContain('min-h-14.5');
@@ -704,7 +706,10 @@ describe('drill-in (content < the split width)', () => {
     const drill = root.querySelector('[data-fdt="drill-detail"]') as HTMLElement;
     expect(drill.hasAttribute('data-fdt-view-enter')).toBe(true);
     const view = root.querySelector('[data-fdt="calm-list-view"]') as HTMLElement;
-    expect(view.className).toContain('invisible');
+    // Covered by the opaque drill, never `visibility`-hidden (a reduced-motion
+    // transition would keep the row unfocusable when Back restores focus).
+    expect(drill.className).toContain('bg-surface-0');
+    expect(view.className).not.toContain('invisible');
     expect(view.hasAttribute('inert')).toBe(true);
     expect(document.activeElement).toBe(within(drill).getByRole('button', { name: 'Images' }));
     expect(drill.querySelector('[data-fdt="drill-position"]')?.textContent).toBe('2 of 5');

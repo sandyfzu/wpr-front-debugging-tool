@@ -16,6 +16,7 @@ import {
   type RucssStartRequest
 } from './rucss-test';
 import { parseScriptSourceRequest, type ScriptSourceRequest } from './script-source';
+import { parseServedScriptTagRequest, type ServedScriptTagRequest } from './served-script-tag';
 import { parseBeaconTestRequest, type BeaconTestRequest } from './beacon-test';
 import { parseLcpAnalysisRequest, type LcpAnalysisRequest } from './lcp-analysis';
 import { numericTabId } from './sender';
@@ -26,6 +27,7 @@ export interface TabRelayPayloads {
   processPageData: undefined;
   getFdtData: undefined;
   getScriptSourceChunk: ScriptSourceRequest;
+  getServedScriptTag: ServedScriptTagRequest;
   startRucssTest: RucssStartRequest;
   applyRucssTest: RucssApplyRequest;
   runBeaconTest: BeaconTestRequest;
@@ -92,6 +94,11 @@ export const TAB_RELAY_ASKS: { readonly [K in TabRelayAsk]: TabRelayAskRow<K> } 
       return { value: { snapshotId, scriptIndex, offset } };
     },
     forward: (asks, tabId, request) => asks.getScriptSourceChunk(tabId, request)
+  },
+  // The guard rebuilds the request from its two fields only.
+  getServedScriptTag: {
+    parsePayload: (input) => box(parseServedScriptTagRequest(input)),
+    forward: (asks, tabId, request) => asks.getServedScriptTag(tabId, request)
   },
   // Both guards rebuild their request from known fields only.
   startRucssTest: {

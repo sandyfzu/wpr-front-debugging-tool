@@ -140,9 +140,10 @@ test.describe('panel find navigation (wire-delivered)', () => {
       await expect.poll(() => markedRowName(panel)).toBe('deep-01');
 
       // User scrolling stays the user's own. The push is bounded by the
-      // live viewport geometry (measured now, not seeded by row estimates),
-      // so the marked row provably stays mounted even with zero overscan —
-      // the marker claim is valid by construction, not windowing luck.
+      // live geometry (measured now, not seeded by row estimates): it stops
+      // short of the marked row's bottom edge, so the row stays inside the
+      // viewport and provably mounted even with zero overscan — the marker
+      // claim is valid by construction, not windowing luck.
       const base = await panel.evaluate(() => {
         const list = document.querySelector<HTMLElement>('[data-fdt-page] [role="list"]');
         if (list === null) throw new Error('list missing for the scroll probe');
@@ -155,10 +156,12 @@ test.describe('panel find navigation (wire-delivered)', () => {
           throw new Error('list or marked row missing for the scroll probe');
         }
         const toRowBottom = row.getBoundingClientRect().bottom - list.getBoundingClientRect().top;
-        const distance = Math.min(350, Math.max(120, list.clientHeight - toRowBottom - 4));
+        const distance = Math.min(350, Math.floor(toRowBottom) - 4);
         list.scrollTop += distance;
         return distance;
       });
+      // A real push, not a nudge: most of a row's height.
+      expect(pushed).toBeGreaterThanOrEqual(40);
       await panel.waitForTimeout(350);
       const pushedTop = await panel.evaluate(() => {
         const list = document.querySelector<HTMLElement>('[data-fdt-page] [role="list"]');

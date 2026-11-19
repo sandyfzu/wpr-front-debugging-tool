@@ -31,7 +31,7 @@ import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/us
 import { DELAYED, liveScript } from './runtime-fixtures';
 import { createRuntimeStatesHandle, RuntimeStatesSection } from './runtime-section';
 import { createRuntimeStatesSession } from './runtime-session';
-import type { CodeBlockSeams } from './script-row';
+import type { CodeBlockSeams } from './code-seams';
 
 /** Every row, keyed as the list keys them (no layout in the test DOM). */
 const everyRow: VirtualizerFactory = (options) => ({

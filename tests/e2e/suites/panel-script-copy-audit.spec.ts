@@ -1,6 +1,10 @@
 /** Independent browser adversarial checks for exhausted inventories and request boundaries. */
 import { expect, test } from '../helpers/extension';
+import { openScriptDetail, scriptRowNamed } from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
+
+/** The clipboard fixture's external script row (its URL's file name). */
+const EXTERNAL_NAME = 'script.js';
 
 test('keeps keyboard focus after an asynchronous complete-source read', async ({ extension }) => {
   const { panel, fixture } = await openPanelForFixture(extension, '/clipboard/scripts.html', {
@@ -36,7 +40,9 @@ test('keeps keyboard focus after an asynchronous complete-source read', async ({
             : callback
         )) as typeof original;
     });
-    const copy = panel.getByRole('button', { name: 'Script URL — copy' });
+    // The copy action lives in the row's detail header.
+    const detail = await openScriptDetail(panel, scriptRowNamed(panel, EXTERNAL_NAME));
+    const copy = detail.getByRole('button', { name: 'Script URL — copy' });
     await copy.focus();
     await copy.press('Enter');
     await expect(copy).toHaveAttribute('aria-busy', 'true');
@@ -84,7 +90,9 @@ test('guards keyboard and mouse repeats without reclaiming focus moved during a 
         return loose(tabId, message, options, callback);
       }) as typeof original;
     });
-    const copy = panel.getByRole('button', { name: 'Script URL — copy' });
+    // The copy action lives in the row's detail header.
+    const detail = await openScriptDetail(panel, scriptRowNamed(panel, EXTERNAL_NAME));
+    const copy = detail.getByRole('button', { name: 'Script URL — copy' });
     await copy.focus();
     await copy.press('Enter');
     await expect(copy).toHaveAttribute('aria-busy', 'true');
@@ -149,7 +157,8 @@ test('copies a row beyond the entire inventory text budget through the real clip
     await expect(row).toBeVisible();
     await expect(row).toContainText('Content not captured (size budget)');
     await extension.browserContext.grantPermissions(['clipboard-read', 'clipboard-write']);
-    await row.getByRole('button', { name: 'Inline script — copy' }).click();
+    const detail = await openScriptDetail(panel, row);
+    await detail.getByRole('button', { name: 'Inline script — copy' }).click();
     await expect(panel.getByText('Inline script copied', { exact: true })).toBeVisible();
     expect(await panel.evaluate(() => navigator.clipboard.readText())).toBe(tail);
 

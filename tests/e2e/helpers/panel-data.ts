@@ -53,6 +53,8 @@ export interface InspectedPanel {
  * page origin the undefined-references reader enumerates through. That stub
  * answers with suite-provided values only; the shipped adapter's shape
  * checks, the definition search and the store flow around it are app code.
+ * With {@link OpenPanelOptions.openResource} it also stamps a recording
+ * `devtools.panels.openResource` (see {@link OPEN_RESOURCE_CALLS}).
  *
  * Exported for the suites that need the shim and the panel document's own
  * boot hash in different orders (the report's inspected-URL stub rides one
@@ -60,15 +62,35 @@ export interface InspectedPanel {
  *
  * @param tabId The tab id a real DevTools window would report.
  * @param inspect The suite-provided resource stub, when one is needed.
+ * @param openResource How the `panels.openResource` stub answers; omitted =
+ *   no `panels` at all (the capability a standalone page lacks).
  * @returns The init script text for {@link Page.addInitScript}.
  */
-export function devtoolsShim(tabId: number, inspect?: OpenPanelOptions['inspect']): string {
+export function devtoolsShim(
+  tabId: number,
+  inspect?: OpenPanelOptions['inspect'],
+  openResource?: OpenPanelOptions['openResource']
+): string {
   // The whole stub rides as a JSON literal: the init script self-contains it,
   // sharing no state with the suite beyond this call's arguments.
   const stub =
     inspect === undefined ? null : { origin: inspect.origin, resources: inspect.resources };
   return `(() => {
     const stub = ${JSON.stringify(stub)};
+    const openMode = ${JSON.stringify(openResource ?? null)};
+    // DevTools' own answer shapes: success is a status record with code OK;
+    // a failure arrives as the callback argument (never runtime.lastError
+    // alone), its details carrying the URL.
+    const calls = [];
+    window[${JSON.stringify(OPEN_RESOURCE_CALLS)}] = calls;
+    const panels = openMode === null ? null : {
+      openResource(url, lineNumber, callback) {
+        calls.push([url, lineNumber]);
+        callback(openMode === 'fail'
+          ? { isError: true, code: 'E_NOTFOUND', description: 'Object not found: %s', details: [url] }
+          : { code: 'OK', description: 'OK', details: [] });
+      }
+    };
     const inspectedWindow = stub === null
       ? { tabId: ${JSON.stringify(tabId)} }
       : {
@@ -84,13 +106,32 @@ export function devtoolsShim(tabId: number, inspect?: OpenPanelOptions['inspect'
         };
     const stamp = (namespace) => {
       if (namespace === undefined || namespace === null) return false;
-      namespace['devtools'] = { inspectedWindow };
+      namespace['devtools'] = panels === null ? { inspectedWindow } : { inspectedWindow, panels };
       return true;
     };
     const win = window;
     stamp(win['chrome']);
     stamp(win['browser']);
   })()`;
+}
+
+/**
+ * The panel window's property holding the `openResource` stub's calls, in
+ * order: `[url, lineNumber]` each (read with {@link openResourceCalls}).
+ */
+export const OPEN_RESOURCE_CALLS = '__fdtOpenResourceCalls';
+
+/**
+ * The calls the `panels.openResource` stub recorded so far.
+ *
+ * @param panel The panel page opened with {@link OpenPanelOptions.openResource}.
+ * @returns Each call's `[url, lineNumber]`, in order (empty without the stub).
+ */
+export async function openResourceCalls(panel: Page): Promise<[string, number][]> {
+  return await panel.evaluate(
+    (key) => (window as unknown as Record<string, [string, number][] | undefined>)[key] ?? [],
+    OPEN_RESOURCE_CALLS
+  );
 }
 
 /** One script resource the {@link OpenPanelOptions.inspect} stub answers with. */
@@ -144,6 +185,12 @@ export interface OpenPanelOptions {
     /** The page's script resources (the fixture page's external scripts). */
     readonly resources: readonly InspectedResourceStub[];
   };
+  /**
+   * A recording `devtools.panels.openResource` (the Open in Sources seam):
+   * `ok` answers DevTools' success record, `fail` its `E_NOTFOUND` status
+   * record. Omitted, the page has no `panels` (its source links open tabs).
+   */
+  readonly openResource?: 'ok' | 'fail';
 }
 
 /**
@@ -177,7 +224,7 @@ export async function openPanelForFixture(
     });
   // Before any module script, so the accessor's feature-detection reads the
   // stamped id at its first read (the boot flight's timing).
-  await panel.addInitScript(devtoolsShim(fixture.tabId, options.inspect));
+  await panel.addInitScript(devtoolsShim(fixture.tabId, options.inspect, options.openResource));
   if (options.panelInit !== undefined) await panel.addInitScript(options.panelInit);
   await panel.goto(`${await panelPageUrl(extension)}${options.bootHash ?? ''}`, {
     waitUntil: 'load'

@@ -67,6 +67,7 @@ import {
 import { cn } from '../../../../utils/cn';
 import { formatCount, type CountNoun } from '../../../../utils/format-count';
 import { useDetailPresence } from '../../state/detail-presence';
+import { PAGE_CANVAS } from '../page-frame';
 import { listKeyIntent } from './list-keys';
 import { createRowFocus, type RowFocus } from './row-focus';
 import { mergeScrollRequests, type ScrollRequests } from './scroll-requests';
@@ -77,6 +78,10 @@ export interface DetailCopy {
   readonly text: string;
   /** The control's accessible name and toast noun ("Script URL"). */
   readonly label: string;
+  /** Read the exact text when `text` is a bounded stand-in (the copy control's `loadText`). */
+  readonly loadText?: (signal: AbortSignal) => Promise<string>;
+  /** The failure toast's remedy when `loadText` fails. */
+  readonly loadFailure?: string;
 }
 
 /**
@@ -402,7 +407,15 @@ function DetailHeading<Row>(props: {
         </h2>
       </div>
       <Show when={copy()}>
-        {(action) => <CopyButton text={action().text} label={action().label} showLabel={false} />}
+        {(action) => (
+          <CopyButton
+            text={action().text}
+            loadText={action().loadText}
+            sourceFailureDescription={action().loadFailure}
+            label={action().label}
+            showLabel={false}
+          />
+        )}
       </Show>
       {props.end}
     </div>
@@ -589,7 +602,11 @@ export function DrillDetail<Row>(props: DetailViewProps<Row>): JSX.Element {
           onKeyDown={(event) => {
             props.controller.onDetailKeyDown(event);
           }}
-          class="absolute inset-0 grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] [grid-template-areas:'bar'_'body'_'actions'] @regular:grid-cols-[minmax(0,1fr)_auto] @regular:grid-rows-[auto_minmax(0,1fr)] @regular:[grid-template-areas:'bar_actions'_'body_body']"
+          // Opaque: it covers the list it replaces (laid out and inert beneath).
+          class={cn(
+            "absolute inset-0 grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] [grid-template-areas:'bar'_'body'_'actions'] @regular:grid-cols-[minmax(0,1fr)_auto] @regular:grid-rows-[auto_minmax(0,1fr)] @regular:[grid-template-areas:'bar_actions'_'body_body']",
+            PAGE_CANVAS
+          )}
         >
           <div
             data-fdt="drill-bar"

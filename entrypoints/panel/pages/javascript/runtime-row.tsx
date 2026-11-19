@@ -24,7 +24,7 @@ import type { LiveScriptRecord } from '../../../../lib/script-runtime/read-live'
 import { capTitle } from '../../../../utils/cap-text';
 import { cn } from '../../../../utils/cn';
 import type { RuntimeRow } from './runtime-rows';
-import type { CodeBlockSeams } from './script-row';
+import type { CodeBlockSeams } from './code-seams';
 
 /** The detail's words for a field the script does not have. */
 export const NONE_VALUE = 'None';

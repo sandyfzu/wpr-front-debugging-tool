@@ -61,6 +61,7 @@ function row(overrides: Partial<JsScriptResource> = {}): JsScriptResource {
     fdtExcluded: null,
     minified: false,
     combined: false,
+    minifyAttribute: false,
     originalType: null,
     ...overrides
   };

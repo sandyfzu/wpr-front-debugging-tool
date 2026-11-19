@@ -46,6 +46,8 @@ export interface JsScriptResource {
   readonly minified: boolean;
   /** This file is a Combine JS bundle (see `scriptMinifyState`). */
   readonly combined: boolean;
+  /** The tag carries WP Rocket's minify stamp — a tag fact; `minified` is the page-proven state. */
+  readonly minifyAttribute: boolean;
   /** A delayed script's original `type`, `null` when it has none. */
   readonly originalType: string | null;
 }
@@ -398,6 +400,7 @@ export function buildScriptRows(
       fdtExcluded: script.fdtExcluded,
       minified,
       combined,
+      minifyAttribute: script.minifyAttribute,
       // The detection records the original type on delayed scripts only.
       originalType: script.delayed ? (script.originalType ?? null) : null
     };

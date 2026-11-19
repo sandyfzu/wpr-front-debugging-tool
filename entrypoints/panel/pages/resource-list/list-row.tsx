@@ -79,23 +79,25 @@ type ColumnSet = 'size-states' | 'size' | 'states' | 'none';
  * (the stylesheet is generated from the source text). Compact: name (+ size)
  * on the first line, the preview under it, chips last; `@regular`: columns.
  * Tracks: size `4rem` (the mockup's 60 px on the 4 px grid), states
- * `10rem` (two chips side by side, ≈ 156 px).
+ * `14rem` (224 px: the widest two chips with their source icons plus a WP
+ * Rocket "+N" — "Excluded" + "Combined" + rocket "+4" — measure 210 px in
+ * Chromium's 11 px system-ui; the rest is room for wider system fonts).
  */
 const ROW_GRIDS: Readonly<Record<ListRowLines, Readonly<Record<ColumnSet, string>>>> = {
   two: {
     'size-states':
-      'grid-cols-[minmax(0,1fr)_auto] [grid-template-areas:"name_size"_"preview_preview"_"states_states"] @regular:grid-cols-[minmax(0,1fr)_4rem_10rem] @regular:[grid-template-areas:"name_size_states"_"preview_size_states"]',
+      'grid-cols-[minmax(0,1fr)_auto] [grid-template-areas:"name_size"_"preview_preview"_"states_states"] @regular:grid-cols-[minmax(0,1fr)_4rem_14rem] @regular:[grid-template-areas:"name_size_states"_"preview_size_states"]',
     size: 'grid-cols-[minmax(0,1fr)_auto] [grid-template-areas:"name_size"_"preview_preview"] @regular:grid-cols-[minmax(0,1fr)_4rem] @regular:[grid-template-areas:"name_size"_"preview_size"]',
     states:
-      'grid-cols-[minmax(0,1fr)] [grid-template-areas:"name"_"preview"_"states"] @regular:grid-cols-[minmax(0,1fr)_10rem] @regular:[grid-template-areas:"name_states"_"preview_states"]',
+      'grid-cols-[minmax(0,1fr)] [grid-template-areas:"name"_"preview"_"states"] @regular:grid-cols-[minmax(0,1fr)_14rem] @regular:[grid-template-areas:"name_states"_"preview_states"]',
     none: 'grid-cols-[minmax(0,1fr)] [grid-template-areas:"name"_"preview"]'
   },
   one: {
     'size-states':
-      'grid-cols-[minmax(0,1fr)_auto] [grid-template-areas:"name_size"_"preview_preview"_"states_states"] @regular:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_4rem_10rem] @regular:[grid-template-areas:"name_preview_size_states"]',
+      'grid-cols-[minmax(0,1fr)_auto] [grid-template-areas:"name_size"_"preview_preview"_"states_states"] @regular:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_4rem_14rem] @regular:[grid-template-areas:"name_preview_size_states"]',
     size: 'grid-cols-[minmax(0,1fr)_auto] [grid-template-areas:"name_size"_"preview_preview"] @regular:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_4rem] @regular:[grid-template-areas:"name_preview_size"]',
     states:
-      'grid-cols-[minmax(0,1fr)] [grid-template-areas:"name"_"preview"_"states"] @regular:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_10rem] @regular:[grid-template-areas:"name_preview_states"]',
+      'grid-cols-[minmax(0,1fr)] [grid-template-areas:"name"_"preview"_"states"] @regular:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_14rem] @regular:[grid-template-areas:"name_preview_states"]',
     none: 'grid-cols-[minmax(0,1fr)] [grid-template-areas:"name"_"preview"] @regular:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @regular:[grid-template-areas:"name_preview"]'
   }
 };
@@ -125,8 +127,8 @@ export const CALM_ROW_ESTIMATES = {
   twoLine: 58,
   /** A one-line row at `@regular` (36 px floor). */
   oneLine: 36,
-  /** A compact row whose chips stack onto a third line. */
-  stacked: 84
+  /** A compact row whose chips stack onto a third line (measured in Chromium: 78 px). */
+  stacked: 78
 } as const;
 
 /** The gap between calm rows (px; T-3), passed to the virtual list's `gap`. */

@@ -47,6 +47,7 @@ import {
   typeRow
 } from '../helpers/exclusion-overlay';
 import { expect, test, type ExtensionDriver } from '../helpers/extension';
+import { pickFacet, setFacetToggle } from '../helpers/javascript-page';
 import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
 import {
   applySimulated,
@@ -402,7 +403,7 @@ test.describe('Delay JS simulation over real sessions', () => {
       try {
         await scripts.setViewportSize({ width: 1280, height: 1600 });
         // Filtered to the delayed rows, so every one renders (the list is virtual).
-        await scripts.locator('[data-fdt-filter-chip="delayed"]').click();
+        await pickFacet(scripts, 'delayed');
         await expect(scripts.locator('[data-fdt="script-row"]')).toHaveCount(SCENARIO_DELAYED - 1, {
           timeout: FRESH.timeout
         });
@@ -416,7 +417,9 @@ test.describe('Delay JS simulation over real sessions', () => {
         await expect(
           scripts.locator('[data-fdt-state="delayed"] .lucide-flask-conical')
         ).toHaveCount(SCENARIO_DELAYED - 1);
-        await scripts.locator('[data-fdt-filter-chip="excluded"]').click();
+        // Facets combine: Delay back to Any, then the Excluded toggle alone.
+        await pickFacet(scripts, 'any', 'Delay');
+        await setFacetToggle(scripts, 'excluded', true);
         const lifecycle = scripts.locator('[data-fdt="script-row"]', {
           hasText: 'fdt-delayed-lifecycle'
         });
