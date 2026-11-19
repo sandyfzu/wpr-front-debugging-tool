@@ -1,7 +1,7 @@
 /**
  * The panel's app shell: the top bar (identity, the page's answers and the
- * shell controls) above the icon rail (the nav) and the content region
- * beside it that renders the route bodies and the data-state surfaces
+ * shell controls) above the nav column (labeled sidebar or icon rail) and
+ * the content region beside it that renders the route bodies and the data-state surfaces
  * around them.
  *
  * Boot states are real states, not theater: `fetching` renders the skeleton,
@@ -39,7 +39,10 @@ import { selectTabPushConnect } from '../../lib/messaging/tab-push-client';
 import { createLogger } from '../../lib/logger';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { panelColdStart } from './cold-start';
-import { AdaptiveNav } from './nav/adaptive-nav';
+import { Sidebar } from './nav/sidebar';
+import { createNavPinState } from './nav/nav-pin';
+import { NAV_PIN_DEFAULT, type NavPin } from '../../lib/panel/nav-mode';
+import { setNavPin } from '../../lib/storage/panel-nav-pin';
 import { createHashRoute } from './router';
 import { navRoute, type RouteId } from './routes';
 import { PageCanvas } from './pages/page-frame';
@@ -123,6 +126,10 @@ export type AppProps = {
    * `ResizeObserver` on the shell element.
    */
   readonly observeShellWidth?: InlineSizeObserver;
+  /** The sidebar pin the boot read; absent, `auto` (the width rule). */
+  readonly navPin?: NavPin;
+  /** The pin writer (tests inject doubles); absent, the storage item. */
+  readonly writeNavPin?: (pin: NavPin) => Promise<void>;
 };
 
 /** The error branch's payload (the error state's fields the view reads). */
@@ -130,19 +137,6 @@ interface DataError {
   /** The user-facing cause the view renders. */
   readonly cause: string;
 }
-
-/**
- * The nav column: the icon rail beside the content.
- *
- * `z-10` is the column's paint priority over the content region: below the
- * panel's usable minimum nothing can absorb the loss of height, so the
- * column's overflow (its "More pages" trigger) must never paint under a
- * stacked page element and become pointer-blocked. At any normal height
- * nothing overflows and the rule is inert; the fixed overlays (dialog
- * z-40+, tooltips/menu portals z-50) rank above it unchanged. The top bar
- * carries the same priority.
- */
-const HEADER = 'relative z-10 flex shrink-0 flex-col gap-2 border-r border-line-2 bg-surface-1 p-2';
 
 /**
  * Render the panel shell.
@@ -228,6 +222,8 @@ export function PanelApp(props: AppProps): JSX.Element {
   const paletteChord = createPanelChordBinding(props.paletteChord ?? realPanelChordDeps(log));
   // eslint-disable-next-line solid/reactivity
   const shellWidth = createShellWidth(props.observeShellWidth);
+  // eslint-disable-next-line solid/reactivity
+  const navPin = createNavPinState(props.navPin ?? NAV_PIN_DEFAULT, props.writeNavPin ?? setNavPin);
   // The top bar's appearance menu, writing through the shared failure guard.
   // eslint-disable-next-line solid/reactivity
   const appearance = props.appearance;
@@ -367,9 +363,12 @@ export function PanelApp(props: AppProps): JSX.Element {
               <div class={STACK_ROW}>
                 {/* The nav column (not a landmark itself: the top bar is the
                     page's banner; the nav inside is the navigation landmark). */}
-                <div data-fdt="panel-header" class={HEADER}>
-                  <AdaptiveNav route={router.route} data={navData} />
-                </div>
+                <Sidebar
+                  route={router.route}
+                  data={navData}
+                  width={shellWidth.width}
+                  pin={navPin}
+                />
                 <main data-fdt="panel-content" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
                   <ErrorBoundary
                     fallback={(error: unknown) => {

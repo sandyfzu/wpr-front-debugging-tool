@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { countLabel, countNoun, formatCount, type CountNoun } from './format-count';
+import {
+  countLabel,
+  countNoun,
+  formatCount,
+  formatCountFloor,
+  type CountNoun
+} from './format-count';
 
 describe('formatCount', () => {
   it.each([
@@ -11,6 +17,15 @@ describe('formatCount', () => {
     [1234567, '1,234,567']
   ])('formats %i as %s without adding a noun or floor marker', (count, expected) => {
     expect(formatCount(count)).toBe(expected);
+  });
+});
+
+describe('formatCountFloor', () => {
+  it('adds the floor marker only to a partial count', () => {
+    expect(formatCountFloor(0, false)).toBe('0');
+    expect(formatCountFloor(1, true)).toBe('1+');
+    expect(formatCountFloor(5000, false)).toBe('5,000');
+    expect(formatCountFloor(5000, true)).toBe('5,000+');
   });
 });
 

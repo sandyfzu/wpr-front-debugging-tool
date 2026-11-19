@@ -7,6 +7,7 @@ import type { Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { expect, openFixturePage, panelPageUrl, test } from '../helpers/extension';
 import { openPanelForFixture } from '../helpers/panel-data';
+import { settleFrames } from '../helpers/frames';
 import { resetStoredOptions } from '../helpers/options';
 
 // One profile serves every suite: the options this file writes go back to the
@@ -371,6 +372,8 @@ test('JavaScript virtual lists and nested code keep fixed native bars at narrow 
     await panel.emulateMedia({ reducedMotion: 'reduce' });
     for (const width of [320, 480, 768, 1280]) {
       await panel.setViewportSize({ width, height: 800 });
+      // The nav form follows the shell width in the next frame (before it paints).
+      await settleFrames(panel);
       await expect.poll(() => list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
       expect(
         await list.evaluate((el: HTMLElement) => ({

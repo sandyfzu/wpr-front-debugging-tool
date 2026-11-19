@@ -13,6 +13,7 @@
 import type { HeaderRowVM, HeadersViewModel } from '../../../../lib/panel/headers-view-model';
 import type { CountNoun } from '../../../../lib/panel/list-behavior';
 import { isRepresentableStampMs } from '../../../../lib/detection/describe';
+import { HEADER_NOUN } from '../../../../lib/detection/count-nouns';
 import { shownHeader, type ShownHeader } from '../../../../lib/panel/shown-header';
 import type { DataState } from '../../state/fdt-state-machine';
 import type { PageCookies } from '../../../../lib/wp-rocket/types';
@@ -29,8 +30,8 @@ export const SECTION_TITLES: Readonly<Record<InventorySectionId, string>> = {
 
 /** What each section's heading count counts. */
 export const SECTION_NOUNS: Readonly<Record<InventorySectionId, CountNoun>> = {
-  caching: { one: 'header', other: 'headers' },
-  other: { one: 'header', other: 'headers' },
+  caching: HEADER_NOUN,
+  other: HEADER_NOUN,
   cookies: { one: 'cookie', other: 'cookies' }
 };
 

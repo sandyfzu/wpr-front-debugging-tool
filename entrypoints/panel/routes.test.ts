@@ -9,6 +9,7 @@ import type { NavLiveState } from './routes';
 import { DEFAULT_ROUTE, NAV_GROUPS, NAV_ROUTES, ROUTE_IDS, navRoute } from './routes';
 import { PAGES } from './pages';
 import { makeDelayScript, makeFdtData, makeLazyImage } from './state/fixtures';
+import { HEADER_NOUN, SCRIPT_NOUN } from '../../lib/detection/count-nouns';
 
 /** Resolve one row's selector for a loaded-data fixture (guards the row set below). */
 function liveStateOf(
@@ -156,7 +157,11 @@ describe('nav live-state selectors', () => {
         }
       }
     });
-    expect(liveStateOf('javascript', loaded)).toEqual({ text: 'delayed 2/3', tone: 'info' });
+    expect(liveStateOf('javascript', loaded)).toEqual({
+      text: 'delayed 2/3',
+      tone: 'info',
+      short: '2/3'
+    });
     // Feature off (or the whole payload unloaded) = nothing to say.
     expect(
       liveStateOf('javascript', makeFdtData()) // present: false in the empty baseline
@@ -179,7 +184,8 @@ describe('nav live-state selectors', () => {
       });
     expect(liveStateOf('javascript', rows('simulated'))).toEqual({
       text: 'delayed 1/2',
-      tone: 'info'
+      tone: 'info',
+      short: '1/2'
     });
     expect(liveStateOf('javascript', rows('unverified'))).toBeNull();
     expect(liveStateOf('javascript', rows())).toBeNull();
@@ -202,6 +208,7 @@ describe('nav live-state selectors', () => {
         }
       });
     expect(liveStateOf('javascript', delay(5000, 6000, true))?.text).toBe('delayed 6,000/5,000+');
+    expect(liveStateOf('javascript', delay(5000, 6000, true))?.short).toBe('6,000/5,000+');
     // No mark but a count over the shown list: still marked, never "6/5".
     expect(liveStateOf('javascript', delay(5, 6))?.text).toBe('delayed 6/5+');
     expect(liveStateOf('javascript', delay(5, 5))?.text).toBe('delayed 5/5');
@@ -217,6 +224,7 @@ describe('nav live-state selectors', () => {
       }
     });
     expect(liveStateOf('lazyload', lazy)?.text).toBe('5,000+ images');
+    expect(liveStateOf('lazyload', lazy)?.short).toBe('5,000+');
 
     const links = makeFdtData({
       preloadedResources: {
@@ -226,6 +234,7 @@ describe('nav live-state selectors', () => {
       }
     });
     expect(liveStateOf('preloaded-resources', links)?.text).toBe('5,000+ hints');
+    expect(liveStateOf('preloaded-resources', links)?.short).toBe('5,000+');
     // The hint inventory reads its own mark, never the preload list's.
     const hints = makeFdtData({
       preloadedResources: {
@@ -282,6 +291,7 @@ describe('nav live-state selectors', () => {
 
   it('distinguishes monitoring from found on the references row', () => {
     // Nothing found while the page still loads = the finder is watching.
+    // No figure: the labeled sidebar shows a tone dot (the phrase stays the description).
     expect(liveStateOf('undefined-references', makeFdtData({ allScriptsLoaded: false }))).toEqual({
       text: 'Monitoring',
       tone: 'neutral'
@@ -294,7 +304,7 @@ describe('nav live-state selectors', () => {
         'undefined-references',
         makeFdtData({ allScriptsLoaded: true, undefinedReferencesOnPage: ['jQuery'] })
       )
-    ).toEqual({ text: '1 found', tone: 'warn' });
+    ).toEqual({ text: '1 found', tone: 'warn', short: '1' });
   });
 
   it('counts image counts only while lazyload is active', () => {
@@ -304,7 +314,11 @@ describe('nav live-state selectors', () => {
         lazyload: { present: true, images: [makeLazyImage(), makeLazyImage()] }
       }
     });
-    expect(liveStateOf('lazyload', loaded)).toEqual({ text: '2 images', tone: 'info' });
+    expect(liveStateOf('lazyload', loaded)).toEqual({
+      text: '2 images',
+      tone: 'info',
+      short: '2'
+    });
     expect(
       liveStateOf('lazyload', {
         ...loaded,
@@ -313,7 +327,7 @@ describe('nav live-state selectors', () => {
           lazyload: { present: true, images: [] }
         }
       })
-    ).toEqual({ text: 'No images', tone: 'neutral' });
+    ).toEqual({ text: 'No images', tone: 'neutral', short: '0' });
     // Feature absent = the nav does not speculate about counts.
     expect(liveStateOf('lazyload', makeFdtData())).toBeNull();
   });
@@ -330,7 +344,8 @@ describe('nav live-state selectors', () => {
     });
     expect(liveStateOf('preloaded-resources', collected)).toEqual({
       text: '2 hints',
-      tone: 'info'
+      tone: 'info',
+      short: '2'
     });
     // A capture without the inventory counts its preload list.
     expect(
@@ -338,7 +353,7 @@ describe('nav live-state selectors', () => {
         ...collected,
         preloadedResources: { present: true, resources: [{ href: '/x.css', type: 'style' }] }
       })
-    ).toEqual({ text: '1 hint', tone: 'info' });
+    ).toEqual({ text: '1 hint', tone: 'info', short: '1' });
     // No hint, no list (unknown) and no data all stay silent.
     for (const preloadedResources of [
       { present: false, hints: [] },
@@ -365,5 +380,67 @@ describe('PAGES', () => {
 
   it('defaults to the first registry route', () => {
     expect(DEFAULT_ROUTE).toBe('detections');
+  });
+});
+
+describe('nav count selectors', () => {
+  /** Resolve one row's count selector for a loaded-data fixture. */
+  function countOf(id: (typeof ROUTE_IDS)[number], data: ReturnType<typeof makeFdtData>) {
+    const selector = navRoute(id)?.count;
+    expect(selector, `${id} carries its count`).toBeDefined();
+    return selector ? selector(data) : null;
+  }
+
+  it('declares counts on exactly the JavaScript and Headers & Cookies rows', () => {
+    expect(NAV_ROUTES.filter((row) => row.count !== undefined).map((row) => row.id)).toEqual([
+      'javascript',
+      'headers-cookies'
+    ]);
+  });
+
+  it('counts every page script, delayed or not, floor-marked when the list was cut', () => {
+    const base = makeFdtData().wprDetections;
+    const withScripts = (n: number, truncated?: true) =>
+      makeFdtData({
+        wprDetections: {
+          ...base,
+          delay_js: {
+            present: false,
+            scripts: Array.from({ length: n }, () => makeDelayScript()),
+            version: null,
+            delayedScripts: 0,
+            ...(truncated ? { truncated } : {})
+          }
+        }
+      });
+    expect(countOf('javascript', withScripts(0))).toEqual({
+      count: 0,
+      partial: false,
+      noun: SCRIPT_NOUN
+    });
+    expect(countOf('javascript', withScripts(3))?.count).toBe(3);
+    // A mark below the cap is clipped content, not a cut list.
+    expect(countOf('javascript', withScripts(3, true))?.partial).toBe(false);
+    expect(countOf('javascript', withScripts(5000, true))?.partial).toBe(true);
+  });
+
+  it('counts the captured headers, nothing without a capture', () => {
+    expect(countOf('headers-cookies', makeFdtData({ pageHeaders: null }))).toBeNull();
+    expect(countOf('headers-cookies', makeFdtData({ pageHeaders: [] }))).toEqual({
+      count: 0,
+      partial: false,
+      noun: HEADER_NOUN
+    });
+    const capped = Array.from({ length: 256 }, (_, i) => ({ name: `x-${String(i)}`, value: 'v' }));
+    expect(
+      countOf('headers-cookies', makeFdtData({ pageHeaders: capped, pageHeadersTruncated: true }))
+    ).toEqual({ count: 256, partial: true, noun: HEADER_NOUN });
+    // Clipped values under the row cap keep an exact count.
+    expect(
+      countOf(
+        'headers-cookies',
+        makeFdtData({ pageHeaders: capped.slice(0, 3), pageHeadersTruncated: true })
+      )?.partial
+    ).toBe(false);
   });
 });

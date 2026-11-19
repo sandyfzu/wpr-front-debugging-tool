@@ -5,6 +5,9 @@
  */
 import type { CountNoun } from '../../utils/format-count';
 
+/** Response headers (the Headers & Cookies page's sections, its nav count). */
+export const HEADER_NOUN: CountNoun = { one: 'header', other: 'headers' };
+
 /** Scripts (Delay JS, Defer JS, the JavaScript page's rows). */
 export const SCRIPT_NOUN: CountNoun = { one: 'script', other: 'scripts' };
 

@@ -72,11 +72,15 @@ test.describe('panel ready boot (the devtools-contract data path)', () => {
 
       // The nav's live-state selectors see the same data: the fixture never
       // dispatches the all-scripts-loaded event, so the undefined-references
-      // row's chip honestly reads "Monitoring" until it does.
-      await panel.getByRole('link', { name: 'Undefined References' }).focus();
-      const tooltip = panel.getByRole('tooltip');
-      await expect(tooltip).toBeVisible();
-      await expect(tooltip).toContainText('Monitoring');
+      // row honestly reads "Monitoring" until it does — on this wide panel
+      // the labeled row's description (the rail would show it in its tooltip).
+      await expect(panel.locator('[data-fdt="panel-nav"]')).toHaveAttribute(
+        'data-fdt-nav-form',
+        'labeled'
+      );
+      await expect(
+        panel.getByRole('link', { name: 'Undefined References' })
+      ).toHaveAccessibleDescription('Monitoring');
 
       // The "Monitoring" chip rides the panel's own machine state: the panel
       // received the served payload (false flag; the event lands on real
