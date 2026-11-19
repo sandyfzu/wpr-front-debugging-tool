@@ -122,6 +122,8 @@ describe('BuilderEntry', () => {
     expect(entry().getAttribute('aria-busy')).toBe('false');
     expect(entry().getAttribute('aria-disabled')).toBeNull();
     expect(entry().className).toMatch(/hover:bg-surface-3/);
+    // A toolbar button beside Refresh and the menus: the same 7 px control corner.
+    expect(entry().className.split(/\s+/)).toContain('rounded-control');
   });
 
   it('names the remedy when the page cannot host the builder', async () => {

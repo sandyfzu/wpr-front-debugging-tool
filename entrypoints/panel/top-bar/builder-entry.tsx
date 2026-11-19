@@ -204,7 +204,7 @@ export type BuilderEntryProps = (
 
 /** The entry's control look: a ghost toolbar button (hover surface only while live). */
 const ENTRY =
-  'flex h-7 min-w-0 shrink-0 items-center gap-1.5 rounded-md text-xs font-medium no-underline';
+  'flex h-7 min-w-0 shrink-0 items-center gap-1.5 rounded-control text-xs font-medium no-underline';
 
 /** The labeled form's padding. */
 const ENTRY_LABELED = 'px-1.5';

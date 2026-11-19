@@ -25,8 +25,11 @@ export const DETECTIONS_LIST_COLUMN = 'mx-auto w-full max-w-4xl';
 /**
  * One grouped surface holding calm rows (T-3: 4 px between rows, no
  * hairlines) — a group's body, the List body, the Cards body at compact.
+ * Wears the `Card` primitive's raised look (frame, level-1 pair, shadow) as
+ * literal classes, so a group reads as the same card as the overview tiles.
  */
-export const ROWS_SURFACE = 'flex flex-col gap-1 rounded-md border border-line-1 bg-surface-1 p-1';
+export const ROWS_SURFACE =
+  'flex flex-col gap-1 rounded-lg border border-line-1 bg-surface-2 shadow-elev-1 p-1';
 
 /**
  * The Grouped body: one column of groups, two balanced columns from the wide
@@ -52,7 +55,7 @@ export const GROUP_HEADER = 'flex flex-wrap items-center gap-x-2 gap-y-1 px-3.5 
  */
 export const CARDS_BODY = cn(
   ROWS_SURFACE,
-  '@regular:grid @regular:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] @regular:gap-2 @regular:rounded-none @regular:border-0 @regular:bg-transparent @regular:p-0'
+  '@regular:grid @regular:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] @regular:gap-2 @regular:rounded-none @regular:border-0 @regular:bg-transparent @regular:shadow-none @regular:p-0'
 );
 
 /**
@@ -91,12 +94,13 @@ const TWO_LINE = 'min-h-14.5';
 const STACKED_LINK_FLOOR = '@max-regular:min-h-14.5';
 
 /**
- * A Cards entry from the regular tier: the `Card` primitive's level-1
- * surface/line pair (literal classes so the stylesheet scanner sees them),
- * its `p-2.5`, full track height, the link row pinned to the bottom.
+ * A Cards entry from the regular tier: the `Card` primitive's raised look —
+ * frame, level-1 surface/line pair, shadow (literal classes so the stylesheet
+ * scanner sees them) — its `p-2.5`, full track height, the link row pinned to
+ * the bottom.
  */
 const CARD_SURFACE =
-  '@regular:h-full @regular:grid-rows-[auto_1fr] @regular:rounded-md @regular:border @regular:border-line-1 @regular:bg-surface-1 @regular:p-2.5';
+  '@regular:h-full @regular:grid-rows-[auto_1fr] @regular:rounded-lg @regular:border @regular:border-line-1 @regular:bg-surface-2 @regular:shadow-elev-1 @regular:p-2.5';
 
 /** Three columns, one line: no link. */
 const AREAS_PLAIN = 'grid-cols-[auto_minmax(0,1fr)_auto] [grid-template-areas:"icon_main_state"]';

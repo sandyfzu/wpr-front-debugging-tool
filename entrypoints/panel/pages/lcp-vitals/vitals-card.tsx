@@ -123,10 +123,11 @@ function VitalMeterBar(props: { metric: VitalKey; meter: VitalMeter }): JSX.Elem
             )}
           </Index>
         </div>
-        {/* A short bar across the track, centred on the value; the ring keeps it apart from the band. */}
+        {/* A short bar across the track, centred on the value; the ring (the tile's card fill,
+            `Card` level 1) keeps it apart from the band. */}
         <div
           data-fdt="vital-meter-marker"
-          class="absolute inset-y-0 w-0.5 -translate-x-1/2 rounded-full bg-fg-primary ring-2 ring-surface-1"
+          class="absolute inset-y-0 w-0.5 -translate-x-1/2 rounded-full bg-fg-primary ring-2 ring-surface-2"
           style={{ left: `${String(props.meter.position * 100)}%` }}
         />
       </div>

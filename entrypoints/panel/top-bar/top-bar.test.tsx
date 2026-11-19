@@ -1052,6 +1052,18 @@ describe('TopBar (controls)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Command palette' }));
     expect(toggle).toHaveBeenCalledTimes(2);
   });
+
+  it("gives every top-bar control the buttons' 7 px control corner", () => {
+    const [width] = createSignal(1100);
+    renderStrip(makeHarness(), { width });
+    for (const name of CONTROL_NAMES) {
+      const tokens = screen.getByRole('button', { name }).className.split(/\s+/);
+      expect(tokens, String(name)).toContain('rounded-control');
+      // The tooltip trigger's own `rounded` and the old 6 px corner both merged away.
+      expect(tokens, String(name)).not.toContain('rounded');
+      expect(tokens, String(name)).not.toContain('rounded-md');
+    }
+  });
 });
 
 describe('the width rule has one declaring site', () => {

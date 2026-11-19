@@ -88,6 +88,11 @@
   --text-tile: 0.9375rem;
   --text-tile--line-height: 1.25rem;
 
+  /* Control corners: buttons, icon buttons and text fields (7 px) — one step
+   * between Tailwind's `md` (6 px) and `lg` (8 px: cards, list rows), so a
+   * control reads as nested inside the card it sits on. `rounded-control`. */
+  --radius-control: 0.4375rem;
+
   /* Elevation: the values are the tokens'; this mapping keeps the
    * `shadow-elev-*` utilities generated with the same behavior. */
   --shadow-elev-1: var(--shadow-elev-1);

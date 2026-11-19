@@ -14,6 +14,15 @@ import { cn } from '../../utils/cn';
 import { FOCUS_RING } from './classes';
 import { MenuTooltipTrigger } from './menu';
 
+/**
+ * The floating label's look: a raised `surface-3` chip under the matching
+ * line, so it stands apart from the `surface-2` cards and menus it floats
+ * over in both palettes; the menu's 6 px corner (both are small floating
+ * surfaces); 8 × 4 px padding keeps a one-line label light.
+ */
+const TOOLTIP_CONTENT_CLASSES =
+  'z-50 max-w-64 rounded-md border border-line-3 bg-surface-3 px-2 py-1 text-2xs leading-snug text-fg-primary shadow-elev-2 break-words';
+
 /** Where the tooltip floats — derived from Kobalte's own placement vocabulary. */
 export type TooltipPlacement = NonNullable<ComponentProps<typeof KobalteTooltip.Root>['placement']>;
 
@@ -194,12 +203,7 @@ export function Tooltip(props: TooltipProps): JSX.Element {
         </Match>
       </Switch>
       <KobalteTooltip.Portal>
-        <KobalteTooltip.Content
-          data-fdt="tooltip"
-          class={cn(
-            'z-50 max-w-64 rounded border border-line-3 bg-surface-3 px-1.5 py-1 text-2xs leading-snug text-fg-primary shadow-elev-2 break-words'
-          )}
-        >
+        <KobalteTooltip.Content data-fdt="tooltip" class={TOOLTIP_CONTENT_CLASSES}>
           {props.content}
         </KobalteTooltip.Content>
       </KobalteTooltip.Portal>

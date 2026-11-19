@@ -15,6 +15,11 @@ import {
   GROUPED_BODY,
   ROWS_SURFACE
 } from './entry-layout';
+import {
+  CARD_FRAME_CLASSES,
+  CARD_LEVEL_CLASSES,
+  CARD_LOOK_CLASSES
+} from '../../../../components/ui/card';
 
 /** The class tokens of a class string. */
 const tokens = (classes: string): string[] => classes.split(/\s+/u).filter(Boolean);
@@ -22,7 +27,7 @@ const tokens = (classes: string): string[] => classes.split(/\s+/u).filter(Boole
 describe('bodies', () => {
   it('paints calm rows on one surface: 4 px gaps, no hairlines', () => {
     expect(tokens(ROWS_SURFACE)).toEqual(
-      expect.arrayContaining(['flex', 'flex-col', 'gap-1', 'bg-surface-1'])
+      expect.arrayContaining(['flex', 'flex-col', 'gap-1', 'bg-surface-2'])
     );
     for (const body of [ROWS_SURFACE, CARDS_BODY, GROUP_SURFACE, GROUPED_BODY])
       expect(body).not.toMatch(/divide-|border-t/u);
@@ -94,7 +99,7 @@ describe('entryClass', () => {
       expect.arrayContaining([
         '@regular:border',
         '@regular:border-line-1',
-        '@regular:bg-surface-1',
+        '@regular:bg-surface-2',
         '@regular:h-full',
         'min-h-14.5'
       ])
@@ -104,5 +109,38 @@ describe('entryClass', () => {
     const plain = tokens(entryClass({ layout: 'cards', hasLink: false, twoLine: false }));
     expect(plain).not.toContain('min-h-14.5');
     expect(plain).toContain('@regular:border');
+  });
+});
+
+describe('card look sync', () => {
+  /** The `Card` primitive's raised default: frame + level-1 pair + look. */
+  const raisedCard = tokens(
+    [
+      CARD_FRAME_CLASSES,
+      CARD_LEVEL_CLASSES[1].surface,
+      CARD_LEVEL_CLASSES[1].line,
+      CARD_LOOK_CLASSES.raised
+    ].join(' ')
+  );
+
+  it('gives the rows surface the same raised look as Card', () => {
+    expect(tokens(ROWS_SURFACE)).toEqual(expect.arrayContaining(raisedCard));
+  });
+
+  it('gives a Cards entry that same look from the regular tier', () => {
+    const card = tokens(entryClass({ layout: 'cards', hasLink: false, twoLine: false }));
+    expect(card).toEqual(expect.arrayContaining(raisedCard.map((token) => `@regular:${token}`)));
+  });
+
+  it('strips the whole look off the Cards body from the regular tier (its entries are the cards)', () => {
+    expect(tokens(CARDS_BODY)).toEqual(
+      expect.arrayContaining([
+        '@regular:rounded-none',
+        '@regular:border-0',
+        '@regular:bg-transparent',
+        '@regular:shadow-none',
+        '@regular:p-0'
+      ])
+    );
   });
 });

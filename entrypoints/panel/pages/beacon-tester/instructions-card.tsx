@@ -159,7 +159,7 @@ function ListBlock(props: { list: InstructionList }): JSX.Element {
         <ul class="flex min-w-0 flex-wrap gap-1">
           <For each={props.list.shown}>
             {(entry) => (
-              <li class="min-w-0 rounded bg-surface-2 px-1 py-0.5 font-mono text-2xs break-all text-fg-primary">
+              <li class="min-w-0 rounded bg-surface-3 px-1 py-0.5 font-mono text-2xs break-all text-fg-primary">
                 {entry}
               </li>
             )}

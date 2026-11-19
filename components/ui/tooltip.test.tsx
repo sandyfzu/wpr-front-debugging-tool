@@ -94,6 +94,30 @@ describe('Tooltip', () => {
     expect(trigger.getAttribute('aria-describedby')).toBeNull();
   });
 
+  it('floats as a raised chip: 6 px corner, surface-3 under its line, 8 x 4 px padding', async () => {
+    const trigger = await renderTooltip();
+    fireEvent.focus(trigger);
+    const content = screen.getByRole('tooltip');
+    expect(content.dataset.fdt).toBe('tooltip');
+    const tokens = content.className.split(/\s+/);
+    expect(tokens).toEqual(
+      expect.arrayContaining([
+        'rounded-md',
+        'border',
+        'border-line-3',
+        'bg-surface-3',
+        'px-2',
+        'py-1',
+        'text-2xs',
+        'text-fg-primary',
+        'shadow-elev-2'
+      ])
+    );
+    expect(tokens).not.toContain('rounded');
+    expect(tokens).not.toContain('px-1.5');
+    fireEvent.blur(trigger);
+  });
+
   it('closes on Escape (the APG tooltip dismissal), acknowledged from the content', async () => {
     const trigger = await renderTooltip();
     fireEvent.focus(trigger);

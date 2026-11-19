@@ -28,6 +28,12 @@ describe('IconButton', () => {
     expect(small.getAttribute('type')).toBe('button');
     expect(small.className).toContain('size-6'); // 24px — the WCAG floor
     expect(medium.className).toContain('size-7');
+    // The same 7 px control corner as `Button`, so a toolbar reads as one set.
+    for (const square of [small, medium]) {
+      const tokens = square.className.split(/\s+/);
+      expect(tokens).toContain('rounded-control');
+      expect(tokens).not.toContain('rounded');
+    }
   });
 
   it('fires clicks and cannot be read unnamed', () => {
