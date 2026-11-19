@@ -2,7 +2,7 @@
 
 ## TLDR
 
-**Resumed and superseded by [P23](./23-phase-23-panel-redesign.md) (owner 2026-11-18).**
+**Resumed and superseded by [P23](./completed-panel-redesign.md) (owner 2026-11-18).**
 
 **Rail-only is the shipped final form; the wide/horizontal (top bar or dual) form is parked** (owner 2026-11-17: not planned for now, kept below to resume later). **P5J closed 2026-11-17** (owner signoff on the shipped rail; only change wanted = Diagnoser entry removal, tracked separately). Dependencies shippedP5C/D/I. Installed stack/shared nav registry/primitives, no new dependency.
 
