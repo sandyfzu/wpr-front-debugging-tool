@@ -27,7 +27,6 @@ import { Dynamic } from 'solid-js/web';
 import Code from 'lucide-solid/icons/code';
 import FileCode from 'lucide-solid/icons/file-code';
 import { EmptyState } from '../../../../components/ui/empty-state';
-import { StatusBadge } from '../../../../components/ui/status-badge';
 import { TabPanel, Tabs } from '../../../../components/ui/tabs';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
@@ -61,6 +60,7 @@ import { openResourceCapability, type OpenResource } from '../open-resource';
 import { PageFrame } from '../page-frame';
 import type { DetailCopy } from '../resource-list/master-detail';
 import { CalmFilteredList } from '../resource-list/calm-list';
+import { ResourceSummary } from '../resource-list/resource-summary';
 import {
   calmRowEstimate,
   ListRow,
@@ -76,12 +76,10 @@ import { reconcileRowViews } from './script-identity';
 import {
   JS_CHIP_SOURCES,
   JS_VIEW_FACETS,
-  delaySummaryBadge,
   scriptKind,
   scriptName,
   scriptSearchField,
   scriptSize,
-  type ScriptBadge,
   type ScriptRowView
 } from './script-view';
 import { createServedTagReader, createSourceChunkReader } from './source-chunk-reader';
@@ -305,12 +303,13 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
           {/* Mounted only while selected: the list's find binding reports only while shown. */}
           <Show when={tab() === 'served'}>
             <div class="flex w-full min-h-0 flex-1 flex-col gap-3">
-              <ScriptSummary
-                present={delayJs().present}
-                simulated={simulation().delay === 'simulated'}
+              <ResourceSummary
+                hooks="script"
+                featureLabel={getRealOptionName('delay_js')}
+                featurePresent={delayJs().present}
+                featureSimulated={simulation().delay === 'simulated'}
                 version={delayJs().version}
-                total={views().length}
-                partial={listCut()}
+                total={countLabel(views().length, SCRIPT_NOUN, listCut())}
               />
               <Show when={listCut()}>
                 <p data-fdt="script-list-cut" class="-mt-1.5 text-2xs text-fg-muted">
@@ -394,55 +393,6 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
         </TabPanel>
       </Tabs>
     </PageFrame>
-  );
-}
-
-/** Props of {@link ScriptSummary}. */
-interface ScriptSummaryProps {
-  /** Whether WP Rocket served Delay JS on the page. */
-  present: boolean;
-  /** Whether a verified simulation runs Delay JS here instead (never with `present`). */
-  simulated: boolean;
-  /** The Delay JS script's version, when it announces one. */
-  version: string | null;
-  /** Scripts received. */
-  total: number;
-  /** The list was cut at its cap (the total is a floor). */
-  partial: boolean;
-}
-
-/**
- * The summary strip: whether Delay JS runs here (plugin-native name + state,
- * never color alone), its version when known, and the script total.
- * Per-value counts live on the facets only — one place per number.
- *
- * @param props See {@link ScriptSummaryProps}.
- */
-function ScriptSummary(props: ScriptSummaryProps): JSX.Element {
-  const state = (): ScriptBadge => delaySummaryBadge(props.present, props.simulated);
-  return (
-    <div
-      data-fdt="script-summary"
-      class="flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-md border border-line-1 bg-surface-1 px-2.5 py-1.5 text-xs"
-    >
-      {/* Flat items, so a compact strip wraps into two lines, never three. */}
-      <span class="me-0.5 font-medium text-fg-primary">{getRealOptionName('delay_js')}</span>
-      <StatusBadge kind={state().kind} icon>
-        {state().label}
-      </StatusBadge>
-      <Show when={props.present && props.version}>
-        {(version) => (
-          <span class="ms-1 font-mono text-2xs text-fg-secondary">
-            <span class="sr-only">Version </span>
-            <span aria-hidden="true">v</span>
-            {version()}
-          </span>
-        )}
-      </Show>
-      <span data-fdt="script-total" class="ms-auto ps-2 text-fg-secondary tabular-nums">
-        {countLabel(props.total, SCRIPT_NOUN, props.partial)}
-      </span>
-    </div>
   );
 }
 

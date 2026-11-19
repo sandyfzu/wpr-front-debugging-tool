@@ -13,9 +13,9 @@ import {
   codeNote,
   describeRuntimeMiss,
   fullTextCapped,
+  textCapped,
   LIVE_STATE_LABEL,
   outsideFiltersNote,
-  RUNTIME_GROUP_EMPTY_TITLES,
   RUNTIME_GROUP_LABELS,
   RUNTIME_STATE_LABELS,
   RUNTIME_STATE_TONES,
@@ -52,14 +52,13 @@ describe('labels', () => {
     });
   });
 
-  it('names every group and its empty view', () => {
+  it('names every group', () => {
     expect(RUNTIME_GROUP_LABELS).toEqual({
       theme: 'Theme',
       plugin: 'Plugins',
       inline: 'Inline',
       other: 'Other'
     });
-    expect(RUNTIME_GROUP_EMPTY_TITLES.plugin).toBe('No plugin scripts in this read');
   });
 });
 
@@ -98,13 +97,13 @@ describe('outsideFiltersNote', () => {
 
   it('counts skipped and unknown scripts, singular and plural', () => {
     expect(outsideFiltersNote({ skipped: 1, unknown: 0 })).toBe(
-      '1 skipped script (a nomodule fallback this browser doesn’t need): listed under “All states” only.'
+      '1 skipped script (a nomodule fallback this browser doesn’t need): shown only while State is “Any”.'
     );
     expect(outsideFiltersNote({ skipped: 0, unknown: 2 })).toBe(
-      '2 scripts with a status this version doesn’t know: listed under “All states” only.'
+      '2 scripts with a status this version doesn’t know: shown only while State is “Any”.'
     );
     expect(outsideFiltersNote({ skipped: 1200, unknown: 1 })).toBe(
-      '1,200 skipped scripts (nomodule fallbacks this browser doesn’t need) and 1 script with a status this version doesn’t know: listed under “All states” only.'
+      '1,200 skipped scripts (nomodule fallbacks this browser doesn’t need) and 1 script with a status this version doesn’t know: shown only while State is “Any”.'
     );
   });
 });
@@ -141,6 +140,16 @@ describe('code notes', () => {
     const astral = '😀'.repeat(FULL_TEXT_MAX + 5);
     expect(fullTextCapped(capText(astral, FULL_TEXT_MAX))).toBe(true);
     expect(fullTextCapped(capText('😀'.repeat(FULL_TEXT_MAX), FULL_TEXT_MAX))).toBe(false);
+  });
+
+  it('applies the same rule to any cap (a URL at its field cap)', () => {
+    expect(textCapped(capText('abcdef', 4), 4)).toBe(true);
+    expect(textCapped(capText('abcd', 4), 4)).toBe(false);
+    // Exactly cap + 1 code points ending in its own ellipsis: the safe side.
+    expect(textCapped('abcd…', 4)).toBe(true);
+    expect(textCapped('abcde…', 4)).toBe(false);
+    expect(textCapped(capText('😀😀😀😀😀', 4), 4)).toBe(true);
+    expect(textCapped('', 0)).toBe(false);
   });
 });
 

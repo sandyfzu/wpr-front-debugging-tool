@@ -191,7 +191,8 @@ export function FacetBar<Row, Id extends string>(props: FacetBarProps<Row, Id>):
   return (
     <div ref={bar} data-fdt="facet-bar" data-fdt-compact={props.compact ? '' : undefined}>
       <div class="flex flex-wrap items-center gap-2">
-        <Show when={!props.compact}>
+        {/* A list without facets (search only) shows neither the group nor the Filters button. */}
+        <Show when={!props.compact && props.facets.facets.length > 0}>
           <div
             role="group"
             aria-label={props.filterLabel}
@@ -212,7 +213,7 @@ export function FacetBar<Row, Id extends string>(props: FacetBarProps<Row, Id>):
         </Show>
         {/* Wide: the field's own bounded width (an intrinsic-width wrapper would shrink it to its placeholder's start). */}
         <div class={props.compact ? 'min-w-0 flex-1' : 'ms-auto w-80 max-w-full'}>{search()}</div>
-        <Show when={props.compact}>
+        <Show when={props.compact && props.facets.facets.length > 0}>
           <Button
             ref={filtersButton}
             data-fdt="facet-filters-button"

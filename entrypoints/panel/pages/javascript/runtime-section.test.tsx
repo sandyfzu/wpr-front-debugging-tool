@@ -1,16 +1,18 @@
 /**
  * The Runtime states section over a session with an injected read: the
  * label and first read on show, the loading state, every miss with typed
- * recoveries, the populated list (state chips, source chips with disabled
- * empty groups, notes for a cut list and for skipped/unknown scripts),
- * details (reason, fields, code, code notes), a re-read keeping chips and
- * the details of unchanged rows (closing changed ones), the source-empty
- * way back, an empty page, and the stale line after a reload.
+ * recoveries, the populated calm list (rows with state + group, Source ×
+ * State facets with counts and held empty values, notes for a cut list and
+ * for skipped/unknown scripts), the detail (reason, tile, facts, code, code
+ * notes, copy; pane and drill-in), a re-read keeping facets and the
+ * selection by script (its detail updates in place), the filtered-empty way
+ * back, an empty page, and the stale line after a reload.
  */
-import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
+import { cleanup, fireEvent, render, screen, within } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IntersectionGate } from '../../../../components/ui/code-block';
+import { HIGHLIGHT_MAX_CHARS, PLAIN_NOTES } from '../../../../components/ui/code-block';
 import type { VirtualItem, VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import {
   LIVE_STATE_LABEL,
@@ -23,12 +25,19 @@ import type {
   LiveScriptsOutcome
 } from '../../../../lib/script-runtime/read-live';
 import { FULL_TEXT_MAX } from '../../../../lib/script-runtime/classify';
+import { createDetailPresence, DetailPresenceContext } from '../../state/detail-presence';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
 import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { createSearchStore } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
+import type { OpenResource } from '../open-resource';
+import {
+  installFakeResizeObserver,
+  type FakeResizeObservers
+} from '../resource-list/fake-resize-observer';
 import { DELAYED, liveScript } from './runtime-fixtures';
+import { PARTIAL_CODE_COPY_LABEL, PARTIAL_COPY_NOTE } from './runtime-rows';
 import { createRuntimeStatesHandle, RuntimeStatesSection } from './runtime-section';
 import { createRuntimeStatesSession } from './runtime-session';
 import type { CodeBlockSeams } from './code-seams';
@@ -82,13 +91,25 @@ async function settle(): Promise<void> {
   for (let index = 0; index < 10; index++) await Promise.resolve();
 }
 
+let observers: FakeResizeObservers;
+
+beforeEach(() => {
+  observers = installFakeResizeObserver();
+});
+
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 /** Render the section with a read double; returns the controls a test drives. */
 function renderSection(
-  options: { read?: () => Promise<LiveScriptsOutcome>; reload?: (() => void) | null } = {}
+  options: {
+    read?: () => Promise<LiveScriptsOutcome>;
+    reload?: (() => void) | null;
+    openResource?: OpenResource | null;
+    width?: number;
+  } = {}
 ) {
   const [state, setState] = createSignal<DataState>({
     status: 'ready',
@@ -117,46 +138,86 @@ function renderSection(
   render(() => (
     <FdtDataContext.Provider value={store}>
       <SearchContext.Provider value={createSearchStore()}>
-        <RuntimeStatesSection
-          session={session}
-          reloadInspectedPage={reload}
-          createVirtualizer={everyRow}
-          codeBlock={CODE_SEAMS}
-        />
+        <DetailPresenceContext.Provider value={createDetailPresence(() => 'javascript')}>
+          <RuntimeStatesSection
+            session={session}
+            reloadInspectedPage={reload}
+            openResource={options.openResource === undefined ? null : options.openResource}
+            createVirtualizer={everyRow}
+            codeBlock={CODE_SEAMS}
+          />
+        </DetailPresenceContext.Provider>
       </SearchContext.Provider>
     </FdtDataContext.Provider>
   ));
   return { read, reload, setState };
 }
 
+/** Let the list measure its width once its rows are in (pane from 830). */
+function layOut(width = 1000): void {
+  observers.resize(width);
+}
+
+/** Every rendered row. */
+function rows(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('[data-fdt="runtime-row"]')];
+}
+
 /** The rendered rows' names, in order. */
 function rowNames(): string[] {
-  return [...document.querySelectorAll('[data-fdt="runtime-row"]')].map(
-    (row) => row.querySelector('.font-mono.text-xs')?.textContent ?? ''
-  );
+  return rows().map((row) => row.querySelector('[data-fdt="list-row-name"]')?.textContent ?? '');
 }
 
-/** A chip of the state bar or the source bar. */
-function chip(bar: 'state' | 'source', value: string): HTMLButtonElement {
-  const scope =
-    bar === 'source'
-      ? document.querySelector('[data-fdt-runtime-sources]')
-      : [...document.querySelectorAll('[data-fdt="filter-bar"]')].find(
-          (node) => !node.hasAttribute('data-fdt-runtime-sources')
-        );
-  const button = scope?.querySelector<HTMLButtonElement>(`[data-fdt-filter-chip="${value}"]`);
-  if (button === null || button === undefined) throw new Error(`no ${bar} chip ${value}`);
-  return button;
+/** A row by its name. */
+function rowNamed(name: string): HTMLElement {
+  const row = rows().find(
+    (node) => node.querySelector('[data-fdt="list-row-name"]')?.textContent === name
+  );
+  if (row === undefined) throw new Error(`no row ${name}`);
+  return row;
 }
 
-/** The Details toggle of a row by name. */
-function toggleOf(name: string): HTMLButtonElement {
-  const row = [...document.querySelectorAll('[data-fdt="runtime-row"]')].find((node) =>
-    node.textContent.includes(name)
+/** Open a row's detail by its name. */
+function open(name: string): void {
+  const button = rowNamed(name).querySelector<HTMLButtonElement>('[data-fdt-row-open]');
+  if (button === null) throw new Error(`no open button on ${name}`);
+  fireEvent.click(button);
+}
+
+/** The open detail (pane or drill-in), or null. */
+function detail(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-fdt="detail-pane"], [data-fdt="drill-detail"]');
+}
+
+/** The open detail (throws when none). */
+function shownDetail(): HTMLElement {
+  const found = detail();
+  if (found === null) throw new Error('no detail');
+  return found;
+}
+
+/** A facet value's radio input. */
+function facetInput(value: string, facet?: 'Source' | 'State'): HTMLInputElement {
+  const scope = facet === undefined ? document : screen.getByRole('radiogroup', { name: facet });
+  const input = scope.querySelector<HTMLInputElement>(
+    `[data-fdt="choice"][data-fdt-choice-value="${value}"] input`
   );
-  const button = row?.querySelector<HTMLButtonElement>('[data-fdt-runtime-toggle]');
-  if (button === null || button === undefined) throw new Error(`no row ${name}`);
-  return button;
+  if (input === null) throw new Error(`no facet value ${value}`);
+  return input;
+}
+
+/** Pick a facet value. */
+function pick(value: string, facet?: 'Source' | 'State'): void {
+  fireEvent.click(facetInput(value, facet));
+}
+
+/** A facet value's count. */
+function countOf(value: string, facet?: 'Source' | 'State'): string {
+  return (
+    facetInput(value, facet)
+      .closest('[data-fdt="choice"]')
+      ?.querySelector('[data-fdt-choice-count]')?.textContent ?? ''
+  );
 }
 
 describe('RuntimeStatesSection', () => {
@@ -177,49 +238,57 @@ describe('RuntimeStatesSection', () => {
     expect(rowNames()).toEqual(['main.js']);
   });
 
-  it('lists every script with its state, group, source and identity', async () => {
+  it('lists every script on a calm row: name, preview, state and group', async () => {
     renderSection();
     await settle();
     expect(rowNames()).toEqual(['main.js', 'x.js', 'Inline script 1', 'lib.js', 'old.js']);
-    const rows = [...document.querySelectorAll<HTMLElement>('[data-fdt-runtime-state]')];
-    expect(rows.map((row) => row.dataset.fdtRuntimeState)).toEqual([
+    const states = [...document.querySelectorAll<HTMLElement>('[data-fdt-runtime-state]')];
+    expect(states.map((row) => row.dataset.fdtRuntimeState)).toEqual([
       'executed',
       'failed',
       'pending',
       'not-delayed',
       'skipped'
     ]);
-    expect(rows.map((row) => row.dataset.fdtRuntimeGroup)).toEqual([
+    expect(states.map((row) => row.dataset.fdtRuntimeGroup)).toEqual([
       'theme',
       'plugin',
       'inline',
       'other',
       'other'
     ]);
-    expect(rows[2]?.textContent).toContain('boot();');
-    expect(rows[2]?.textContent).toContain('#boot .early');
-    expect(rows[0]?.textContent).toContain('https://a.test/wp-content/themes/t/main.js');
+    // The state in words with its group, never color alone.
+    expect(states[2]?.textContent).toBe('PendingInline');
+    const preview = (name: string) =>
+      rowNamed(name).querySelector('[data-fdt="list-row-preview"]')?.textContent;
+    expect(preview('Inline script 1')).toBe('#boot · boot();');
+    expect(preview('main.js')).toBe('a.test/wp-content/themes/t/main.js');
+    // Rows are text only: no code block, no disclosure.
+    expect(document.querySelector('[data-fdt="runtime-row"] [data-fdt="code-block"]')).toBeNull();
+    expect(document.querySelector('[data-fdt-runtime-toggle]')).toBeNull();
   });
 
-  it('filters by state chip and by source chip together; empty groups are held', async () => {
+  it('filters by Source and State together; counts follow the other facet; empty values held', async () => {
     renderSection();
     await settle();
-    expect(chip('state', 'pending').textContent).toContain('1');
-    expect(chip('source', 'theme').disabled).toBe(false);
-    fireEvent.click(chip('state', 'not-delayed'));
+    layOut();
+    expect(countOf('pending')).toBe('1');
+    expect(facetInput('theme').disabled).toBe(false);
+    pick('not-delayed');
     expect(rowNames()).toEqual(['lib.js']);
-    fireEvent.click(chip('state', 'all'));
-    fireEvent.click(chip('source', 'other'));
+    pick('any', 'State');
+    pick('other');
     expect(rowNames()).toEqual(['lib.js', 'old.js']);
-    // The state chips count within the chosen source.
-    expect(chip('state', 'executed').textContent).toContain('0');
+    // The State counts follow the chosen source.
+    expect(countOf('executed')).toBe('0');
     cleanup();
     renderSection({ read: () => Promise.resolve(readOf([OTHER])) });
     await settle();
-    expect(chip('source', 'theme').disabled).toBe(true);
+    layOut();
+    expect(facetInput('theme').disabled).toBe(true);
   });
 
-  it('notes a cut list and the scripts no state chip covers', async () => {
+  it('notes a cut list and the scripts no State value covers', async () => {
     renderSection({ read: () => Promise.resolve(readOf([THEME, SKIPPED], 1500)) });
     await settle();
     const notes = [...document.querySelectorAll('[data-fdt-runtime-note]')].map(
@@ -227,34 +296,110 @@ describe('RuntimeStatesSection', () => {
     );
     expect(notes).toEqual([
       'The page has 1,500 scripts; the first 2 are listed.',
-      '1 skipped script (a nomodule fallback this browser doesn’t need): listed under “All states” only.'
+      '1 skipped script (a nomodule fallback this browser doesn’t need): shown only while State is “Any”.'
     ]);
   });
 
-  it('opens details with the reason, every field and the code (with its notes)', async () => {
-    const cut = liveScript({ type: DELAYED, text: 'cut();' }, true);
-    const capped = liveScript({ text: 'x'.repeat(FULL_TEXT_MAX + 1) });
-    renderSection({ read: () => Promise.resolve(readOf([PLUGIN, PENDING, cut, capped])) });
+  it('opens a URL script: state + reason, the tile, the status attribute, the URL copy', async () => {
+    renderSection({ openResource: () => Promise.resolve() });
     await settle();
-    fireEvent.click(toggleOf('x.js'));
-    const detail = document.querySelector('[data-fdt-runtime-detail]');
-    expect(toggleOf('x.js').getAttribute('aria-expanded')).toBe('true');
-    expect(detail?.textContent).toContain('its file failed to load');
-    expect(detail?.textContent).toContain('failed-network');
-    expect(detail?.textContent).toContain('https://a.test/wp-content/plugins/p/x.js');
-    fireEvent.click(toggleOf('Inline script 1'));
-    expect(document.body.textContent).toContain('boot();');
-    fireEvent.click(toggleOf('Inline script 2'));
-    fireEvent.click(toggleOf('Inline script 3'));
-    const codeNotes = [...document.querySelectorAll('[data-fdt-runtime-code-note]')].map(
-      (node) => node.textContent
+    layOut();
+    open('x.js');
+    const pane = shownDetail();
+    expect(pane.getAttribute('data-fdt')).toBe('detail-pane');
+    expect(pane.querySelector('[data-fdt="detail-kind"]')?.textContent).toBe('External script');
+    expect(pane.querySelector('[data-fdt="detail-title"]')?.textContent).toBe('x.js');
+    const body = pane.querySelector<HTMLElement>('[data-fdt-runtime-detail]');
+    expect(body?.querySelector('[data-fdt-runtime-state]')?.textContent).toBe('FailedPlugins');
+    expect(body?.querySelector('[data-fdt="runtime-reason"]')?.textContent).toContain(
+      'its file failed to load'
     );
-    expect(codeNotes).toEqual([TEXT_CUT_NOTE, TEXT_CAPPED_NOTE]);
-    fireEvent.click(toggleOf('x.js'));
-    expect(toggleOf('x.js').getAttribute('aria-expanded')).toBe('false');
+    expect(pane.querySelector('[data-fdt="source-link-open"]')?.textContent).toContain(
+      'Open in Sources'
+    );
+    expect(pane.querySelector('[data-fdt="runtime-facts"]')?.textContent).toContain(
+      'failed-network'
+    );
+    // No inline code: no code section.
+    expect(pane.querySelector('[data-fdt="runtime-code"]')).toBeNull();
+    expect(within(pane).getByRole('button', { name: 'Script URL — copy' })).toBeTruthy();
   });
 
-  it('re-reads on Read again, keeping chips and the details of unchanged rows', async () => {
+  it('opens inline code: facts, all the code kept (JSON-LD as data), its notes, a partial copy named so', async () => {
+    const cut = liveScript({ type: DELAYED, text: 'cut();' }, true);
+    const capped = liveScript({ text: 'x'.repeat(FULL_TEXT_MAX + 1) });
+    const json = liveScript({ type: 'application/ld+json', text: '{"@type":"Thing"}' });
+    renderSection({
+      read: () => Promise.resolve(readOf([PLUGIN, PENDING, cut, capped, json, liveScript()]))
+    });
+    await settle();
+    layOut();
+    open('Inline script 1');
+    const facts = shownDetail().querySelector('[data-fdt="runtime-facts"]')?.textContent ?? '';
+    expect(facts).toContain('Inline code');
+    expect(facts).toContain('boot');
+    expect(facts).toContain('early');
+    expect(shownDetail().querySelector('[data-fdt="runtime-code"]')?.textContent).toContain(
+      'boot();'
+    );
+    expect(shownDetail().querySelector('[data-fdt="runtime-code"] h3')?.textContent).toBe(
+      'Code1 line'
+    );
+    expect(
+      within(shownDetail()).getByRole('button', { name: 'Inline script — copy' })
+    ).toBeTruthy();
+    open('Inline script 2');
+    expect(shownDetail().querySelector('[data-fdt-runtime-code-note]')?.textContent).toBe(
+      `${TEXT_CUT_NOTE} ${PARTIAL_COPY_NOTE}`
+    );
+    // A cut code is copied as what it is — never as the inline script.
+    expect(
+      within(shownDetail()).getByRole('button', { name: `${PARTIAL_CODE_COPY_LABEL} — copy` })
+    ).toBeTruthy();
+    expect(
+      within(shownDetail()).queryByRole('button', { name: 'Inline script — copy' })
+    ).toBeNull();
+    open('Inline script 3');
+    expect(shownDetail().querySelector('[data-fdt-runtime-code-note]')?.textContent).toBe(
+      `${TEXT_CAPPED_NOTE} ${PARTIAL_COPY_NOTE}`
+    );
+    // Past the highlight limit: every kept character shows (plain, the block says so).
+    const block = shownDetail().querySelector('[data-fdt="runtime-code"] [data-fdt="code-block"]');
+    expect(block?.querySelector('[data-fdt-code-fallback]')?.textContent).toBe(capped.fullText);
+    expect(capped.fullText.length).toBeGreaterThan(HIGHLIGHT_MAX_CHARS);
+    expect(block?.querySelector('[data-fdt-code-block-plain]')?.textContent).toBe(
+      PLAIN_NOTES['too-large']
+    );
+    expect(shownDetail().querySelector('[data-fdt="runtime-code-cut"]')).toBeNull();
+    expect(
+      within(shownDetail()).getByRole('button', { name: `${PARTIAL_CODE_COPY_LABEL} — copy` })
+    ).toBeTruthy();
+    open('Inline script 4');
+    expect(shownDetail().querySelector('[data-fdt="detail-kind"]')?.textContent).toBe(
+      'Structured data'
+    );
+    expect(shownDetail().querySelector('[data-fdt="runtime-reason"]')?.textContent).toBe(
+      'Structured data (JSON-LD): read as data, never run.'
+    );
+    open('Inline script 5');
+    expect(shownDetail().querySelector('[data-fdt="runtime-code"]')?.textContent).toContain(
+      'No code in the tag.'
+    );
+  });
+
+  it('drills in below the split width, Back returns to the list', async () => {
+    renderSection();
+    await settle();
+    layOut(600);
+    open('main.js');
+    expect(shownDetail().getAttribute('data-fdt')).toBe('drill-detail');
+    const back = document.querySelector<HTMLButtonElement>('[data-fdt="drill-back"]');
+    expect(back?.textContent).toContain('Live scripts');
+    fireEvent.click(back as HTMLButtonElement);
+    expect(detail()).toBeNull();
+  });
+
+  it('re-reads on Read again, keeping facets, unchanged rows and the selection by script', async () => {
     const reads = [
       readOf([THEME, PENDING]),
       readOf([
@@ -270,18 +415,24 @@ describe('RuntimeStatesSection', () => {
     ];
     const { read } = renderSection({ read: () => Promise.resolve(reads.shift() ?? readOf([])) });
     await settle();
-    fireEvent.click(chip('state', 'all'));
-    fireEvent.click(toggleOf('main.js'));
-    fireEvent.click(toggleOf('Inline script 1'));
-    const before = document.querySelector('[data-fdt="runtime-row"]');
+    layOut();
+    open('Inline script 1');
+    expect(
+      shownDetail().querySelector('[data-fdt-runtime-detail] [data-fdt-runtime-state]')?.textContent
+    ).toBe('PendingInline');
+    const before = rowNamed('main.js');
     fireEvent.click(document.querySelector('[data-fdt-runtime-read]') as HTMLButtonElement);
     await settle();
     expect(read).toHaveBeenCalledTimes(2);
-    // The unchanged row kept its element and its open details; the changed one closed.
-    expect(document.querySelector('[data-fdt="runtime-row"]')).toBe(before);
-    expect(toggleOf('main.js').getAttribute('aria-expanded')).toBe('true');
-    expect(toggleOf('Inline script 1').getAttribute('aria-expanded')).toBe('false');
-    expect(chip('state', 'executed').textContent).toContain('2');
+    // The unchanged row kept its element; the run script's detail stays open and updates.
+    expect(rowNamed('main.js')).toBe(before);
+    expect(shownDetail().querySelector('[data-fdt="detail-title"]')?.textContent).toBe(
+      'Inline script 1'
+    );
+    expect(
+      shownDetail().querySelector('[data-fdt-runtime-detail] [data-fdt-runtime-state]')?.textContent
+    ).toBe('ExecutedInline');
+    expect(countOf('executed')).toBe('2');
   });
 
   it('keeps the list mounted under a failed re-read’s notice, then clears it on a good one', async () => {
@@ -292,45 +443,48 @@ describe('RuntimeStatesSection', () => {
     ];
     renderSection({ read: () => Promise.resolve(reads.shift() ?? readOf([])) });
     await settle();
-    fireEvent.click(chip('source', 'theme'));
-    fireEvent.click(toggleOf('main.js'));
-    const before = document.querySelector('[data-fdt="runtime-row"]');
+    layOut();
+    pick('theme');
+    open('main.js');
+    const before = rowNamed('main.js');
     fireEvent.click(document.querySelector('[data-fdt-runtime-read]') as HTMLButtonElement);
     await settle();
-    // The failure is named above the kept list; chip, details and row survive.
+    // The failure is named above the kept list; facet, selection and row survive.
     expect(
       document.querySelector('[data-fdt="runtime-outcome"]')?.getAttribute('data-fdt-runtime-miss')
     ).toBe('timeout');
-    expect(document.querySelector('[data-fdt="runtime-row"]')).toBe(before);
-    // Still narrowed to the theme source (the inline script stays out).
+    expect(rowNamed('main.js')).toBe(before);
     expect(rowNames()).toEqual(['main.js']);
-    expect(toggleOf('main.js').getAttribute('aria-expanded')).toBe('true');
+    expect(shownDetail().querySelector('[data-fdt="detail-title"]')?.textContent).toBe('main.js');
     fireEvent.click(document.querySelector('[data-fdt-recovery="runtime:retry"]') as HTMLElement);
     await settle();
     expect(document.querySelector('[data-fdt="runtime-outcome"]')).toBeNull();
-    expect(document.querySelector('[data-fdt="runtime-row"]')).toBe(before);
+    expect(rowNamed('main.js')).toBe(before);
     expect(rowNames()).toEqual(['main.js']);
   });
 
-  it('offers the way back when the chosen source emptied on a re-read', async () => {
+  it('offers Clear filters when the chosen source emptied on a re-read', async () => {
     const reads = [readOf([THEME, OTHER]), readOf([OTHER])];
     renderSection({ read: () => Promise.resolve(reads.shift() ?? readOf([])) });
     await settle();
-    fireEvent.click(chip('source', 'theme'));
+    layOut();
+    pick('theme');
     fireEvent.click(document.querySelector('[data-fdt-runtime-read]') as HTMLButtonElement);
     await settle();
-    expect(screen.getByText('No theme scripts in this read')).toBeTruthy();
-    // The chosen (now empty) chip stays selectable; the way back shows every source.
-    expect(chip('source', 'theme').disabled).toBe(false);
-    fireEvent.click(screen.getByRole('button', { name: 'Show all sources' }));
+    expect(rowNames()).toEqual([]);
+    // The chosen (now empty) value stays selectable; Clear filters shows every script.
+    expect(facetInput('theme').disabled).toBe(false);
+    fireEvent.click(
+      document.querySelector('[data-fdt-no-matches-action="clear-filters"]') as HTMLElement
+    );
     expect(rowNames()).toEqual(['lib.js']);
   });
 
-  it('shows an empty page as such, without chips', async () => {
+  it('shows an empty page as such, without facets', async () => {
     renderSection({ read: () => Promise.resolve(readOf([])) });
     await settle();
     expect(screen.getByText('No scripts on the page now')).toBeTruthy();
-    expect(document.querySelector('[data-fdt="filter-bar"]')).toBeNull();
+    expect(document.querySelector('[data-fdt="facet-bar"]')).toBeNull();
   });
 
   it.each([

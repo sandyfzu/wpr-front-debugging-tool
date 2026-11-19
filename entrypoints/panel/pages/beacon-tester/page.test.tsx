@@ -2,12 +2,13 @@
  * The Beacon Tester page over a session with injected doubles: the form's
  * load states, feature names and live issues, the run card's states and
  * typed recoveries, the results tabs (no results, not part of the run, the
- * candidate table with its LCP chip and search, the lazy-render list, the
- * list notes), stale results after a reload, and a refresh keeping the view.
+ * candidate list with its Label facet, search and detail, the lazy-render
+ * list, the list notes), stale results after a reload, and a refresh keeping
+ * the view.
  */
 import { cleanup, fireEvent, render, screen, within } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VirtualItem, VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import type { BeaconTestDraft } from '../../../../lib/beacon-test/config';
 import type { AboveTheFoldCandidate, BeaconTestResults } from '../../../../lib/beacon-test/results';
@@ -18,9 +19,14 @@ import {
 } from '../../../../lib/beacon-test/settings';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
+import { createDetailPresence, DetailPresenceContext } from '../../state/detail-presence';
 import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { createSearchStore, SEARCH_DEBOUNCE_MS } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
+import {
+  installFakeResizeObserver,
+  type FakeResizeObservers
+} from '../resource-list/fake-resize-observer';
 import { NO_FEATURE_NOTE } from './form';
 import {
   BEACON_TESTER_SUBTITLE,
@@ -89,9 +95,16 @@ async function settle(): Promise<void> {
   for (let index = 0; index < 10; index++) await Promise.resolve();
 }
 
+let observers: FakeResizeObservers;
+
+beforeEach(() => {
+  observers = installFakeResizeObserver();
+});
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 /** Render the page with doubles; returns the controls a test drives. */
@@ -133,11 +146,13 @@ function renderPage(
   render(() => (
     <FdtDataContext.Provider value={store}>
       <SearchContext.Provider value={search}>
-        <BeaconTesterPage
-          handle={handle}
-          reloadInspectedPage={reload}
-          createVirtualizer={everyRow}
-        />
+        <DetailPresenceContext.Provider value={createDetailPresence(() => 'beacon-tester')}>
+          <BeaconTesterPage
+            handle={handle}
+            reloadInspectedPage={reload}
+            createVirtualizer={everyRow}
+          />
+        </DetailPresenceContext.Provider>
       </SearchContext.Provider>
     </FdtDataContext.Provider>
   ));
@@ -167,6 +182,17 @@ function shownPanel(): HTMLElement {
 async function run(): Promise<void> {
   fireEvent.click(runButton());
   await settle();
+  // The result lists measure their width once mounted (pane from 830 px).
+  observers.resize(1000);
+}
+
+/** A Label facet value's radio input (the candidate list). */
+function labelValue(value: string): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>(
+    `[data-fdt="choice"][data-fdt-choice-value="${value}"] input`
+  );
+  if (input === null) throw new Error(`no Label value ${value}`);
+  return input;
 }
 
 describe('BeaconTesterPage — settings', () => {
@@ -249,6 +275,7 @@ describe('BeaconTesterPage — run', () => {
     expect(runButton().getAttribute('aria-busy')).toBe('true');
     finish(COMPLETED);
     await settle();
+    observers.resize(1000);
     expect(outcome()?.getAttribute('data-fdt-beacon-outcome')).toBe('completed');
     expect(outcome()?.textContent).toContain('Beacon test complete');
     expect(handle.tab()).toBe('above-the-fold');
@@ -381,7 +408,7 @@ describe('BeaconTesterPage — results', () => {
     expect(handle.tab()).toBe('settings');
   });
 
-  it('renders the candidate table with counts, the left-out note, LCP chip and search', async () => {
+  it('renders the candidate rows with counts, the left-out note, the Label facet and search', async () => {
     vi.useFakeTimers();
     renderPage();
     await settle();
@@ -394,22 +421,23 @@ describe('BeaconTesterPage — results', () => {
       [...document.querySelectorAll('[data-fdt="beacon-candidate-row"]')].map((row) =>
         row.textContent.replace(/\s+/g, ' ')
       );
+    // File name, element kind · URL, the beacon's label.
     expect(rows()).toEqual([
-      'https://a.test/hero.jpgDetailsimglcp',
-      'https://a.test/bg.webpDetailsbg-imgabove-the-fold'
+      'hero.jpgimg · a.test/hero.jpglcp',
+      'bg.webpbg-img · a.test/bg.webpabove-the-fold'
     ]);
-    fireEvent.click(document.querySelector('[data-fdt-filter-chip="lcp"]') as HTMLElement);
+    fireEvent.click(labelValue('lcp'));
     expect(rows()).toHaveLength(1);
-    fireEvent.click(document.querySelector('[data-fdt-filter-chip="all"]') as HTMLElement);
+    fireEvent.click(labelValue('any'));
     fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'webp' } });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
-    expect(rows()).toEqual(['https://a.test/bg.webpDetailsbg-imgabove-the-fold']);
+    expect(rows()).toEqual(['bg.webpbg-img · a.test/bg.webpabove-the-fold']);
     fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'nothing-here' } });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
     expect(screen.getByText('No matches')).toBeTruthy();
   });
 
-  it('opens a candidate’s Details with every value, explaining a search match, kept across filters', async () => {
+  it('opens a candidate’s detail with every value, explaining a search match; a hiding search closes it', async () => {
     vi.useFakeTimers();
     const picture = candidate({
       kind: 'picture',
@@ -438,35 +466,55 @@ describe('BeaconTesterPage — results', () => {
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
     const row = document.querySelector<HTMLElement>('[data-fdt="beacon-candidate-row"]');
     expect(row?.textContent).not.toContain('wide.avif');
-    // …and Details shows it, with the <source> sizes and the uninterpreted field.
+    // …and its detail shows it, with the <source> sizes and the uninterpreted field.
     expect(document.querySelector('[data-fdt-beacon-candidate-detail]')).toBeNull();
-    const toggle = row?.querySelector<HTMLButtonElement>('[data-fdt-beacon-candidate-toggle]');
-    fireEvent.click(toggle as HTMLButtonElement);
-    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    const open = row?.querySelector<HTMLButtonElement>('[data-fdt-row-open]');
+    fireEvent.click(open as HTMLButtonElement);
+    expect(open?.getAttribute('aria-current')).toBe('true');
+    const pane = document.querySelector<HTMLElement>('[data-fdt="detail-pane"]');
+    expect(pane?.querySelector('[data-fdt="detail-kind"]')?.textContent).toBe(
+      'Critical image candidate'
+    );
+    expect(
+      within(pane as HTMLElement).getByRole('button', { name: 'Image URL — copy' })
+    ).toBeTruthy();
     const detail = () =>
       document.querySelector('[data-fdt-beacon-candidate-detail]')?.textContent ?? '';
     expect(detail()).toContain('https://a.test/wide.avif 1x');
     expect(detail()).toContain('sizes: (max-width: 600px) 100vw');
     expect(detail()).toContain('fetchpriority');
     expect(detail()).toContain('high');
-    // Open state lives with the list owner: a filtered-out row comes back open.
+    // A <source>'s attributes keep their own lines.
+    const multiline = [
+      ...document.querySelectorAll<HTMLElement>('[data-fdt="beacon-candidate-facts"] dd')
+    ].filter((dd) => dd.className.includes('whitespace-pre-line'));
+    expect(multiline.map((dd) => dd.textContent)).toEqual([
+      'srcset: https://a.test/wide.avif 1x\nsizes: (max-width: 600px) 100vw\nmedia: (min-width: 600px)\ntype: image/avif'
+    ]);
+    // The list kit's rule: a search hiding the open row closes the side pane;
+    // clearing it lists the row again, closed.
     fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'nothing-here' } });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
     expect(document.querySelector('[data-fdt-beacon-candidate-detail]')).toBeNull();
     fireEvent.input(screen.getByRole('searchbox'), { target: { value: '' } });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
-    expect(detail()).toContain('fetchpriority');
+    expect(document.querySelectorAll('[data-fdt="beacon-candidate-row"]')).toHaveLength(1);
+    expect(document.querySelector('[data-fdt-beacon-candidate-detail]')).toBeNull();
   });
 
-  it('lists the lazy-render hashes without chips', async () => {
+  it('lists the lazy-render hashes on one-line rows, search only', async () => {
     const { handle } = renderPage();
     await settle();
     await run();
     handle.setTab('lazy-render');
+    observers.resize(1000);
     expect(
       [...document.querySelectorAll('[data-fdt="beacon-lazy-row"]')].map((row) => row.textContent)
     ).toEqual(['hash-one', 'hash-two']);
-    expect(shownPanel().querySelector('[data-fdt-filter-chip]')).toBeNull();
+    expect(shownPanel().querySelector('[data-fdt="choice"]')).toBeNull();
+    expect(shownPanel().querySelector('[data-fdt="facet-filters-button"]')).toBeNull();
+    // Static rows: nothing opens.
+    expect(shownPanel().querySelector('[data-fdt-row-open]')).toBeNull();
   });
 
   it('shows a timed-out run’s partial results and an empty list’s explanation', async () => {

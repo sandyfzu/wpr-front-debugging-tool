@@ -165,7 +165,7 @@
       "chunks/fdt-*.js",
       "chunks/page-identity-*.js",
       "chunks/code-block-*.js",
-      "chunks/filtered-list-*.js"
+      "chunks/source-link-*.js"
     ],
     "maxKb": {
       "raw": 600

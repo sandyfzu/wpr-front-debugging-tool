@@ -5,6 +5,7 @@
  */
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
+import { cn } from '../../../../utils/cn';
 
 /** One fact line of a detail (an attribute the element carries, a size…). */
 export interface DetailFact {
@@ -12,6 +13,8 @@ export interface DetailFact {
   readonly value: string;
   /** The value is markup or an identifier (rendered mono). */
   readonly mono: boolean;
+  /** The value holds line breaks to keep (one attribute per line). */
+  readonly multiline?: boolean;
 }
 
 /**
@@ -31,7 +34,12 @@ export function FactList(props: { facts: readonly DetailFact[]; hook: string }):
           {(fact) => (
             <>
               <dt class="text-fg-muted">{fact.label}</dt>
-              <dd class={fact.mono ? 'font-mono break-all text-fg-primary' : 'text-fg-primary'}>
+              <dd
+                class={cn(
+                  fact.mono ? 'font-mono break-all text-fg-primary' : 'text-fg-primary',
+                  fact.multiline === true && 'whitespace-pre-line'
+                )}
+              >
                 {fact.value}
               </dd>
             </>

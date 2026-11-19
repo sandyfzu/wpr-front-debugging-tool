@@ -7,34 +7,19 @@
  * the page the fixture's stand-in runner loads the delayed scripts, and
  * "Read again" shows the theme file and the inline script executed and the
  * missing plugin file failed (network) — the live DOM, not the snapshot the
- * Delay & defer tab still lists. Source chips narrow by group; details show
- * the status attribute. No horizontal overflow at 320 / 1280 px in light
- * and dark (screenshots attached).
+ * Delay & defer tab still lists. The Source facet narrows by group, the
+ * State facet by state (counts follow the read); a row opens its detail
+ * (status attribute, reason) and Read again keeps it open on the same
+ * script. No horizontal overflow at 320 / 1280 px in light and dark, the
+ * detail open (screenshots attached).
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
-import { facetCount } from '../helpers/javascript-page';
+import { facetCount, openScriptDetail, pickFacet, scriptDetail } from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
 
 /** The section's required label. */
 const LIVE_STATE_LABEL = 'Live DOM state (not the snapshot passed to detection)';
-
-/**
- * A chip of one of the section's bars.
- *
- * @param panel The panel page.
- * @param bar The source bar or the state bar.
- * @param value The chip's value.
- */
-function chip(panel: Page, bar: 'source' | 'state', value: string): Locator {
-  const scope =
-    bar === 'source'
-      ? panel.locator('[data-fdt-runtime-sources]')
-      : panel.locator(
-          '[data-fdt="runtime-states"] [data-fdt="filter-bar"]:not([data-fdt-runtime-sources])'
-        );
-  return scope.locator(`[data-fdt-filter-chip="${value}"]`);
-}
 
 /**
  * The state of the row naming a script.
@@ -68,12 +53,18 @@ test('reads the live script states, before and after a real interaction', async 
     await expect(stateOf(panel, 'missing.js')).toHaveAttribute('data-fdt-runtime-group', 'plugin');
     await expect(stateOf(panel, 'lib.js')).toHaveAttribute('data-fdt-runtime-state', 'not-delayed');
     await expect(stateOf(panel, 'legacy.js')).toHaveAttribute('data-fdt-runtime-state', 'skipped');
-    await expect(chip(panel, 'state', 'pending')).toContainText('3');
-    await expect(chip(panel, 'state', 'executed')).toContainText('0');
+    await expect(facetCount(panel, 'pending')).toHaveText('3');
+    await expect(facetCount(panel, 'executed')).toHaveText('0');
     await expect(panel.locator('[data-fdt-runtime-note]')).toContainText(
       '1 skipped script (a nomodule fallback this browser doesn’t need)'
     );
-    await expect(chip(panel, 'source', 'inline')).toContainText('3');
+    await expect(facetCount(panel, 'inline')).toHaveText('3');
+    // Open the theme file before the run: Read again must keep it open.
+    const themeDetail = await openScriptDetail(
+      panel,
+      panel.locator('[data-fdt="runtime-row"]', { hasText: 'theme.js' })
+    );
+    await expect(themeDetail.locator('[data-fdt-runtime-detail]')).toContainText('Pending');
 
     // A real interaction runs the delayed scripts; the page stamps their outcome.
     await fixture.page.locator('h1').click();
@@ -84,23 +75,30 @@ test('reads the live script states, before and after a real interaction', async 
     await panel.locator('[data-fdt-runtime-read]').click();
     await expect(stateOf(panel, 'theme.js')).toHaveAttribute('data-fdt-runtime-state', 'executed');
     await expect(stateOf(panel, 'missing.js')).toHaveAttribute('data-fdt-runtime-state', 'failed');
-    await expect(chip(panel, 'state', 'executed')).toContainText('2');
-    await expect(chip(panel, 'state', 'pending')).toContainText('0');
+    await expect(facetCount(panel, 'executed')).toHaveText('2');
+    await expect(facetCount(panel, 'pending')).toHaveText('0');
+    // The same script's detail, still open, now says it ran.
+    await expect(scriptDetail(panel).locator('[data-fdt="detail-title"]')).toHaveText('theme.js');
+    await expect(scriptDetail(panel).locator('[data-fdt-runtime-detail]')).toContainText(
+      'executed'
+    );
 
-    // The failed chip, then its details: the status attribute and the reason.
-    await chip(panel, 'state', 'failed').click();
+    // The Failed state, then its detail: the status attribute and the reason.
+    await pickFacet(panel, 'failed');
     await expect(rows).toHaveCount(1);
-    await rows.first().locator('[data-fdt-runtime-toggle]').click();
-    const detail = panel.locator('[data-fdt-runtime-detail]');
-    await expect(detail).toContainText('failed-network');
-    await expect(detail).toContainText('its file failed to load');
-    await chip(panel, 'state', 'all').click();
+    const detail = await openScriptDetail(panel, rows.first());
+    await expect(detail.locator('[data-fdt-runtime-detail]')).toContainText('failed-network');
+    await expect(detail.locator('[data-fdt-runtime-detail]')).toContainText(
+      'its file failed to load'
+    );
+    await pickFacet(panel, 'any', 'State');
 
-    // A source chip narrows to its group.
-    await chip(panel, 'source', 'other').click();
+    // A source value narrows to its group.
+    await pickFacet(panel, 'other');
     await expect(rows).toHaveCount(2);
-    await chip(panel, 'source', 'all').click();
+    await pickFacet(panel, 'any', 'Source');
     await expect(rows).toHaveCount(7);
+    await openScriptDetail(panel, rows.first());
 
     for (const scheme of ['light', 'dark'] as const) {
       await panel.emulateMedia({ colorScheme: scheme });

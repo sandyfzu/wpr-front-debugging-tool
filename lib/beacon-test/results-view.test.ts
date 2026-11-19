@@ -242,8 +242,8 @@ describe('LAZY_RENDER_LIST', () => {
       truncated: false
     });
     expect(rows).toEqual([
-      { id: 0, hash: 'abc123' },
-      { id: 1, hash: 'def456' }
+      { id: 0, key: 'abc123#0', hash: 'abc123' },
+      { id: 1, key: 'def456#0', hash: 'def456' }
     ]);
     expect(filterAndSearch(rows, LAZY_RENDER_LIST, 'all', 'DEF').map((row) => row.id)).toEqual([1]);
   });
@@ -256,7 +256,36 @@ describe('row identity', () => {
     expect(sameAboveTheFoldRow(first, { ...first })).toBe(true);
     expect(sameAboveTheFoldRow(first, { ...first, label: 'above-the-fold' })).toBe(false);
     expect(sameAboveTheFoldRow(first, { ...first, detail: '' })).toBe(false);
-    expect(sameLazyRenderRow({ id: 0, hash: 'a' }, { id: 0, hash: 'a' })).toBe(true);
-    expect(sameLazyRenderRow({ id: 0, hash: 'a' }, { id: 0, hash: 'b' })).toBe(false);
+    expect(
+      sameLazyRenderRow({ id: 0, key: 'a#0', hash: 'a' }, { id: 0, key: 'a#0', hash: 'a' })
+    ).toBe(true);
+    expect(
+      sameLazyRenderRow({ id: 0, key: 'a#0', hash: 'a' }, { id: 0, key: 'a#0', hash: 'b' })
+    ).toBe(false);
+  });
+
+  it('keys rows by content, duplicates by occurrence (unique, never by position alone)', () => {
+    const rows = aboveTheFoldRows({
+      kind: 'ok',
+      items: [LCP, BG, LCP, candidate({ kind: 'img', src: 'https://a.test/hero.jpg' })],
+      dropped: 0,
+      truncated: false
+    });
+    const keys = rows.map((row) => row.key);
+    expect(new Set(keys).size).toBe(4);
+    expect(keys[0]).toBe('img\u001fhttps://a.test/hero.jpg\u001flcp#0');
+    expect(keys[2]).toBe('img\u001fhttps://a.test/hero.jpg\u001flcp#1');
+    // Same URL and kind, another label: its own signature.
+    expect(keys[3]).toBe('img\u001fhttps://a.test/hero.jpg\u001fabove-the-fold#0');
+    // A row's key does not move with an earlier row of another signature.
+    const alone = aboveTheFoldRows({ kind: 'ok', items: [BG], dropped: 0, truncated: false });
+    expect(alone[0]?.key).toBe(keys[1]);
+    const hashes = lazyRenderRows({
+      kind: 'ok',
+      items: ['h', 'h', 'g'],
+      dropped: 0,
+      truncated: false
+    });
+    expect(hashes.map((row) => row.key)).toEqual(['h#0', 'h#1', 'g#0']);
   });
 });
