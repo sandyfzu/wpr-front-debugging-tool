@@ -10,6 +10,7 @@
 import type { Locator, Page } from '@playwright/test';
 
 import { expect } from './extension';
+import { settleFrames } from './frames';
 
 /** A script row's surface (the calm list item: `data-fdt-row-key`, `data-selected`). */
 export const SCRIPT_ROW = '[data-fdt="script-row"]';
@@ -139,7 +140,7 @@ export function facetCount(scope: Scope, value: string, facet?: string): Locator
  */
 export async function pickFacet(scope: Scope, value: string, facet?: string): Promise<void> {
   const bar = scope.locator('[data-fdt="facet-bar"]');
-  const compact = (await bar.getAttribute('data-fdt-compact')) !== null;
+  const compact = await isCompactBar(bar);
   if (compact) await bar.locator('[data-fdt="facet-filters-button"]').click();
   const segment = facetSegment(compact ? sheetScope(scope) : bar, value, facet);
   await segment.locator('label').click();
@@ -167,12 +168,27 @@ export function facetToggle(scope: Scope, id: string): Locator {
  */
 export async function setFacetToggle(scope: Scope, id: string, on: boolean): Promise<void> {
   const bar = scope.locator('[data-fdt="facet-bar"]');
-  const compact = (await bar.getAttribute('data-fdt-compact')) !== null;
+  const compact = await isCompactBar(bar);
   if (compact) await bar.locator('[data-fdt="facet-filters-button"]').click();
   const chip = facetToggle(compact ? sheetScope(scope) : bar, id);
   if ((await chip.getAttribute('aria-pressed')) !== String(on)) await chip.click();
   await expect(chip).toHaveAttribute('aria-pressed', String(on));
   if (compact) await sheetScope(scope).locator('[data-fdt="facet-sheet-show"]').click();
+}
+
+/**
+ * Whether the facet bar is in its compact form (facets in the Filters
+ * sheet). The form follows the list's width through a resize observer, which
+ * reports in the next frame — a read right after `setViewportSize` still sees
+ * the previous, never-painted form, then the control it picked is replaced
+ * mid-click. Reading after two frames sees the form the user sees.
+ *
+ * @param bar The facet bar.
+ * @returns True when compact.
+ */
+async function isCompactBar(bar: Locator): Promise<boolean> {
+  await settleFrames(bar.page());
+  return (await bar.getAttribute('data-fdt-compact')) !== null;
 }
 
 /**

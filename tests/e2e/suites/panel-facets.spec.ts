@@ -315,6 +315,31 @@ test('the open sheet closes once the list widens out of compact, the facets inli
   }
 });
 
+test('a facet move right after a resize takes the form the new width gives, into compact and back', async ({
+  extension
+}) => {
+  const opened = await openFacets(extension, { width: 1280, height: 800 });
+  const { panel } = opened;
+  try {
+    const bar = jsPage(panel).locator('[data-fdt="facet-bar"]');
+    // No wait between a resize and the move: the bar's form changes in the
+    // next frame's resize-observer step, which the move must not race.
+    await panel.setViewportSize({ width: 420, height: 800 });
+    await setFacetToggle(jsPage(panel), 'excluded', true);
+    await expect(bar).toHaveAttribute('data-fdt-compact', '');
+    await expect(sheet(panel)).toHaveCount(0);
+    await expect(resultsStatus(panel)).toHaveText(`Showing 1 of ${String(TOTAL)} scripts`);
+    await panel.setViewportSize({ width: 1280, height: 800 });
+    await pickFacet(jsPage(panel), 'external');
+    await expect(bar).not.toHaveAttribute('data-fdt-compact');
+    await expect(facetToggle(bar, 'excluded')).toHaveAttribute('aria-pressed', 'true');
+    await expect(resultsStatus(panel)).toHaveText(`Showing 1 of ${String(TOTAL)} scripts`);
+  } finally {
+    await opened.panel.close();
+    await opened.fixture.page.close();
+  }
+});
+
 test('on a short panel the sheet keeps its footer in view, and nothing in it runs under reduced motion', async ({
   extension
 }) => {
