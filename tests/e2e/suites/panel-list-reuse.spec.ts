@@ -197,32 +197,34 @@ function inventory(count: number, revision = 0): string {
 }
 
 /**
- * Each list's hooks: its total (the chips' Show all name, the JavaScript
- * facets' Any count), its rows' focusable control, and its first row's URL
- * carrier (the link, or the JavaScript row's URL preview).
+ * Each list's hooks (every list is calm): its total (its first facet's Any
+ * count), its rows' focusable control (the open button), and its first
+ * row's URL carrier (the row's URL preview).
+ *
+ * @param facet The list's first facet label.
  */
-const REUSE_PAGES = {
-  javascript: {
-    total: (root: Locator, count: number) =>
-      expect(facetCount(root, 'any', 'Delay')).toHaveText(String(count)),
+function reuseHooks(facet: string): {
+  total: (root: Locator, count: number) => Promise<void>;
+  control: string;
+  firstUrl: (root: Locator) => Promise<void>;
+} {
+  return {
+    total: (root, count) => expect(facetCount(root, 'any', facet)).toHaveText(String(count)),
     control: '[data-fdt-row-open]',
-    firstUrl: (root: Locator) =>
+    firstUrl: (root) =>
       expect(root.locator('[data-fdt="list-row-preview"]').first()).toHaveText(/-1\.js$/)
-  },
-  // Lazyload and Preloaded Resources: chip filters, link rows.
-  linkRows: {
-    total: (root: Locator, count: number) =>
-      expect(root.locator('[data-fdt-filter-chip="all"]')).toHaveAccessibleName(
-        `Show all ${String(count)} matching`
-      ),
-    control: '[data-fdt="external-link"]',
-    firstUrl: (root: Locator) =>
-      expect(root.locator('[data-fdt="external-link"]').first()).toHaveAttribute('href', /-1\.js$/)
-  }
+  };
+}
+
+/** The first facet of each list under test. */
+const FIRST_FACET = {
+  javascript: 'Delay',
+  lazyload: 'Lazyload',
+  'preloaded-resources': 'Source'
 } as const;
 
-for (const id of ['javascript', 'lazyload', 'preloaded-resources']) {
-  const hooks = id === 'javascript' ? REUSE_PAGES.javascript : REUSE_PAGES.linkRows;
+for (const id of ['javascript', 'lazyload', 'preloaded-resources'] as const) {
+  const hooks = reuseHooks(FIRST_FACET[id]);
   test(`${id} preserves a focused row and scroll through a captured append/delete refresh`, async ({
     extension
   }) => {

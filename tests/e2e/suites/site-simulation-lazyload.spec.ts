@@ -445,13 +445,13 @@ test.describe('LazyLoad simulation over real sessions', () => {
       // The panel's Lazyload page: simulated (never "detected"), said who did it, rows marked.
       await panel.reload({ waitUntil: 'load' });
       const summary = panel.locator('[data-fdt="resource-summary"]');
-      await expect(summary).toContainText('simulated', FRESH);
-      await expect(summary).not.toContainText('detected');
+      await expect(summary.locator('[data-fdt="status-badge"]')).toHaveText('Simulated', FRESH);
+      await expect(summary).not.toContainText(/detected/i);
       await expect(summary.locator('[data-fdt="resource-note"]')).toContainText([WORDS.panelNote]);
       await expect(
         panel
           .locator(
-            '[data-fdt="resource-row"] [data-fdt="state-chip"][data-fdt-source="simulated"] [data-fdt="badge"]',
+            '[data-fdt="lazyload-row"] [data-fdt="state-chip"][data-fdt-source="simulated"] [data-fdt="badge"]',
             { hasText: WORDS.panelChip }
           )
           .first()

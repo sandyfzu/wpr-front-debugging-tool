@@ -6,14 +6,29 @@ import { emptyDetections } from '../../../../lib/panel/support-report.fixtures';
 import type { ResourceHint } from '../../../../lib/wp-rocket/types';
 import {
   attributionChip,
+  hintFacts,
+  hintFetchesFile,
+  hintIcon,
+  hintKind,
   hintKindChip,
+  hintPreview,
   missingUrlLabel,
+  missingUrlNote,
   NO_URL_LABEL,
+  NO_URL_NOTE,
   preloadedInventory,
   preloadedNotes,
+  preloadedRowKeys,
+  preloadedRowViews,
+  preloadedSearchField,
+  PRELOADED_VIEW_FACETS,
   samePreloadedRow,
+  samePreloadedView,
   SRCSET_ONLY_LABEL,
-  wpRocketHintsPresent
+  SRCSET_ONLY_NOTE,
+  stampMarkup,
+  wpRocketHintsPresent,
+  type PreloadedRowView
 } from './preloaded-view';
 
 /** A plain row. */
@@ -202,5 +217,187 @@ describe('preloadedNotes', () => {
     expect(preloadedNotes(report, [plainDns], none)).toEqual([]);
     expect(preloadedNotes(report, [stampedDns], declared)).toEqual([]);
     expect(preloadedNotes(report, [row()], declared)).toEqual([]);
+  });
+});
+
+describe('row views', () => {
+  /**
+   * One view of one row.
+   *
+   * @param overrides The row's overrides.
+   * @param clipped The clip mark.
+   */
+  function view(overrides: Partial<PreloadedResource> = {}, clipped = false): PreloadedRowView {
+    const [built] = preloadedRowViews([row(overrides)], () => clipped);
+    if (built === undefined) throw new Error('no view');
+    return built;
+  }
+
+  it('leads with an icon by what the hint fetches', () => {
+    expect(
+      [
+        row(),
+        row({ as: 'font' }),
+        row({ as: 'style' }),
+        row({ as: 'script' }),
+        row({ as: 'fetch' }),
+        row({ as: '' }),
+        row({ rel: 'modulepreload', as: '' }),
+        row({ rel: 'modulepreload', as: 'image' }),
+        row({ rel: 'preconnect', as: 'image' }),
+        row({ rel: 'dns-prefetch' })
+      ].map(hintIcon)
+    ).toEqual([
+      'image',
+      'font',
+      'style',
+      'script',
+      'file',
+      'file',
+      'script',
+      'script',
+      'origin',
+      'origin'
+    ]);
+  });
+
+  it('previews the kind, a preload’s type, then the URL without its scheme', () => {
+    expect(hintPreview(row({ href: 'https://cdn.test/a/hero.webp?v=1' }))).toBe(
+      'preload · image · cdn.test/a/hero.webp?v=1'
+    );
+    expect(hintPreview(row({ rel: 'preconnect', as: 'font', href: 'https://fonts.test' }))).toBe(
+      'preconnect · fonts.test/'
+    );
+    expect(hintPreview(row({ href: '' }))).toBe('preload · image');
+  });
+
+  it('names a row by its file (or host), else by the missing-URL words', () => {
+    expect(view({ href: 'https://cdn.test/a/hero.webp' }).name).toBe('hero.webp');
+    expect(view({ rel: 'preconnect', as: '', href: 'https://fonts.test' }).name).toBe('fonts.test');
+    expect(view({ href: '' }).name).toBe(SRCSET_ONLY_LABEL);
+    expect(view({ rel: 'modulepreload', as: '', href: '' }).name).toBe(NO_URL_LABEL);
+  });
+
+  it('carries the clip mark and the attribution chip', () => {
+    const stamped = view(
+      { attribution: { by: 'wp-rocket', mark: 'preload', feature: 'Preload fonts' } },
+      true
+    );
+    expect(stamped.clipped).toBe(true);
+    expect(stamped.attribution).toEqual(
+      attributionChip({ by: 'wp-rocket', mark: 'preload', feature: 'Preload fonts' })
+    );
+    expect(view().attribution.id).toBe('unattributed');
+  });
+
+  it('keys rows by kind, type, URL and occurrence, never position', () => {
+    const rows = [row(), row({ as: 'font' }), row(), row({ rel: 'modulepreload' })];
+    const keys = preloadedRowKeys(rows);
+    expect(new Set(keys).size).toBe(4);
+    expect(preloadedRowKeys([row({ href: 'https://x/new' }), ...rows]).slice(1)).toEqual(keys);
+  });
+
+  it('keys hints of one URL apart by kind and by type, so removing one keeps the other', () => {
+    // Same URL, same type, different kind; then same URL, same kind, different type.
+    for (const [first, second] of [
+      [row({ rel: 'preconnect', as: '' }), row({ rel: 'dns-prefetch', as: '' })],
+      [row({ as: 'image' }), row({ as: 'font' })]
+    ] as const) {
+      const [, secondKey] = preloadedRowKeys([first, second]);
+      expect(preloadedRowKeys([second])).toEqual([secondKey]);
+    }
+  });
+
+  it('views match on the row data and the clip mark only', () => {
+    expect(samePreloadedView(view(), view({ id: 7 }))).toBe(true);
+    expect(samePreloadedView(view(), view({}, true))).toBe(false);
+    expect(
+      samePreloadedView(
+        view(),
+        view({ attribution: { by: 'wp-rocket', mark: 'preload', feature: null } })
+      )
+    ).toBe(false);
+  });
+
+  it('searches the URL and filters by the lifted facets', () => {
+    const image = view();
+    const dns = view({ rel: 'dns-prefetch', as: '', href: 'https://d.test' });
+    expect(preloadedSearchField(dns)).toBe('https://d.test');
+    const hintValues = PRELOADED_VIEW_FACETS.byId
+      .get('hint')
+      ?.values.filter((value) => value.predicate(dns))
+      .map((value) => value.id);
+    expect(hintValues).toEqual(['dns-prefetch']);
+    const typeValues = PRELOADED_VIEW_FACETS.byId
+      .get('preload-type')
+      ?.values.filter((value) => value.predicate(image))
+      .map((value) => value.id);
+    expect(typeValues).toEqual(['images']);
+  });
+
+  it('names the detail by the hint kind', () => {
+    expect(
+      (['preload', 'modulepreload', 'preconnect', 'dns-prefetch'] as const).map((rel) =>
+        hintKind(view({ rel }))
+      )
+    ).toEqual(['Preload', 'Module preload', 'Preconnect', 'DNS prefetch']);
+  });
+});
+
+describe('detail rules', () => {
+  it('opens files in Sources, never an origin', () => {
+    expect(hintFetchesFile(row())).toBe(true);
+    expect(hintFetchesFile(row({ rel: 'modulepreload' }))).toBe(true);
+    expect(hintFetchesFile(row({ rel: 'preconnect' }))).toBe(false);
+    expect(hintFetchesFile(row({ rel: 'dns-prefetch' }))).toBe(false);
+  });
+
+  it('says why a hint has no URL', () => {
+    expect(missingUrlNote(row({ href: '' }))).toBe(SRCSET_ONLY_NOTE);
+    expect(missingUrlNote(row({ as: 'font', href: '' }))).toBe(NO_URL_NOTE);
+    expect(missingUrlNote(row({ rel: 'modulepreload', as: 'image', href: '' }))).toBe(NO_URL_NOTE);
+  });
+
+  it('writes each stamp as the tag carries it', () => {
+    expect(stampMarkup('preload')).toBe('data-rocket-preload');
+    expect(stampMarkup('async')).toBe('data-rocket-async="style"');
+    expect(stampMarkup('preconnect')).toBe('data-rocket-preconnect');
+    expect(stampMarkup('prefetch')).toBe('data-rocket-prefetch');
+  });
+
+  it('lists rel, a non-empty as, the stamp and a proven feature', () => {
+    expect(hintFacts(row())).toEqual([
+      { label: 'Rel', value: 'preload', mono: true },
+      { label: 'As', value: 'image', mono: true }
+    ]);
+    expect(hintFacts(row({ rel: 'dns-prefetch', as: '' }))).toEqual([
+      { label: 'Rel', value: 'dns-prefetch', mono: true }
+    ]);
+    expect(
+      hintFacts(
+        row({ as: 'style', attribution: { by: 'wp-rocket', mark: 'async', feature: null } })
+      )
+    ).toEqual([
+      { label: 'Rel', value: 'preload', mono: true },
+      { label: 'As', value: 'style', mono: true },
+      { label: 'WP Rocket stamp', value: 'data-rocket-async="style"', mono: true }
+    ]);
+    expect(
+      hintFacts(
+        row({
+          rel: 'preconnect',
+          as: '',
+          attribution: {
+            by: 'wp-rocket',
+            mark: 'preconnect',
+            feature: 'Preconnect to External Domains'
+          }
+        })
+      )
+    ).toEqual([
+      { label: 'Rel', value: 'preconnect', mono: true },
+      { label: 'WP Rocket stamp', value: 'data-rocket-preconnect', mono: true },
+      { label: 'Feature', value: 'Preconnect to External Domains', mono: false }
+    ]);
   });
 });

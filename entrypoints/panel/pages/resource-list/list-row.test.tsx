@@ -162,6 +162,28 @@ describe('ListRow', () => {
     expect(bar(undefined)).toBeNull();
   });
 
+  it('renders the row’s own state content in the states cell, over chips and the dash', () => {
+    const { container } = render(() => (
+      <ListRow
+        columns={BOTH}
+        name="a"
+        chips={splitStateChips([{ id: 'a', label: 'Lazyloaded', source: 'wp-rocket' }], 2)}
+        stateContent={<span data-fdt="own-state">Unattributed</span>}
+      />
+    ));
+    const own = container.querySelector('[data-fdt="own-state"]');
+    expect(own?.parentElement?.className).toContain('[grid-area:states]');
+    expect(container.querySelector('[data-fdt="state-chip"]')).toBeNull();
+    expect(
+      [...container.querySelectorAll('span[aria-hidden="true"]')].some((s) => s.textContent === '—')
+    ).toBe(false);
+    // A list without a states column draws neither.
+    const { container: plain } = render(() => (
+      <ListRow columns={NONE} name="b" stateContent={<span data-fdt="own-state">x</span>} />
+    ));
+    expect(plain.querySelector('[data-fdt="own-state"]')).toBeNull();
+  });
+
   it('flags a clipped value with a Clipped badge before the preview', () => {
     const { container } = render(() => (
       <ListRow columns={NONE} name="a" preview="https://x" clipped />

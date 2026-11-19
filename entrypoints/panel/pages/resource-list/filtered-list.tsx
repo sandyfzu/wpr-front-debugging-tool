@@ -1,9 +1,9 @@
 /**
  * The panel's one filter/search/list body: a filter bar over a row list and
  * its virtualized rows, inside a `fill` page (it carries the page's one
- * scroller). Every list page renders its rows through it — whole pages
- * (`./resource-list`) and lists inside a page's tab alike — so each declares
- * only its rows, chips, empty view and row renderer.
+ * scroller). Every list renders its rows through it — whole pages and
+ * lists inside a page's tab alike — so each declares only its rows, chips,
+ * empty view and row renderer.
  *
  * State matrix:
  * - **empty** (no rows): the caller's empty view in the list region, no bar;
@@ -19,7 +19,7 @@
  * refresh (the body stays mounted); the selection resets with a remount.
  *
  * Two variants, one component: the **default** (framed list, hairline rows,
- * single-select chips — every page today) and the opt-in **calm** one
+ * single-select chips — lists not yet on the calm rows) and the opt-in **calm** one
  * (`variant: 'calm'`, `./calm-list`: calm rows, chips or combinable facets,
  * master–detail). The props are a union, so a page passes exactly one shape.
  */

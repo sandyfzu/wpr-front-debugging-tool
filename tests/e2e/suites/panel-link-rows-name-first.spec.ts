@@ -1,10 +1,9 @@
 /**
  * Resource rows lead with the file name on real Chromium: at a 320 px panel
  * (the narrowest supported) in both palettes, every URL row on the
- * JavaScript, Stylesheets and Lazyload pages shows its file name whole —
- * not cut by the row, inside the page — while the full URL stays one step
- * away: the Lazyload rows' link (its `title` carrying it) beneath, the
- * JavaScript and Stylesheets rows' URL preview beneath and their detail's
+ * JavaScript, Stylesheets, Lazyload and Preloaded Resources pages shows its
+ * file name whole — not cut by the row, inside the page — while the full
+ * URL stays one step away: the row's URL preview beneath and its detail's
  * source-link tile (href + `title`, its file name whole inside the tile);
  * the page never scrolls sideways; at a
  * regular-tier 768 px width the settled names stay whole too. The palette
@@ -25,30 +24,33 @@ const DEEP =
 
 /**
  * Each page under test: its route, its row hook, its rows' name hook, the
- * file names its rows must show, and where the full URL lives — the row's
- * own link, or (a calm row: the row opens its detail) the detail's tile.
+ * file names its rows must show (each row opens its detail, whose tile
+ * carries the full URL).
  */
 const PAGES = [
   {
     route: 'javascript',
     row: '[data-fdt="script-row"]',
     name: '[data-fdt="list-row-name"]',
-    names: ['frontend.min.js', 'vendor.js'],
-    url: 'detail'
+    names: ['frontend.min.js', 'vendor.js']
   },
   {
     route: 'stylesheets',
     row: '[data-fdt="stylesheet-row"]',
     name: '[data-fdt="list-row-name"]',
-    names: ['style.min.css', 'print.css'],
-    url: 'detail'
+    names: ['style.min.css', 'print.css']
   },
   {
     route: 'lazyload',
-    row: '[data-fdt="resource-link"]',
-    name: '[data-fdt="resource-name"]',
-    names: ['hero-photo.jpg'],
-    url: 'row'
+    row: '[data-fdt="lazyload-row"]',
+    name: '[data-fdt="list-row-name"]',
+    names: ['hero-photo.jpg']
+  },
+  {
+    route: 'preloaded-resources',
+    row: '[data-fdt="hint-row"]',
+    name: '[data-fdt="list-row-name"]',
+    names: ['inter-var.woff2']
   }
 ] as const;
 
@@ -61,9 +63,13 @@ function fileUrlPattern(name: string): RegExp {
   return new RegExp(`/${name.replaceAll('.', '\\.')}`);
 }
 
-/** The fixture: deep-path scripts (one delayed), stylesheets (one print-only) and an image. */
+/**
+ * The fixture: deep-path scripts (one delayed), stylesheets (one
+ * print-only), a font preload and an image.
+ */
 function nameFirstPage(): string {
   return `<!doctype html><html lang="en"><head><title>Name-first rows</title>
+    <link rel="preload" as="font" href="${DEEP}/fonts/inter-var.woff2" crossorigin>
     <link rel="stylesheet" href="${DEEP}/css/style.min.css?ver=6.8.3">
     <link rel="stylesheet" media="print" href="${DEEP}/css/print/print.css?ver=1.0#x">
     </head><body><h1>Name-first rows</h1>
@@ -194,48 +200,40 @@ for (const colorScheme of ['light', 'dark'] as const) {
           expect(fit.overflow, `${target.route} ${expected} inside the page`).toBeLessThanOrEqual(
             0.5
           );
-          if (target.url === 'row') {
-            // The full URL is still the row's link, its preview on the text's title.
-            const link = row.getByRole('link');
-            await expect(link).toHaveAttribute('href', fileUrlPattern(expected));
-            const title = await link.locator('[title]').getAttribute('title');
-            expect(title?.startsWith(DEEP)).toBe(true);
-          } else {
-            // The URL previews beneath the name (scheme dropped); the full URL
-            // is the detail's source-link tile: its href and its title.
-            await expect(row.locator('[data-fdt="list-row-preview"]')).toContainText(
-              DEEP.replace('https://', '')
-            );
-            const detail = await openScriptDetail(panel, row);
-            const link = detail.locator('[data-fdt="source-link"] a[href]').first();
-            await expect(link).toHaveAttribute('href', fileUrlPattern(expected));
-            const tile = detail.locator('[data-fdt="source-link-open"]');
-            expect((await tile.getAttribute('title'))?.startsWith(DEEP)).toBe(true);
-            // The tile names the file whole however deep the path: only its
-            // directory elides, and the file stays inside the tile.
-            const file = tile.locator('[data-fdt="source-link-file"]');
-            await expect(file).toHaveText(expected);
-            await expect(file).toBeVisible();
-            const fileFit = await nameFit(tile, file);
-            expect(fileFit.cut, `${expected} tile file name whole`).toBe(false);
-            expect(fileFit.overflow, `${expected} tile file inside the tile`).toBeLessThanOrEqual(
-              0.5
-            );
-            // Nor clamped away below the path's visible lines.
-            const path = tile.locator('[data-fdt="source-link-path"]');
-            const clip = await path.evaluate((element) => {
-              const shown = element.querySelector('[data-fdt="source-link-file"]');
-              return {
-                hidden: element.scrollHeight - element.clientHeight,
-                below:
-                  (shown?.getBoundingClientRect().bottom ?? Infinity) -
-                  element.getBoundingClientRect().bottom
-              };
-            });
-            expect(clip.hidden, `${expected} tile path never clamped`).toBeLessThanOrEqual(0.5);
-            expect(clip.below, `${expected} tile file within the path`).toBeLessThanOrEqual(0.5);
-            await closeScriptDetail(panel);
-          }
+          // The URL previews beneath the name (scheme dropped); the full URL
+          // is the detail's source-link tile: its href and its title.
+          await expect(row.locator('[data-fdt="list-row-preview"]')).toContainText(
+            DEEP.replace('https://', '')
+          );
+          const detail = await openScriptDetail(panel, row);
+          const link = detail.locator('[data-fdt="source-link"] a[href]').first();
+          await expect(link).toHaveAttribute('href', fileUrlPattern(expected));
+          const tile = detail.locator('[data-fdt="source-link-open"]');
+          expect((await tile.getAttribute('title'))?.startsWith(DEEP)).toBe(true);
+          // The tile names the file whole however deep the path: only its
+          // directory elides, and the file stays inside the tile.
+          const file = tile.locator('[data-fdt="source-link-file"]');
+          await expect(file).toHaveText(expected);
+          await expect(file).toBeVisible();
+          const fileFit = await nameFit(tile, file);
+          expect(fileFit.cut, `${expected} tile file name whole`).toBe(false);
+          expect(fileFit.overflow, `${expected} tile file inside the tile`).toBeLessThanOrEqual(
+            0.5
+          );
+          // Nor clamped away below the path's visible lines.
+          const path = tile.locator('[data-fdt="source-link-path"]');
+          const clip = await path.evaluate((element) => {
+            const shown = element.querySelector('[data-fdt="source-link-file"]');
+            return {
+              hidden: element.scrollHeight - element.clientHeight,
+              below:
+                (shown?.getBoundingClientRect().bottom ?? Infinity) -
+                element.getBoundingClientRect().bottom
+            };
+          });
+          expect(clip.hidden, `${expected} tile path never clamped`).toBeLessThanOrEqual(0.5);
+          expect(clip.below, `${expected} tile file within the path`).toBeLessThanOrEqual(0.5);
+          await closeScriptDetail(panel);
         }
         await expect
           .poll(() => page.evaluate((element) => element.scrollWidth - element.clientWidth), {

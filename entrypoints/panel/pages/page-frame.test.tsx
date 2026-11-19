@@ -1,8 +1,8 @@
 /**
  * Render tests for the page seam: the frame contract (entrance class, unpadded
  * container root, focus target, single `h1`, fill mode), the filtered-empty
- * view (sentence per input, gated buttons, the focus hand-off), and the
- * external link (new-tab safety, accessible name, unsafe-scheme fallback).
+ * view (sentence per input, gated buttons, the focus hand-off), and the page
+ * layout tiers.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
@@ -11,7 +11,6 @@ import { createSignal, Show } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ROUTE_HEADING_SELECTOR } from '../palette/focus';
 import {
-  ExternalLink,
   NO_MATCHES_QUERY_MAX,
   NoMatches,
   type NoMatchesFocusTarget,
@@ -436,87 +435,6 @@ describe('NoMatches focus hand-off', () => {
     render(() => <FilteredPage focusAfter={target} />);
     fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
     expect(target).not.toHaveBeenCalled();
-  });
-});
-
-describe('ExternalLink', () => {
-  const url = 'https://example.com/wp-content/a.js?ver=1';
-
-  it.each(['https://example.com/', 'data:image/svg+xml,'])(
-    'caps long hover text without altering full display text or link targets: %s',
-    (prefix) => {
-      const href = `${prefix}${'😀'.repeat(301)}`;
-      render(() => <ExternalLink href={href} />);
-      const text = document.querySelector('[data-fdt="external-link"] .truncate');
-      expect(text?.getAttribute('title')).toBe(`${Array.from(href).slice(0, 300).join('')}…`);
-      expect(text?.textContent).toBe(href);
-      if (prefix.startsWith('https:')) {
-        expect(
-          screen.getByRole('link', { name: `${href} (opens in a new tab)` }).getAttribute('href')
-        ).toBe(href);
-      } else {
-        expect(screen.queryByRole('link')).toBeNull();
-      }
-    }
-  );
-
-  it('updates bounded titles and full hrefs reactively', () => {
-    const [href, setHref] = createSignal(url);
-    render(() => <ExternalLink href={href()} />);
-    const link = screen.getByRole('link');
-    const long = `https://example.com/${'x'.repeat(400)}`;
-    setHref(long);
-    expect(link.getAttribute('href')).toBe(long);
-    expect(link.querySelector('.truncate')?.getAttribute('title')).toBe(`${long.slice(0, 300)}…`);
-    setHref(url);
-    expect(link.querySelector('.truncate')?.getAttribute('title')).toBe(url);
-  });
-
-  it('opens http(s) URLs in a new tab without opener or referrer', () => {
-    render(() => <ExternalLink href={url} />);
-    const link = screen.getByRole('link');
-    expect(link.getAttribute('href')).toBe(url);
-    expect(link.getAttribute('target')).toBe('_blank');
-    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
-  });
-
-  it('names the new tab in the accessible name; the full URL rides the text span’s title', () => {
-    render(() => <ExternalLink href={url} />);
-    const link = screen.getByRole('link', { name: `${url} (opens in a new tab)` });
-    // Not on the anchor: a title there would be read again as the description.
-    expect(link.hasAttribute('title')).toBe(false);
-    expect(link.querySelector('.truncate')?.getAttribute('title')).toBe(url);
-    expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-  });
-
-  it('renders mono, truncating, keyboard-focus-ringed text and merges caller classes', () => {
-    render(() => <ExternalLink href="http://example.com/" class="text-2xs" />);
-    const link = screen.getByRole('link');
-    expect(link.classList).toContain('font-mono');
-    expect(link.classList).toContain('min-w-0');
-    expect(link.classList).toContain('focus-visible:outline-accent');
-    expect(link.classList).toContain('text-2xs');
-    expect(link.classList).not.toContain('text-xs');
-    expect(link.querySelector('.truncate')?.textContent).toBe('http://example.com/');
-  });
-
-  it.each([
-    'javascript:alert(1)',
-    'JAVASCRIPT:alert(1)',
-    'data:text/html,<p>x</p>',
-    'chrome-extension://abc/page.html',
-    '/relative/path.js',
-    '//cdn.example.com/a.js',
-    'not a url',
-    ''
-  ])('renders %j as plain text, never a link', (href) => {
-    render(() => <ExternalLink href={href} />);
-    expect(screen.queryByRole('link')).toBeNull();
-    const plain = document.querySelector('[data-fdt="external-link"]');
-    expect(plain?.tagName).toBe('SPAN');
-    expect(plain?.querySelector('.truncate')?.getAttribute('title')).toBe(href);
-    expect(plain?.textContent).toBe(href);
-    expect(plain?.querySelector('svg')).toBeNull();
   });
 });
 

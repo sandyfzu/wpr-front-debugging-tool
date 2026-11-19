@@ -1,14 +1,14 @@
 /**
- * Grouped filter names and bounded titles over real captured inventories: the
- * Lazyload and Preloaded pages' chips; the JavaScript page's facets (the
- * Delay facet's "Any" segment counts every row), its rows' bounded name
- * titles and its detail's source-link tile and copy.
+ * Grouped filter names and bounded titles over real captured inventories:
+ * the JavaScript, Lazyload and Preloaded pages' facets (each first facet's
+ * "Any" segment counts every row), their rows' bounded name titles and
+ * their detail's source-link tile and copy.
  */
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type { Locator } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
-import { facetSegment, openScriptDetail, scriptRows } from '../helpers/javascript-page';
+import { facetSegment, openScriptDetail } from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
 import { resetStoredOptions } from '../helpers/options';
 
@@ -31,11 +31,18 @@ const LONG_URL = `https://example.test/${'x'.repeat(400)}.js?exact=%20#tail`;
 /** The capped title of {@link LONG_URL}. */
 const LONG_TITLE = `${LONG_URL.slice(0, 300)}…`;
 
-/** The long URL's file name (the JavaScript row's name). */
+/** The long URL's file name (its rows' name). */
 const LONG_NAME = `${'x'.repeat(400)}.js`;
 
 /** The capped title of {@link LONG_NAME}. */
 const LONG_NAME_TITLE = `${LONG_NAME.slice(0, 300)}…`;
+
+/** Each list's first facet, its rows' hook and its detail's copy name. */
+const LISTS = {
+  javascript: { facet: 'Delay', row: '[data-fdt="script-row"]', copy: 'Script URL' },
+  lazyload: { facet: 'Lazyload', row: '[data-fdt="lazyload-row"]', copy: 'Image URL' },
+  'preloaded-resources': { facet: 'Source', row: '[data-fdt="hint-row"]', copy: 'Hint URL' }
+} as const;
 
 /**
  * The search field's and its row's widths, plus the 20 rem cap (rem resolves
@@ -109,33 +116,22 @@ test('keeps grouped names, bounded titles and full copy/link values on all list 
       } else {
         await expect(panel.locator('html')).toHaveAttribute('data-theme', theme);
       }
-      for (const id of ['javascript', 'lazyload', 'preloaded-resources']) {
+      for (const id of ['javascript', 'lazyload', 'preloaded-resources'] as const) {
         await panel.evaluate((id) => {
           location.hash = `#/${id}`;
         }, id);
         const root = panel.locator(`[data-fdt-page="${id}"]`);
         const scripts = id === 'javascript';
-        // The "all rows" filter: the chips' Show all, or the Delay facet's Any.
-        const chip = scripts
-          ? facetSegment(root, 'any', 'Delay')
-          : root.locator('[data-fdt-filter-chip="all"]');
-        if (scripts) {
-          await expect(chip.locator('input')).toHaveAccessibleName(/5,000$/);
-          await expect(chip.locator('[data-fdt-choice-count]')).toHaveText('5,000');
-          await expect(chip.locator('input')).toBeChecked();
-          // The row's name is the file name, its title bounded.
-          const name = scriptRows(root).first().locator('[data-fdt="list-row-name"]');
-          await expect(name).toHaveText(LONG_NAME);
-          await expect(name).toHaveAttribute('title', LONG_NAME_TITLE);
-        } else {
-          await expect(chip).toHaveAccessibleName(/5,000 matching$/);
-          await expect(chip.locator('[data-fdt-filter-count]')).toHaveText('5,000');
-          await expect(chip).toHaveAttribute('aria-pressed', 'true');
-          const link = root.locator('[data-fdt="external-link"]').first();
-          await expect(link).toHaveAttribute('href', LONG_URL);
-          await expect(link.locator('.truncate')).toHaveAttribute('title', LONG_TITLE);
-          await expect(link.locator('.truncate')).toHaveText(LONG_URL);
-        }
+        const list = LISTS[id];
+        // The "all rows" filter: the list's first facet's Any.
+        const chip = facetSegment(root, 'any', list.facet);
+        await expect(chip.locator('input')).toHaveAccessibleName(/5,000$/);
+        await expect(chip.locator('[data-fdt-choice-count]')).toHaveText('5,000');
+        await expect(chip.locator('input')).toBeChecked();
+        // The row's name is the file name, its title bounded.
+        const name = root.locator(list.row).first().locator('[data-fdt="list-row-name"]');
+        await expect(name).toHaveText(LONG_NAME);
+        await expect(name).toHaveAttribute('title', LONG_NAME_TITLE);
         for (const width of [320, 480, 768, 1280]) {
           await panel.setViewportSize({ width, height: 800 });
           // The list's tier follows its measured width (a resize observer):
@@ -152,9 +148,8 @@ test('keeps grouped names, bounded titles and full copy/link values on all list 
           );
           // A compact facet bar folds its facets into the Filters button.
           const compactFacets =
-            scripts &&
             (await root.locator('[data-fdt="facet-bar"]').getAttribute('data-fdt-compact')) !==
-              null;
+            null;
           await expect(
             compactFacets ? root.locator('[data-fdt="facet-filters-button"]') : chip
           ).toBeVisible();
@@ -185,19 +180,16 @@ test('keeps grouped names, bounded titles and full copy/link values on all list 
           await expect(root.getByRole('tab', { selected: true })).toBeFocused();
         }
         await panel.keyboard.press('Tab');
-        await expect(scripts ? chip.locator('input') : chip).toBeFocused();
-        let copy = root.getByRole('button', { name: /URL.*— copy$/ }).first();
-        if (scripts) {
-          // The full URL and its copy live in the row's detail.
-          const detail = await openScriptDetail(panel, scriptRows(root).first());
-          const tile = detail.locator('[data-fdt="source-link-open"]');
-          await expect(tile).toHaveAttribute('title', LONG_TITLE);
-          await expect(detail.locator('[data-fdt="source-link"] a[href]').first()).toHaveAttribute(
-            'href',
-            LONG_URL
-          );
-          copy = detail.getByRole('button', { name: 'Script URL — copy' });
-        }
+        await expect(chip.locator('input')).toBeFocused();
+        // The full URL and its copy live in the row's detail.
+        const detail = await openScriptDetail(panel, root.locator(list.row).first());
+        const tile = detail.locator('[data-fdt="source-link-open"]');
+        await expect(tile).toHaveAttribute('title', LONG_TITLE);
+        await expect(detail.locator('[data-fdt="source-link"] a[href]').first()).toHaveAttribute(
+          'href',
+          LONG_URL
+        );
+        const copy = detail.getByRole('button', { name: `${list.copy} — copy` });
         await panel.evaluate(() => navigator.clipboard.writeText('not copied'));
         await copy.press('Enter');
         await expect

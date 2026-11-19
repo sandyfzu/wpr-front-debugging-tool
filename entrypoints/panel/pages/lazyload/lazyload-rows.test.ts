@@ -6,20 +6,22 @@ import {
   exclusionReasons,
   LAZY_MARKUP_NOTE,
   LAZYLOAD_CHIP_SOURCES,
-  LAZYLOAD_ROW_ESTIMATE,
-  LAZYLOAD_ROW_WITH_REASONS_ESTIMATE,
+  LAZYLOAD_VIEW_FACETS,
   lazyloadChipFacts,
-  lazyloadChipSplit,
   lazyloadChipTable,
+  lazyloadFacts,
   lazyloadNotes,
-  lazyloadRowEstimate,
-  lazyloadRowView,
+  lazyloadReasonsView,
+  lazyloadRowKeys,
+  lazyloadRowViews,
+  lazyloadSearchField,
+  lazyloadStateChips,
+  NO_IMAGE_URL_NAME,
   NO_LAZYLOAD_CHIP_FACTS,
   PAGE_LAZY_MARKUP_TITLE,
   sameImageRow,
   sameImageRowView,
   sameLazyloadChipFacts,
-  showLazyloadReasons,
   type LazyloadChipTable,
   type LazyloadRowView
 } from './lazyload-rows';
@@ -41,33 +43,30 @@ function table(simulation: SimulationFact | null = null, present = true): Lazylo
   return lazyloadChipTable({ present, simulation });
 }
 
-describe('lazyloadChipSplit', () => {
+describe('lazyloadStateChips', () => {
   const lazy = row({ lazyloaded: true });
   const marked = row({ excludedReasons: ['data-src', FDT_EXCLUDED_RESOURCE] });
 
   it('WP Rocket’s LazyLoad detected, no marker: a lazyloaded image is WP Rocket’s, named with the feature', () => {
-    expect(lazyloadChipSplit(lazy, table())).toEqual({
-      visible: [
-        {
-          id: 'lazyloaded',
-          label: 'Lazyloaded',
-          source: 'wp-rocket',
-          title: 'Lazyloaded by WP Rocket (LazyLoad for images)'
-        }
-      ],
-      overflow: null
-    });
+    expect(lazyloadStateChips(lazy, table())).toEqual([
+      {
+        id: 'lazyloaded',
+        label: 'Lazyloaded',
+        source: 'wp-rocket',
+        title: 'Lazyloaded by WP Rocket (LazyLoad for images)'
+      }
+    ]);
   });
 
   it('WP Rocket’s LazyLoad not detected: the lazy markup is the page’s own (any plugin writes it)', () => {
-    expect(lazyloadChipSplit(lazy, table(null, false)).visible).toEqual([
+    expect(lazyloadStateChips(lazy, table(null, false))).toEqual([
       { id: 'lazyloaded', label: 'Lazyloaded', source: 'page', title: PAGE_LAZY_MARKUP_TITLE }
     ]);
     expect(PAGE_LAZY_MARKUP_TITLE).toBe(
       "Lazy markup on the page (WP Rocket's LazyLoad not detected)"
     );
     // An unverified marker vouches for nothing either; the hover still flags it.
-    expect(lazyloadChipSplit(lazy, table('unverified', false)).visible).toEqual([
+    expect(lazyloadStateChips(lazy, table('unverified', false))).toEqual([
       {
         id: 'lazyloaded',
         label: 'Lazyloaded',
@@ -78,7 +77,7 @@ describe('lazyloadChipSplit', () => {
   });
 
   it('a verified simulation produced it: the simulation’s source and title (WP Rocket absent)', () => {
-    expect(lazyloadChipSplit(lazy, table('simulated', false)).visible).toEqual([
+    expect(lazyloadStateChips(lazy, table('simulated', false))).toEqual([
       {
         id: 'lazyloaded',
         label: 'Lazyloaded',
@@ -89,7 +88,7 @@ describe('lazyloadChipSplit', () => {
   });
 
   it('an unverified marker on a detected page keeps WP Rocket and flags the title', () => {
-    const [chip] = lazyloadChipSplit(lazy, table('unverified')).visible;
+    const [chip] = lazyloadStateChips(lazy, table('unverified'));
     expect(chip?.source).toBe('wp-rocket');
     expect(chip?.title).toBe(
       `Lazyloaded by WP Rocket (LazyLoad for images)${UNVERIFIED_SIMULATION_SUFFIX}`
@@ -104,7 +103,7 @@ describe('lazyloadChipSplit', () => {
   ] as const)(
     'the FDT marker reads Excluded (FDT exclusion) whatever the facts (%s, %s)',
     (fact, present) => {
-      expect(lazyloadChipSplit(marked, table(fact, present)).visible).toEqual([
+      expect(lazyloadStateChips(marked, table(fact, present))).toEqual([
         {
           id: 'excluded',
           label: 'Excluded',
@@ -116,9 +115,9 @@ describe('lazyloadChipSplit', () => {
   );
 
   it('a non-lazyloaded image without the marker shows no chip (the filter keeps it)', () => {
-    expect(lazyloadChipSplit(row(), table())).toBe(NO_STATE_CHIPS);
-    expect(lazyloadChipSplit(row({ excludedReasons: ['skip-lazy'] }), table('simulated'))).toBe(
-      NO_STATE_CHIPS
+    expect(lazyloadStateChips(row(), table())).toEqual([]);
+    expect(lazyloadStateChips(row({ excludedReasons: ['skip-lazy'] }), table('simulated'))).toEqual(
+      []
     );
   });
 
@@ -127,7 +126,7 @@ describe('lazyloadChipSplit', () => {
     for (const fact of [null, 'simulated', 'unverified'] as const) {
       for (const present of [true, false]) {
         for (const image of [lazy, marked]) {
-          for (const chip of lazyloadChipSplit(image, table(fact, present)).visible) {
+          for (const chip of lazyloadStateChips(image, table(fact, present))) {
             expect(LAZYLOAD_CHIP_SOURCES).toContain(chip.source);
             seen.add(chip.source);
           }
@@ -159,36 +158,86 @@ describe('chip facts and row views', () => {
     expect(sameLazyloadChipFacts(base, { ...base, simulation: 'unverified' })).toBe(false);
   });
 
-  it('a row view carries its row and its split', () => {
-    const chips = table();
-    const view = lazyloadRowView(row({ lazyloaded: true }), chips);
-    expect(view.lazyloaded).toBe(true);
-    expect(view.chips.visible).toEqual([chips.lazyloaded]);
+  it('keys rows by URL and occurrence, never position', () => {
+    const rows = [row({ src: 'a' }), row({ src: 'b' }), row({ src: 'a' }), row({ src: '' })];
+    const keys = lazyloadRowKeys(rows);
+    expect(new Set(keys).size).toBe(4);
+    // An image added above shifts no key.
+    const shifted = lazyloadRowKeys([row({ src: 'new' }), ...rows]).slice(1);
+    expect(shifted).toEqual(keys);
+    expect(lazyloadRowKeys([])).toEqual([]);
   });
 
-  it('views match only with the same data and chips that read the same', () => {
+  it('builds a view per row: name, preview, clip mark, every chip and the calm split', () => {
     const chips = table();
-    const a = lazyloadRowView(row({ lazyloaded: true }), chips);
-    expect(sameImageRowView(a, lazyloadRowView(row({ lazyloaded: true }), chips))).toBe(true);
-    // A new fact set builds a new table: every view re-derives.
-    expect(
-      sameImageRowView(a, lazyloadRowView(row({ lazyloaded: true }), table('simulated')))
-    ).toBe(false);
-    expect(sameImageRowView(a, lazyloadRowView(row(), chips))).toBe(false);
-    const plain = lazyloadRowView(row(), chips);
-    expect(sameImageRowView(plain, lazyloadRowView(row(), table('simulated')))).toBe(true);
-  });
-
-  it('views with a "+N" chip compare its title', () => {
-    const chips = table();
-    const base = lazyloadRowView(row({ lazyloaded: true }), chips);
-    const overflow = (title: string): LazyloadRowView => ({
-      ...base,
-      chips: { visible: base.chips.visible, overflow: { label: '+1', title, hidesWpRocket: false } }
+    const [lazyView, plain, empty] = lazyloadRowViews(
+      [
+        row({ src: 'https://cdn.example/a/hero.jpg?v=2', lazyloaded: true }),
+        row({ src: '/rel/plain.png' }),
+        row({ src: '' })
+      ],
+      chips,
+      (src) => src.endsWith('?v=2')
+    );
+    expect(lazyView).toMatchObject({
+      name: 'hero.jpg',
+      preview: 'cdn.example/a/hero.jpg?v=2',
+      clipped: true,
+      chips: [chips.lazyloaded],
+      rowChips: { visible: [chips.lazyloaded], overflow: null }
     });
-    expect(sameImageRowView(overflow('Also: A (page)'), overflow('Also: A (page)'))).toBe(true);
-    expect(sameImageRowView(overflow('Also: A (page)'), overflow('Also: B (page)'))).toBe(false);
-    expect(sameImageRowView(base, overflow('Also: A (page)'))).toBe(false);
+    // A relative URL is previewed as captured (no scheme to drop).
+    expect(plain).toMatchObject({ name: 'plain.png', preview: '/rel/plain.png', clipped: false });
+    expect(plain?.rowChips).toBe(NO_STATE_CHIPS);
+    expect(empty).toMatchObject({ name: NO_IMAGE_URL_NAME, preview: undefined });
+    expect(NO_IMAGE_URL_NAME).toBe('No URL captured');
+  });
+
+  it('views match only with the same data, clip mark and chips that read the same', () => {
+    const chips = table();
+    const view = (
+      image: LazyloadImageResource,
+      facts: LazyloadChipTable = chips,
+      clipped = false
+    ): LazyloadRowView => {
+      const [built] = lazyloadRowViews([image], facts, () => clipped);
+      if (built === undefined) throw new Error('no view');
+      return built;
+    };
+    const a = view(row({ lazyloaded: true }));
+    expect(sameImageRowView(a, view(row({ lazyloaded: true })))).toBe(true);
+    // A new fact set builds a new table: a chip that reads differently re-derives.
+    expect(sameImageRowView(a, view(row({ lazyloaded: true }), table('simulated')))).toBe(false);
+    expect(sameImageRowView(a, view(row()))).toBe(false);
+    expect(sameImageRowView(a, view(row({ lazyloaded: true }), chips, true))).toBe(false);
+    // Position is no content: a moved image is the same view.
+    expect(sameImageRowView(a, view(row({ id: 9, lazyloaded: true })))).toBe(true);
+    const plain = view(row());
+    expect(sameImageRowView(plain, view(row(), table('simulated')))).toBe(true);
+  });
+
+  it('searches the image URL and filters by the lifted facets', () => {
+    const [lazyView, plain] = lazyloadRowViews(
+      [row({ src: 'a.jpg', lazyloaded: true }), row({ src: 'b.jpg' })],
+      table(),
+      () => false
+    );
+    if (lazyView === undefined || plain === undefined) throw new Error('no views');
+    expect(lazyloadSearchField(lazyView)).toBe('a.jpg');
+    const values = LAZYLOAD_VIEW_FACETS.byId
+      .get('lazyload')
+      ?.values.map((value) => [value.id, value.predicate(lazyView), value.predicate(plain)]);
+    expect(values).toEqual([
+      ['lazyloaded', true, false],
+      ['non-lazyloaded', false, true]
+    ]);
+  });
+
+  it('lists whether the image is lazyloaded as its one fact', () => {
+    expect(lazyloadFacts(row({ lazyloaded: true }))).toEqual([
+      { label: 'Lazyloaded', value: 'Yes', mono: false }
+    ]);
+    expect(lazyloadFacts(row())).toEqual([{ label: 'Lazyloaded', value: 'No', mono: false }]);
   });
 });
 
@@ -211,35 +260,33 @@ describe('exclusionReasons', () => {
   });
 });
 
-describe('showLazyloadReasons', () => {
-  it.each([
-    [true, true, false],
-    [true, false, true],
-    [false, true, false],
-    [false, false, false]
-  ])('feature present %s, image lazyloaded %s → reasons %s', (present, lazyloaded, expected) => {
-    const image = row({ lazyloaded });
-    expect(showLazyloadReasons(image, present)).toBe(expected);
-    expect(lazyloadRowEstimate(image, present)).toBe(
-      expected ? LAZYLOAD_ROW_WITH_REASONS_ESTIMATE : LAZYLOAD_ROW_ESTIMATE
-    );
+describe('lazyloadReasonsView', () => {
+  it('a lazyloaded image says nothing, running or not', () => {
+    const lazy = row({ lazyloaded: true, excludedReasons: ['skip-lazy'] });
+    expect(lazyloadReasonsView(lazy, true)).toEqual({ kind: 'hidden' });
+    expect(lazyloadReasonsView(lazy, false)).toEqual({ kind: 'hidden' });
   });
 
-  it('the marker alone is no reasons line (its chip says it); beside page reasons the line stays', () => {
-    const only = row({ excludedReasons: [FDT_EXCLUDED_RESOURCE] });
-    expect(showLazyloadReasons(only, true)).toBe(false);
-    expect(lazyloadRowEstimate(only, true)).toBe(LAZYLOAD_ROW_ESTIMATE);
-    const both = row({ excludedReasons: ['skip-lazy', FDT_EXCLUDED_RESOURCE] });
-    expect(showLazyloadReasons(both, true)).toBe(true);
-    expect(showLazyloadReasons(both, false)).toBe(false);
+  it('lazyload not running: says so instead of listing reasons', () => {
+    expect(lazyloadReasonsView(row({ excludedReasons: ['skip-lazy'] }), false)).toEqual({
+      kind: 'off'
+    });
+    expect(lazyloadReasonsView(row(), false)).toEqual({ kind: 'off' });
   });
-});
 
-describe('lazyloadRowEstimate', () => {
-  it('seeds lazyloaded rows without the reasons line', () => {
-    expect(lazyloadRowEstimate(row({ lazyloaded: true }), true)).toBe(LAZYLOAD_ROW_ESTIMATE);
-    expect(lazyloadRowEstimate(row(), true)).toBe(LAZYLOAD_ROW_WITH_REASONS_ESTIMATE);
-    expect(LAZYLOAD_ROW_WITH_REASONS_ESTIMATE).toBeGreaterThan(LAZYLOAD_ROW_ESTIMATE);
+  it('running: the page reasons in order, else "none found"', () => {
+    const reasons = ['data-src', FDT_EXCLUDED_RESOURCE, 'skip'];
+    expect(lazyloadReasonsView(row({ excludedReasons: reasons }), true)).toEqual({
+      kind: 'reasons',
+      reasons: ['data-src', 'skip']
+    });
+    expect(lazyloadReasonsView(row(), true)).toEqual({ kind: 'none-found' });
+  });
+
+  it('the marker alone is no reasons section (its chip says it)', () => {
+    expect(lazyloadReasonsView(row({ excludedReasons: [FDT_EXCLUDED_RESOURCE] }), true)).toEqual({
+      kind: 'hidden'
+    });
   });
 });
 

@@ -1,19 +1,29 @@
 /**
  * Pure presentation rules for the Lazyload page: the state chips and their
- * sources, the exclusion-reason split (the tool's own exclusion marker is a
- * chip, apart from the page's reasons), row identity across refreshes, the
- * summary notes and the row's seed height.
+ * sources, the row views (name, URL preview, chips — built once per row,
+ * never in the renderer) and the content key a row keeps across refreshes,
+ * the detail's facts and the exclusion-reason split (the tool's own
+ * exclusion marker is a chip, apart from the page's reasons), and the
+ * summary notes.
  */
 import { LAZYLOAD_IMAGE_STATES, type LazyloadStateId } from '../../../../lib/panel/lazyload-states';
-import type { LazyloadImageResource } from '../../../../lib/panel/resources-view-model';
+import { liftFacets, type FacetSet } from '../../../../lib/panel/resource-facets';
+import {
+  LAZYLOAD_PAGE_FACETS,
+  LAZYLOAD_PAGE_RESOURCES,
+  type LazyloadFacetId,
+  type LazyloadImageResource
+} from '../../../../lib/panel/resources-view-model';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import { FDT_EXCLUDED_RESOURCE } from '../../../../lib/wp-rocket/constants';
 import type { SimulationFact, WprDetections } from '../../../../lib/wp-rocket/types';
 import { formatCount } from '../../../../utils/format-count';
 import { simulationModifierCopy } from '../../../../lib/detection/hud';
-import { listCapped } from '../resource-list/resource-list-view';
+import type { DetailFact } from '../resource-list/detail-section';
+import { listCapped, resourceName, urlPreview } from '../resource-list/resource-list-view';
 import {
+  CALM_VISIBLE_STATE_CHIPS,
   UNVERIFIED_SIMULATION_SUFFIX,
   simulatableSource,
   splitStateChips,
@@ -112,39 +122,115 @@ export function lazyloadChipTable(facts: LazyloadChipFacts): LazyloadChipTable {
 }
 
 /**
- * The state chips of one image row, split for rendering: the shared state
- * table's order; Not lazyloaded is no chip (its filter keeps it).
+ * The state chips of one image row, in the shared state table's order; Not
+ * lazyloaded is no chip (its facet value keeps it).
  *
  * @param row The image row.
  * @param table The fact set's chips.
- * @returns The split chips.
+ * @returns Every chip the row shows (the detail lists them all).
  */
-export function lazyloadChipSplit(
+export function lazyloadStateChips(
   row: LazyloadImageResource,
   table: LazyloadChipTable
-): StateChipSplit {
-  return splitStateChips(
-    LAZYLOAD_IMAGE_STATES.filter((state) => state.holds(row)).map((state) => table[state.id])
-  );
+): StateChip[] {
+  return LAZYLOAD_IMAGE_STATES.filter((state) => state.holds(row)).map((state) => table[state.id]);
 }
 
-/** One rendered row: the classified image plus its chips, derived once per row view. */
-export interface LazyloadRowView extends LazyloadImageResource {
-  /** The row's state chips, split for rendering. */
-  readonly chips: StateChipSplit;
+/** One rendered row: the classified image plus what its renderer reads, built once. */
+export interface LazyloadRowView {
+  /** The classified image (its `id` is its capture position at build time only). */
+  readonly row: LazyloadImageResource;
+  /** The content key: the same image keeps it across refreshes (see {@link lazyloadRowKeys}). */
+  readonly key: string;
+  /** The row's name: the image's file name, or {@link NO_IMAGE_URL_NAME}. */
+  readonly name: string;
+  /** The URL without its scheme (undefined without a URL). */
+  readonly preview: string | undefined;
+  /** The capture cut the URL at its length cap. */
+  readonly clipped: boolean;
+  /** Every state chip (the detail lists them all). */
+  readonly chips: readonly StateChip[];
+  /** The row's chips: at most two, then "+N". */
+  readonly rowChips: StateChipSplit;
+}
+
+/** An image whose capture holds no URL (its row name). */
+export const NO_IMAGE_URL_NAME = 'No URL captured';
+
+/** Separates a key's fields (never part of a captured URL's text). */
+const KEY_FIELD = '\u0001';
+
+/**
+ * The content key of every row: the image's URL plus its occurrence among
+ * images with the same URL — never its position, so an image added above
+ * shifts nothing (the selection and the open detail follow the image).
+ *
+ * @param rows The classified images, in list order.
+ * @returns One unique key per row, same order.
+ */
+export function lazyloadRowKeys(rows: readonly LazyloadImageResource[]): string[] {
+  const seen = new Map<string, number>();
+  return rows.map((row) => {
+    const occurrence = seen.get(row.src) ?? 0;
+    seen.set(row.src, occurrence + 1);
+    return `${row.src}${KEY_FIELD}${String(occurrence)}`;
+  });
 }
 
 /**
- * Build a row view.
+ * Build the row views (keys, names, previews and chips once per row).
  *
- * @param row The classified image.
+ * @param rows The classified images, in list order.
  * @param table The fact set's chips.
+ * @param clipped Whether the capture cut a given URL at its length cap.
+ * @returns One view per row, same order.
  */
-export function lazyloadRowView(
-  row: LazyloadImageResource,
-  table: LazyloadChipTable
-): LazyloadRowView {
-  return { ...row, chips: lazyloadChipSplit(row, table) };
+export function lazyloadRowViews(
+  rows: readonly LazyloadImageResource[],
+  table: LazyloadChipTable,
+  clipped: (src: string) => boolean
+): LazyloadRowView[] {
+  const keys = lazyloadRowKeys(rows);
+  return rows.map((row, index) => {
+    const chips = lazyloadStateChips(row, table);
+    return {
+      row,
+      key: keys[index] ?? '',
+      name: resourceName(row.src) || NO_IMAGE_URL_NAME,
+      preview: row.src === '' ? undefined : urlPreview(row.src),
+      clipped: clipped(row.src),
+      chips,
+      rowChips: splitStateChips(chips, CALM_VISIBLE_STATE_CHIPS)
+    };
+  });
+}
+
+/** The page's facets over row views (the row facets, lifted). */
+export const LAZYLOAD_VIEW_FACETS: FacetSet<LazyloadRowView, LazyloadFacetId> = liftFacets(
+  LAZYLOAD_PAGE_FACETS,
+  (view: LazyloadRowView) => view.row
+);
+
+/**
+ * A view's searched field: the image URL.
+ *
+ * @param view The row view.
+ */
+export function lazyloadSearchField(view: LazyloadRowView): string {
+  return LAZYLOAD_PAGE_RESOURCES.searchField(view.row);
+}
+
+/** The detail's caps kind label. */
+export const IMAGE_KIND = 'Image';
+
+/**
+ * The facts the detail lists for an image (what the capture records).
+ *
+ * @param row The image row.
+ * @returns The facts, in reading order.
+ */
+export function lazyloadFacts(row: LazyloadImageResource): DetailFact[] {
+  return [{ label: 'Lazyloaded', value: row.lazyloaded ? 'Yes' : 'No', mono: false }];
 }
 
 /** A non-lazyloaded row's reasons, split for display. */
@@ -171,43 +257,41 @@ export function exclusionReasons(row: LazyloadImageResource): ExclusionReasons {
 }
 
 /**
- * Whether the row shows its reasons line: exclusion evidence is meaningful
- * only while lazyload runs on the page, for an image it skipped — and not
- * when the tool's marker is the only reason (the Excluded chip says it; "No
- * reasons found" would contradict it).
+ * What the detail's reasons section shows for an image:
+ * - `reasons` — the page's own reasons it escapes lazyload;
+ * - `none-found` — skipped while lazyload runs, with no reason found;
+ * - `off` — not lazyloaded, but lazyload does not run on the page: no
+ *   exclusion applies (said, so the missing section never reads as "none");
+ * - `hidden` — nothing to say: a lazyloaded image, or one whose only reason
+ *   is the tool's marker (its Excluded chip says it; "No reasons found"
+ *   would contradict it).
+ */
+export type LazyloadReasonsView =
+  | { readonly kind: 'reasons'; readonly reasons: readonly string[] }
+  | { readonly kind: 'none-found' | 'off' | 'hidden' };
+
+/**
+ * Decide the detail's reasons section: exclusion evidence is meaningful
+ * only while lazyload runs on the page, for an image it skipped.
  *
  * @param row The image row.
- * @param featurePresent Whether image lazyload runs on the page.
- * @returns Whether to render the row's reasons line, including the empty fallback.
+ * @param running Whether image lazyload runs on the page (WP Rocket's or a verified simulation's).
+ * @returns The section's view.
  */
-export function showLazyloadReasons(row: LazyloadImageResource, featurePresent: boolean): boolean {
-  if (!featurePresent || row.lazyloaded) return false;
+export function lazyloadReasonsView(
+  row: LazyloadImageResource,
+  running: boolean
+): LazyloadReasonsView {
+  if (row.lazyloaded) return { kind: 'hidden' };
+  if (!running) return { kind: 'off' };
   const split = exclusionReasons(row);
-  return !split.excludedByTool || split.reasons.length > 0;
-}
-
-/** Seed height of a row without reasons (name line + URL line), in px. */
-export const LAZYLOAD_ROW_ESTIMATE = 55;
-
-/** Seed height of a row with its reasons line, in px (measurement refines wraps). */
-export const LAZYLOAD_ROW_WITH_REASONS_ESTIMATE = 79;
-
-/**
- * Seed the virtual list with the same visibility rule as the reasons line.
- *
- * @param row The image row.
- * @param featurePresent Whether image lazyload was detected on the page.
- * @returns The estimate in px.
- */
-export function lazyloadRowEstimate(row: LazyloadImageResource, featurePresent: boolean): number {
-  return showLazyloadReasons(row, featurePresent)
-    ? LAZYLOAD_ROW_WITH_REASONS_ESTIMATE
-    : LAZYLOAD_ROW_ESTIMATE;
+  if (split.reasons.length > 0) return { kind: 'reasons', reasons: split.reasons };
+  return { kind: split.excludedByTool ? 'hidden' : 'none-found' };
 }
 
 /**
- * Whether two image rows with the same id show the same thing (the refresh
- * reuse test): URL, state and reasons in order.
+ * Whether two classified images carry the same data (position ignored):
+ * URL, state and reasons in order.
  *
  * @param a The previous row.
  * @param b The fresh row.
@@ -239,20 +323,20 @@ function sameChip(a: StateChip, b: StateChip | undefined): boolean {
 }
 
 /**
- * Whether two row views show the same thing: the same image data and chips
- * that read the same — so a changed fact set re-renders only the rows whose
- * chips it changed (the rest keep their element and focus).
+ * Whether two views of one key show the same thing: the same image data,
+ * the clip mark and chips that read the same — so a changed fact set
+ * re-renders only the rows whose chips it changed (the rest keep their
+ * element and focus). The name and preview derive from the URL.
  *
  * @param a The previous view.
  * @param b The fresh view.
  */
 export function sameImageRowView(a: LazyloadRowView, b: LazyloadRowView): boolean {
   return (
-    sameImageRow(a, b) &&
-    // The "+N" title names every hidden chip with its source.
-    (a.chips.overflow?.title ?? null) === (b.chips.overflow?.title ?? null) &&
-    a.chips.visible.length === b.chips.visible.length &&
-    a.chips.visible.every((chip, index) => sameChip(chip, b.chips.visible[index]))
+    sameImageRow(a.row, b.row) &&
+    a.clipped === b.clipped &&
+    a.chips.length === b.chips.length &&
+    a.chips.every((chip, index) => sameChip(chip, b.chips[index]))
   );
 }
 
