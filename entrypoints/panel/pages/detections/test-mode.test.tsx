@@ -30,7 +30,7 @@ describe('Detections — TEST MODE', () => {
     expect(notices[0]?.textContent).toContain(RUCSS_TEST_MODE_TAG);
     expect(notices[0]?.textContent).toContain(RUCSS_TEST_MODE_SENTENCE);
     expect(document.body.textContent.split(RUCSS_TEST_MODE_TAG)).toHaveLength(2);
-    // Above the summary strip.
+    // Above the overview tiles.
     const summary = document.querySelector('[data-fdt="detections-summary"]');
     expect(
       (notices[0] as Node).compareDocumentPosition(summary as Node) &

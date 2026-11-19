@@ -1,27 +1,27 @@
 /**
- * The Detections page — the panel's overview: a summary strip with the
- * page-level facts, the status card grid (one card per detection plus the
+ * The Detections page — the panel's overview: the overview tiles (score,
+ * WP Rocket, page cache, stack), the status card grid (one card per detection plus the
  * serving facts); `Copy report` is the page's one primary action.
  *
  * State matrix: the shell owns idle/fetching (skeleton), fetch error (+
  * Retry) and render crashes; this body renders only on `ready` and
- * `refreshing`. Within it: plugin absent → the strip says "WP Rocket not
- * detected" and the cards still render; headers not captured → the Server /
+ * `refreshing`. Within it: plugin absent → the tiles say "Not detected" and
+ * the cards still render; headers not captured → the Server /
  * Known Platform cards are omitted; a RUCSS test applied on the page → the
- * TEST MODE notice above the strip, once. The full header inventory lives on the
+ * TEST MODE notice above the tiles, once. The full header inventory lives on the
  * Headers & Cookies page. A refresh swaps data only: cards are keyed by their
  * id, so their DOM and focus survive.
  *
  * The control row's status filter (All optimizations / Active / Inactive,
  * page-local, default All) narrows only the optimization cards — page-context
- * cards stay under every filter — while the strip and `Copy report` keep
+ * cards stay under every filter — while the tiles and `Copy report` keep
  * reading the full page. A refresh keeps the selection; a selected bucket a
  * refresh emptied stays selected and says so, with the way back to All.
  *
  * The layout choice (Adaptive / List, shell-session, from the regular tier
  * up — below it both are the same rows) changes classes only: Adaptive is
  * the width-driven grid; List bounds the control row and the rows to one
- * reading-width column, the strip keeping the page canvas.
+ * reading-width column, the tiles keeping the page canvas.
  *
  * Card rendering is registry-driven — the view model's rows are the card
  * set and the page-local link table decides which become links — so a new
@@ -57,7 +57,7 @@ import { TestModeNotice } from '../test-mode-notice';
 import { CARD_PAGE_LINKS } from './card-presentation';
 import { CopyReportButton } from './copy-report-button';
 import { StatusCard } from './status-card';
-import { SummaryStrip } from './summary-strip';
+import { OverviewTiles } from './overview-tiles';
 
 /** The page's one-line intro under its title. */
 export const DETECTIONS_SUBTITLE = 'What WP Rocket applied to this page, and how it was served.';
@@ -184,7 +184,7 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
         fact={props.data.rucssTestMode}
         reloadInspectedPage={props.reloadInspectedPage}
       />
-      <SummaryStrip summary={summary()} />
+      <OverviewTiles data={props.data} summary={summary()} now={props.now} />
       {/* The page's control row: the status filter at its start, the layout choice at
           its end. Always mounted, chips included: the All chip is never disabled, so it
           is the filtered-empty reset's focus target even on a payload with no

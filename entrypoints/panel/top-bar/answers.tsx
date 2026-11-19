@@ -15,10 +15,11 @@ import { FOCUS_RING } from '../../../components/ui/classes';
 import { Skeleton } from '../../../components/ui/skeleton';
 import { StatusBadge } from '../../../components/ui/status-badge';
 import { Tooltip } from '../../../components/ui/tooltip';
+import { WPR_NOT_DETECTED } from '../../../lib/panel/wpr-evidence';
 import { cn } from '../../../utils/cn';
 import { FOLD_ELIDE_MARK, FoldPart, type TopBarFoldControl } from './fold';
 import type { FreshnessSegmentView, SegmentId, TopBarSegments } from './selectors';
-import { STALE_WINDOW_MINUTES } from './selectors';
+import { cacheAnswerTone, STALE_WINDOW_MINUTES } from './selectors';
 
 /** The composed answers accessor (each read resolves inside the caller's boundary). */
 export type SegmentsAccessor = () => TopBarSegments;
@@ -177,7 +178,7 @@ export function WprAnswer(props: { segments: SegmentsAccessor; compact: boolean 
       <Match when={view().kind === 'not-detected'}>
         <a href={ANSWER_TARGETS.wpr} class={cn(ANSWER, ANSWER_HOVER, FOCUS_RING)}>
           <StatusBadge kind="neutral" icon class={PILL}>
-            <PillText>Not detected</PillText>
+            <PillText>{WPR_NOT_DETECTED}</PillText>
           </StatusBadge>
         </a>
       </Match>
@@ -264,17 +265,8 @@ export function CacheAnswer(props: {
             placement="bottom"
             class={cn(ANSWER, ANSWER_HOVER)}
           >
-            {/* Warn only for conflicting evidence; `not-detected` and the
-                bypass request (intent, not a fault) stay neutral. */}
-            <StatusBadge
-              kind={
-                state().kind === 'uncertain-signature' || state().kind === 'possibly-cached'
-                  ? 'warn'
-                  : 'neutral'
-              }
-              icon
-              class={PILL}
-            >
+            {/* The shared tone rule (warn only for conflicting evidence). */}
+            <StatusBadge kind={cacheAnswerTone(state())} icon class={PILL}>
               <PillText>{state().copy.chip}</PillText>
             </StatusBadge>
           </Tooltip>
@@ -290,7 +282,7 @@ export function CacheAnswer(props: {
               when={state().age !== null}
               fallback={
                 <a href={ANSWER_TARGETS.cache} class={cn(ANSWER, ANSWER_HOVER, FOCUS_RING)}>
-                  <StatusBadge kind="ok" class={PILL}>
+                  <StatusBadge kind={cacheAnswerTone(state())} class={PILL}>
                     <PillText>{state().copy.chip}</PillText>
                   </StatusBadge>
                 </a>
@@ -303,7 +295,7 @@ export function CacheAnswer(props: {
                 placement="bottom"
                 class={cn(ANSWER, ANSWER_HOVER)}
               >
-                <StatusBadge kind="ok" class={PILL}>
+                <StatusBadge kind={cacheAnswerTone(state())} class={PILL}>
                   <PillText>{state().copy.chip}</PillText>
                 </StatusBadge>
                 {/* Compact: sr-only (the name keeps it). Full: a foldable

@@ -1,5 +1,5 @@
 /**
- * The Detections summary: every fact read off the cards (strip ↔ card
+ * The Detections summary: every fact read off the cards (overview ↔ card
  * consistency by construction), the cache tri-state, and the
  * "N of M optimizations active" count's membership rule.
  */
@@ -8,6 +8,7 @@ import type { FdtData, WprDetections } from '../wp-rocket/types';
 import { buildStatusItems, type StatusItem } from './detections-view-model';
 import {
   isOptimizationCard,
+  optimizationBucket,
   STATUS_LABELS,
   summarizeDetections,
   summarizeFdtData
@@ -160,6 +161,8 @@ describe('summarizeDetections', () => {
     expect(summarizeDetections(items).optimizations).toEqual({
       active: 1,
       total: optimizationCards.length,
+      collecting: 0,
+      off: optimizationCards.length - 1,
       offInTab: 0,
       simulated: 0,
       unverified: 0
@@ -204,7 +207,7 @@ describe('summarizeDetections', () => {
     expect(summarizeDetections(items).optimizations).toMatchObject({ active: 2, total: 18 });
   });
 
-  it('agrees with the cards for every card it states (strip ↔ card consistency)', () => {
+  it('agrees with the cards for every card it states (overview ↔ card consistency)', () => {
     const items = buildStatusItems(
       data(
         {
@@ -240,7 +243,15 @@ describe('summarizeDetections', () => {
       cache: { kind: 'not-applicable' },
       server: null,
       platform: null,
-      optimizations: { active: 0, total: 0, offInTab: 0, simulated: 0, unverified: 0 },
+      optimizations: {
+        active: 0,
+        total: 0,
+        collecting: 0,
+        off: 0,
+        offInTab: 0,
+        simulated: 0,
+        unverified: 0
+      },
       wordpressVersion: null,
       cacheLayer: null
     });
@@ -316,5 +327,56 @@ describe('summarizeFdtData — the non-card page facts', () => {
     expect(summary.optimizations.active).toBe(
       items.filter((item) => isOptimizationCard(item.id) && item.status === 'active').length
     );
+  });
+
+  it('buckets every optimization card once: active + collecting + off = total', () => {
+    const { summary, items } = summarizeFdtData(
+      data({
+        ...handled,
+        priority_elements_beacon: { present: true, status: { lrc: true }, isMobile: null }
+      })
+    );
+    const optimizations = items.filter((item) => isOptimizationCard(item.id));
+    const counts = summary.optimizations;
+    expect(counts.collecting).toBe(
+      optimizations.filter((item) => item.status === 'collecting').length
+    );
+    expect(counts.collecting).toBeGreaterThan(0);
+    // Unknown verdicts land in Off, never in a bucket of their own.
+    expect(counts.off).toBe(
+      optimizations.filter((item) => item.status === 'not-active' || item.status === 'unknown')
+        .length
+    );
+    expect(counts.active + counts.collecting + counts.off).toBe(counts.total);
+  });
+});
+
+describe('optimizationBucket', () => {
+  /** An optimization card with overrides. */
+  const card = (overrides: Partial<StatusItem>): StatusItem => ({
+    id: 'delay_js',
+    name: 'Delay JavaScript execution',
+    status: 'active',
+    ...overrides
+  });
+
+  it.each([
+    ['active', {}, 'active'],
+    ['active, rows excluded (the feature still runs)', { builder: { excluded: 2 } }, 'active'],
+    ['active, turned off feature-wide in this tab', { builder: { off: 'feature' } }, 'off'],
+    ['active, turned off for this page', { builder: { off: 'page' } }, 'off'],
+    ['collecting', { status: 'collecting' }, 'collecting'],
+    ['unknown', { status: 'unknown' }, 'off'],
+    ['not active', { status: 'not-active' }, 'off']
+  ] as const)('%s → %s', (_name, overrides, bucket) => {
+    expect(optimizationBucket(card(overrides))).toBe(bucket);
+  });
+
+  it('counts a builder-off card in Off and in the off-in-tab reason', () => {
+    const counts = summarizeDetections([
+      card({ builder: { off: 'feature' } }),
+      card({ id: 'defer_all_js' })
+    ]).optimizations;
+    expect(counts).toMatchObject({ active: 1, collecting: 0, off: 1, offInTab: 1, total: 2 });
   });
 });

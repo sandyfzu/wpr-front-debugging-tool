@@ -2,7 +2,7 @@
  * The Detections page: frame + heading, the card grid in view-model order
  * with link vs static forms (only mapped ids are anchors; static cards take
  * no tab stop and carry no lift), the status vocabulary, the tooltip
- * subtitles, the summary strip's agreement with the cards, the absence of a
+ * subtitles, the overview's agreement with the cards, the absence of a
  * duplicate header inventory, `Copy report`, refresh stability (cards keep
  * their DOM and focus), the optimization status filter, and the
  * store wiring.
@@ -20,6 +20,7 @@ import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { CARD_PAGE_LINKS } from './card-presentation';
 import { DNS_PREFETCH_LIMIT, MOBILE_CACHE_LIMIT } from '../../../../lib/detection/hud';
 import { isOptimizationCard } from '../../../../lib/panel/detections-summary';
+import { platformSegment, wprSegment } from '../../top-bar/selectors';
 import {
   DETECTIONS_GRID,
   DETECTIONS_SUBTITLE,
@@ -290,7 +291,7 @@ describe('DetectionsView', () => {
     expect(trigger()?.textContent).toBe('Generated 1 d ago');
   });
 
-  it('heads the page with the strip, agreeing with the cards', () => {
+  it('heads the page with the overview tiles, agreeing with the cards and the top bar', () => {
     const data = richData();
     render(() => <DetectionsView data={data} now={NOW} />);
     const headline = document.querySelector('[data-fdt-summary-headline]');
@@ -305,11 +306,21 @@ describe('DetectionsView', () => {
     expect(document.querySelector('[data-fdt-summary-fact="cache"]')?.textContent).toBe(
       'Cache generated 2023-11-14 22:13:20 UTC'
     );
-    // Nothing cloned from the top bar: no plugin badge, no server, no age.
-    const strip = document.querySelector('[data-fdt="detections-summary"]');
-    expect(strip?.querySelector('[data-fdt="status-badge"]')).toBeNull();
-    expect(strip?.textContent).not.toContain('nginx');
-    expect(strip?.textContent).not.toContain('ago');
+    // The tiles restate the bar's answers through its own selectors (never a
+    // second reading), as tile text — no badge — and the absolute stamp, no age.
+    const tiles = document.querySelector('[data-fdt="detections-summary"]');
+    const server = platformSegment(data);
+    expect(server.kind).toBe('captured');
+    expect(tiles?.querySelector('[data-fdt-overview-server]')?.textContent).toBe(
+      server.kind === 'captured' ? server.value : null
+    );
+    const wpr = wprSegment(data);
+    expect(
+      tiles?.querySelector('[data-fdt-overview-tile="wpr"] [data-fdt="stat-tile-value"]')
+        ?.textContent
+    ).toBe(wpr.kind === 'detected' ? wpr.version : null);
+    expect(tiles?.querySelector('[data-fdt="status-badge"]')).toBeNull();
+    expect(tiles?.textContent).not.toContain('ago');
   });
 
   it('still renders every card when the plugin is absent', () => {
@@ -460,14 +471,14 @@ describe('DetectionsView status filter', () => {
     expect(cardIds()).toEqual(all);
   });
 
-  it('keeps the summary strip byte-identical under every filter', () => {
+  it('keeps the overview byte-identical under every filter', () => {
     render(() => <DetectionsView data={richData()} now={NOW} />);
-    const strip = () => document.querySelector('[data-fdt="detections-summary"]')?.outerHTML;
-    const before = strip();
+    const overview = () => document.querySelector('[data-fdt="detections-summary"]')?.outerHTML;
+    const before = overview();
     expect(before).toContain('data-fdt-summary-headline');
     for (const id of ['inactive', 'active', 'all']) {
       fireEvent.click(chip(id));
-      expect(strip()).toBe(before);
+      expect(overview()).toBe(before);
     }
   });
 

@@ -2,7 +2,7 @@
  * The Detections status filter: the chip registry, the Active/Inactive
  * buckets (the summary's in-tab rule, Exclusion Builder facts included),
  * page-context cards surviving every filter, the `all` identity, and counts
- * that agree with the summary strip.
+ * that agree with the overview.
  */
 import { describe, expect, it } from 'vitest';
 import { runDetection } from '../detection/run-detection';
@@ -155,7 +155,7 @@ describe('optimizationCounts', () => {
     });
   });
 
-  it('agrees with the summary strip over a real page with Exclusion Builder facts', () => {
+  it('agrees with the overview over a real page with Exclusion Builder facts', () => {
     const declared =
       '<meta name="generator" content="WP Rocket 3.23.5.1" data-wpr-features="wpr_delay_js wpr_defer_js wpr_lazyload_images">';
     const marker = `<meta name="${BUILDER_MARKER_META_NAME}" content="v1 delay_js=off defer_all_js=page-off lazyload=excluded:2">`;
