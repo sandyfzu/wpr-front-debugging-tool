@@ -325,7 +325,7 @@ function IdleResult(props: { session: RucssTesterSession }): JSX.Element {
         <Skeleton data-fdt-rucss-result-held="loading" class="h-40 rounded-lg @wide:flex-1" />
       </Match>
       <Match when={props.session.load().status === 'failed'}>
-        <Card class="border-dashed bg-surface-0">
+        <Card look="placeholder">
           <p data-fdt-rucss-result-held="failed" class="text-2xs text-fg-secondary">
             {HELD_COPY}
           </p>

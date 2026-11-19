@@ -1,7 +1,7 @@
 /**
- * The shared multi-line text field (free-text notes and the like). A native `<textarea>` wearing the same chip
- * density as `Input` so a page mixing fields and buttons composes without
- * seams.
+ * The shared multi-line text field (patterns, free-text notes). A native
+ * `<textarea>` wearing `Input`'s look — fill, border, 7 px control corner,
+ * inline padding — so a form mixing both field kinds reads as one set.
  */
 import type { JSX } from 'solid-js';
 import { splitProps } from 'solid-js';
@@ -30,7 +30,7 @@ export function Textarea(props: TextareaProps): JSX.Element {
     <textarea
       data-fdt="textarea"
       class={cn(
-        'w-full rounded border border-line-2 bg-surface-2 px-2 py-1 font-mono text-xs text-fg-primary placeholder:text-fg-muted',
+        'w-full rounded-control border border-line-2 bg-surface-2 px-2.5 py-1.5 font-mono text-xs text-fg-primary placeholder:text-fg-muted',
         'hover:border-line-3',
         'aria-invalid:border-status-error aria-invalid:ring-1 aria-invalid:ring-status-error/40',
         DISABLED,

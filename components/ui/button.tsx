@@ -169,7 +169,8 @@ export function Button(props: ButtonProps): JSX.Element {
         invokeClickHandler(own.onClick, event);
       }}
       class={cn(
-        'inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded border font-medium',
+        // `rounded-control`: the theme's 7 px control corner, shared with fields.
+        'inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-control border font-medium',
         FOCUS_RING,
         DISABLED,
         buttonVariantClasses(

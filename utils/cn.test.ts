@@ -34,6 +34,16 @@ describe('cn', () => {
     expect(cn('text-xs', 'text-stat')).toBe('text-stat');
   });
 
+  it('reads the control radius as a radius, so the caller wins either way', () => {
+    expect(cn('rounded-control', 'rounded-full')).toBe('rounded-full');
+    expect(cn('rounded-full', 'rounded-control')).toBe('rounded-control');
+    expect(cn('rounded', 'rounded-control')).toBe('rounded-control');
+    // A corner radius still refines it instead of replacing it.
+    expect(cn('rounded-control', 'rounded-t-none')).toBe('rounded-control rounded-t-none');
+    // Another group (border width) never conflicts with it.
+    expect(cn('rounded-control', 'border')).toBe('rounded-control border');
+  });
+
   it('handles conditional objects and arrays', () => {
     expect(cn('base', { active: true, hidden: false }, ['x', 'y'])).toBe('base active x y');
   });

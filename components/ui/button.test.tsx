@@ -53,6 +53,30 @@ describe('Button', () => {
     expect(screen.getByRole('button', { name: 'md' }).className).toContain('h-7');
   });
 
+  it('wears the 7 px control corner on every variant and size, never the old 4 px one', () => {
+    render(() => (
+      <div>
+        <For each={BUTTON_VARIANTS}>
+          {(variant) => <Button variant={variant}>{variant}</Button>}
+        </For>
+        <For each={BUTTON_SIZES}>{(size) => <Button size={size}>{size}</Button>}</For>
+        <Button loading>loading</Button>
+      </div>
+    ));
+    for (const name of [...BUTTON_VARIANTS, ...BUTTON_SIZES, 'loading']) {
+      const tokens = screen.getByRole('button', { name }).className.split(/\s+/);
+      expect(tokens, name).toContain('rounded-control');
+      expect(tokens, name).not.toContain('rounded');
+    }
+  });
+
+  it('keeps a caller radius over the control corner', () => {
+    render(() => <Button class="rounded-full">Pill</Button>);
+    const tokens = screen.getByRole('button', { name: 'Pill' }).className.split(/\s+/);
+    expect(tokens).toContain('rounded-full');
+    expect(tokens).not.toContain('rounded-control');
+  });
+
   it('flips to the busy state while loading: disabled, aria-busy, spinner present', () => {
     const onClick = vi.fn();
     render(() => (

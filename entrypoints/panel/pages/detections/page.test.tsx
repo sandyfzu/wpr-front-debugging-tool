@@ -362,7 +362,7 @@ describe('DetectionsView', () => {
     expect(CARDS_BODY).not.toContain('divide-y');
     expect(CARDS_BODY).toContain('@regular:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]');
     // The card surface pair from the regular tier.
-    expect(card('wpr').className).toContain('@regular:bg-surface-1');
+    expect(card('wpr').className).toContain('@regular:bg-surface-2');
     expect(card('wpr').className).toContain('@regular:border-line-1');
   });
 

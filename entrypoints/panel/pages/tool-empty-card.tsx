@@ -39,10 +39,8 @@ export function ToolEmptyCard(props: ToolEmptyCardProps): JSX.Element {
   const preview = children(() => props.children);
   return (
     <Card
-      class={cn(
-        'flex flex-col justify-center border-dashed bg-surface-0',
-        props.fill && '@wide:flex-1'
-      )}
+      look="placeholder"
+      class={cn('flex flex-col justify-center', props.fill && '@wide:flex-1')}
     >
       <div data-fdt={props.hook} class="flex flex-col items-center gap-3">
         <EmptyState

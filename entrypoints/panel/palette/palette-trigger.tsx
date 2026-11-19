@@ -31,11 +31,11 @@ export interface PaletteTriggerProps {
  * row, and the bar's fold measures this slot as laid out.
  */
 const WIDE_CLASSES =
-  'flex h-7 min-w-30 shrink-0 items-center gap-1 rounded-md border border-line-2 bg-surface-2 px-1.5 text-xs text-fg-muted hover:border-line-3 hover:text-fg-secondary';
+  'flex h-7 min-w-30 shrink-0 items-center gap-1 rounded-control border border-line-2 bg-surface-2 px-1.5 text-xs text-fg-muted hover:border-line-3 hover:text-fg-secondary';
 
 /** The folded form: a 28 px ghost square. */
 const ICON_CLASSES =
-  'inline-grid size-7 shrink-0 place-items-center rounded-md text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
+  'inline-grid size-7 shrink-0 place-items-center rounded-control text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
 
 /**
  * The inline key chip. Decorative (the tooltip carries the keys): its text

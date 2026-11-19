@@ -216,16 +216,21 @@ for (const colorScheme of ['light', 'dark'] as const) {
         .evaluate((el) => el.getBoundingClientRect().width);
       expect(overviewWidth).toBeGreaterThan(wide.gridWidth);
 
-      // Cards: a multi-column grid of bordered cards, still no lift.
+      // Cards: a multi-column grid of raised cards (the `Card` look: border +
+      // resting shadow), still no lift — hover never changes the shadow.
       await radio(panel, 'list').focus();
       await panel.keyboard.press('ArrowRight');
       await expect(radio(panel, 'cards')).toBeChecked();
       await expect(grid).toHaveAttribute('data-fdt-layout', 'cards');
       await expect.poll(async () => (await geometry(panel)).lefts.length).toBeGreaterThan(1);
       await expect.poll(async () => (await chrome(linked)).border).toBe('1px');
+      await panel.mouse.move(0, 0);
+      await expect.poll(runningAnimations).toBe(0);
+      const restingCard = await chrome(linked);
+      expect(restingCard.shadow).not.toBe('none');
       await linked.hover();
       await expect.poll(runningAnimations).toBe(0);
-      expect((await chrome(linked)).shadow).toBe('none');
+      expect((await chrome(linked)).shadow).toBe(restingCard.shadow);
 
       // Arrow back (from the checked radio), then Space on a focused unchecked one.
       await panel.keyboard.press('ArrowLeft');

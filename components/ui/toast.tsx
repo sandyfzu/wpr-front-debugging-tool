@@ -3,7 +3,7 @@
  * corner stack with `status`/`alert` semantics, hover/focus pausing of the
  * auto-dismiss timers, and a keyboard-reachable close control per toast.
  *
- * Escape handling is intentionally NOT here: the shell (P5E) owns Esc
+ * Escape handling is intentionally NOT here: the panel shell owns Esc
  * semantics shell-wide, and toasts are not focus-trapped overlays.
  */
 import type { JSX } from 'solid-js';
@@ -37,6 +37,18 @@ const TONE_ROLES: Record<ToastTone, 'status' | 'alert'> = {
   info: 'status',
   error: 'alert'
 };
+
+/**
+ * One toast's card: the menu/dialog fill and line, the card corner (8 px)
+ * and the dialog's elevation — a toast floats unanchored over whatever page
+ * is up, so it takes the strongest lift; 10 × 8 px padding, 8 px icon gap.
+ */
+const TOAST_CARD_CLASSES =
+  'pointer-events-auto flex items-start gap-2 rounded-lg border border-line-2 bg-surface-2 px-2.5 py-2 shadow-elev-3';
+
+/** The close control: a 24 px square in the buttons' 7 px control corner. */
+const TOAST_CLOSE_CLASSES =
+  '-me-1 -mt-1 inline-grid size-6 shrink-0 place-items-center rounded-control text-fg-muted hover:bg-surface-3 hover:text-fg-primary';
 
 export interface ToastsProps {
   /** Extra classes on the fixed region wrapper, merged last. */
@@ -122,7 +134,7 @@ function ToastCard(props: ToastCardProps): JSX.Element {
     <li
       data-fdt="toast"
       data-fdt-tone={props.item.tone}
-      class="pointer-events-auto flex items-start gap-1.5 rounded-md border border-line-2 bg-surface-2 px-2 py-1.5 shadow-elev-2"
+      class={TOAST_CARD_CLASSES}
       onPointerEnter={() => {
         setHovered(true);
       }}
@@ -156,10 +168,7 @@ function ToastCard(props: ToastCardProps): JSX.Element {
         type="button"
         data-fdt="toast-close"
         aria-label={`Dismiss — ${props.item.title}`}
-        class={cn(
-          '-me-1 -ms-0.5 -mt-1 inline-grid size-6 place-items-center rounded text-fg-muted hover:bg-surface-3 hover:text-fg-primary',
-          FOCUS_RING
-        )}
+        class={cn(TOAST_CLOSE_CLASSES, FOCUS_RING)}
         onClick={() => {
           toast.dismiss(props.item.id);
         }}

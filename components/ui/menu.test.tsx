@@ -60,6 +60,12 @@ describe('MENU_ICON_TRIGGER_SIZE', () => {
     expect(MENU_ICON_TRIGGER_SIZE).toBe('size-7');
     expect(MENU_ICON_TRIGGER_CLASSES.split(' ')).toContain(MENU_ICON_TRIGGER_SIZE);
   });
+
+  it("wears the buttons' 7 px control corner, so the toolbar squares match IconButton", () => {
+    const tokens = MENU_ICON_TRIGGER_CLASSES.split(' ');
+    expect(tokens).toContain('rounded-control');
+    expect(tokens).not.toContain('rounded-md');
+  });
 });
 
 describe('Menu radio parts', () => {

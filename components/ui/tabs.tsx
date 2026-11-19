@@ -44,20 +44,34 @@ export interface TabsProps {
   children: JSX.Element;
 }
 
-/** Base + state classes of a trigger — underline tabs, 28px hit area. */
+/**
+ * The tab row: one quiet hairline under text tabs spaced 16 px apart — the
+ * selected tab's accent underline is the only emphasis (no fills, no boxes).
+ */
+const TAB_LIST_CLASSES = 'flex w-full items-end gap-4 border-b border-line-1';
+
+/**
+ * Base + state classes of a trigger — an underline tab: 32 px tall, the label
+ * nearly flush (2 px) so the spacing between tabs carries the rhythm; selected
+ * = primary text over a 2 px accent rule that overlaps the row's hairline.
+ */
 const TAB_TRIGGER_CLASSES = cn(
-  'inline-flex h-7 items-center gap-1.5 -mb-px px-2.5 whitespace-nowrap text-xs font-medium border-b-2 border-transparent',
+  'inline-flex h-8 items-center gap-1.5 -mb-px px-0.5 whitespace-nowrap text-xs font-medium border-b-2 border-transparent',
   'data-selected:border-accent data-selected:text-fg-primary'
 );
 
-/** Hover treatment of an enabled trigger — never applied to a disabled one. */
-const TAB_TRIGGER_ENABLED = 'text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
+/**
+ * An enabled trigger: muted at rest, primary text on hover — color only, no
+ * hover fill (the row stays calm); never applied to a disabled trigger.
+ */
+const TAB_TRIGGER_ENABLED = 'text-fg-muted hover:text-fg-primary';
 
 /**
  * Disabled treatment: muted, but without the pointer-events kill other
  * surfaces use — disabled tabs stay hover-reachable so a tooltip can explain
- * why the view is reserved; a hover tint on a disabled control would lie
- * about its state, so the enabled-only fragment above stays off instead.
+ * why the view is reserved. At rest it shares the enabled muted color, so
+ * the dimming tells the two apart; a hover color change on a disabled
+ * control would lie about its state, so the enabled fragment stays off.
  */
 const TAB_TRIGGER_DISABLED = 'text-fg-muted opacity-60';
 
@@ -93,10 +107,7 @@ export function Tabs(props: TabsProps): JSX.Element {
       activationMode="automatic"
       class={props.rootClass}
     >
-      <KobalteTabs.List
-        aria-label={props.label}
-        class={cn('flex w-full items-end border-b border-line-2', props.class)}
-      >
+      <KobalteTabs.List aria-label={props.label} class={cn(TAB_LIST_CLASSES, props.class)}>
         <For each={props.items}>
           {(item) => (
             <KobalteTabs.Trigger
