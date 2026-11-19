@@ -1,21 +1,28 @@
 /**
- * The tester's run card: what a run sends (shown before the first click),
- * the Run control, and the run's state — running (a real wait, bounded by
- * the deadlines), the repeat-run question, a run held by an unsaved form,
- * or the finished outcome with its recoveries, the copyable request
- * address, the counts and each replacement's matches (reworded once the
- * page reloaded or navigated since a run that changed it). Every state is
- * read from the session; nothing here latches.
+ * The tester's result side: the run bar (the Run control beside what a run
+ * sends, shown before the first click) above the run's state — never run
+ * (an empty card naming what a test produces once Run is available; a
+ * skeleton of it while the settings load, a held line when they failed —
+ * the settings column offers the Retry), running (a skeleton shaped
+ * like the result, a real wait bounded by the deadlines; the service call
+ * cannot be cancelled), the repeat-run question, a run held by an unsaved
+ * form, or the finished outcome with its recoveries, the counts, each
+ * replacement's matches and the copyable request address (reworded once
+ * the page reloaded or navigated since a run that changed it). Every state
+ * is read from the session; nothing here latches.
  */
 import type { JSX } from 'solid-js';
 import { createMemo, For, Match, Show, Switch } from 'solid-js';
 import Play from 'lucide-solid/icons/play';
 import RotateCw from 'lucide-solid/icons/rotate-cw';
 import ShieldAlert from 'lucide-solid/icons/shield-alert';
+import TestTubeDiagonal from 'lucide-solid/icons/test-tube-diagonal';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
 import { CopyButton } from '../../../../components/ui/copy-button';
+import { EmptyState } from '../../../../components/ui/empty-state';
 import { KeyValueList } from '../../../../components/ui/key-value';
+import { Skeleton } from '../../../../components/ui/skeleton';
 import {
   STATUS_SOFT_CLASSES,
   STATUS_TEXT_CLASSES,
@@ -41,9 +48,26 @@ import type { RucssTesterSession } from './session';
 /** The running line (the bound is the panel's worst-case wait: start, build and apply in turn). */
 export const RUNNING_COPY = `Waiting for the RUCSS service, then building and applying the CSS — up to ${formatCount(Math.round(RUCSS_RUN_WORST_CASE_MS / 1000))} s.`;
 
-/** The held-run line (the save line above names the failure). */
+/** The held-run line (the settings heading names the save failure). */
 export const BLOCKED_COPY =
-  'The test did not start: the settings could not be saved, so it would run with old ones. Fix the problem named under the form, then run again.';
+  'The test did not start: the settings could not be saved, so it would run with old ones. Fix the problem named beside Settings, then run again.';
+
+/** The result side before any run: what a test produces. */
+export const RESULT_EMPTY = {
+  title: 'No test run yet',
+  description:
+    "Run a test to get the used CSS WP Rocket's service keeps for this page, applied live until the page reloads."
+} as const;
+
+/** The result side while Run is held by settings that did not load (Retry sits under Settings). */
+export const HELD_COPY = "The test can't run until its settings load. Retry them under Settings.";
+
+/** What a finished test shows, named in the empty card (label, then what it is). */
+export const RESULT_PREVIEW: readonly (readonly [label: string, value: string])[] = [
+  ['Removed', 'Styles the test strips'],
+  ['Kept', 'By your markers and patterns'],
+  ['Applied', 'Used CSS, live on the page']
+];
 
 /** The recoveries' button labels. */
 export const RECOVERY_LABELS: Readonly<Record<RucssRecovery, string>> = {
@@ -52,6 +76,9 @@ export const RECOVERY_LABELS: Readonly<Record<RucssRecovery, string>> = {
   'review-patterns': 'Review patterns',
   'inspect-styles': 'Inspect page styles'
 };
+
+/** An applied run's counts. */
+type AppliedSummary = Extract<RucssTestOutcome, { kind: 'applied' }>['summary'];
 
 /** Outcome tones → the shared status vocabulary. */
 const TONE_KIND: Readonly<Record<RucssOutcomeView['tone'], StatusKind>> = {
@@ -69,12 +96,6 @@ export interface RunPanelActions {
   readonly reviewPatterns: (view: RucssOutcomeView) => void;
   /** Show the page-style inventory. */
   readonly inspectStyles: () => void;
-}
-
-/** Props of {@link RunPanel}. */
-export interface RunPanelProps {
-  session: RucssTesterSession;
-  actions: RunPanelActions;
 }
 
 /**
@@ -120,6 +141,21 @@ function RecoveryButton(props: {
   );
 }
 
+/** The applied run's counts, in order (the running skeleton draws one line per row). */
+const SUMMARY_ROWS: readonly {
+  readonly term: string;
+  readonly value: (summary: AppliedSummary) => string;
+}[] = [
+  { term: 'Styles removed', value: (summary) => formatCount(summary.removed) },
+  { term: 'Kept by inline markers', value: (summary) => formatCount(summary.preserved) },
+  { term: 'Kept by stylesheet patterns', value: (summary) => formatCount(summary.excluded) },
+  { term: 'Already gone', value: (summary) => formatCount(summary.gone) },
+  {
+    term: 'CSS injected',
+    value: (summary) => countLabel(summary.cssChars, { one: 'character', other: 'characters' })
+  }
+];
+
 /**
  * The applied run's details: the counts and each replacement's matches.
  *
@@ -128,37 +164,14 @@ function RecoveryButton(props: {
 function AppliedDetails(props: {
   outcome: Extract<RucssTestOutcome, { kind: 'applied' }>;
 }): JSX.Element {
-  const summary = () => props.outcome.summary;
   return (
     <div class="flex flex-col gap-2">
       <KeyValueList
         data-fdt="rucss-summary"
-        items={[
-          {
-            term: 'Styles removed',
-            value: <span class="tabular-nums">{formatCount(summary().removed)}</span>
-          },
-          {
-            term: 'Kept by inline markers',
-            value: <span class="tabular-nums">{formatCount(summary().preserved)}</span>
-          },
-          {
-            term: 'Kept by stylesheet patterns',
-            value: <span class="tabular-nums">{formatCount(summary().excluded)}</span>
-          },
-          {
-            term: 'Already gone',
-            value: <span class="tabular-nums">{formatCount(summary().gone)}</span>
-          },
-          {
-            term: 'CSS injected',
-            value: (
-              <span class="tabular-nums">
-                {countLabel(summary().cssChars, { one: 'character', other: 'characters' })}
-              </span>
-            )
-          }
-        ]}
+        items={SUMMARY_ROWS.map((row) => ({
+          term: row.term,
+          value: <span class="tabular-nums">{row.value(props.outcome.summary)}</span>
+        }))}
       />
       <Show when={props.outcome.applied.length > 0}>
         <ul data-fdt="rucss-pair-counts" class="flex flex-col gap-0.5 text-2xs text-fg-secondary">
@@ -179,7 +192,39 @@ function AppliedDetails(props: {
 }
 
 /**
- * The finished run's outcome block.
+ * The finished run's request address, copyable.
+ *
+ * @param props.url The address.
+ */
+function RequestLine(props: { url: string }): JSX.Element {
+  return (
+    <div class="flex min-w-0 items-center gap-1.5">
+      <span class="shrink-0 text-2xs text-fg-muted">Request</span>
+      <span
+        data-fdt-rucss-request
+        class="min-w-0 flex-1 truncate font-mono text-2xs text-fg-primary"
+        title={props.url}
+      >
+        {props.url}
+      </span>
+      <CopyButton
+        text={props.url}
+        label="Request address"
+        ariaLabel="Copy request address"
+        title="Copy the request address"
+        showLabel={false}
+        successTitle="Request address copied"
+        size="sm"
+      />
+    </div>
+  );
+}
+
+/**
+ * The finished run: one result card — the outcome notice (its words, an
+ * invalid configuration's problems, the recoveries), then the applied
+ * run's counts and the request address on the card itself (no box inside
+ * the notice's tint).
  *
  * @param props The outcome, the session and the actions.
  */
@@ -194,80 +239,197 @@ function OutcomeBlock(props: {
   const kind = (): StatusKind => TONE_KIND[view().tone];
   const applied = () => (props.outcome.kind === 'applied' ? props.outcome : undefined);
   return (
-    <OutcomeNotice
-      data-fdt="rucss-outcome"
-      data-fdt-rucss-outcome={props.outcome.kind}
-      data-fdt-rucss-stale={props.session.stale() ? '' : undefined}
-      kind={kind()}
-      title={view().title}
-      message={view().message}
-    >
-      <Show when={props.outcome.kind === 'invalid-config' ? props.outcome : undefined}>
-        {(invalid) => (
-          <ul class="flex flex-col gap-0.5 ps-5 text-2xs text-fg-secondary">
-            <For each={invalid().problems}>
-              {(problem) => (
-                <li class="break-words">
-                  {problem.kind === 'replacement-pattern'
-                    ? `Replacement ${formatCount(problem.index + 1)}: ${problem.message}`
-                    : `Stylesheet pattern “${problem.line}”: ${problem.message}`}
-                </li>
-              )}
-            </For>
-          </ul>
-        )}
-      </Show>
-      <Show when={applied()}>{(outcome) => <AppliedDetails outcome={outcome()} />}</Show>
-      <Show when={view().requestUrl}>
-        {(url) => (
-          <div class="flex min-w-0 items-center gap-1.5">
-            <span class="shrink-0 text-2xs text-fg-muted">Request</span>
-            <span
-              data-fdt-rucss-request
-              class="min-w-0 flex-1 truncate font-mono text-2xs text-fg-primary"
-              title={url()}
-            >
-              {url()}
-            </span>
-            <CopyButton
-              text={url()}
-              label="Request address"
-              ariaLabel="Copy request address"
-              title="Copy the request address"
-              showLabel={false}
-              successTitle="Request address copied"
-              size="sm"
-            />
-          </div>
-        )}
-      </Show>
-      <Show when={view().recoveries.length > 0}>
-        <div class="flex flex-wrap gap-1.5">
-          <For each={view().recoveries}>
-            {(recovery, index) => (
-              <RecoveryButton
-                recovery={recovery}
-                view={view()}
-                session={props.session}
-                actions={props.actions}
-                primary={index() === 0}
-              />
+    <Card>
+      <div data-fdt="rucss-result" class="flex flex-col gap-3">
+        <OutcomeNotice
+          data-fdt="rucss-outcome"
+          data-fdt-rucss-outcome={props.outcome.kind}
+          data-fdt-rucss-stale={props.session.stale() ? '' : undefined}
+          kind={kind()}
+          title={view().title}
+          message={view().message}
+        >
+          <Show when={props.outcome.kind === 'invalid-config' ? props.outcome : undefined}>
+            {(invalid) => (
+              <ul class="flex flex-col gap-0.5 ps-5 text-2xs text-fg-secondary">
+                <For each={invalid().problems}>
+                  {(problem) => (
+                    <li class="break-words">
+                      {problem.kind === 'replacement-pattern'
+                        ? `Replacement ${formatCount(problem.index + 1)}: ${problem.message}`
+                        : `Stylesheet pattern “${problem.line}”: ${problem.message}`}
+                    </li>
+                  )}
+                </For>
+              </ul>
             )}
-          </For>
-        </div>
-      </Show>
-    </OutcomeNotice>
+          </Show>
+          <Show when={view().recoveries.length > 0}>
+            <div class="flex flex-wrap gap-1.5">
+              <For each={view().recoveries}>
+                {(recovery, index) => (
+                  <RecoveryButton
+                    recovery={recovery}
+                    view={view()}
+                    session={props.session}
+                    actions={props.actions}
+                    primary={index() === 0}
+                  />
+                )}
+              </For>
+            </div>
+          </Show>
+        </OutcomeNotice>
+        <Show when={applied()}>{(outcome) => <AppliedDetails outcome={outcome()} />}</Show>
+        <Show when={view().requestUrl}>{(url) => <RequestLine url={url()} />}</Show>
+      </div>
+    </Card>
   );
 }
 
 /**
- * Render the run card.
+ * The run bar: Run, and what a run sends beside it (wrapping under it when
+ * the column is narrow). Run is held until the settings are loaded.
  *
- * @param props See {@link RunPanelProps}.
+ * @param props.session The session.
  */
-export function RunPanel(props: RunPanelProps): JSX.Element {
+export function RunBar(props: { session: RucssTesterSession }): JSX.Element {
   const running = (): boolean => props.session.run().status === 'running';
-  const ready = (): boolean => props.session.load().status === 'ready';
+  return (
+    <Card>
+      <div data-fdt="rucss-run" class="flex flex-wrap items-center gap-x-3.5 gap-y-2">
+        <Button
+          variant="primary"
+          busy={running()}
+          disabled={props.session.load().status !== 'ready'}
+          data-fdt-rucss-run
+          onClick={() => {
+            void props.session.start();
+          }}
+        >
+          <Show when={!running()}>
+            <Play size={12} aria-hidden="true" />
+          </Show>
+          {running() ? 'Running test…' : 'Run test'}
+        </Button>
+        <p
+          data-fdt-rucss-disclosure
+          class="flex min-w-0 flex-1 basis-60 items-start gap-1.5 text-2xs text-fg-secondary"
+        >
+          <ShieldAlert size={12} class="mt-px shrink-0 text-fg-muted" aria-hidden="true" />
+          <span>{RUCSS_REQUEST_DISCLOSURE}</span>
+        </p>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The result side before any run: an honest empty card naming what a test
+ * produces. Painted in the canvas color, not transparent: same look, but
+ * its text sits on a background that encloses it, so contrast stays
+ * computable below the fold.
+ */
+function EmptyResult(): JSX.Element {
+  return (
+    <Card class="flex flex-col justify-center border-dashed bg-surface-0 @wide:flex-1">
+      <div data-fdt="rucss-empty" class="flex flex-col items-center gap-3">
+        <EmptyState
+          class="gap-2 pb-0"
+          icon={
+            <span class="grid size-11 place-items-center rounded-lg bg-accent-soft text-accent">
+              <TestTubeDiagonal size={22} aria-hidden="true" />
+            </span>
+          }
+          title={RESULT_EMPTY.title}
+          description={RESULT_EMPTY.description}
+        />
+        <ul class="grid w-full max-w-120 grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2 pb-6">
+          <For each={RESULT_PREVIEW}>
+            {([label, value]) => (
+              <li class="flex flex-col gap-0.5 rounded-lg border border-line-1 bg-surface-1 p-2.5">
+                <span class="text-2xs text-fg-muted">{label}</span>
+                <span class="text-xs font-semibold text-fg-primary">{value}</span>
+              </li>
+            )}
+          </For>
+        </ul>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The result side before any run, by the settings' load: the empty card
+ * once Run is available, a skeleton of it while they load (a real wait,
+ * resolved with the settings' own skeleton), the held line when they
+ * failed — never "Run a test" beside a held Run.
+ *
+ * @param props.session The session.
+ */
+function IdleResult(props: { session: RucssTesterSession }): JSX.Element {
+  return (
+    <Switch>
+      <Match when={props.session.load().status === 'ready'}>
+        <EmptyResult />
+      </Match>
+      <Match when={props.session.load().status === 'loading'}>
+        <Skeleton data-fdt-rucss-result-held="loading" class="h-40 rounded-lg @wide:flex-1" />
+      </Match>
+      <Match when={props.session.load().status === 'failed'}>
+        <Card class="border-dashed bg-surface-0">
+          <p data-fdt-rucss-result-held="failed" class="text-2xs text-fg-secondary">
+            {HELD_COPY}
+          </p>
+        </Card>
+      </Match>
+    </Switch>
+  );
+}
+
+/**
+ * A run's wait: what it waits for, then a skeleton shaped like the result
+ * (the outcome notice, the five counts, the request line). Shown only while
+ * the run is in flight.
+ */
+function RunningResult(): JSX.Element {
+  return (
+    <Card>
+      <div data-fdt="rucss-running" class="flex flex-col gap-3">
+        <p data-fdt-rucss-running class="text-2xs text-fg-secondary">
+          {RUNNING_COPY}
+        </p>
+        <div data-fdt-rucss-result-loading class="flex flex-col gap-3">
+          <Skeleton class="h-12 rounded-md" />
+          <div class="flex flex-col gap-1.5">
+            <For each={SUMMARY_ROWS}>
+              {() => (
+                <div class="flex justify-between gap-3">
+                  <Skeleton class="h-3 w-32 max-w-[60%]" />
+                  <Skeleton class="h-3 w-10" />
+                </div>
+              )}
+            </For>
+          </div>
+          <Skeleton class="h-3 w-3/4" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** Props of {@link RunResult}. */
+export interface RunResultProps {
+  session: RucssTesterSession;
+  actions: RunPanelActions;
+}
+
+/**
+ * Render the run's state under the run bar.
+ *
+ * @param props See {@link RunResultProps}.
+ */
+export function RunResult(props: RunResultProps): JSX.Element {
   /** The finished run, else `undefined`. */
   const finished = () => {
     const state = props.session.run();
@@ -281,97 +443,71 @@ export function RunPanel(props: RunPanelProps): JSX.Element {
       : RUCSS_UNCONFIRMED_REPEAT_WARNING;
   };
   return (
-    <Card level={1} class="p-2.5">
-      <div data-fdt="rucss-run" class="flex flex-col gap-2.5">
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Button
-            variant="primary"
-            busy={running()}
-            disabled={!ready()}
-            data-fdt-rucss-run
-            onClick={() => {
-              void props.session.start();
-            }}
-          >
-            <Show when={!running()}>
-              <Play size={12} aria-hidden="true" />
-            </Show>
-            {running() ? 'Running test…' : 'Run test'}
-          </Button>
-          <p
-            data-fdt-rucss-disclosure
-            class="flex min-w-0 flex-1 basis-60 items-start gap-1.5 text-2xs text-fg-secondary"
-          >
-            <ShieldAlert size={12} class="mt-px shrink-0 text-fg-muted" aria-hidden="true" />
-            <span>{RUCSS_REQUEST_DISCLOSURE}</span>
-          </p>
-        </div>
-        <Switch>
-          <Match when={running()}>
-            <p data-fdt-rucss-running class="text-2xs text-fg-secondary">
-              {RUNNING_COPY}
-            </p>
-          </Match>
-          <Match when={props.session.run().status === 'confirm-repeat'}>
-            <div
-              data-fdt-rucss-repeat
-              class={cn('flex flex-col gap-2 rounded-md p-2.5', STATUS_SOFT_CLASSES.warn)}
-            >
-              <p class="text-xs text-fg-primary">{repeatWarning()}</p>
-              <div class="flex flex-wrap gap-1.5">
-                <Show when={props.actions.reloadPage}>
-                  {(reload) => (
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      onClick={() => {
-                        props.session.cancelRepeat();
-                        reload()();
-                      }}
-                    >
-                      <RotateCw size={12} aria-hidden="true" />
-                      Reload for a clean run
-                    </Button>
-                  )}
-                </Show>
+    <Switch fallback={<IdleResult session={props.session} />}>
+      <Match when={props.session.run().status === 'running'}>
+        <RunningResult />
+      </Match>
+      <Match when={props.session.run().status === 'confirm-repeat'}>
+        <div
+          data-fdt-rucss-repeat
+          class={cn('flex flex-col gap-2 rounded-md p-2.5', STATUS_SOFT_CLASSES.warn)}
+        >
+          <p class="text-xs text-fg-primary">{repeatWarning()}</p>
+          <div class="flex flex-wrap gap-1.5">
+            <Show when={props.actions.reloadPage}>
+              {(reload) => (
                 <Button
                   size="sm"
-                  variant="secondary"
-                  data-fdt-rucss-run-on-top
-                  onClick={() => {
-                    void props.session.start({ force: true });
-                  }}
-                >
-                  Run on top
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
+                  variant="primary"
                   onClick={() => {
                     props.session.cancelRepeat();
+                    reload()();
                   }}
                 >
-                  Cancel
+                  <RotateCw size={12} aria-hidden="true" />
+                  Reload for a clean run
                 </Button>
-              </div>
-            </div>
-          </Match>
-          <Match when={props.session.run().status === 'blocked'}>
-            <p data-fdt-rucss-blocked class={cn('text-2xs', STATUS_TEXT_CLASSES.error)}>
-              {BLOCKED_COPY}
-            </p>
-          </Match>
-          <Match when={finished()} keyed>
-            {(state) => (
-              <OutcomeBlock
-                outcome={state.outcome}
-                session={props.session}
-                actions={props.actions}
-              />
-            )}
-          </Match>
-        </Switch>
-      </div>
-    </Card>
+              )}
+            </Show>
+            <Button
+              size="sm"
+              variant="secondary"
+              data-fdt-rucss-run-on-top
+              onClick={() => {
+                void props.session.start({ force: true });
+              }}
+            >
+              Run on top
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                props.session.cancelRepeat();
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Match>
+      <Match when={props.session.run().status === 'blocked'}>
+        <p
+          data-fdt-rucss-blocked
+          class={cn(
+            'rounded-md p-2.5 text-2xs',
+            STATUS_SOFT_CLASSES.error,
+            STATUS_TEXT_CLASSES.error
+          )}
+        >
+          {BLOCKED_COPY}
+        </p>
+      </Match>
+      <Match when={finished()} keyed>
+        {(state) => (
+          <OutcomeBlock outcome={state.outcome} session={props.session} actions={props.actions} />
+        )}
+      </Match>
+    </Switch>
   );
 }

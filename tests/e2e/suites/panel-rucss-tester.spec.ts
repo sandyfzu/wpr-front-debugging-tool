@@ -675,6 +675,12 @@ test.describe('RUCSS tester (panel → page → background → mocked service)',
     const { panel, fixture } = opened;
     try {
       const before = await styleMarkup(fixture.page);
+      // Default settings: the replacements' section starts folded.
+      const adjust = panel.locator(
+        '[data-fdt-rucss-section="adjust"] [data-fdt-rucss-section-toggle]'
+      );
+      await expect(adjust).toHaveAttribute('aria-expanded', 'false');
+      await adjust.click();
       await panel.getByRole('button', { name: 'Add replacement' }).click();
       await panel.getByRole('textbox', { name: 'Replacement 1 search' }).fill('(unclosed');
       await expect(panel.locator('[data-fdt-rucss-pair="0"] [data-fdt-field-error]')).toBeVisible();
@@ -684,8 +690,11 @@ test.describe('RUCSS tester (panel → page → background → mocked service)',
       await expect(outcome).toContainText('Replacement 1:');
       expect(service.calls).toHaveLength(0);
       expect(await styleMarkup(fixture.page)).toEqual(before);
-      // Its recovery takes the user to the pattern.
+      // Folded, the section still names the problem; its recovery unfolds it and takes the user to the pattern.
+      await adjust.click();
+      await expect(adjust).toContainText('1 invalid pattern');
       await outcome.locator('[data-fdt-rucss-recovery="review-patterns"]').click();
+      await expect(adjust).toHaveAttribute('aria-expanded', 'true');
       await expect(panel.getByRole('textbox', { name: 'Replacement 1 search' })).toBeFocused();
     } finally {
       await closeAll(opened);

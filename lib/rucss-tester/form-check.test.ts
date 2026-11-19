@@ -9,9 +9,11 @@ import {
   checkExcludeLines,
   checkReplacementPair,
   clampRucssTesterConfig,
+  countInvalidPatterns,
   findStoreProblem
 } from './form-check';
 import { prepareRucssRun } from './run-plan';
+import { parseLineList } from '../../utils/line-list';
 
 const BASE: RucssTesterConfig = { ...DEFAULT_RUCSS_TESTER_CONFIG, replacements: [] };
 
@@ -32,6 +34,19 @@ describe('checkExcludeLines', () => {
       const run = prepareRucssRun({ ...BASE, excludeFiles: text });
       expect(checkExcludeLines(text).length === 0, text).toBe(run.ok);
     }
+  });
+});
+
+describe('countInvalidPatterns', () => {
+  it('counts each distinct invalid line once, as the field pattern count does', () => {
+    expect(countInvalidPatterns([])).toBe(0);
+    expect(countInvalidPatterns(checkExcludeLines('(\n(\n  (  '))).toBe(1);
+    expect(countInvalidPatterns(checkExcludeLines('(\n[\n(\nok'))).toBe(2);
+  });
+
+  it('agrees with the deduped pattern count on the same field', () => {
+    const text = '(\n(';
+    expect(countInvalidPatterns(checkExcludeLines(text))).toBe(parseLineList(text).length);
   });
 });
 
