@@ -21,16 +21,16 @@
  *   surface resets it when the page reloads).
  *
  * Asset identity is a typed discriminator ({@link ScriptOrigin.kind}) so the
- * definitions list can render inline entries as chips and URL entries as
- * links without string-matching.
+ * definitions list can render inline entries as static tiles and URL entries
+ * as source-link tiles without string-matching.
  */
 
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../wp-rocket/constants';
 
 /**
  * Where one definition lives. `inline` entries come from the page's own
- * inline scripts (rendered as inline chips, never as the pseudo-URL link
- * that mis-rendered before); `url` entries are real script files.
+ * inline scripts (a static tile: no file to open, never a pseudo-URL link);
+ * `url` entries are real script files (a source-link tile).
  */
 export type ScriptOrigin =
   { readonly kind: 'inline' } | { readonly kind: 'url'; readonly url: string };
