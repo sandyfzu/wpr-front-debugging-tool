@@ -10,6 +10,7 @@
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import { settleFrames } from '../helpers/frames';
 import {
   closeScriptDetail,
   facetToggle,
@@ -102,6 +103,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
       const root = panel.locator('[data-fdt-page="lazyload"]');
       for (const width of [768, 480, 320]) {
         await panel.setViewportSize({ width, height: 1200 });
+        // Measure the layout the user sees: the facet bar's form follows the
+        // list's width a frame later (a resize observer).
+        await settleFrames(panel);
         await expect
           .poll(() => root.evaluate((element) => element.scrollWidth - element.clientWidth), {
             message: `lazyload must fit at ${String(width)}px (${colorScheme})`
