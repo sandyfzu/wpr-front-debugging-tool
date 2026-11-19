@@ -58,14 +58,6 @@ export const RUNTIME_GROUP_LABELS: Readonly<Record<ScriptGroup, string>> = {
   other: 'Other'
 };
 
-/** The list's empty view when the chosen group has no script in the read. */
-export const RUNTIME_GROUP_EMPTY_TITLES: Readonly<Record<ScriptGroup, string>> = {
-  theme: 'No theme scripts in this read',
-  plugin: 'No plugin scripts in this read',
-  inline: 'No inline scripts in this read',
-  other: 'No scripts from other sources in this read'
-};
-
 /** The list's empty view when the page has no script at all. */
 export const NO_SCRIPTS_COPY = {
   title: 'No scripts on the page now',
@@ -115,8 +107,8 @@ export interface OutsideFilterCounts {
 }
 
 /**
- * The note naming the scripts no state filter covers (they are listed under
- * all states only), or null when there are none.
+ * The note naming the scripts no State value covers (they show only while
+ * State is "Any"), or null when there are none.
  *
  * @param counts See {@link OutsideFilterCounts}.
  */
@@ -135,7 +127,7 @@ export function outsideFiltersNote(counts: OutsideFilterCounts): string | null {
     );
   }
   if (parts.length === 0) return null;
-  return `${parts.join(' and ')}: listed under “All states” only.`;
+  return `${parts.join(' and ')}: shown only while State is “Any”.`;
 }
 
 /**
@@ -159,27 +151,39 @@ export const TEXT_CUT_NOTE = `Only the start of this code arrived: one read carr
 export const TEXT_CAPPED_NOTE = `Shortened to its first ${formatCount(FULL_TEXT_MAX)} characters.`;
 
 /**
- * Whether a full text was cut at the per-script cap: it holds the cap's
- * code points plus the ellipsis the cap appends. A text whose own last
+ * Whether a text was cut by `capText` at `max` code points: it holds the
+ * cap's code points plus the ellipsis the cap appends. A text whose own last
  * character is `…` at exactly that length reads as cut too — the safe side.
  *
- * @param fullText The record's full text.
+ * @param text The capped text.
+ * @param max The cap it went through, in code points.
+ * @returns `true` when the cap cut it.
  */
-export function fullTextCapped(fullText: string): boolean {
+export function textCapped(text: string, max: number): boolean {
   // Fewer units than the cap cannot hold cap + 1 code points.
-  if (fullText.length <= FULL_TEXT_MAX || !fullText.endsWith('…')) return false;
+  if (text.length <= max || !text.endsWith('…')) return false;
   let points = 0;
   // Count code points, stopping early once past the capped length.
-  for (let index = 0; index < fullText.length && points <= FULL_TEXT_MAX + 1; index += 1) {
-    const unit = fullText.charCodeAt(index);
+  for (let index = 0; index < text.length && points <= max + 1; index += 1) {
+    const unit = text.charCodeAt(index);
     // A high surrogate followed by a low one is one code point.
     if (unit >= 0xd800 && unit <= 0xdbff) {
-      const next = fullText.charCodeAt(index + 1);
+      const next = text.charCodeAt(index + 1);
       if (next >= 0xdc00 && next <= 0xdfff) index += 1;
     }
     points += 1;
   }
-  return points === FULL_TEXT_MAX + 1;
+  return points === max + 1;
+}
+
+/**
+ * Whether a script's full text was cut at the per-script cap.
+ *
+ * @param fullText The record's full text.
+ * @returns `true` when the cap cut it.
+ */
+export function fullTextCapped(fullText: string): boolean {
+  return textCapped(fullText, FULL_TEXT_MAX);
 }
 
 /**

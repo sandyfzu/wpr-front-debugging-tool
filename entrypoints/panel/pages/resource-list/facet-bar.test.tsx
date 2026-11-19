@@ -170,6 +170,30 @@ describe('FacetBar compact', () => {
   });
 });
 
+describe('FacetBar without facets (search only)', () => {
+  it('shows only the search field in both tiers: no empty group, no Filters button', () => {
+    const none = defineFacets<Row, never>([]);
+    const [compact, setCompact] = createSignal(false);
+    render(() => (
+      <FacetBar
+        facets={none}
+        selection={{}}
+        counts={facetCounts(ROWS, none, {}, { field: () => '', query: '' })}
+        onChange={() => undefined}
+        compact={compact()}
+        search={<input type="search" aria-label="Search hashes" />}
+        filterLabel="Filter hashes"
+        shownLabel="3 hashes"
+      />
+    ));
+    expect(screen.queryByRole('group', { name: 'Filter hashes' })).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Search hashes' })).toBeTruthy();
+    setCompact(true);
+    expect(screen.queryByRole('button', { name: /Filters/u })).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Search hashes' })).toBeTruthy();
+  });
+});
+
 describe('filtersRestoreTarget', () => {
   /** A bar root holding the given markup. */
   function barWith(html: string): HTMLElement {

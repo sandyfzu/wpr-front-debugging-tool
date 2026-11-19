@@ -5,7 +5,6 @@
  * the facets over row views. No DOM, no Solid: the page wraps these in one
  * memo chain and the rows only read the results.
  */
-import type { StatusKind } from '../../../../components/ui/status-badge';
 import type { CodeLanguage } from '../../../../components/ui/code-block-langs';
 import {
   JS_PAGE_FACETS,
@@ -52,12 +51,6 @@ import {
   type StateChipSplit
 } from '../resource-list/state-chips';
 import { STATE_SOURCES, type StateSource } from '../resource-list/state-sources';
-
-/** A summary-strip state: its words and its vocabulary kind. */
-export interface ScriptBadge {
-  readonly label: string;
-  readonly kind: StatusKind;
-}
 
 /**
  * How much of an inline script's text the capture delivered (the payload's
@@ -178,23 +171,6 @@ export function notableScriptType(row: JsScriptResource): string | null {
   const type = row.originalType;
   if (type === null || isBlankScriptType(type) || isClassicScriptType(type)) return null;
   return type;
-}
-
-/**
- * The summary strip's Delay JS state: served by WP Rocket, run by a verified
- * simulation (never "Not detected" while a runtime holds scripts back), or
- * absent.
- *
- * @param present WP Rocket served Delay JS on the page.
- * @param simulated A verified simulation runs Delay JS here instead.
- * @returns The badge's word and tone.
- */
-export function delaySummaryBadge(present: boolean, simulated: boolean): ScriptBadge {
-  if (present) return { label: 'Detected', kind: 'ok' };
-  // Info, as every other "Simulated" badge: its glyph sets it apart from
-  // "Not detected" (never the word alone).
-  if (simulated) return { label: 'Simulated', kind: 'info' };
-  return { label: 'Not detected', kind: 'neutral' };
 }
 
 /**

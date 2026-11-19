@@ -17,7 +17,6 @@ import {
   PREVIEW_CHARS,
   collapsedPreview,
   countLines,
-  delaySummaryBadge,
   expandedCutNote,
   expandedText,
   lineCount,
@@ -52,14 +51,6 @@ function script(overrides: Partial<JsScriptResource> = {}): JsScriptResource {
     ...overrides
   };
 }
-
-describe('delaySummaryBadge', () => {
-  it('served, simulated (never "Not detected"), absent', () => {
-    expect(delaySummaryBadge(true, false)).toEqual({ label: 'Detected', kind: 'ok' });
-    expect(delaySummaryBadge(false, true)).toEqual({ label: 'Simulated', kind: 'info' });
-    expect(delaySummaryBadge(false, false)).toEqual({ label: 'Not detected', kind: 'neutral' });
-  });
-});
 
 /** Delay JS and Defer JS both run by a verified simulation. */
 const BOTH_SIMULATED: ScriptSimulation = { delay: 'simulated', defer: 'simulated' };
