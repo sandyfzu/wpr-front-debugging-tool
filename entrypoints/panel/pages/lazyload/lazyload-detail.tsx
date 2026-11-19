@@ -11,7 +11,7 @@ import { For, Match, Show, Switch, createMemo } from 'solid-js';
 import { Badge } from '../../../../components/ui/badge';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import type { OpenResource } from '../open-resource';
-import { CodeSection, FactList } from '../resource-list/detail-section';
+import { DetailSection, FactList } from '../resource-list/detail-section';
 import { SourceLink } from '../resource-list/source-link';
 import { StateChips } from '../resource-list/state-chip-list';
 import { splitStateChips } from '../resource-list/state-chips';
@@ -78,7 +78,7 @@ export function LazyloadDetail(props: LazyloadDetailProps): JSX.Element {
           </p>
         </Match>
         <Match when={reasons().kind === 'none-found' || reasons().kind === 'reasons'}>
-          <CodeSection title="Exclusion reasons" hook="lazyload-reasons">
+          <DetailSection title="Exclusion reasons" hook="lazyload-reasons">
             <Show
               when={reasonList()}
               fallback={<p class="text-2xs text-fg-muted">{NO_REASONS_FOUND}</p>}
@@ -95,7 +95,7 @@ export function LazyloadDetail(props: LazyloadDetailProps): JSX.Element {
                 </div>
               )}
             </Show>
-          </CodeSection>
+          </DetailSection>
         </Match>
       </Switch>
     </div>

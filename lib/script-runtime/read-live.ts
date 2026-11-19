@@ -31,6 +31,8 @@ export type LiveScriptsOutcome =
       readonly total: number;
       /** Whether the page had more scripts than the read lists. */
       readonly truncated: boolean;
+      /** The page's base URL (relative script URLs resolve against it), when it sent one. */
+      readonly baseUrl: string | null;
     };
 
 /** What a read needs (the caller binds the tab; tests inject doubles). */
@@ -69,7 +71,7 @@ export async function readLiveScripts(deps: LiveScriptsDeps): Promise<LiveScript
     logAskMiss(deps.log, 'Live script read', outcome);
     return { kind: 'page-unreachable', miss: outcome.kind };
   }
-  const { scripts, total } = outcome.reply;
+  const { scripts, total, baseUrl } = outcome.reply;
   return {
     kind: 'read',
     scripts: Object.freeze(
@@ -78,6 +80,7 @@ export async function readLiveScripts(deps: LiveScriptsDeps): Promise<LiveScript
       )
     ),
     total,
-    truncated: total > scripts.length
+    truncated: total > scripts.length,
+    baseUrl: baseUrl ?? null
   };
 }

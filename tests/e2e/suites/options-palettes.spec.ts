@@ -1,5 +1,5 @@
 /**
- * P9.1 — the options page's appearance suite: the three-way choice over the
+ * The options page's appearance suite: the three-way choice over the
  * real page, its persistence, and the live cross-surface restyling.
  *
  * The seams this suite pins (all through shipped code, no test doubles):

@@ -203,6 +203,11 @@ export interface ListRowProps {
   mono?: boolean;
   /** The muted preview (two-line) or value (one-line) line; plain text, truncating. */
   preview?: string;
+  /**
+   * The preview's full text rides its `title` (capped) — for static rows,
+   * whose truncated line has no detail view to read it whole in.
+   */
+  previewTitle?: boolean;
   /** The capture cut the previewed value at its cap: a "Clipped" badge leads the line. */
   clipped?: boolean;
   /** The size cell's text (already formatted); omitted → the cell stays empty. */
@@ -272,7 +277,15 @@ export function ListRow(props: ListRowProps): JSX.Element {
                 Clipped
               </Badge>
             </Show>
-            <span data-fdt="list-row-preview" class="truncate font-mono text-2xs text-fg-muted">
+            <span
+              data-fdt="list-row-preview"
+              title={
+                props.previewTitle === true && props.preview !== undefined
+                  ? capTitle(props.preview)
+                  : undefined
+              }
+              class="truncate font-mono text-2xs text-fg-muted"
+            >
               {props.preview}
             </span>
           </span>
@@ -425,11 +438,17 @@ export function ListRowHead(props: ListRowHeadProps): JSX.Element {
         <Show when={lines() === 'one' && props.preview}>
           <span class="hidden truncate [grid-area:preview] @regular:block">{props.preview}</span>
         </Show>
+        {/* Size and states span both row lines at `@regular` (rows center
+            them between name and preview); the head has no preview line,
+            so its captions sit on the name's line (start), never centered
+            into the empty one below. */}
         <Show when={props.columns.size && props.size}>
-          <span class="justify-self-end [grid-area:size]">{props.size}</span>
+          <span class="self-start justify-self-end [grid-area:size]">{props.size}</span>
         </Show>
         <Show when={props.columns.states && props.states}>
-          <span class="hidden truncate [grid-area:states] @regular:block">{props.states}</span>
+          <span class="hidden self-start truncate [grid-area:states] @regular:block">
+            {props.states}
+          </span>
         </Show>
       </div>
       <Show when={props.actions === true}>

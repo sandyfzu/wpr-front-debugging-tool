@@ -1,5 +1,5 @@
 /**
- * P11.1 — the detection site matrix over the real docker site.
+ * The detection site matrix over the real docker site.
  *
  * Three WP Rocket settings combinations are written through wp-cli (config
  * regenerated, caches purged), and per-request fixture flags vary what the
@@ -667,7 +667,7 @@ let found: WprSettings | null = null;
  */
 let foundOverrides: { readonly value: unknown } | null = null;
 
-test.describe('detection site matrix (P11.1)', () => {
+test.describe('detection site matrix', () => {
   test.describe.configure({ mode: 'serial' });
 
   test.beforeAll(async ({ extension }) => {

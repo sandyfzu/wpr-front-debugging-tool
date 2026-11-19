@@ -161,7 +161,7 @@ test('names the pattern to add by hand when the clipboard write is rejected', as
   }
 });
 
-/** The live docker capture pair's served URL (P18.0): the fixture enqueue's minified copy. */
+/** The live docker capture pair's served URL: the fixture enqueue's minified copy. */
 const DOCKER_SERVED =
   'http://127.0.0.1:8493/wp-content/cache/min/1/wp-content/mu-plugins/assets/fdt-delayed-definer.js?ver=1792430636';
 /** …and the original path its copy payload must carry. */

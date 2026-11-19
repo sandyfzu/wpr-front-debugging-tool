@@ -33,6 +33,7 @@ import type { DetailFact } from '../resource-list/detail-section';
 import type { DetailCopy } from '../resource-list/master-detail';
 import { resourceName, urlPreview } from '../resource-list/resource-list-view';
 import { SCRIPT_KIND_LABELS, SCRIPT_URL_COPY_LABEL } from '../resource-list/script-words';
+import { resolveHttpUrl } from '../../../../utils/urls';
 
 /** One script's row. */
 export interface RuntimeRow {
@@ -43,6 +44,12 @@ export interface RuntimeRow {
   readonly name: string;
   /** The muted line: `#id · ` then the URL without its scheme, or the start of the code. */
   readonly preview: string;
+  /**
+   * The script's URL resolved against the page's base (the source tile's
+   * target), or `null` for an inline script or a URL that resolves to no
+   * http(s) address — the tile then shows the URL as captured.
+   */
+  readonly url: string | null;
 }
 
 /** The facts' word for a status attribute the script does not carry. */
@@ -175,10 +182,14 @@ export function runtimePreview(script: LiveScriptRecord): string {
  * The rows of a read.
  *
  * @param scripts The read's scripts, in document order.
+ * @param baseUrl The page's base URL the scripts' URLs resolve against (null: none sent).
  * @returns One row per script; inline scripts numbered from 1 in document
  *   order; keys unique (an occurrence suffix tells duplicates apart).
  */
-export function runtimeRows(scripts: readonly LiveScriptRecord[]): RuntimeRow[] {
+export function runtimeRows(
+  scripts: readonly LiveScriptRecord[],
+  baseUrl: string | null
+): RuntimeRow[] {
   let inline = 0;
   const seen = new Map<string, number>();
   return scripts.map((script) => {
@@ -188,10 +199,11 @@ export function runtimeRows(scripts: readonly LiveScriptRecord[]): RuntimeRow[] 
     const key = `${signature}#${String(occurrence)}`;
     const preview = runtimePreview(script);
     if (script.sourceKind === 'url') {
-      return { key, script, name: resourceName(script.source), preview };
+      const url = resolveHttpUrl(script.source, baseUrl);
+      return { key, script, name: resourceName(script.source), preview, url };
     }
     inline += 1;
-    return { key, script, name: `Inline script ${String(inline)}`, preview };
+    return { key, script, name: `Inline script ${String(inline)}`, preview, url: null };
   });
 }
 
@@ -208,6 +220,7 @@ export function sameRuntimeRow(a: RuntimeRow, b: RuntimeRow): boolean {
   const y = b.script;
   return (
     a.name === b.name &&
+    a.url === b.url &&
     x.state === y.state &&
     x.rawStatus === y.rawStatus &&
     x.group === y.group &&

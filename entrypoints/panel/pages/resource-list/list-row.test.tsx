@@ -3,6 +3,7 @@ import { cleanup, render } from '@solidjs/testing-library';
 import ImageIcon from 'lucide-solid/icons/image';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { capTitle } from '../../../../utils/cap-text';
 import { CURRENT_MATCH_ROW } from '../current-match';
 import {
   CALM_ROW_ESTIMATES,
@@ -133,6 +134,10 @@ describe('ListRow', () => {
     expect(container.querySelectorAll('[data-fdt="state-chip"]')).toHaveLength(1);
     expect(container.querySelector('[data-fdt="list-row-icon"] svg')).not.toBeNull();
     expect(container.querySelector('svg.lucide-chevron-right')).toBeNull();
+    // No preview title unless the row asks for one.
+    expect(container.querySelector('[data-fdt="list-row-preview"]')?.hasAttribute('title')).toBe(
+      false
+    );
   });
 
   it('leaves the size cell empty when the row has no size, and the dash marks no chips', () => {
@@ -246,6 +251,22 @@ describe('ListRow', () => {
   });
 });
 
+describe('ListRow — preview title', () => {
+  it('carries the full preview on hover when asked (capped), none without a preview', () => {
+    const long = `https://a.test/${'x'.repeat(2000)}.css`;
+    const { container } = render(() => (
+      <>
+        <ListRow columns={BOTH} name="a.css" preview={long} previewTitle />
+        <ListRow columns={BOTH} name="b.css" previewTitle clipped />
+      </>
+    ));
+    const previews = container.querySelectorAll<HTMLElement>('[data-fdt="list-row-preview"]');
+    expect(previews[0]?.title).toBe(capTitle(long));
+    expect(previews[0]?.title.length).toBeLessThan(long.length);
+    expect(previews[1]?.hasAttribute('title')).toBe(false);
+  });
+});
+
 describe('ListRowHead', () => {
   it('captions the columns on the rows’ grid, reserving the icon, actions and chevron widths', () => {
     const { container } = render(() => (
@@ -261,6 +282,11 @@ describe('ListRowHead', () => {
     expect(head.querySelector('.w-6')).not.toBeNull();
     expect(head.querySelector('.w-3\\.5')).not.toBeNull();
     expect(head.querySelector('div')?.className).toContain(rowGrid('two', BOTH));
+    // The captions share the name's line (a two-line grid would center them lower).
+    for (const caption of ['Size', 'WP Rocket']) {
+      const span = [...head.querySelectorAll('span')].find((s) => s.textContent === caption);
+      expect(span?.className).toContain('self-start');
+    }
   });
 
   it('shows a one-line preview caption from @regular, and no spacers outside a list', () => {

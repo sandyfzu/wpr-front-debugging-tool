@@ -82,6 +82,15 @@ describe('readLiveScripts', () => {
     expect(Object.isFrozen(outcome.scripts)).toBe(true);
     expect(Object.isFrozen(outcome.scripts[0])).toBe(true);
     expect(outcome.scripts[0]).not.toHaveProperty('textCut');
+    // No base in the answer: none in the outcome.
+    expect(outcome.baseUrl).toBeNull();
+  });
+
+  it('passes the page base on for the panel to resolve relative URLs', async () => {
+    const outcome = await readLiveScripts(
+      deps({ kind: 'reply', reply: { scripts: [], total: 0, baseUrl: 'https://a.test/shop/' } })
+    );
+    expect(outcome).toMatchObject({ kind: 'read', baseUrl: 'https://a.test/shop/' });
   });
 
   it('reports a page with more scripts than listed as truncated', async () => {

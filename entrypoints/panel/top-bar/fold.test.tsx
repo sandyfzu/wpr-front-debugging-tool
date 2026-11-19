@@ -12,6 +12,7 @@ import {
   createTopBarFold,
   foldStateMark,
   readFoldMetrics,
+  watchFoldContent,
   watchFoldSizes,
   type FoldMetrics,
   type TopBarFoldSeams
@@ -45,29 +46,54 @@ function sized(
 function seamsDouble(metrics: () => FoldMetrics | null): {
   seams: TopBarFoldSeams;
   change: () => void;
+  mutate: () => void;
   observed: Set<Element>;
+  log: string[];
+  contentRoots: Element[];
   disconnected: () => boolean;
+  contentStopped: () => number;
 } {
   const observed = new Set<Element>();
+  const log: string[] = [];
+  const contentRoots: Element[] = [];
   let onChange: (() => void) | undefined;
+  let onContent: (() => void) | undefined;
   let disconnected = false;
+  let contentStops = 0;
   return {
     seams: {
       watch: (callback) => {
         onChange = callback;
         return {
-          observe: (element) => observed.add(element),
-          unobserve: (element) => observed.delete(element),
+          observe: (element) => {
+            log.push(`observe ${element.tagName}`);
+            observed.add(element);
+          },
+          unobserve: (element) => {
+            log.push(`unobserve ${element.tagName}`);
+            observed.delete(element);
+          },
           disconnect: () => {
             disconnected = true;
           }
         };
       },
+      watchContent: (element, callback) => {
+        contentRoots.push(element);
+        onContent = callback;
+        return () => {
+          contentStops += 1;
+        };
+      },
       read: () => metrics()
     },
     change: () => onChange?.(),
+    mutate: () => onContent?.(),
     observed,
-    disconnected: () => disconnected
+    log,
+    contentRoots,
+    disconnected: () => disconnected,
+    contentStopped: () => contentStops
   };
 }
 
@@ -135,6 +161,66 @@ describe('watchFoldSizes', () => {
     }).not.toThrow();
     expect(
       warn.mock.calls.some((call) => /ResizeObserver is unavailable/.test(String(call[0])))
+    ).toBe(true);
+  });
+});
+
+describe('watchFoldContent', () => {
+  it('watches the subtree for nodes and text, calls back, and stops', async () => {
+    const root = document.createElement('div');
+    document.body.append(root);
+    const onChange = vi.fn();
+    const stop = watchFoldContent(root, onChange);
+    root.append(document.createElement('span'));
+    await Promise.resolve();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const text = document.createTextNode('a');
+    root.firstElementChild?.append(text);
+    await Promise.resolve();
+    text.data = 'WP Rocket';
+    await Promise.resolve();
+    expect(onChange).toHaveBeenCalledTimes(3);
+    stop();
+    root.append(document.createElement('span'));
+    await Promise.resolve();
+    expect(onChange).toHaveBeenCalledTimes(3);
+  });
+
+  it('contains a failing follow to one logged error', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let callback: (() => void) | undefined;
+    const options: unknown[] = [];
+    vi.stubGlobal(
+      'MutationObserver',
+      class {
+        constructor(cb: () => void) {
+          callback = cb;
+        }
+        observe(_target: Node, init: unknown): void {
+          options.push(init);
+        }
+        disconnect(): void {}
+      }
+    );
+    watchFoldContent(document.createElement('div'), () => {
+      throw new Error('bad read');
+    });
+    expect(options).toEqual([{ childList: true, subtree: true, characterData: true }]);
+    expect(() => callback?.()).not.toThrow();
+    expect(
+      error.mock.calls.some((call) => /failed to follow a content change/.test(String(call[0])))
+    ).toBe(true);
+  });
+
+  it('degrades to a no-op watch (logged) without the API', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.stubGlobal('MutationObserver', undefined);
+    const stop = watchFoldContent(document.createElement('div'), vi.fn());
+    expect(() => {
+      stop();
+    }).not.toThrow();
+    expect(
+      warn.mock.calls.some((call) => /MutationObserver is unavailable/.test(String(call[0])))
     ).toBe(true);
   });
 });
@@ -288,6 +374,33 @@ describe('createTopBarFold', () => {
       expect(double.observed.has(part)).toBe(false);
       dispose();
     });
+  });
+
+  it('re-arms the start row on a content change, so a squeeze nothing else reports re-measures', () => {
+    const double = seamsDouble(() => null);
+    createRoot((dispose) => {
+      const fold = createTopBarFold(() => false, double.seams);
+      double.mutate(); // before the row mounts: nothing to re-arm
+      expect(double.log).toEqual([]);
+      const start = document.createElement('div');
+      fold.attachStart(start);
+      expect(double.contentRoots).toEqual([start]);
+      // Data arrives: the placeholders become pills with fresh labels.
+      const label = document.createElement('span');
+      label.setAttribute(FOLD_ELIDE_ATTRIBUTE, '');
+      start.append(label);
+      double.log.length = 0;
+      double.mutate();
+      expect(double.observed.has(label)).toBe(true);
+      // A fresh observation of the row: the size watch reports it once.
+      expect(double.log.slice(-2)).toEqual(['unobserve DIV', 'observe DIV']);
+      expect(double.observed.has(start)).toBe(true);
+      // A re-attached row replaces the content watch.
+      fold.attachStart(document.createElement('section'));
+      expect(double.contentStopped()).toBe(1);
+      dispose();
+    });
+    expect(double.contentStopped()).toBe(2);
   });
 
   it('keeps a newer registration when an older one unregisters late', () => {

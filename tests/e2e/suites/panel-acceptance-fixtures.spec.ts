@@ -1,6 +1,5 @@
 /**
- * P6.1 browser acceptance — the fixture round (rows 1–2 of
- * 07-phase-6-panel-pages.md).
+ * Panel browser acceptance — the fixture round.
  *
  * The local docker site serves no `x-rocket-*`/`age`-shaped responses, so
  * this round rides known served fixtures through the real capture path:

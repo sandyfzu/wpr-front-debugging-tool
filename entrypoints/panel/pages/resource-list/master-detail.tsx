@@ -612,16 +612,20 @@ export function DrillDetail<Row>(props: DetailViewProps<Row>): JSX.Element {
             data-fdt="drill-bar"
             class="flex min-w-0 items-center gap-1 border-b border-line-1 pb-2 [grid-area:bar]"
           >
+            {/* The one part that gives: a long label elides (whole in its
+                title) so ↑/↓ and "n of m" always keep their room. */}
             <Button
               ref={backButton}
               variant="ghost"
               data-fdt="drill-back"
+              title={props.detail.backLabel}
+              class="min-w-0 shrink"
               onClick={() => {
                 props.controller.back();
               }}
             >
-              <ChevronLeft size={14} aria-hidden="true" />
-              {props.detail.backLabel}
+              <ChevronLeft size={14} class="shrink-0" aria-hidden="true" />
+              <span class="truncate">{props.detail.backLabel}</span>
             </Button>
             <span aria-hidden="true" class="mx-1 h-4 w-px shrink-0 bg-line-2" />
             <IconButton
@@ -648,7 +652,10 @@ export function DrillDetail<Row>(props: DetailViewProps<Row>): JSX.Element {
             </IconButton>
             <Show when={position()}>
               {(at) => (
-                <span data-fdt="drill-position" class="ms-1 text-2xs text-fg-muted tabular-nums">
+                <span
+                  data-fdt="drill-position"
+                  class="ms-1 shrink-0 text-2xs whitespace-nowrap text-fg-muted tabular-nums"
+                >
                   {positionLabel(at())}
                 </span>
               )}

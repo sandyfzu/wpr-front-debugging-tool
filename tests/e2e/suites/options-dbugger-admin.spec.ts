@@ -1,6 +1,6 @@
 /**
- * P9.1 — the D-bugger improvement round over the real site's wp-admin,
- * driven by the real options page (the P4.3 admin suite drives the same
+ * The D-bugger improvement round over the real site's wp-admin, driven by
+ * the real options page (`site-improvements-admin.spec.ts` drives the same
  * storage seam directly; this suite drives the page's own Save path).
  *
  * The improvement is ONE-SHOT by design: the content script's improvement
@@ -10,7 +10,7 @@
  *
  * Receipt honesty: this is a PAGE reload of the inspected admin document.
  * The service worker never restarts in this round and the suite makes no
- * restart claim — the P9B copy's "applies as soon as it is saved" refers to
+ * restart claim — the page's copy "applies as soon as it is saved" refers to
  * the storage write, and the admin entry's application remains the next page
  * load's business.
  *

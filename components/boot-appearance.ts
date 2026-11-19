@@ -1,25 +1,26 @@
 /**
- * The panel boot's appearance leg: puts `<html>` on the stored choice, arms
- * the follow, releases the paint lock, and hands the top bar's appearance
- * menu the choice the document follows — fed by that one follow, never a
+ * The appearance leg of an extension page's boot (the panel and the options
+ * page): puts `<html>` on the stored choice, arms the follow, releases the
+ * paint lock, and hands the page the choice the document follows (its
+ * appearance menu, the options row) — fed by that one follow, never a
  * second storage subscription.
  *
  * A failed read degrades to the token stylesheet's system default (the
- * menu shows System) and still arms the write half of the follow: the
- * menu's own pick, the palette's cycle or the options page then restyle the
- * panel and move the menu as soon as one write lands — never a pick that
+ * page shows System) and still arms the write half of the follow: the
+ * page's own pick or another surface's write then restyles the document
+ * and moves its controls as soon as one write lands — never a pick that
  * saves yet changes nothing visible.
  */
 import { createSignal, type Accessor } from 'solid-js';
-import type { Logger } from '../../lib/logger';
+import type { Logger } from '../lib/logger';
 import {
   applyStoredAppearance,
   followAppearanceWrites,
   releaseThemeLock,
   type AppearanceSource
-} from '../../lib/appearance/appearance';
-import { FALLBACK } from '../../lib/storage/options';
-import type { Appearance } from '../../utils/theme';
+} from '../lib/appearance/appearance';
+import { FALLBACK } from '../lib/storage/options';
+import type { Appearance } from '../utils/theme';
 
 /**
  * Summarize a cause for the log: an `Error`'s message, anything else as is.
@@ -31,17 +32,17 @@ function logCause(cause: unknown): unknown {
 }
 
 /**
- * Resolve the panel document's appearance before the first render. Never
+ * Resolve an extension page's appearance before its first render. Never
  * rejects: every failure is logged and degrades, and the paint lock
- * releases in every arm (the panel is never left hidden). The follow lives
+ * releases in every arm (the page is never left hidden). The follow lives
  * for the document's lifetime, so no stop handle is returned.
  *
  * @param root The document root (`<html>`).
- * @param log The panel's diagnostics sink.
+ * @param log The page's diagnostics sink.
  * @param source The options seam; absent, the real storage item.
  * @returns The choice the document follows (the menu's value).
  */
-export async function bootPanelAppearance(
+export async function bootAppearance(
   root: HTMLElement,
   log: Logger,
   source?: AppearanceSource
@@ -63,7 +64,7 @@ export async function bootPanelAppearance(
       followAppearanceWrites(root, source, follow);
     } catch (armCause) {
       log.warn(
-        'The appearance follow could not be armed — the panel keeps the system scheme',
+        'The appearance follow could not be armed — the page keeps the system scheme',
         logCause(armCause)
       );
     }

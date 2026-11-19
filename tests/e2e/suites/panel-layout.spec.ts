@@ -202,8 +202,8 @@ for (const theme of ['light', 'dark'] as const) {
                 // The one reviewed incomplete allowance: contrast unresolved
                 // because a virtual row sits half-clipped at the scroller's
                 // edge (`elmPartiallyObscured` — the row is fully readable by
-                // scrolling; the P6F receipt discloses exactly this for
-                // virtual lists and P6.1 carries the same allowance). Every
+                // scrolling; a known, accepted limit of
+                // virtual lists). Every
                 // node must match the message AND resolve inside a virtual
                 // list; anything else stays unresolved and fails.
                 const insideVirtualList = (target: unknown): boolean => {

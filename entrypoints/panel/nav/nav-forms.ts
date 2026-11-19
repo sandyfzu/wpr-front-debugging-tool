@@ -50,7 +50,7 @@ export const NAV_FORM_CLASSES: Readonly<Record<NavForm, NavFormClasses>> = {
       'mt-1.5 flex flex-col border-t border-line-2 pt-1.5 first:mt-0 first:border-t-0 first:pt-0',
     caption: null,
     list: 'flex flex-col items-center gap-1',
-    row: 'flex size-8 shrink-0 items-center justify-center rounded whitespace-nowrap text-2xs font-medium no-underline',
+    row: 'flex size-8 shrink-0 items-center justify-center rounded-control whitespace-nowrap text-2xs font-medium no-underline',
     rowActive: ROW_ACTIVE,
     rowIdle: ROW_IDLE,
     triggerBlock: 'flex shrink-0 flex-col items-center border-t border-line-2 pt-1.5'
@@ -61,7 +61,7 @@ export const NAV_FORM_CLASSES: Readonly<Record<NavForm, NavFormClasses>> = {
     caption:
       'truncate px-2.5 pt-3.5 pb-1.5 text-2xs leading-4 font-semibold tracking-wide text-fg-muted uppercase',
     list: 'flex flex-col gap-0.5',
-    row: 'flex h-8 w-full shrink-0 items-center gap-2.5 rounded px-2.5 text-left text-xs font-medium whitespace-nowrap no-underline',
+    row: 'flex h-8 w-full shrink-0 items-center gap-2.5 rounded-control px-2.5 text-left text-xs font-medium whitespace-nowrap no-underline',
     rowActive: ROW_ACTIVE,
     rowIdle: ROW_IDLE,
     triggerBlock: 'flex shrink-0 flex-col border-t border-line-2 pt-1.5'

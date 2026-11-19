@@ -4,11 +4,15 @@
  * beacon, mobile cache, Server, Known Platform, host layers, Cached) are never
  * narrowed — they describe the page, not an optimization.
  *
+ * The page's search ("Filter features…") narrows every row by its name
+ * with the list pages' one search rule, on top of the status filter.
+ *
  * Pure: the page owns the selection signal; this module owns the vocabulary
  * and the counts. The buckets themselves are the summary's
  * ({@link optimizationBucket}), so the filter's counts equal the overview's.
  */
 import type { StatusItem } from './detections-view-model';
+import { searchPredicate } from './row-search';
 import {
   isOptimizationCard,
   optimizationBucket,
@@ -107,4 +111,31 @@ export function detectionFilterLabel(filter: DetectionFilterId): string {
   const found = DETECTION_FILTERS.find((entry) => entry.id === filter);
   if (found === undefined) throw new Error(`Unknown detection filter "${filter}".`);
   return found.label;
+}
+
+/**
+ * A row's searched field: its name — the feature or fact as the page
+ * titles it (what "Filter features…" promises).
+ *
+ * @param item Any row.
+ * @returns The searched text.
+ */
+export function detectionSearchField(item: StatusItem): string {
+  return item.name;
+}
+
+/**
+ * Narrow the rows to a query. Unlike the status filter, the search narrows
+ * page-context rows too: a typed name hides every row that is not it.
+ *
+ * @param items The rows, in render order.
+ * @param query The committed query, already normalized (`''` = no search).
+ * @returns `items` itself for a blank query (memos downstream stay quiet), else the matches.
+ */
+export function searchStatusItems(
+  items: readonly StatusItem[],
+  query: string
+): readonly StatusItem[] {
+  const matches = searchPredicate(detectionSearchField, query);
+  return matches === null ? items : items.filter(matches);
 }

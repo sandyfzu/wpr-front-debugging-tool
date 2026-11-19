@@ -3,7 +3,10 @@
  * values as they are now (Delay JS rewrites `type`, `src` and the status
  * attribute while it runs), in document order — never the snapshot
  * detection parsed, and never written to (no attribute, no property).
- * The panel classifies the answer.
+ * The page's base URL rides along (whole, or not at all), so the panel
+ * resolves relative script URLs exactly as the page does (`<base href>`
+ * included). The panel
+ * classifies the answer.
  */
 import {
   SCRIPT_RUNTIME_LIMITS,
@@ -80,6 +83,19 @@ export function scriptFacts(element: Element, textCap: number): LiveScriptFacts 
 }
 
 /**
+ * The base URL the answer carries: the page's whole base, or null when it is
+ * longer than the field cap — a clipped base still parses, so it would
+ * resolve relative script URLs to wrong but working ones; without a base
+ * they stay the text the page wrote.
+ *
+ * @param base The page's base URL (`document.baseURI`).
+ * @returns The base, or null past the cap.
+ */
+export function answerBaseUrl(base: string): string | null {
+  return capText(base, FIELD_MAX) === base ? base : null;
+}
+
+/**
  * Read the live scripts.
  *
  * @param doc The page's document.
@@ -96,5 +112,5 @@ export function readLiveScripts(doc: Document): ScriptRuntimeReply {
     budget -= facts.text.length;
     scripts.push(facts);
   }
-  return { scripts, total: all.length };
+  return { scripts, total: all.length, baseUrl: answerBaseUrl(doc.baseURI) };
 }

@@ -1,7 +1,7 @@
 /** The detail building blocks: the facts list (mono, multi-line, none) and the titled code section. */
 import { cleanup, render } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
-import { CodeSection, FactList } from './detail-section';
+import { DetailSection, FactList } from './detail-section';
 
 afterEach(() => {
   cleanup();
@@ -41,21 +41,21 @@ describe('FactList', () => {
   });
 });
 
-describe('CodeSection', () => {
+describe('DetailSection', () => {
   it('titles its body, with the muted aside only when given', () => {
     const { container } = render(() => (
-      <CodeSection title="Code" aside="3 lines" hook="code">
+      <DetailSection title="Code" aside="3 lines" hook="code">
         <p>body</p>
-      </CodeSection>
+      </DetailSection>
     ));
     const section = container.querySelector('[data-fdt="code"]');
     expect(section?.querySelector('h3')?.textContent).toBe('Code3 lines');
     expect(section?.querySelector('p')?.textContent).toBe('body');
     cleanup();
     const bare = render(() => (
-      <CodeSection title="Code" hook="code">
+      <DetailSection title="Code" hook="code">
         <p>body</p>
-      </CodeSection>
+      </DetailSection>
     ));
     expect(bare.container.querySelector('h3')?.textContent).toBe('Code');
   });

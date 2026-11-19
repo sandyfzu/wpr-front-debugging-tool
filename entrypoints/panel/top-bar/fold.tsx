@@ -14,8 +14,13 @@
  * laid-out extent (overflow included) plus what its pill labels lost to
  * elision, so one measure lands on the final fold even from an overflowing
  * layout; the labels are watched too, so a squeeze that changes nothing else
- * still re-measures. The callback only reads (layout is clean at that point)
- * and then writes once, so it never thrashes layout.
+ * still re-measures. A content change inside the start row (data arriving:
+ * the placeholders become pills, a label's text changes) may move no watched
+ * box at all — the row already fills its slot and the pills absorb it by
+ * eliding — so a mutation watch re-arms the start row's size watch, which
+ * reports it afresh in the same frame's rendering step. The callback only
+ * reads (layout is clean at that point) and then writes once, so it never
+ * thrashes layout.
  */
 import { createSignal, onCleanup, type Accessor, type JSX } from 'solid-js';
 import { createLogger } from '../../../lib/logger';
@@ -43,6 +48,12 @@ export interface FoldSizeWatch {
 
 /** Create a size watch that calls `onChange` after any watched box changes size. */
 export type WatchFoldSizes = (onChange: () => void) => FoldSizeWatch;
+
+/**
+ * Watch an element's subtree for content changes (nodes added or removed,
+ * text edited) and call `onChange` after them; returns the stop.
+ */
+export type WatchFoldContent = (element: Element, onChange: () => void) => () => void;
 
 /** The bar's measured facts, read from layout (see {@link readFoldMetrics}). */
 export interface FoldMetrics {
@@ -72,6 +83,8 @@ export interface FoldElements {
 export interface TopBarFoldSeams {
   /** The size watch. */
   readonly watch: WatchFoldSizes;
+  /** The start row's content watch. */
+  readonly watchContent: WatchFoldContent;
   /** The layout read. */
   readonly read: (elements: FoldElements) => FoldMetrics | null;
 }
@@ -145,6 +158,35 @@ export const watchFoldSizes: WatchFoldSizes = (onChange) => {
     disconnect: () => {
       observer.disconnect();
     }
+  };
+};
+
+/**
+ * The production content watch: one `MutationObserver` over the subtree.
+ * Without the API (never in a supported browser) it watches nothing and
+ * logs once: the fold then re-measures on size changes only.
+ *
+ * @param element The watched root.
+ * @param onChange Called after a batch of mutations (errors are contained and logged).
+ * @returns The stop.
+ */
+export const watchFoldContent: WatchFoldContent = (element, onChange) => {
+  if (typeof MutationObserver !== 'function') {
+    log.warn('MutationObserver is unavailable — the top bar re-measures on size changes only');
+    return () => undefined;
+  }
+  const observer = new MutationObserver(() => {
+    try {
+      onChange();
+    } catch (cause) {
+      log.error('Top bar fold failed to follow a content change — the bar keeps its last fold', {
+        cause: cause instanceof Error ? { message: cause.message } : cause
+      });
+    }
+  });
+  observer.observe(element, { childList: true, subtree: true, characterData: true });
+  return () => {
+    observer.disconnect();
   };
 };
 
@@ -228,7 +270,11 @@ export function readFoldMetrics(elements: FoldElements): FoldMetrics | null {
 }
 
 /** The production seams. */
-export const REAL_FOLD_SEAMS: TopBarFoldSeams = { watch: watchFoldSizes, read: readFoldMetrics };
+export const REAL_FOLD_SEAMS: TopBarFoldSeams = {
+  watch: watchFoldSizes,
+  watchContent: watchFoldContent,
+  read: readFoldMetrics
+};
 
 /** The bar's fold state and the refs that feed it. */
 export interface TopBarFoldControl {
@@ -266,6 +312,7 @@ export function createTopBarFold(
   const labels = new Set<Element>();
   let start: HTMLElement | null = null;
   let menu: HTMLElement | null = null;
+  let stopContent: (() => void) | undefined;
 
   /**
    * Keep the watch on the start row's current pill labels: a squeeze moves
@@ -308,7 +355,21 @@ export function createTopBarFold(
   const watch = seams.watch(measure);
   onCleanup(() => {
     watch.disconnect();
+    stopContent?.();
   });
+
+  /**
+   * Follow a content change in the start row: watch its current labels and
+   * re-arm the row's size watch, which then reports the row afresh (a new
+   * observation always reports once) — so the measure runs in the rendering
+   * step, on clean layout, even when no watched box changed size.
+   */
+  const contentChanged = (): void => {
+    if (start === null) return;
+    syncLabels();
+    watch.unobserve(start);
+    watch.observe(start);
+  };
 
   return {
     inline: (part) =>
@@ -326,6 +387,8 @@ export function createTopBarFold(
     attachStart: (element) => {
       start = element;
       watch.observe(element);
+      stopContent?.();
+      stopContent = seams.watchContent(element, contentChanged);
       // The slot's own size is the room; the parent exists once the row is
       // inserted, which happens after the ref runs — so watch it on the
       // next microtask.

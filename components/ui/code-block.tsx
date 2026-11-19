@@ -1,8 +1,7 @@
 /**
  * The code surface — one component for every rendered source (script
  * excerpts, stylesheets, served markup, JSON payloads the *page itself*
- * wants shown as source; structured JSON data goes through `json-value.tsx`,
- * never through a highlighter).
+ * wants shown as source).
  *
  * shiki highlights with the `CODE_BLOCK_LANGS` grammars and a light/dark
  * theme pair whose colors resolve through `light-dark()` — code follows the
@@ -202,6 +201,11 @@ export type CodeBlockProps = {
    * button with no writer is a dead control.
    */
   onWrapToggle?: (wrap: boolean) => void;
+  /**
+   * Extra toolbar controls, placed before the Wrap toggle (toolbar chrome
+   * only) — e.g. a consumer's display toggle that swaps `text`.
+   */
+  actions?: JSX.Element;
   /** The overflow seam; defaults to the shared `ResizeObserver` watcher. */
   watchOverflow?: OverflowWatcher;
   /** Extra classes on the container, merged last so callers win. */
@@ -366,6 +370,7 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     'toolbar',
     'wrap',
     'onWrapToggle',
+    'actions',
     'watchOverflow',
     'class'
   ]);
@@ -569,17 +574,20 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
               )}
             </Show>
           </span>
-          <Button
-            type="button"
-            data-fdt-code-block-wrap
-            variant="ghost"
-            size="sm"
-            aria-pressed={wrap()}
-            onClick={toggleWrap}
-            class="min-h-6 px-1.5 text-2xs"
-          >
-            {WRAP_LABEL}
-          </Button>
+          <span class="flex shrink-0 items-center gap-1">
+            {own.actions}
+            <Button
+              type="button"
+              data-fdt-code-block-wrap
+              variant="ghost"
+              size="sm"
+              aria-pressed={wrap()}
+              onClick={toggleWrap}
+              class="min-h-6 px-1.5 text-2xs"
+            >
+              {WRAP_LABEL}
+            </Button>
+          </span>
         </div>
       </Show>
       <div

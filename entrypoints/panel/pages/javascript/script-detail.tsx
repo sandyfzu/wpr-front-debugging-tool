@@ -23,7 +23,7 @@ import type {
   ServedScriptTagError
 } from '../../../../lib/messaging/served-script-tag';
 import type { OpenResource } from '../open-resource';
-import { CodeSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
+import { DetailSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
 import { createOnDemand, type OnDemandState } from '../resource-list/on-demand';
 import { SourceLink } from '../resource-list/source-link';
 import { READ_FAILURE_NOTES } from '../resource-list/top-frame-reader';
@@ -190,7 +190,7 @@ function InlineSource(props: InlineSourceProps): JSX.Element {
   const shown = (): { text: string; cut: boolean } =>
     expandedText(source()?.text ?? '', HIGHLIGHT_MAX_CHARS);
   return (
-    <CodeSection
+    <DetailSection
       title="Source"
       hook="script-source"
       aside={source() === null ? undefined : lineCount(countLines(source()?.text ?? ''))}
@@ -235,7 +235,7 @@ function InlineSource(props: InlineSourceProps): JSX.Element {
           </p>
         </Show>
       </Show>
-    </CodeSection>
+    </DetailSection>
   );
 }
 
@@ -264,7 +264,7 @@ function ServedTag(props: {
     return value.status === 'gone' ? SERVED_TAG_NOTES.gone : SERVED_TAG_NOTES[value.reason];
   };
   return (
-    <CodeSection title="Served as" hook="script-served-tag">
+    <DetailSection title="Served as" hook="script-served-tag">
       <Switch>
         <Match when={props.state.status === 'loading'}>
           <Skeleton class="h-8 w-full" />
@@ -291,6 +291,6 @@ function ServedTag(props: {
           )}
         </Match>
       </Switch>
-    </CodeSection>
+    </DetailSection>
   );
 }

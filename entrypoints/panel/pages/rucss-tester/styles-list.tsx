@@ -2,7 +2,7 @@
  * The page-style inventory: the inspected page's `style` and stylesheet
  * `link` elements as they are now (the ones a test strips) as calm rows —
  * the Stylesheets page's row look (icon tile, name, one muted preview line
- * holding what a keep rule matches, an inline style's characters, the "Test
+ * holding what a keep rule matches — whole on hover — an inline style's characters and size bar, the "Test
  * result" chip) — read on demand from the page, refreshed after each
  * applied test. Rows are static: the Stylesheets page holds each style's
  * detail.
@@ -89,7 +89,10 @@ function StyleRow(props: { view: InventoryRowView }): JSX.Element {
       name={props.view.name}
       mono={props.view.monoName}
       preview={props.view.preview}
+      // Static rows: the full URL a keep pattern matches stays one hover away.
+      previewTitle
       size={props.view.size}
+      sizeShare={props.view.sizeShare}
       chips={props.view.chips}
     />
   );

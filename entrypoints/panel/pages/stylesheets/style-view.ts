@@ -5,9 +5,12 @@
  * a row keeps across refreshes, the detail's facts, the summary and cut
  * lines, and which of its states the page is in.
  */
+import { LABEL_OPTIMIZE_CSS_DELIVERY } from '../../../../lib/detection/labels';
 import type { AskMiss } from '../../../../lib/messaging/bounded-ask';
 import type { PageStylesheetsReply } from '../../../../lib/messaging/page-stylesheets';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
+import { optimizationBucket } from '../../../../lib/panel/detections-summary';
+import type { StatusItem, StatusItemId } from '../../../../lib/panel/detections-view-model';
 import { liftFacets, type FacetSet } from '../../../../lib/panel/resource-facets';
 import {
   CSS_PAGE_FACETS,
@@ -28,6 +31,7 @@ import {
   SELF_HOSTED_FONTS_ATTRIBUTE
 } from '../../../../lib/wp-rocket/constants';
 import { countLabel, formatCompactCount, formatCount } from '../../../../utils/format-count';
+import { joinWords } from '../../../../utils/text';
 import type { AskRunState } from '../ask-run';
 import type { DetailFact } from '../resource-list/detail-section';
 import { MINIFY_STAMP_LABEL, urlPreview } from '../resource-list/resource-list-view';
@@ -324,6 +328,15 @@ export function styleFacts(view: StyleRowView): DetailFact[] {
 }
 
 /**
+ * Whether the page has more styles than one read lists (the list is cut).
+ *
+ * @param reply The inventory.
+ */
+export function isListCut(reply: Pick<PageStylesheetsReply, 'styles' | 'total'>): boolean {
+  return reply.total > reply.styles.length;
+}
+
+/**
  * The muted line under the summary when the page has more styles than one
  * read lists.
  *
@@ -331,7 +344,7 @@ export function styleFacts(view: StyleRowView): DetailFact[] {
  * @returns The note, or `null` while every style is listed.
  */
 export function listCutNote(reply: Pick<PageStylesheetsReply, 'styles' | 'total'>): string | null {
-  if (reply.total <= reply.styles.length) return null;
+  if (!isListCut(reply)) return null;
   return `Showing the first ${formatCount(reply.styles.length)} of ${formatCount(reply.total)} styles.`;
 }
 
@@ -390,4 +403,78 @@ export function stylesheetsView(
     refreshing: false,
     refreshMiss: failure?.kind === 'page-unreachable' ? failure.miss : null
   };
+}
+
+/** One WP Rocket feature that changes stylesheets: its settings name and Detections card. */
+interface StyleFeature {
+  readonly name: string;
+  readonly card: StatusItemId;
+}
+
+/**
+ * The features behind the style states, in the settings' order. Remove
+ * Unused CSS and Load CSS asynchronously share one card (and their settings
+ * group's name: one switch between them in the plugin's UI).
+ */
+const STYLE_FEATURES: readonly StyleFeature[] = [
+  { name: LABEL_OPTIMIZE_CSS_DELIVERY, card: 'remove_unused_css' },
+  { name: getRealOptionName('minify_css'), card: 'minify_css' },
+  { name: getRealOptionName('lazyload_css_bg_img'), card: 'lazyload_css_bg_img' },
+  { name: getRealOptionName('host_fonts_locally'), card: 'self_hosted_fonts' }
+];
+
+/**
+ * Whether a Detections card says its feature is off: the cards' own "off"
+ * bucket, minus the unknown verdict (absence the page cannot prove is no
+ * "off"). Collecting is its own bucket, so it never reads as off.
+ *
+ * @param card The feature's Detections card.
+ */
+function cardSaysOff(card: StatusItem): boolean {
+  return optimizationBucket(card) === 'off' && card.status !== 'unknown';
+}
+
+/** The page note when no listed style carries a WP Rocket state. */
+export interface UnchangedStylesNotice {
+  readonly title: string;
+  /** The style features Detections shows off (null when none is). */
+  readonly detail: string | null;
+}
+
+/**
+ * The note's title: what the rows prove, never more — a state needs WP
+ * Rocket's own footprint, and a change without one (a CDN host swap) is not
+ * read here, so it says "shows", not "changed".
+ */
+export const UNCHANGED_STYLES_TITLE = 'No stylesheet shows a WP Rocket change.';
+
+/**
+ * The page note for a list where WP Rocket changed nothing: shown only when
+ * WP Rocket is proven on the page (else the top bar's "Not detected" says
+ * it all) and the whole list is read (a cut list may hide a changed style)
+ * with rows, none with a state. Its detail names the style features whose
+ * Detections card says off — the usual reason; unknown and collecting
+ * features stay unnamed, so the note never contradicts their cards.
+ *
+ * @param reply The inventory (its cut decides, see {@link isListCut}).
+ * @param views The listed rows.
+ * @param cards The page's Detections cards (null before data).
+ * @returns The note, or null when it does not apply.
+ */
+export function unchangedStylesNotice(
+  reply: Pick<PageStylesheetsReply, 'styles' | 'total'>,
+  views: readonly StyleRowView[],
+  cards: readonly StatusItem[] | null
+): UnchangedStylesNotice | null {
+  if (cards === null || isListCut(reply)) return null;
+  const byId = new Map(cards.map((card) => [card.id, card]));
+  if (byId.get('wpr')?.status !== 'active') return null;
+  if (views.length === 0 || views.some((view) => view.chips.length > 0)) return null;
+  const off = STYLE_FEATURES.filter((feature) => {
+    const card = byId.get(feature.card);
+    return card !== undefined && cardSaysOff(card);
+  }).map((feature) => feature.name);
+  const detail =
+    off.length === 0 ? null : `${joinWords(off)} ${off.length === 1 ? 'is' : 'are'} off.`;
+  return { title: UNCHANGED_STYLES_TITLE, detail };
 }

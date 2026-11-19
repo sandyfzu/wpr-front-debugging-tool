@@ -240,7 +240,7 @@ const COLUMNS: ListRowColumns = { size: false, states: true };
  * @param props See {@link RuntimeListProps}.
  */
 function RuntimeList(props: RuntimeListProps): JSX.Element {
-  const rows = createMemo(() => runtimeRows(props.read.scripts));
+  const rows = createMemo(() => runtimeRows(props.read.scripts, props.read.baseUrl));
   const notes = createMemo(() =>
     [
       truncatedNote({
@@ -296,7 +296,7 @@ function RuntimeList(props: RuntimeListProps): JSX.Element {
             name={row.name}
             preview={row.preview}
             clipped={urlClipped(row.script)}
-            stateContent={<RuntimeStateLine script={row.script} />}
+            stateContent={<RuntimeStateLine script={row.script} row />}
           />
         )}
         detail={{

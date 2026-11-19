@@ -1,5 +1,5 @@
 /**
- * P4.3 suite 4 — the data hub on real WP Rocket pages.
+ * The data hub on real WP Rocket pages.
  *
  * The fixture pipeline suite pins the log contract over fixture pages; this
  * suite re-proves it over the real site's optimized pages and covers the

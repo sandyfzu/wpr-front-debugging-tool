@@ -16,10 +16,10 @@
  *   boundary by every panel — the delivery never reaches store state.
  *
  * Not pinned here, by design: the debounce commit cadence and the immediate
- * clear are state math with no rendered consumer before the P6 pages ship —
+ * clear are state math —
  * `state/search.test.ts` pins those semantics at the unit tier, and moving
  * them to this tier would require either a shipped search UI or an
- * app-side test hook (both out of scope for a suites phase).
+ * app-side test hook (both out of scope here).
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';

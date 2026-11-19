@@ -1,6 +1,5 @@
 /**
- * P6.1 browser acceptance — the seeded large-list round (rows 4–5 of
- * 07-phase-6-panel-pages.md).
+ * Panel browser acceptance — the seeded large-list round.
  *
  * The 5,000-row fixture is generated on demand (never committed JSON): this
  * file builds a deterministic inventory page and serves it through the real

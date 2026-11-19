@@ -1,8 +1,8 @@
 /**
- * P9.1 — the toolbar-badge toggle at the SW seam, driven by the real options
+ * The toolbar-badge toggle at the SW seam, driven by the real options
  * page.
  *
- * The P9B page writes the feature through the model's Save; the background's
+ * The options page writes the feature through the model's Save; the background's
  * existing options watch (`entrypoints/background/badge.ts`) re-applies the
  * gate live. The honest browser observable is the `chrome.action` state read
  * back in the service worker (helpers/badge.ts's seam): turning the option
