@@ -23,6 +23,7 @@ import {
   on,
   onCleanup,
   onMount,
+  type Accessor,
   type JSX
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
@@ -30,6 +31,9 @@ import { ErrorState } from '../../components/ui/error-state';
 import { PageHeader } from '../../components/ui/page-header';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Toasts } from '../../components/ui/toast';
+import { AppearanceMenu } from '../../components/appearance-menu';
+import { setAppearanceOption } from '../../lib/storage/options';
+import type { Appearance } from '../../utils/theme';
 import { selectTabAsks } from '../../lib/messaging/tab-asks';
 import { selectTabPushConnect } from '../../lib/messaging/tab-push-client';
 import { createLogger } from '../../lib/logger';
@@ -41,6 +45,7 @@ import { navRoute, type RouteId } from './routes';
 import { PageCanvas } from './pages/page-frame';
 import { DATA_UNAVAILABLE_TITLE, DataUnavailable } from './data-unavailable';
 import { TopBar } from './top-bar/top-bar';
+import { guardAppearanceWrite } from './appearance-write';
 import { realBuilderEntryDeps, type BuilderEntryDeps } from './top-bar/builder-entry';
 import { readInspectedPageUrl, realInspectedEvalApi } from './report/inspected-page-url';
 import { PAGES } from './pages';
@@ -103,6 +108,16 @@ export type AppProps = {
    * absent, the DevTools eval of the inspected page.
    */
   readonly readPageUrl?: () => Promise<string | null>;
+  /**
+   * The stored appearance the document follows (the boot's appearance
+   * follow feeds it); absent, the top bar renders no appearance menu.
+   */
+  readonly appearance?: Accessor<Appearance>;
+  /**
+   * The appearance writer (tests inject doubles); absent, the options
+   * store's `setAppearanceOption`.
+   */
+  readonly writeAppearance?: (next: Appearance) => Promise<void>;
   /**
    * The shell's size observer (tests drive widths by hand); absent, a
    * `ResizeObserver` on the shell element.
@@ -213,6 +228,20 @@ export function PanelApp(props: AppProps): JSX.Element {
   const paletteChord = createPanelChordBinding(props.paletteChord ?? realPanelChordDeps(log));
   // eslint-disable-next-line solid/reactivity
   const shellWidth = createShellWidth(props.observeShellWidth);
+  // The top bar's appearance menu, writing through the shared failure guard.
+  // eslint-disable-next-line solid/reactivity
+  const appearance = props.appearance;
+  // eslint-disable-next-line solid/reactivity
+  const writeAppearance = props.writeAppearance ?? setAppearanceOption;
+  const appearanceControl =
+    appearance === undefined ? undefined : (
+      <AppearanceMenu
+        value={appearance()}
+        onChange={(next) => {
+          void guardAppearanceWrite(() => writeAppearance(next));
+        }}
+      />
+    );
   /** The trigger's key hint: the resolved convention, else the navigator's. */
   const keyHint = (): string =>
     paletteKeyHint(paletteChord.binding()?.platform ?? navigatorChordPlatform(navigator));
@@ -333,6 +362,7 @@ export function PanelApp(props: AppProps): JSX.Element {
                 }}
                 builderEntry={builderEntryDeps}
                 readPageUrl={props.readPageUrl ?? readRealPageUrl}
+                appearance={appearanceControl}
               />
               <div class={STACK_ROW}>
                 {/* The nav column (not a landmark itself: the top bar is the

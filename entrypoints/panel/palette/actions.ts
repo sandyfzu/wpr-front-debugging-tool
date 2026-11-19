@@ -18,14 +18,11 @@ import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import SunMoon from 'lucide-solid/icons/sun-moon';
 import type { PaletteCommand } from '../../../components/ui/command-palette';
 import type { FdtData } from '../../../lib/wp-rocket/types';
-import { createLogger } from '../../../lib/logger';
-import { toast } from '../../../components/ui/toast-store';
 import { copySupportReport, type CopyReportOutcome } from '../report/copy-report';
 import type { JsonExportResult } from './export-json';
 import { SHORTCUTS_OVERLAY_BINDING } from './shortcuts';
+import { guardAppearanceWrite } from '../appearance-write';
 import { NAV_ROUTES, type RouteId } from '../routes';
-
-const log = createLogger('panel');
 
 /**
  * One executable palette row: the surface contract plus its run closure.
@@ -95,9 +92,6 @@ export function createPageCommands(deps: PageCommandDeps): PanelCommand[] {
 /** The appearance row's cycle, phrased once (the row's keywords repeat the states). */
 const APPEARANCE_CYCLE_NOTE = 'system → dark → light';
 
-/** The stable remedy line for a rejected appearance write. */
-const APPEARANCE_SAVE_NOTE = 'The choice did not save; the panel keeps its current palette.';
-
 /**
  * The five shell actions, in row order. Each run routes through its
  * mechanism and reports there — a mechanism that rejects despite its own
@@ -156,21 +150,9 @@ export function createPanelActions(deps: PanelActionDeps): PanelCommand[] {
       icon: SunMoon,
       hint: APPEARANCE_CYCLE_NOTE,
       keywords: ['theme', 'dark', 'light', 'system'],
-      run: () => {
-        return deps
-          .cycleAppearance()
-          .then(() => undefined)
-          .catch((cause: unknown) => {
-            // A failed persistence is user-facing: the toast frames the
-            // outcome, the log carries the cause. Never a silent swallow.
-            log.warn('The appearance cycle could not be persisted', {
-              cause: cause instanceof Error ? { message: cause.message } : cause
-            });
-            toast.error('The appearance could not be changed', {
-              description: APPEARANCE_SAVE_NOTE
-            });
-          });
-      }
+      // A failed persistence is user-facing: the shared guard logs the
+      // cause and toasts the outcome with its remedy.
+      run: () => guardAppearanceWrite(() => deps.cycleAppearance())
     },
     {
       id: 'action-show-shortcuts',

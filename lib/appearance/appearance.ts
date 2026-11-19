@@ -71,6 +71,37 @@ export function pageTheme(appearance: Appearance): Theme | null {
 export type AppearanceFollow = () => void;
 
 /**
+ * Arm the write half of the follow alone: every validated options write
+ * re-applies the document's declaration (only when it changes) and reports
+ * the choice. {@link applyStoredAppearance} builds on it; a boot whose read
+ * failed arms it directly, so a later successful write (from any surface)
+ * still restyles the document and moves its controls.
+ *
+ * @param root The document root (`<html>`).
+ * @param source The options seam (the real storage item by default).
+ * @param onAppearance Told the choice of every validated write (repeats
+ *   included; a signal setter dedupes).
+ * @returns The stop handle.
+ */
+export function followAppearanceWrites(
+  root: HTMLElement,
+  source: AppearanceSource = optionsStoreSource,
+  onAppearance?: (appearance: Appearance) => void
+): AppearanceFollow {
+  const unwatch = source.watch((raw) => {
+    const appearance = storedOptionsOrFallback(raw).appearance;
+    const next = pageTheme(appearance);
+    // Apply unless the declaration already sits on the tree: a write that
+    // keeps the appearance (other option slots write too) must not restyle.
+    if (next !== root.getAttribute('data-theme')) applyTheme(root, next);
+    onAppearance?.(appearance);
+  });
+  return () => {
+    unwatch();
+  };
+}
+
+/**
  * Put the document on the stored appearance and arm the follow that keeps
  * it there. The read applies before the caller renders, so no wrong-palette
  * frame paints; every options write re-applies until the returned handle
@@ -78,6 +109,10 @@ export type AppearanceFollow = () => void;
  *
  * @param root The document root (`<html>`, the extension-page contract).
  * @param source The options seam (the real storage item by default).
+ * @param onAppearance Told the stored choice the document follows — after
+ *   the read and on every validated write (repeats included; a signal
+ *   setter dedupes) — so a control can show the choice without a second
+ *   storage subscription.
  * @returns The stop handle.
  * @throws {@link Error} when the options read fails — the watch is
  *   unsubscribed first, so a failed follow never leaves a subscription
@@ -86,15 +121,13 @@ export type AppearanceFollow = () => void;
  */
 export async function applyStoredAppearance(
   root: HTMLElement,
-  source: AppearanceSource = optionsStoreSource
+  source: AppearanceSource = optionsStoreSource,
+  onAppearance?: (appearance: Appearance) => void
 ): Promise<AppearanceFollow> {
   let writes = 0;
-  const unwatch = source.watch((raw) => {
+  const stop = followAppearanceWrites(root, source, (appearance) => {
     writes += 1;
-    const next = pageTheme(storedOptionsOrFallback(raw).appearance);
-    // Apply unless the declaration already sits on the tree: a write that
-    // keeps the appearance (other option slots write too) must not restyle.
-    if (next !== root.getAttribute('data-theme')) applyTheme(root, next);
+    onAppearance?.(appearance);
   });
   try {
     // Track the writes the watch saw during the read: a change between
@@ -105,17 +138,16 @@ export async function applyStoredAppearance(
     const appearance = storedOptionsOrFallback(await source.getValue()).appearance;
     if (writes === writesBeforeRead) {
       applyTheme(root, pageTheme(appearance));
+      onAppearance?.(appearance);
     }
   } catch (cause) {
     // Read failed with the channel armed: unwind the subscription before
     // the error propagates (the boot treats a read rejection as broken
     // wiring, not bad input).
-    unwatch();
+    stop();
     throw cause;
   }
-  return () => {
-    unwatch();
-  };
+  return stop;
 }
 
 /**

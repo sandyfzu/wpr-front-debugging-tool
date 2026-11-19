@@ -152,15 +152,28 @@ export function App(props: OptionsPageProps): JSX.Element {
     }
   });
 
-  /** The appearance choice's instant write: the failures doom the draft here. */
-  const writeAppearance = (next: Appearance): void => {
+  /**
+   * The appearance choice's instant write. Success marks the row stored (its
+   * baseline moves, the row reads clean), so a later Save never writes this
+   * choice back over a newer one from another surface; a failure keeps it a
+   * pending edit for Save.
+   *
+   * @param rowId The appearance row's id.
+   * @param next The chosen appearance.
+   */
+  const writeAppearance = (rowId: string, next: Appearance): void => {
     const write = props.writeAppearance ?? setAppearanceOption;
-    void write(next).catch((cause: unknown) => {
-      log.error('The appearance write failed — the choice stays unsaved', cause);
-      toast.error(APPEARANCE_WRITE_FAILURE_TITLE, {
-        description: APPEARANCE_WRITE_FAILURE_DESCRIPTION
-      });
-    });
+    void write(next).then(
+      () => {
+        model.markOptionStored(rowId, next);
+      },
+      (cause: unknown) => {
+        log.error('The appearance write failed — the choice stays unsaved', cause);
+        toast.error(APPEARANCE_WRITE_FAILURE_TITLE, {
+          description: APPEARANCE_WRITE_FAILURE_DESCRIPTION
+        });
+      }
+    );
   };
 
   /**
@@ -187,7 +200,9 @@ export function App(props: OptionsPageProps): JSX.Element {
       // Synchronous, untracked read (an event handler): the save state at
       // click time is what gates the write.
       const saving = current.status === 'ready' && current.saving;
-      if (row.kind === 'appearance' && isAppearance(value) && !saving) writeAppearance(value);
+      if (row.kind === 'appearance' && isAppearance(value) && !saving) {
+        writeAppearance(row.id, value);
+      }
     }
   };
 

@@ -14,6 +14,7 @@ import type { Logger } from '../logger';
 import {
   createOptionsPageModel,
   createStorageOptionsPageIO,
+  draftAfterSave,
   draftFromOptions,
   INITIAL_OPTIONS_PAGE_SNAPSHOT,
   isDraftDirty,
@@ -123,11 +124,12 @@ describe('the pure draft core', () => {
         detectionWidget: true
       }
     };
-    const merged = optionsWithDraft(base, {
-      'wp-dashboard-dbugger-entry': false,
-      appearance: 'light',
-      toolbarBadge: false
-    });
+    // Baseline = base: no concurrent write, every differing row is an edit.
+    const merged = optionsWithDraft(
+      base,
+      { 'wp-dashboard-dbugger-entry': false, appearance: 'light', toolbarBadge: false },
+      base
+    );
     expect(merged.improvements).toEqual({
       'wp-dashboard-dbugger-entry': false,
       'future-flag': false
@@ -155,10 +157,149 @@ describe('the pure draft core', () => {
       appearance: 'neon',
       toolbarBadge: 'yes'
     } as unknown as OptionsDraft;
-    const merged = optionsWithDraft(base, corrupted);
+    const merged = optionsWithDraft(base, corrupted, base);
     expect(merged.appearance).toBe('dark');
     expect(merged.features).toEqual(base.features);
     expect(merged.improvements).toEqual(base.improvements);
+  });
+});
+
+describe('edited rows only — concurrent registry-row writes survive', () => {
+  /** The loaded baseline: defaults, so the draft starts as the fallback shape. */
+  const BASELINE: StoredOptions = {
+    improvements: { 'wp-dashboard-dbugger-entry': true },
+    appearance: 'system',
+    features: { ...STORED_NONDEFAULT.features, toolbarBadge: true, detectionWidget: true }
+  };
+
+  it('optionsWithDraft keeps a fresh appearance another surface wrote when another row is saved', () => {
+    const fresh: StoredOptions = { ...BASELINE, appearance: 'dark' };
+    const draft: OptionsDraft = {
+      ...draftFromOptions(BASELINE),
+      'wp-dashboard-dbugger-entry': false
+    };
+    const merged = optionsWithDraft(fresh, draft, BASELINE);
+    expect(merged.appearance).toBe('dark'); // Untouched on the page: the fresh value wins.
+    expect(merged.improvements['wp-dashboard-dbugger-entry']).toBe(false); // The edit lands.
+  });
+
+  it('optionsWithDraft still writes a row the user changed over a concurrent write to it', () => {
+    const fresh: StoredOptions = { ...BASELINE, appearance: 'dark' };
+    const draft: OptionsDraft = { ...draftFromOptions(BASELINE), appearance: 'light' };
+    expect(optionsWithDraft(fresh, draft, BASELINE).appearance).toBe('light');
+  });
+
+  it('optionsWithDraft skips a corrupted changed value, keeping the fresh (not the baseline) value', () => {
+    const fresh: StoredOptions = { ...BASELINE, appearance: 'dark' };
+    const corrupted = {
+      ...draftFromOptions(BASELINE),
+      appearance: 'neon'
+    } as unknown as OptionsDraft;
+    expect(optionsWithDraft(fresh, corrupted, BASELINE).appearance).toBe('dark');
+  });
+
+  it('draftAfterSave follows the stored value except rows edited while the write was in flight', () => {
+    const stored: StoredOptions = {
+      ...BASELINE,
+      appearance: 'dark',
+      improvements: { 'wp-dashboard-dbugger-entry': false }
+    };
+    const saved: OptionsDraft = {
+      ...draftFromOptions(BASELINE),
+      'wp-dashboard-dbugger-entry': false
+    };
+    const current: OptionsDraft = { ...saved, toolbarBadge: false };
+    const rebased = draftAfterSave(stored, saved, current);
+    expect(rebased).toEqual({
+      'wp-dashboard-dbugger-entry': false, // saved edit
+      appearance: 'dark', // the concurrent write the merge kept
+      detectionWidget: true,
+      toolbarBadge: false // the in-flight edit
+    });
+    expect(Object.isFrozen(rebased)).toBe(true);
+    expect(isDraftDirty(stored, rebased)).toBe(true); // Only the in-flight edit is pending.
+    expect(isDraftDirty(stored, { ...rebased, toolbarBadge: true })).toBe(false);
+  });
+
+  it('a Save of one row neither reverts a concurrent appearance write nor re-reverts it on the next Save', async () => {
+    await optionsStore.setValue(BASELINE);
+    const fx = createFixture();
+    await fx.model.load();
+    // Another surface (the panel's appearance menu) writes after the load.
+    await optionsStore.setValue({ ...BASELINE, appearance: 'dark' });
+    fx.model.setOption('wp-dashboard-dbugger-entry', false);
+    await fx.model.save();
+    expect((await getOptions()).appearance).toBe('dark');
+    expect((await getOptions()).improvements['wp-dashboard-dbugger-entry']).toBe(false);
+    const snapshot = fx.model.snapshot();
+    if (snapshot.status !== 'ready') throw new Error('expected ready');
+    // The draft caught up with the kept write: clean, so no later Save carries the stale choice.
+    expect(snapshot.draft['appearance']).toBe('dark');
+    expect(snapshot.dirty).toBe(false);
+    fx.model.setOption('toolbarBadge', false);
+    await fx.model.save();
+    expect((await getOptions()).appearance).toBe('dark');
+  });
+});
+
+describe('markOptionStored — a row persisted outside Save', () => {
+  it('an instant-written appearance reads clean and a later Save keeps a newer write from another surface', async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT);
+    const fx = createFixture();
+    await fx.model.load();
+    // The page's own pick, written instantly (the row's write path).
+    fx.model.setOption('appearance', 'light');
+    await optionsStore.setValue({ ...STORED_NONDEFAULT, appearance: 'light' });
+    fx.model.markOptionStored('appearance', 'light');
+    expect(fx.model.snapshot()).toMatchObject({ dirty: false });
+    // A newer pick elsewhere (the panel menu), then a Save of another row.
+    await optionsStore.setValue({ ...STORED_NONDEFAULT, appearance: 'system' });
+    fx.model.setOption('toolbarBadge', true);
+    await fx.model.save();
+    expect((await getOptions()).appearance).toBe('system');
+    expect((await getOptions()).features.toolbarBadge).toBe(true);
+  });
+
+  it("moves only that row's baseline: other pending edits stay dirty", async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT);
+    const fx = createFixture();
+    await fx.model.load();
+    fx.model.setOption('toolbarBadge', true);
+    fx.model.setOption('appearance', 'light');
+    fx.model.markOptionStored('appearance', 'light');
+    const snapshot = fx.model.snapshot();
+    if (snapshot.status !== 'ready') throw new Error('expected ready');
+    expect(snapshot.dirty).toBe(true); // the badge edit is still pending
+    expect(snapshot.options.appearance).toBe('light');
+    expect(snapshot.options.features).toEqual(STORED_NONDEFAULT.features);
+    expect(Object.isFrozen(snapshot.options)).toBe(true);
+    expect(Object.isFrozen(snapshot.options.features)).toBe(true);
+    fx.model.setOption('toolbarBadge', false); // reverted → clean
+    expect(fx.model.snapshot()).toMatchObject({ dirty: false });
+  });
+
+  it('a draft moved on past the written value stays dirty (an older write landing late)', async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT);
+    const fx = createFixture();
+    await fx.model.load();
+    fx.model.setOption('appearance', 'light');
+    fx.model.setOption('appearance', 'system');
+    fx.model.markOptionStored('appearance', 'light');
+    expect(fx.model.snapshot()).toMatchObject({ dirty: true });
+  });
+
+  it('throws on wiring bugs: not ready, unknown row, illegal value', async () => {
+    const fx = createFixture();
+    expect(() => {
+      fx.model.markOptionStored('appearance', 'dark');
+    }).toThrow(/markOptionStored: the options page is not ready \(status 'loading'\)/);
+    await fx.model.load();
+    expect(() => {
+      fx.model.markOptionStored('nope', true);
+    }).toThrow("markOptionStored: unknown option row 'nope'.");
+    expect(() => {
+      fx.model.markOptionStored('appearance', true);
+    }).toThrow("markOptionStored: true is not a legal value for the 'appearance' row.");
   });
 });
 
