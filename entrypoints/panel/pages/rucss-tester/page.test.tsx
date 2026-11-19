@@ -869,6 +869,12 @@ describe('RucssTesterPage — result side', () => {
     expect(empty?.textContent).toContain(RESULT_EMPTY.title);
     expect(empty?.textContent).toContain(RESULT_EMPTY.description);
     expect(empty?.querySelectorAll('li')).toHaveLength(RESULT_PREVIEW.length);
+    // Never a 2 + 1 split: one column at compact, all three from the regular tier.
+    const preview = empty?.querySelector('[data-fdt="rucss-empty-preview"]');
+    expect(preview?.className.split(/\s+/u)).toEqual(
+      expect.arrayContaining(['grid-cols-1', '@regular:grid-cols-3'])
+    );
+    expect(preview?.className).not.toContain('auto-fit');
     // Painted, not transparent: its text keeps a computable background below the fold.
     expect(empty?.closest('[data-fdt="card"]')?.className).toContain('bg-surface-0');
     fireEvent.click(runButton());

@@ -112,17 +112,24 @@ export function Switch(props: SwitchProps): JSX.Element {
         <KobalteSwitch.Thumb
           data-fdt-switch-thumb
           class={cn(
-            'inline-flex h-3.5 w-7 items-center justify-start rounded-full border border-line-2 bg-surface-3 p-0.5',
+            // Off: a firm edge on the raised fill, so the pill reads on any
+            // surface it sits on (a hairline vanished on the light pages).
+            'inline-flex h-3.5 w-7 items-center justify-start rounded-full border border-line-strong bg-surface-3 p-0.5',
             // Checked travel: the thumb content justifies to the far side (a
             // discrete jump — no slide transition) on the accent fill.
             'data-checked:justify-end',
             'data-checked:border-accent-strong data-checked:bg-accent-strong',
             own.disabled
               ? undefined
-              : 'hover:border-line-3 data-checked:group-hover/switch:brightness-110'
+              : 'hover:border-fg-muted data-checked:group-hover/switch:brightness-110'
           )}
         >
-          <span data-fdt-switch-handle class="block size-2.5 rounded-full bg-surface-0" />
+          {/* The handle carries the state at ≥ 3:1 in both palettes: muted
+              on the off pill, the page's lightest surface on the accent. */}
+          <span
+            data-fdt-switch-handle
+            class="block size-2.5 rounded-full bg-fg-muted group-data-checked/switch:bg-surface-0"
+          />
         </KobalteSwitch.Thumb>
       </KobalteSwitch.Control>
       {sideFirst() ? null : side()}

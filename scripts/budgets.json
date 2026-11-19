@@ -65,7 +65,7 @@
     "surface": "options page start JS (options.html + static imports)",
     "start": "options.html",
     "maxKb": {
-      "raw": 278
+      "raw": 198
     }
   },
   {
@@ -73,7 +73,7 @@
     "build": "firefox-mv2",
     "start": "options.html",
     "maxKb": {
-      "raw": 278
+      "raw": 198
     }
   },
   {
@@ -195,7 +195,27 @@
     }
   },
   {
+    "surface": "code highlighter (shiki worker, Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["assets/code-block-highlight.worker-*.js"],
+    "maxKb": {
+      "raw": 368,
+      "gzip": 75
+    },
+    "required": true
+  },
+  {
     "surface": "code highlighter CSS + HTML grammars (worker chunk, on demand, panel)",
+    "globs": ["assets/code-block-web-grammars-*.js"],
+    "maxKb": {
+      "raw": 112,
+      "gzip": 24
+    },
+    "required": true
+  },
+  {
+    "surface": "code highlighter CSS + HTML grammars (Firefox)",
+    "build": "firefox-mv2",
     "globs": ["assets/code-block-web-grammars-*.js"],
     "maxKb": {
       "raw": 112,

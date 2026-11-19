@@ -41,12 +41,13 @@ const ROWS: readonly Row[] = [
 function renderBar(compact = false) {
   const [selection, setSelection] = createSignal<FacetSelection<Id>>({});
   const [isCompact, setCompact] = createSignal(compact);
+  const [rows, setRows] = createSignal<readonly Row[]>(ROWS);
   const onChange = vi.fn((next: FacetSelection<Id>) => setSelection(() => next));
   render(() => (
     <FacetBar
       facets={SET}
       selection={selection()}
-      counts={facetCounts(ROWS, SET, selection(), { field: () => '', query: '' })}
+      counts={facetCounts(rows(), SET, selection(), { field: () => '', query: '' })}
       onChange={onChange}
       compact={isCompact()}
       search={<input type="search" aria-label="Search scripts" />}
@@ -54,7 +55,7 @@ function renderBar(compact = false) {
       shownLabel="3 scripts"
     />
   ));
-  return { selection, onChange, setCompact };
+  return { selection, onChange, setCompact, setRows };
 }
 
 beforeEach(() => {
@@ -97,6 +98,58 @@ describe('FacetBar inline', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /Excluded/u }));
     expect(selection()).toEqual({ type: 'external' });
+  });
+});
+
+/** The radio input of one segment, scoped to `root`. */
+function radio(root: ParentNode, value: string): HTMLInputElement {
+  return root.querySelector(`[data-fdt-choice-value="${value}"] input`) as HTMLInputElement;
+}
+
+/** The visible count of one segment, scoped to `root`. */
+function countOf(root: ParentNode, value: string): string | undefined {
+  return root.querySelector(`[data-fdt-choice-value="${value}"] [data-fdt-choice-count]`)
+    ?.textContent;
+}
+
+/**
+ * Pins that a pick and a count change patch the segments in place: the same
+ * radio nodes stay mounted and the focused one keeps focus (a rebuilt
+ * segment list would drop focus to the body after a click or an arrow key).
+ */
+function expectSegmentsSurvive(root: () => ParentNode, setRows: (rows: readonly Row[]) => void) {
+  const external = radio(root(), 'external');
+  const inline = radio(root(), 'inline');
+  expect(countOf(root(), 'inline')).toBe('1');
+  external.focus();
+  fireEvent.click(external);
+  expect(radio(root(), 'external')).toBe(external);
+  expect(radio(root(), 'inline')).toBe(inline);
+  expect(document.activeElement).toBe(external);
+  expect(external.checked).toBe(true);
+  // A refresh changes every count under the focused segment.
+  setRows([...ROWS, { delayed: false, inline: true, excluded: false }]);
+  expect(radio(root(), 'external')).toBe(external);
+  expect(document.activeElement).toBe(external);
+  // The new inline row patched the count text in place.
+  expect(countOf(root(), 'inline')).toBe('2');
+}
+
+describe('FacetBar segment identity', () => {
+  it('inline: a pick and a count change keep the segment nodes and focus', () => {
+    const { setRows } = renderBar();
+    const group = (): ParentNode => screen.getByRole('radiogroup', { name: 'Type' });
+    expectSegmentsSurvive(group, setRows);
+  });
+
+  it('sheet: a pick and a count change keep the segment nodes and focus', () => {
+    const { setRows } = renderBar(true);
+    fireEvent.click(screen.getByRole('button', { name: /Filters/u }));
+    const group = (): ParentNode =>
+      within(screen.getByRole('dialog', { name: 'Filters' })).getByRole('radiogroup', {
+        name: 'Type'
+      });
+    expectSegmentsSurvive(group, setRows);
   });
 });
 

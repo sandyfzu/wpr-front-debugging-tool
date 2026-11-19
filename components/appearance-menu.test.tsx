@@ -8,7 +8,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@solidjs/te
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Appearance } from '../utils/theme';
-import { APPEARANCE_MENU_LABELS, AppearanceMenu, appearanceMenuLabel } from './appearance-menu';
+import { AppearanceMenu } from './appearance-menu';
+import { APPEARANCE_MENU_LABELS, appearanceMenuLabel } from './appearance-trigger';
 import { fakeScheme, type FakeScheme } from './system-dark.fake';
 
 afterEach(() => {

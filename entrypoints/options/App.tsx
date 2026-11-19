@@ -20,10 +20,10 @@ import { For, Index, Show } from 'solid-js';
 import { AppBar } from '../../components/ui/app-bar';
 import { BrandMark } from '../../components/ui/brand-mark';
 import { Card } from '../../components/ui/card';
-import { AppearanceMenu } from '../../components/appearance-menu';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { MENU_ICON_TRIGGER_SIZE } from '../../components/ui/menu';
+// The Kobalte-free class module: the menu's own code loads lazily (./lazy-appearance-menu).
+import { MENU_ICON_TRIGGER_SIZE } from '../../components/ui/menu-classes';
 import { Skeleton } from '../../components/ui/skeleton';
 import { ErrorState } from '../../components/ui/error-state';
 import { Toasts } from '../../components/ui/toast';
@@ -62,6 +62,7 @@ import { DRAFTED_OPTION_ROWS, type AppearanceOptionRow } from '../../lib/options
 import { OptionSections, type OptionRowScope } from './sections';
 import type { InstantRowsScope } from './instant-rows';
 import { KnownConflictsFreshness } from './kc-freshness';
+import { LazyAppearanceMenu } from './lazy-appearance-menu';
 
 const log = createLogger('options');
 
@@ -459,7 +460,7 @@ export function App(props: OptionsPageProps): JSX.Element {
                 />
               }
             >
-              <AppearanceMenu
+              <LazyAppearanceMenu
                 value={draftedAppearance()}
                 onChange={(next) => {
                   scope.edit(APPEARANCE_ROW, next);

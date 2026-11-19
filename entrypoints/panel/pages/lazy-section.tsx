@@ -13,13 +13,8 @@ import { Match, Switch } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { ErrorState } from '../../../components/ui/error-state';
 import { Skeleton } from '../../../components/ui/skeleton';
-import {
-  createChunkLoader,
-  mountChunk,
-  prefetchWhenIdle,
-  reloadPanelDocument,
-  type LazyChunkOptions
-} from './chunk-loader';
+import { createChunkLoader, prefetchWhenIdle } from '../../../utils/chunk-loader';
+import { mountChunk, reloadPanelDocument, type LazyChunkOptions } from './chunk-loader';
 
 /** The failed load's words. */
 export const SECTION_LOAD_FAILED_COPY =

@@ -261,6 +261,10 @@ describe('OverviewTiles — page cache', () => {
     expect(time?.getAttribute('datetime')).toBe('2023-11-14T22:13:20.000Z');
     // Wraps at its spaces: a half-width compact tile is narrower than the stamp.
     expect(time?.className).not.toContain('whitespace-nowrap');
+    // … but only between the date and the time, never at the date's hyphens.
+    const chunks = [...(time?.querySelectorAll('[data-fdt-stamp-chunk]') ?? [])];
+    expect(chunks.map((chunk) => chunk.textContent)).toEqual(STAMP_TEXT.split(/ (.*)/u, 2));
+    for (const chunk of chunks) expect(chunk.className).toContain('whitespace-nowrap');
     // A cached value is not a tooltip trigger: the stamp is its proof.
     expect(part('cache', 'value')?.querySelector('[data-fdt="tooltip-trigger"]')).toBeNull();
     expect(document.querySelectorAll('[data-fdt-summary-fact="cache"]')).toHaveLength(1);

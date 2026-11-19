@@ -15,13 +15,8 @@ import { Match, Switch } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { ErrorState } from '../../../components/ui/error-state';
 import { navRoute, type RouteId } from '../routes';
-import {
-  createChunkLoader,
-  mountChunk,
-  prefetchWhenIdle,
-  reloadPanelDocument,
-  type LazyChunkOptions
-} from './chunk-loader';
+import { createChunkLoader, prefetchWhenIdle } from '../../../utils/chunk-loader';
+import { mountChunk, reloadPanelDocument, type LazyChunkOptions } from './chunk-loader';
 import { LoadingActions, LoadingSubtitle, RouteLoading } from './loading-shapes';
 import { PageFrame } from './page-frame';
 import { PageStateCard } from './page-state-card';

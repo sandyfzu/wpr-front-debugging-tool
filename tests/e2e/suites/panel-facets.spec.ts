@@ -191,6 +191,43 @@ function markedRowInView(panel: Page): Promise<boolean> {
   });
 }
 
+/**
+ * Move keyboard focus onto a facet's checked radio (its group's Tab stop)
+ * with real Tab presses, at most `limit` of them.
+ *
+ * @param panel The panel page.
+ * @param target The radio input to land on.
+ * @param key `Tab` or `Shift+Tab`.
+ * @param limit Presses before giving up.
+ */
+async function tabTo(panel: Page, target: Locator, key: string, limit = 12): Promise<void> {
+  for (let press = 0; press < limit; press += 1) {
+    if (await target.evaluate((input) => input === document.activeElement)) return;
+    await panel.keyboard.press(key);
+  }
+  await expect(target).toBeFocused();
+}
+
+/**
+ * Arrow twice through a facet's segments, then click one of another facet:
+ * every move keeps focus on the moved-to (or clicked) radio of its group and
+ * applies its value — the segments are patched in place, never rebuilt.
+ *
+ * @param scope Where the segments live (the inline bar or the open sheet).
+ * @param panel The panel page.
+ */
+async function expectFocusFollowsSegments(scope: Locator, panel: Page): Promise<void> {
+  await panel.keyboard.press('ArrowRight');
+  await expect(facetSegment(scope, 'delayed').locator('input')).toBeFocused();
+  await expect(facetSegment(scope, 'delayed').locator('input')).toBeChecked();
+  await panel.keyboard.press('ArrowRight');
+  await expect(facetSegment(scope, 'non-delayed').locator('input')).toBeFocused();
+  await expect(facetSegment(scope, 'non-delayed').locator('input')).toBeChecked();
+  await facetSegment(scope, 'external').locator('label').click();
+  await expect(facetSegment(scope, 'external').locator('input')).toBeChecked();
+  await expect(facetSegment(scope, 'external').locator('input')).toBeFocused();
+}
+
 test.beforeEach(async ({ extension }) => {
   await extension.browserContext.route(`**${FIXTURE_PATH}*`, async (route) => {
     const fill = Number(new URL(route.request().url()).searchParams.get('fill') ?? '0');
@@ -418,6 +455,37 @@ test('the DevTools find works inside the filtered rows: it marks and scrolls to 
     await relaySearchAction(extension, { action: 'cancelSearch', tabId: fixture.tabId });
     await expect.poll(() => markedRowName(panel)).toBeNull();
     await expect(resultsStatus(panel)).toHaveText(`Showing 45 of ${String(TOTAL + 40)} scripts`);
+  } finally {
+    await opened.panel.close();
+    await opened.fixture.page.close();
+  }
+});
+
+test('arrow keys and clicks on facet segments keep focus on the segment, inline and in the sheet', async ({
+  extension
+}) => {
+  const opened = await openFacets(extension, { width: 1280, height: 800 });
+  const { panel } = opened;
+  try {
+    const bar = jsPage(panel).locator('[data-fdt="facet-bar"]');
+    // Inline: back-tab from the search field into the Delay group.
+    await bar.locator('input[type="search"]').focus();
+    await tabTo(panel, facetSegment(bar, 'any', 'Delay').locator('input'), 'Shift+Tab');
+    await expectFocusFollowsSegments(bar, panel);
+    await expect(resultsStatus(panel)).toHaveText(`Showing 3 of ${String(TOTAL)} scripts`);
+
+    // Compact: back to Any, then the same moves inside the Filters sheet.
+    await facetSegment(bar, 'any', 'Delay').locator('label').click();
+    await facetSegment(bar, 'any', 'Type').locator('label').click();
+    await panel.setViewportSize({ width: 420, height: 800 });
+    await expect(bar).toHaveAttribute('data-fdt-compact', '');
+    await bar.locator('[data-fdt="facet-filters-button"]').click();
+    await expect(sheet(panel)).toBeVisible();
+    await tabTo(panel, facetSegment(sheet(panel), 'any', 'Delay').locator('input'), 'Tab');
+    await expectFocusFollowsSegments(sheet(panel), panel);
+    await expect(sheet(panel).locator('[data-fdt="facet-sheet-show"]')).toHaveText(
+      'Show 3 scripts'
+    );
   } finally {
     await opened.panel.close();
     await opened.fixture.page.close();

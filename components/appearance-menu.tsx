@@ -9,7 +9,7 @@
  * failure handling; the document restyles through its appearance follow,
  * never through this component.
  */
-import { For, Show, createMemo, createSignal, type JSX } from 'solid-js';
+import { For, createSignal, type JSX } from 'solid-js';
 import type { LucideIcon } from 'lucide-solid';
 import Check from 'lucide-solid/icons/check';
 import Monitor from 'lucide-solid/icons/monitor';
@@ -25,28 +25,15 @@ import {
   Menu
 } from './ui/menu';
 import { Tooltip } from './ui/tooltip';
-import {
-  APPEARANCES,
-  isAppearance,
-  resolveTheme,
-  type Appearance,
-  type Theme
-} from '../utils/theme';
+import { APPEARANCES, isAppearance, type Appearance } from '../utils/theme';
 import { cn } from '../utils/cn';
-import { createSystemDark, type ColorSchemeQuery } from './system-dark';
-
-/** Each choice's menu word (sentence case; "System" stays short in a menu row). */
-export const APPEARANCE_MENU_LABELS: Readonly<Record<Appearance, string>> = Object.freeze({
-  system: 'System',
-  dark: 'Dark',
-  light: 'Light'
-});
-
-/** Each palette's word in the trigger's name. */
-const THEME_WORDS: Readonly<Record<Theme, string>> = Object.freeze({
-  dark: 'Dark',
-  light: 'Light'
-});
+import type { ColorSchemeQuery } from './system-dark';
+import {
+  APPEARANCE_MENU_LABELS,
+  AppearanceFrame,
+  AppearanceIcon,
+  createAppearanceTrigger
+} from './appearance-trigger';
 
 /** Each choice's row icon (System = the OS's screen). */
 const CHOICE_ICONS: Readonly<Record<Appearance, LucideIcon>> = Object.freeze({
@@ -54,21 +41,6 @@ const CHOICE_ICONS: Readonly<Record<Appearance, LucideIcon>> = Object.freeze({
   dark: Moon,
   light: Sun
 });
-
-/**
- * The trigger's accessible name and tooltip: the stored choice, plus the
- * palette it resolves to when that is the OS's call.
- *
- * @param value The stored choice.
- * @param resolved The palette in effect.
- * @returns E.g. "Appearance: System (Dark)", "Appearance: Light".
- */
-export function appearanceMenuLabel(value: Appearance, resolved: Theme): string {
-  const choice = APPEARANCE_MENU_LABELS[value];
-  return value === 'system'
-    ? `Appearance: ${choice} (${THEME_WORDS[resolved]})`
-    : `Appearance: ${choice}`;
-}
 
 /** Props of {@link AppearanceMenu}. */
 export interface AppearanceMenuProps {
@@ -92,11 +64,9 @@ export function AppearanceMenu(props: AppearanceMenuProps): JSX.Element {
   const [open, setOpen] = createSignal(false);
   // Read once: the query is a mount-time seam, never swapped while mounted.
   // eslint-disable-next-line solid/reactivity
-  const systemDark = createSystemDark(props.systemScheme);
-  const resolved = createMemo(() => resolveTheme(props.value, systemDark()));
-  const label = createMemo(() => appearanceMenuLabel(props.value, resolved()));
+  const { resolved, label } = createAppearanceTrigger(() => props.value, props.systemScheme);
   return (
-    <span data-fdt="appearance-menu" data-fdt-resolved={resolved()} class="inline-flex shrink-0">
+    <AppearanceFrame resolved={resolved()}>
       <Menu.Root open={open()} onOpenChange={setOpen} modal={false} placement="bottom-end">
         <Tooltip
           as="menu-trigger"
@@ -107,9 +77,7 @@ export function AppearanceMenu(props: AppearanceMenuProps): JSX.Element {
           ariaExpanded={open()}
           class={MENU_ICON_TRIGGER_CLASSES}
         >
-          <Show when={resolved() === 'dark'} fallback={<Sun size={16} aria-hidden="true" />}>
-            <Moon size={16} aria-hidden="true" />
-          </Show>
+          <AppearanceIcon resolved={resolved()} />
         </Tooltip>
         <Menu.Portal>
           <Menu.Content data-fdt="appearance-menu-content" class={MENU_CONTENT_CLASSES}>
@@ -152,6 +120,6 @@ export function AppearanceMenu(props: AppearanceMenuProps): JSX.Element {
           </Menu.Content>
         </Menu.Portal>
       </Menu.Root>
-    </span>
+    </AppearanceFrame>
   );
 }

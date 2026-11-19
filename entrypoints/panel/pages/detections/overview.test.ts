@@ -9,7 +9,14 @@ import { summarizeFdtData } from '../../../../lib/panel/detections-summary';
 import type { FdtData, WprDetections } from '../../../../lib/wp-rocket/types';
 import { makeFdtData } from '../../state/fixtures';
 import { cacheAnswerTone, cacheSegment, platformSegment } from '../../top-bar/selectors';
-import { CACHE_EVIDENCE_ROUTE, cacheTile, overviewView, stackTile, wprTile } from './overview';
+import {
+  CACHE_EVIDENCE_ROUTE,
+  cacheStampChunks,
+  cacheTile,
+  overviewView,
+  stackTile,
+  wprTile
+} from './overview';
 
 /** The page clock the tiles read (ms). */
 const NOW = 1_700_010_000_000;
@@ -142,6 +149,21 @@ describe('cacheTile', () => {
 
   it('points at the captured headers for the evidence', () => {
     expect(CACHE_EVIDENCE_ROUTE).toBe('headers-cookies');
+  });
+});
+
+describe('cacheStampChunks', () => {
+  it('splits the stamp into the date and the time with its zone', () => {
+    expect(cacheStampChunks('2026-11-19 21:15:40 UTC')).toEqual(['2026-11-19', '21:15:40 UTC']);
+  });
+
+  it('keeps a form without a space whole, and an empty one as one empty chunk', () => {
+    expect(cacheStampChunks('2026-11-19')).toEqual(['2026-11-19']);
+    expect(cacheStampChunks('')).toEqual(['']);
+  });
+
+  it('splits at the first space only', () => {
+    expect(cacheStampChunks('a b c')).toEqual(['a', 'b c']);
   });
 });
 

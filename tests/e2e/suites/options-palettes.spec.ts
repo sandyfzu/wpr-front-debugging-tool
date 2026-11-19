@@ -109,6 +109,40 @@ async function clearStripOptIn(driver: ExtensionDriver): Promise<void> {
   }, WIDGET_ORIGINS_KEY);
 }
 
+/**
+ * Every switch's knob against its pill on the page: the WCAG contrast of
+ * the handle's painted color over the pill's, per switch and state.
+ *
+ * @param page The options page.
+ * @returns One `{ checked, ratio }` per switch.
+ */
+function switchKnobContrasts(page: Page): Promise<{ checked: boolean; ratio: number }[]> {
+  return page.evaluate(() => {
+    /** Relative luminance of a computed `rgb(…)` color. */
+    const luminance = (color: string): number => {
+      const [r = 0, g = 0, b = 0] = (color.match(/\d+(\.\d+)?/gu) ?? []).map(Number);
+      const linear = (channel: number): number => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    };
+    return [...document.querySelectorAll('[data-fdt="switch"]')].map((root) => {
+      const handle = root.querySelector('[data-fdt-switch-handle]');
+      const pill = root.querySelector('[data-fdt-switch-thumb]');
+      if (handle === null || pill === null) throw new Error('a switch without its knob or pill');
+      const [lighter, darker] = [
+        luminance(getComputedStyle(handle).backgroundColor),
+        luminance(getComputedStyle(pill).backgroundColor)
+      ].sort((a, b) => b - a) as [number, number];
+      return {
+        checked: root.querySelector('input')?.checked === true,
+        ratio: (lighter + 0.05) / (darker + 0.05)
+      };
+    });
+  });
+}
+
 test.describe('options appearance', () => {
   test('System follows the emulated OS scheme live, without a remount', async ({ extension }) => {
     await resetStoredOptions(extension); // No stored choice — the System default.
@@ -353,6 +387,32 @@ test.describe('options appearance', () => {
       await resetStoredOptions(extension);
       await clearStripOptIn(extension);
       if (sitePage !== null) await sitePage.page.close();
+    }
+  });
+
+  test('every switch keeps a visible knob, off and on, in both palettes', async ({ extension }) => {
+    await resetStoredOptions(extension);
+    const page = await openOptionsPage(extension, { colorScheme: 'light' });
+    try {
+      for (const palette of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme: palette });
+        await expect
+          .poll(async () => (await readDocumentTheme(page)).background, RESTYLE_POLL)
+          .toBe(PAGE_SURFACE_0[palette]);
+        // The switches as they load, then each pressed once (a row can gate
+        // another): both states measured on the page.
+        const resting = await switchKnobContrasts(page);
+        const tracks = page.locator('[data-fdt="switch"] [data-fdt-switch-track]');
+        for (const track of await tracks.all()) await track.click();
+        const pressed = await switchKnobContrasts(page);
+        const knobs = [...resting, ...pressed];
+        expect(new Set(knobs.map((knob) => knob.checked))).toEqual(new Set([true, false]));
+        for (const knob of knobs)
+          expect(knob.ratio, `${palette} ${knob.checked ? 'on' : 'off'}`).toBeGreaterThanOrEqual(3);
+      }
+    } finally {
+      await resetStoredOptions(extension);
+      await page.close();
     }
   });
 });

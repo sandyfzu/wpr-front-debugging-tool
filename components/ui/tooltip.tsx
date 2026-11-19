@@ -11,7 +11,7 @@ import type { ComponentProps, JSX } from 'solid-js';
 import { Match, Switch } from 'solid-js';
 import { Tooltip as KobalteTooltip } from '@kobalte/core';
 import { cn } from '../../utils/cn';
-import { FOCUS_RING } from './classes';
+import { FOCUS_RING, TOOLTIP_TRIGGER_FRAME } from './classes';
 import { MenuTooltipTrigger } from './menu';
 
 /**
@@ -142,7 +142,7 @@ export function Tooltip(props: TooltipProps): JSX.Element {
         ? // Anchor trigger: only the hit-area floor is built in — the caller
           // owns the link's layout (e.g. nav rail rows).
           'min-h-6 min-w-6'
-        : 'inline-grid min-h-6 min-w-6 place-items-center rounded',
+        : TOOLTIP_TRIGGER_FRAME,
       FOCUS_RING,
       props.class
     );

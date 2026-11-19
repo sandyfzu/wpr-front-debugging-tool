@@ -18,6 +18,13 @@ export const FOCUS_RING =
   'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent';
 
 /**
+ * A tooltip-attributed button's frame (the tooltip's button and menu-trigger
+ * forms): the 24px hit floor, content centered. A stand-in for such a
+ * trigger takes the same frame, so swapping it in shows no shift.
+ */
+export const TOOLTIP_TRIGGER_FRAME = 'inline-grid min-h-6 min-w-6 place-items-center rounded';
+
+/**
  * The disabled treatment: dimmed but still hoverable.
  *
  * `pointer-events-none` is deliberately NOT applied — native disabled buttons
