@@ -390,10 +390,16 @@ export function PanelApp(props: AppProps): JSX.Element {
                   width={shellWidth.width}
                   pin={navPin}
                 />
+                {/* `relative`: the scroller is the containing block of the
+                    out-of-flow content it holds (sr-only text, joiners), so
+                    it scrolls and clips with the page. Without a positioned
+                    ancestor it resolves against the viewport, and its static
+                    offsets grow the document's own overflow — a second,
+                    document-level scrollbar that narrows the whole shell. */}
                 <main
                   ref={contentRegion}
                   data-fdt="panel-content"
-                  class="min-h-0 min-w-0 flex-1 overflow-y-auto"
+                  class="relative min-h-0 min-w-0 flex-1 overflow-y-auto"
                 >
                   <ErrorBoundary
                     fallback={(error: unknown) => {

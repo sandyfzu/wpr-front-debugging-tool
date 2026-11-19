@@ -267,6 +267,19 @@ for (const colorScheme of ['light', 'dark'] as const) {
             { message: `no document horizontal scroll at ${String(width)} px (${colorScheme})` }
           )
           .toBe(0);
+        // Nor vertical: the content region is the one scroller. The cards'
+        // out-of-flow text (sr-only) resolves against it; were it to leak to the
+        // viewport, its offsets would scroll the document itself and its
+        // scrollbar would narrow the whole shell.
+        await expect
+          .poll(
+            () =>
+              panel.evaluate(
+                () => document.documentElement.scrollHeight - document.documentElement.clientHeight
+              ),
+            { message: `no document vertical scroll at ${String(width)} px (${colorScheme})` }
+          )
+          .toBe(0);
         for (const { id } of CASES) {
           const card = root.locator(`[data-fdt-card-id="${id}"]`);
           await expect(card.locator('[data-fdt-card-modifier]'), id).toBeVisible();
