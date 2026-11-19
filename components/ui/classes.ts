@@ -52,11 +52,3 @@ export const MOTION_REVEAL =
  */
 export const MOTION_TURN =
   'transition-transform duration-[var(--motion-fast)] ease-[var(--ease-standard)]';
-
-/**
- * Hover lift for a whole-card **link** (an element that navigates): shadow
- * and border only, no translate. Never on a non-interactive card — a lift
- * promises a click; never on virtual list rows.
- */
-export const MOTION_LIFT =
-  'transition-[box-shadow,border-color] duration-[var(--motion-fast)] ease-[var(--ease-standard)] hover:shadow-elev-2 hover:border-line-3';

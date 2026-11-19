@@ -110,12 +110,14 @@ describe('the modifier on the cards', () => {
     }
   });
 
-  it('adds no tab stop and nothing interactive inside a link card', () => {
+  it('adds no tab stop: the row keeps its page link as its one control', () => {
     render(() => <DetectionsView data={data(MARKED)} now={0} />);
     const badge = modifier('delay_js');
-    expect(card('delay_js').tagName).toBe('A');
+    expect(card('delay_js').tagName).toBe('DIV');
+    expect(card('delay_js').querySelectorAll('a, button, [tabindex]')).toHaveLength(1);
+    expect(card('delay_js').querySelector('a[data-fdt-card-link]')).not.toBeNull();
     expect(badge?.querySelector('a, button, [tabindex]')).toBeNull();
-    expect(badge?.closest('[tabindex]')).toBeNull();
+    expect(badge?.closest('a, [tabindex]')).toBeNull();
   });
 
   it('shows no modifier on a page with no builder fact', () => {
@@ -143,7 +145,10 @@ describe('the modifier on the cards', () => {
     expect(modifierLine('delay_js')?.textContent).toContain(
       'Disabled in this tab by the Exclusion Builder.'
     );
-    expect(delay.textContent).toContain('Not active');
+    // The row's state word for a feature WP Rocket did not serve.
+    const state = delay.querySelector<HTMLElement>('[data-fdt-card-state]');
+    expect(state?.dataset.fdtCardState).toBe('not-active');
+    expect(state?.textContent).toContain('Off');
     expect(delay.textContent).not.toMatch(/served/i);
   });
 });

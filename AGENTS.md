@@ -86,7 +86,7 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   │                          #   table (`simulation-parity.fixtures.json`, dev/test only)
 │   ├── page-commands/         # the on-page command vocabulary (labels the menu + palette share), the
 │   │                          #   palette's executor contract and the view↔module bridge
-│   ├── panel/                 # panel view models (pure): Detections cards + summary, support report, resource
+│   ├── panel/                 # panel view models (pure): Detections rows + groups + summary, support report, resource
 │   │                          #   rows + their chip states (`script-states`, `style-states`), hint attribution
 │   ├── beacon-test/           # beacon test config/result validation + runner bridge; live-analysis
 │   │                          #   siblings: `lcp-analysis/`, `script-runtime/`, `web-vitals/` (current visit)

@@ -37,6 +37,7 @@ import {
   panelPageUrl,
   type ExtensionDriver
 } from '../helpers/extension';
+import { showDetectionsList } from '../helpers/detections-page';
 import { facetCount, pickFacet } from '../helpers/javascript-page';
 import {
   devtoolsShim,
@@ -463,6 +464,8 @@ sourceTest.describe('source-build parity over one served fixture', () => {
         const sourceList = sourcePanel.locator('main .grid > li').first();
         await expect(sourceList).toBeVisible();
 
+        // List: every port row in model order, page facts included.
+        await showDetectionsList(portPanel);
         const port = await portCards(portPanel);
         const origin = await sourceCards(sourcePanel);
         // Every source card exists on the port side with the same verdict;

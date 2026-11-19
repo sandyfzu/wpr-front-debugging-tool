@@ -218,8 +218,18 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await expect(badge, id).not.toHaveAttribute('title');
         // The full sentence is visible text, never hover-only.
         await expect(card.locator('[data-fdt-card-modifier-line]'), id).toContainText(sentence);
-        // Spoken once: the link card's name says the sentence a single time.
-        await expect(card, id).toHaveAccessibleName(saysOnce(sentence));
+        // Spoken once: the row's readable text (aria-hidden subtrees excluded,
+        // what assistive tech reads in order) says the sentence a single time.
+        const spoken = await card.evaluate((element) => {
+          const read = (node: Node): string =>
+            node instanceof Element && node.getAttribute('aria-hidden') === 'true'
+              ? ''
+              : node.nodeType === Node.TEXT_NODE
+                ? (node.textContent ?? '')
+                : Array.from(node.childNodes, read).join('');
+          return read(element);
+        });
+        expect(spoken, id).toMatch(saysOnce(sentence));
         // The served verdict stays.
         await expect(card.locator('[data-fdt="status-badge"]'), id).toHaveText('Active');
       }
@@ -324,20 +334,25 @@ for (const colorScheme of ['light', 'dark'] as const) {
         }
       }
 
-      // Keyboard: the changed link cards stay reachable with Tab; the badge adds no stop.
+      // Keyboard: the changed rows' page links stay reachable with Tab; the
+      // badge adds no stop (the link is the row's one control).
       await root.getByRole('heading', { level: 1 }).focus();
       const delay = root.locator('[data-fdt-card-id="delay_js"]');
+      const delayLink = delay.locator('a[data-fdt-card-link]');
       let reached = false;
       for (let step = 0; step < 40 && !reached; step++) {
         await panel.keyboard.press('Tab');
-        reached = await delay.evaluate((element) => element === document.activeElement);
+        reached = await delayLink.evaluate((element) => element === document.activeElement);
       }
-      expect(reached, 'Tab reaches the Delay JS card').toBe(true);
-      await expect(delay.locator('[tabindex], button, a')).toHaveCount(0);
-      // The compact tier's hover row fill keeps the modifier text at AA.
+      expect(reached, 'Tab reaches the Delay JS row link').toBe(true);
+      await expect(delay.locator('[tabindex], button, a')).toHaveCount(1);
+      await expect(
+        delay.locator('[data-fdt-card-modifier] :is([tabindex], button, a)')
+      ).toHaveCount(0);
+      // Hovered at the compact tier, the modifier text keeps AA.
       await panel.setViewportSize({ width: 320, height: 900 });
       await delay.hover();
-      await expectModifierContrast(panel, `${colorScheme} 320 px hovered Delay JS card`);
+      await expectModifierContrast(panel, `${colorScheme} 320 px hovered Delay JS row`);
 
       // Reduced motion: nothing animates after mount.
       await expect
@@ -384,7 +399,8 @@ test('the modifier follows the displayed document: kept on re-read, gone after a
     body = MARKED_PAGE.replace('WP Rocket 3.23.5.1', 'WP Rocket 3.23.5.2');
     expect(body).toContain(BUILDER_MARKER_META_NAME);
     await fixture.page.reload();
-    await expect(root.locator('[data-fdt-card-id="wpr"]')).toContainText('3.23.5.2', {
+    // The plugin identity is the overview's WP Rocket tile (no row in Grouped).
+    await expect(root.locator('[data-fdt-overview-tile="wpr"]')).toContainText('3.23.5.2', {
       timeout: 15_000
     });
     await expect(badges).toHaveCount(CASES.length);

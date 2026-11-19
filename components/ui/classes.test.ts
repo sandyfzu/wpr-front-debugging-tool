@@ -1,10 +1,10 @@
 /**
- * Pins the shared class fragments: the three motion moments keep the exact
+ * Pins the shared class fragments: the two motion moments keep the exact
  * literals the UI/UX bar sanctions (token-driven, so the global reduced-motion
  * collapse reaches them) — any drift fails here.
  */
 import { describe, expect, it } from 'vitest';
-import { DISABLED, FOCUS_RING, MOTION_LIFT, MOTION_REVEAL, MOTION_TURN } from './classes';
+import { DISABLED, FOCUS_RING, MOTION_REVEAL, MOTION_TURN } from './classes';
 
 describe('motion class constants', () => {
   it('pin the exact sanctioned literals', () => {
@@ -13,9 +13,6 @@ describe('motion class constants', () => {
     );
     expect(MOTION_TURN).toBe(
       'transition-transform duration-[var(--motion-fast)] ease-[var(--ease-standard)]'
-    );
-    expect(MOTION_LIFT).toBe(
-      'transition-[box-shadow,border-color] duration-[var(--motion-fast)] ease-[var(--ease-standard)] hover:shadow-elev-2 hover:border-line-3'
     );
   });
 });

@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { FIXTURE_DIR } from '../../../../lib/detection/fixtures/corpus';
 import { runDetection } from '../../../../lib/detection/run-detection';
 import { makeFdtData } from '../../state/fixtures';
+import { createDetectionsLayout } from '../../state/detections-layout';
 import { DetectionsView } from './page';
 
 afterEach(cleanup);
@@ -30,7 +31,10 @@ describe('the declared-only sentence on the Detections cards', () => {
   it('shows on each declared card with nothing on the page, beside the unchanged verdict', () => {
     const html = readFileSync(join(FIXTURE_DIR, 'qa-landing-page.html'), 'utf8');
     const data = makeFdtData({ wprDetections: runDetection(html).detections });
-    render(() => <DetectionsView data={data} now={0} />);
+    // List: every row shows its own source chip (Grouped states a shared one once).
+    const list = createDetectionsLayout();
+    list.setLayout('list');
+    render(() => <DetectionsView data={data} now={0} layoutStore={list} />);
     expect(declaredCards()).toEqual(['minify_css', 'minify_js', 'preload_links']);
     const card = document.querySelector<HTMLElement>('[data-fdt-card-id="minify_js"]');
     expect(card?.querySelector('[data-fdt-card-declared-line]')?.textContent).toContain(

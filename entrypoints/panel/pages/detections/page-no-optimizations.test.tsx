@@ -2,7 +2,7 @@
  * The Detections control row when no card counts as an optimization. A valid
  * payload always yields optimization cards (the detections type requires
  * every row), so the card classifier is mocked behind a switch: the row, its
- * chips and the filtered-empty reset's focus target must survive that edge.
+ * segments and the filtered-empty reset's focus target must survive that edge.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
@@ -32,7 +32,7 @@ afterEach(() => {
 /** The page clock reading the view renders against. */
 const NOW = 1_700_000_000_000;
 
-/** A payload with one optimization active, so the Active chip is selectable. */
+/** A payload with one optimization active, so the Active segment is selectable. */
 function oneActive(): FdtData {
   const base = makeFdtData();
   return makeFdtData({
@@ -44,16 +44,29 @@ function oneActive(): FdtData {
 }
 
 /**
- * One status filter chip by id.
+ * One status filter segment's radio by id.
  *
- * @param id The chip's filter id.
- * @returns The chip button.
- * @throws {@link Error} When the chip is not rendered.
+ * @param id The segment's filter id.
+ * @returns The radio input.
+ * @throws {@link Error} When the segment is not rendered.
  */
-function chip(id: string): HTMLButtonElement {
-  const found = document.querySelector<HTMLButtonElement>(`[data-fdt-filter-chip="${id}"]`);
-  if (!found) throw new Error(`no chip ${id}`);
+function segment(id: string): HTMLInputElement {
+  const found = document.querySelector<HTMLInputElement>(
+    `[data-fdt="detections-filter"] [data-fdt-choice-value="${id}"] input`
+  );
+  if (!found) throw new Error(`no segment ${id}`);
   return found;
+}
+
+/**
+ * A segment's visible count.
+ *
+ * @param id The segment's filter id.
+ * @returns The count text.
+ */
+function count(id: string): string | null | undefined {
+  return segment(id).closest('[data-fdt="choice"]')?.querySelector('[data-fdt-choice-count]')
+    ?.textContent;
 }
 
 /** The control row, when mounted. */
@@ -62,33 +75,33 @@ function controls(): Element | null {
 }
 
 describe('DetectionsView with no optimization card', () => {
-  it('keeps the control row with honest zero counts and an enabled All chip', () => {
+  it('keeps the control row with honest zero counts and an enabled All segment', () => {
     classifier.none = true;
     render(() => <DetectionsView data={oneActive()} now={NOW} />);
     expect(controls()).not.toBeNull();
-    const counts = ['all', 'active', 'inactive'].map(
-      (id) => chip(id).querySelector('[data-fdt-filter-count]')?.textContent
-    );
-    expect(counts).toEqual(['0', '0', '0']);
+    expect(['all', 'active', 'collecting', 'off'].map(count)).toEqual(['0', '0', '0', '0']);
     // All is the reset target, so it stays selectable at zero; the empty buckets do not.
-    expect(chip('all').disabled).toBe(false);
-    expect(chip('active').disabled).toBe(true);
-    expect(chip('inactive').disabled).toBe(true);
+    expect(segment('all').disabled).toBe(false);
+    expect(segment('active').disabled).toBe(true);
+    expect(segment('collecting').disabled).toBe(true);
+    expect(segment('off').disabled).toBe(true);
     expect(document.querySelector('[data-fdt="detections-filtered-empty"]')).toBeNull();
   });
 
-  it('lands focus on the connected All chip after a refresh emptied every optimization', () => {
+  it('lands focus on the connected All segment after a refresh emptied every optimization', () => {
     const [data, setData] = createSignal(oneActive());
     render(() => <DetectionsView data={data()} now={NOW} />);
-    fireEvent.click(chip('active'));
+    const label = segment('active').closest('[data-fdt="choice"]')?.querySelector('label');
+    if (!label) throw new Error('no Active label');
+    fireEvent.click(label);
     classifier.none = true;
     setData(oneActive());
     const back = screen.getByRole('button', { name: SHOW_ALL_OPTIMIZATIONS });
     back.focus();
     fireEvent.click(back);
-    const all = chip('all');
+    const all = segment('all');
     expect(all.isConnected).toBe(true);
-    expect(all.getAttribute('aria-pressed')).toBe('true');
+    expect(all.checked).toBe(true);
     expect(document.activeElement).toBe(all);
     expect(controls()).not.toBeNull();
   });

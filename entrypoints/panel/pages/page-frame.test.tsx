@@ -55,6 +55,20 @@ describe('PageFrame', () => {
     expect(frameBody().classList).not.toContain('flex-1');
   });
 
+  it('hands its ref the container root (the box tier variants read)', () => {
+    let received: HTMLElement | undefined;
+    render(() => (
+      <PageFrame
+        id="javascript"
+        title="JavaScript"
+        ref={(element) => {
+          received = element;
+        }}
+      />
+    ));
+    expect(received).toBe(frameRoot());
+  });
+
   it('renders exactly one h1 — the shell’s route-switch focus target', () => {
     render(() => (
       <PageFrame id="lazyload" title="Lazyload" subtitle="Images the page deferred">

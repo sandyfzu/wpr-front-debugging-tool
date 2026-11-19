@@ -42,6 +42,7 @@ import {
   openPanelForFixture,
   panelPageUrl
 } from '../helpers/panel-data';
+import { showDetectionsList } from '../helpers/detections-page';
 import { runPanelAxe } from '../helpers/audit';
 import { STRIP_HOST } from '../helpers/strip-pill';
 import { BYPASS_APPLIED_COPY } from '../../../lib/detection/bypass-applied';
@@ -199,6 +200,8 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
       // counts exactly what the cards say Active.
       const detections = panel.locator('[data-fdt-page="detections"]');
       await expect(detections.getByRole('heading', { level: 1, name: 'Detections' })).toBeVisible();
+      // List: every row in model order (Grouped leaves the tiles' facts to the tiles).
+      await showDetectionsList(panel);
       const pure = buildStatusItems(served);
       const summary = summarizeDetections(pure);
       const cards = await panel.evaluate(
@@ -442,7 +445,9 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
       const detections = panel.locator('[data-fdt-page="detections"]');
       await expect(detections.getByRole('heading', { level: 1, name: 'Detections' })).toBeVisible();
       // No headers → both header-derived cards omitted, and no cached card
-      // either (a plain page's plugin is absent; no cache card exists).
+      // either (a plain page's plugin is absent; no cache card exists) — read
+      // in List, where those rows would render.
+      await showDetectionsList(panel);
       const cardIds = await panel.evaluate(() =>
         Array.from(document.querySelectorAll('[data-fdt-card-id]')).map((card) =>
           card.getAttribute('data-fdt-card-id')

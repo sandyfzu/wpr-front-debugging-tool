@@ -1,6 +1,6 @@
 /**
- * The Detections status filter: the chip registry, the Active/Inactive
- * buckets (the summary's in-tab rule, Exclusion Builder facts included),
+ * The Detections status filter: the segment registry, the Active /
+ * Collecting / Off buckets (the summary's rule, Exclusion Builder facts included),
  * page-context cards surviving every filter, the `all` identity, and counts
  * that agree with the overview.
  */
@@ -18,7 +18,7 @@ import {
   statusBucket,
   type DetectionFilterId
 } from './detections-filter';
-import { isOptimizationCard, summarizeFdtData } from './detections-summary';
+import { isOptimizationCard, optimizationBucket, summarizeFdtData } from './detections-summary';
 import { buildStatusItems, type StatusItem, type StatusItemId } from './detections-view-model';
 import { makeReportData } from './support-report.fixtures';
 
@@ -50,45 +50,51 @@ function ids(items: readonly StatusItem[]): StatusItemId[] {
 }
 
 describe('DETECTION_FILTERS', () => {
-  it('declares All, Active, Inactive in that order, identity chip first', () => {
+  it('declares All, Active, Collecting, Off in that order, identity segment first', () => {
     expect(DETECTION_FILTERS.map((filter) => [filter.id, filter.label])).toEqual([
-      ['all', 'All optimizations'],
+      ['all', 'All'],
       ['active', 'Active'],
-      ['inactive', 'Inactive']
+      ['collecting', 'Collecting'],
+      ['off', 'Off']
     ]);
     expect(DETECTION_FILTER_LABEL).toBe('Optimization status');
   });
 
-  it('never words the inactive bucket as enabled/disabled', () => {
+  it('never words a bucket as enabled/disabled', () => {
     for (const filter of DETECTION_FILTERS) expect(filter.label).not.toMatch(/enabled|disabled/i);
   });
 
-  it('names each filter by its chip label, and refuses an undeclared id', () => {
+  it('names each filter by its segment label, and refuses an undeclared id', () => {
     expect(detectionFilterLabel('active')).toBe('Active');
-    expect(detectionFilterLabel('inactive')).toBe('Inactive');
-    expect(() => detectionFilterLabel('paused' as DetectionFilterId)).toThrow(/"paused"/);
+    expect(detectionFilterLabel('collecting')).toBe('Collecting');
+    expect(detectionFilterLabel('off')).toBe('Off');
+    expect(() => detectionFilterLabel('inactive' as DetectionFilterId)).toThrow(/"inactive"/);
   });
 });
 
 describe('statusBucket', () => {
-  it('puts only an active verdict under active; collecting, unknown and not active are inactive', () => {
-    expect(statusBucket(item('delay_js', 'active'))).toBe('active');
-    expect(statusBucket(item('delay_js', 'collecting'))).toBe('inactive');
-    expect(statusBucket(item('delay_js', 'unknown'))).toBe('inactive');
-    expect(statusBucket(item('delay_js', 'not-active'))).toBe('inactive');
+  it.each([
+    ['active', 'active'],
+    ['collecting', 'collecting'],
+    ['unknown', 'off'],
+    ['not-active', 'off']
+  ] as const)('puts a %s verdict under %s', (status, bucket) => {
+    expect(statusBucket(item('delay_js', status))).toBe(bucket);
   });
 
-  it('follows the Exclusion Builder: off / page-off inactive, excluded active, no fact by status', () => {
-    expect(statusBucket(item('delay_js', 'active', { builder: { off: 'feature' } }))).toBe(
-      'inactive'
-    );
-    expect(statusBucket(item('defer_all_js', 'active', { builder: { off: 'page' } }))).toBe(
-      'inactive'
-    );
+  it('follows the Exclusion Builder: off / page-off → off, excluded stays active', () => {
+    expect(statusBucket(item('delay_js', 'active', { builder: { off: 'feature' } }))).toBe('off');
+    expect(statusBucket(item('defer_all_js', 'active', { builder: { off: 'page' } }))).toBe('off');
     expect(statusBucket(item('lazyload', 'active', { builder: { excluded: 2 } }))).toBe('active');
-    expect(statusBucket(item('lazyload', 'not-active', { builder: { excluded: 2 } }))).toBe(
-      'inactive'
-    );
+    expect(statusBucket(item('lazyload', 'not-active', { builder: { excluded: 2 } }))).toBe('off');
+    expect(
+      statusBucket(item('remove_unused_css', 'collecting', { builder: { excluded: 1 } }))
+    ).toBe('collecting');
+  });
+
+  it('is the summary rule itself (never re-coded)', () => {
+    for (const card of ITEMS.filter((entry) => isOptimizationCard(entry.id)))
+      expect(statusBucket(card)).toBe(optimizationBucket(card));
   });
 });
 
@@ -97,62 +103,59 @@ describe('filterStatusItems', () => {
     expect(filterStatusItems(ITEMS, 'all')).toBe(ITEMS);
   });
 
-  it('narrows only optimization cards, keeping page context and order', () => {
+  it('narrows only optimization rows, keeping page context and order', () => {
+    const context = ['wpr', 'cached', 'server', 'priority_elements_beacon'];
     expect(ids(filterStatusItems(ITEMS, 'active'))).toEqual([
-      'wpr',
-      'cached',
-      'server',
-      'priority_elements_beacon',
+      ...context,
       'delay_js',
       'mobile_cache'
     ]);
-    expect(ids(filterStatusItems(ITEMS, 'inactive'))).toEqual([
-      'wpr',
-      'cached',
-      'server',
-      'priority_elements_beacon',
-      'lazyload',
+    expect(ids(filterStatusItems(ITEMS, 'collecting'))).toEqual([
+      ...context,
       'remove_unused_css',
+      'mobile_cache'
+    ]);
+    expect(ids(filterStatusItems(ITEMS, 'off'))).toEqual([
+      ...context,
+      'lazyload',
       'defer_all_js',
       'mobile_cache'
     ]);
   });
 
-  it('keeps the cards themselves (badges and why travel unchanged)', () => {
+  it('keeps the rows themselves (state and why travel unchanged)', () => {
     const unsure = item('remove_unused_css', 'collecting', { why: 'Waiting for the beacon.' });
-    expect(filterStatusItems([unsure], 'inactive')[0]).toBe(unsure);
+    expect(filterStatusItems([unsure], 'collecting')[0]).toBe(unsure);
   });
 
   it('leaves only page context when a bucket is empty, and nothing from nothing', () => {
     const allActive = ITEMS.filter(
       (card) => !isOptimizationCard(card.id) || card.status === 'active'
     );
-    expect(ids(filterStatusItems(allActive, 'inactive'))).toEqual(
-      ids(allActive.filter((card) => !isOptimizationCard(card.id)))
-    );
+    for (const filter of ['collecting', 'off'] as const)
+      expect(ids(filterStatusItems(allActive, filter))).toEqual(
+        ids(allActive.filter((card) => !isOptimizationCard(card.id)))
+      );
     expect(filterStatusItems([], 'active')).toEqual([]);
   });
 
   it('treats an unknown future detection row as an optimization', () => {
     const future = item('future_row' as StatusItemId, 'active');
     expect(matchesDetectionFilter(future, 'active')).toBe(true);
-    expect(matchesDetectionFilter(future, 'inactive')).toBe(false);
-    expect(optimizationCounts([future])).toEqual({ all: 1, active: 1, inactive: 0 });
+    expect(matchesDetectionFilter(future, 'off')).toBe(false);
+    expect(optimizationCounts([future])).toEqual({ all: 1, active: 1, collecting: 0, off: 0 });
   });
 });
 
 describe('optimizationCounts', () => {
-  it('counts optimization cards only, per bucket', () => {
-    expect(optimizationCounts(ITEMS)).toEqual({ all: 4, active: 1, inactive: 3 });
+  it('counts optimization rows only, per bucket, the buckets summing to all', () => {
+    expect(optimizationCounts(ITEMS)).toEqual({ all: 4, active: 1, collecting: 1, off: 2 });
   });
 
   it('counts zero buckets as zero', () => {
-    expect(optimizationCounts([])).toEqual({ all: 0, active: 0, inactive: 0 });
-    expect(optimizationCounts([item('wpr', 'active'), item('server', 'active')])).toEqual({
-      all: 0,
-      active: 0,
-      inactive: 0
-    });
+    const zero = { all: 0, active: 0, collecting: 0, off: 0 };
+    expect(optimizationCounts([])).toEqual(zero);
+    expect(optimizationCounts([item('wpr', 'active'), item('server', 'active')])).toEqual(zero);
   });
 
   it('agrees with the overview over a real page with Exclusion Builder facts', () => {
@@ -165,13 +168,16 @@ describe('optimizationCounts', () => {
     const data = makeReportData({ wprDetections: { ...base.wprDetections, ...detections } });
     const { items, summary } = summarizeFdtData(data);
     const counts = optimizationCounts(items);
+    // Each segment's count is the score tile's number, by construction.
     expect(counts.active).toBe(summary.optimizations.active);
+    expect(counts.collecting).toBe(summary.optimizations.collecting);
+    expect(counts.off).toBe(summary.optimizations.off);
     expect(counts.all).toBe(summary.optimizations.total);
-    expect(counts.active + counts.inactive).toBe(counts.all);
-    // The builder-off pair lands under inactive, the excluded row stays active.
-    const inactive = ids(filterStatusItems(items, 'inactive'));
-    expect(inactive).toContain('delay_js');
-    expect(inactive).toContain('defer_all_js');
+    expect(counts.active + counts.collecting + counts.off).toBe(counts.all);
+    // The builder-off pair lands under off, the excluded row stays active.
+    const off = ids(filterStatusItems(items, 'off'));
+    expect(off).toContain('delay_js');
+    expect(off).toContain('defer_all_js');
     expect(ids(filterStatusItems(items, 'active'))).toContain('lazyload');
     expect(buildStatusItems(data)).toEqual(items);
   });

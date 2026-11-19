@@ -21,7 +21,9 @@
  */
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { RadioGroup as KobalteRadioGroup } from '@kobalte/core';
+import type { LucideIcon } from 'lucide-solid';
 // Plain joining, not `cn`: no caller fights the group's own utilities, and
 // the conflict resolver would ship to every injected UI that mounts a group.
 import { clsx } from 'clsx';
@@ -57,6 +59,11 @@ export interface ChoiceOption<T extends string> {
    * count stays selectable — pass `disabled` to refuse it.
    */
   readonly count?: number;
+  /**
+   * A leading icon (decorative: hidden from assistive tech, the label names
+   * the choice). Absent, the tile's DOM is exactly the icon-less one.
+   */
+  readonly icon?: LucideIcon;
 }
 
 export interface ChoiceGroupProps<T extends string> {
@@ -352,6 +359,18 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>): JSX.E
                   optionDisabled: option.disabled === true
                 })}
               >
+                <Show when={option.icon}>
+                  {(icon) => (
+                    // A margin, not a tile gap: the icon-less tile keeps its classes.
+                    <Dynamic
+                      component={icon()}
+                      size={14}
+                      aria-hidden="true"
+                      data-fdt-choice-icon=""
+                      class="me-1 shrink-0"
+                    />
+                  )}
+                </Show>
                 {option.label}
                 <Show when={countText()}>
                   {(text) => (

@@ -1,13 +1,15 @@
 /**
  * The choice group's looks: the default `tiles` look pinned byte-for-byte
  * (injected UIs rely on it), the opt-in `segmented` tray, the leading
- * caption, per-option counts and the unavailable states — on the one radio
+ * caption, per-option counts and icons, and the unavailable states — on the one radio
  * anatomy both looks share (so the native radio keyboard contract holds for
  * either).
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import LayoutList from 'lucide-solid/icons/layout-list';
+import List from 'lucide-solid/icons/list';
 import { ChoiceGroup, type ChoiceGroupVariant, type ChoiceOption } from './choice-group';
 import { describeAxeViolations, runAxeAudit } from './a11y-audit';
 import {
@@ -450,5 +452,45 @@ describe('ChoiceGroup segmented variant', () => {
     ));
     const result = await runAxeAudit();
     expect(describeAxeViolations(result.violations)).toBe('');
+  });
+});
+
+describe('ChoiceGroup option icon', () => {
+  /** A layout-shaped set: two options with icons, one without. */
+  const LAYOUTS: readonly ChoiceOption<'grouped' | 'list' | 'cards'>[] = [
+    { value: 'grouped', label: 'Grouped', icon: LayoutList },
+    { value: 'list', label: 'List', icon: List },
+    { value: 'cards', label: 'Cards' }
+  ];
+
+  it.each<ChoiceGroupVariant>(['tiles', 'segmented'])(
+    'leads the label with a decorative icon on the %s look, the name unchanged',
+    (variant) => {
+      render(() => (
+        <ChoiceGroup
+          variant={variant}
+          options={LAYOUTS}
+          value="grouped"
+          onChange={() => {}}
+          aria-label="Layout"
+        />
+      ));
+      const icon = tile('grouped').querySelector('[data-fdt-choice-icon]');
+      expect(icon?.tagName.toLowerCase()).toBe('svg');
+      expect(icon?.getAttribute('aria-hidden')).toBe('true');
+      expect(icon?.getAttribute('class')).toContain('me-1 shrink-0');
+      // First child of the tile, before the label text.
+      expect(tile('grouped').firstElementChild).toBe(icon);
+      expect(tile('grouped').textContent).toBe('Grouped');
+      expect(screen.getByRole('radio', { name: 'Grouped' })).toBeTruthy();
+    }
+  );
+
+  it('renders nothing extra without an icon (the icon-less DOM is unchanged)', () => {
+    render(() => (
+      <ChoiceGroup options={LAYOUTS} value="grouped" onChange={() => {}} aria-label="Layout" />
+    ));
+    expect(tile('cards').children).toHaveLength(0);
+    expect(tile('cards').innerHTML).toBe('Cards');
   });
 });
