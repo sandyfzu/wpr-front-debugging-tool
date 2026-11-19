@@ -484,7 +484,7 @@ describe('the detail presence (shell-owned)', () => {
       });
       const store = presence as DetailPresenceStore;
       expect(store.detailOpen()).toBe(false);
-      store.setDetailOpen(true);
+      store.claim().set(true);
       expect(store.detailOpen()).toBe(true);
       hashTo('javascript');
       expect(store.detailOpen()).toBe(false);

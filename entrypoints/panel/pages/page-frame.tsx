@@ -120,27 +120,35 @@ export const NO_MATCHES_QUERY_MAX = 60;
  *
  * Blank inputs count as unset; an over-long query is cut by code point (never
  * splitting a surrogate pair) and elided with `…`, so a pasted blob cannot
- * flood the view.
+ * flood the view. Narrowing facet values (combinable filters) take the
+ * chip's place, each quoted, in facet order.
  *
  * @param chipLabel The selected filter chip's label, if a non-"all" chip is active.
  * @param query The committed search query, if any.
- * @returns One sentence naming the chip and/or the query.
+ * @param filterLabels The narrowing facet values' labels (facet lists; blank ones ignored).
+ * @returns One sentence naming the chip or facet values and/or the query.
  */
-export function noMatchesSentence(chipLabel?: string, query?: string): string {
-  const chip = chipLabel?.trim() ?? '';
+export function noMatchesSentence(
+  chipLabel?: string,
+  query?: string,
+  filterLabels?: readonly string[]
+): string {
+  const filters = (filterLabels ?? []).map((label) => label.trim()).filter((label) => label !== '');
+  const chip = filters.length > 0 ? filters.join('", "') : (chipLabel?.trim() ?? '');
+  const noun = filters.length > 1 ? 'filters' : 'filter';
   const points = Array.from(query?.trim() ?? '');
   const shown =
     points.length > NO_MATCHES_QUERY_MAX
       ? `${points.slice(0, NO_MATCHES_QUERY_MAX).join('')}…`
       : points.join('');
   if (chip && shown) return `Nothing in "${chip}" matches "${shown}".`;
-  if (chip) return `Nothing matches the "${chip}" filter.`;
+  if (chip) return `Nothing matches the "${chip}" ${noun}.`;
   if (shown) return `Nothing matches "${shown}".`;
   return 'Nothing matches the current filters.';
 }
 
-/** The two ways back out of a filtered-empty view. */
-export type NoMatchesAction = 'clear-search' | 'show-all';
+/** The ways back out of a filtered-empty view. */
+export type NoMatchesAction = 'clear-search' | 'show-all' | 'clear-filters';
 
 /**
  * Where focus goes after a {@link NoMatches} action removes the focused
@@ -160,6 +168,18 @@ export interface NoMatchesProps {
   onShowAll?: () => void;
   /** The reset button's label when "Show all" alone would be vague (default "Show all"). */
   showAllLabel?: string;
+  /**
+   * The narrowing facet values' labels (a facet list; the chip props stay
+   * unset). Named in the sentence; with {@link NoMatchesProps.onClearFilters}
+   * they offer `Clear filters`.
+   */
+  filterLabels?: readonly string[];
+  /**
+   * Clears every facet **and** the search (one click back). `Clear filters`
+   * renders only with this and a non-blank `filterLabels` entry, and then
+   * replaces `Clear search` (it clears the query too).
+   */
+  onClearFilters?: () => void;
   /**
    * The focus target once an action's result removes its focused button
    * (typically: the search field after `clear-search`, the "All" chip after
@@ -221,15 +241,28 @@ function NoMatchesButton(props: NoMatchesButtonProps): JSX.Element {
  * @param props See {@link NoMatchesProps}.
  */
 export function NoMatches(props: NoMatchesProps): JSX.Element {
+  const canClearFilters = (): boolean =>
+    props.onClearFilters !== undefined &&
+    (props.filterLabels ?? []).some((label) => label.trim() !== '');
   const canClear = (): boolean =>
-    props.onClearSearch !== undefined && (props.query?.trim() ?? '') !== '';
+    !canClearFilters() && props.onClearSearch !== undefined && (props.query?.trim() ?? '') !== '';
   const canShowAll = (): boolean =>
     props.onShowAll !== undefined && (props.chipLabel?.trim() ?? '') !== '';
   // Built once (EmptyState reads each slot twice: its `Show` gate + the render).
   const icon = <SearchX size={16} aria-hidden="true" />;
   const action = createMemo((): JSX.Element | undefined =>
-    canClear() || canShowAll() ? (
+    canClear() || canShowAll() || canClearFilters() ? (
       <div class="flex flex-wrap justify-center gap-1.5">
+        <Show when={canClearFilters()}>
+          <NoMatchesButton
+            action="clear-filters"
+            label="Clear filters"
+            onActivate={() => {
+              props.onClearFilters?.();
+            }}
+            focusAfter={props.focusAfter}
+          />
+        </Show>
         <Show when={canClear()}>
           <NoMatchesButton
             action="clear-search"
@@ -258,7 +291,7 @@ export function NoMatches(props: NoMatchesProps): JSX.Element {
       class="wrap-anywhere"
       icon={icon}
       title="No matches"
-      description={noMatchesSentence(props.chipLabel, props.query)}
+      description={noMatchesSentence(props.chipLabel, props.query, props.filterLabels)}
       action={action()}
     />
   );

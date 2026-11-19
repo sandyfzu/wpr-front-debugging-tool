@@ -40,6 +40,13 @@ export interface StateChipSplit {
 /** At most this many state chips show on a row before the "+N" chip. */
 export const MAX_VISIBLE_STATE_CHIPS = 3;
 
+/**
+ * The calm rows' cap (pass it to {@link splitStateChips}): a 58 px two-line
+ * row holds two chips beside its name before the "+N" — the full set lives
+ * in the row's detail view.
+ */
+export const CALM_VISIBLE_STATE_CHIPS = 2;
+
 /** The split of a row without states (shared: no allocation per plain row). */
 export const NO_STATE_CHIPS: StateChipSplit = { visible: [], overflow: null };
 

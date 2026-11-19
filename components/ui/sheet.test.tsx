@@ -157,6 +157,36 @@ describe('Sheet structure', () => {
     expect(footer.contains(screen.getByRole('button', { name: 'Show 3 scripts' }))).toBe(true);
   });
 
+  it('builds the footer slot once per mount, and keeps a null footer as a present row', () => {
+    let built = 0;
+    /** A footer that counts its own creations (each read of a JSX prop builds anew). */
+    function CountedFooter() {
+      built += 1;
+      return <Button>Apply</Button>;
+    }
+    render(() => (
+      <Sheet
+        open
+        onClose={() => {}}
+        title="Filters"
+        restoreFocusTo={() => undefined}
+        footer={<CountedFooter />}
+      >
+        <Button>First facet</Button>
+      </Sheet>
+    ));
+    expect(built).toBe(1);
+    expect(document.querySelectorAll('[data-fdt="sheet-footer"] button')).toHaveLength(1);
+    cleanup();
+    render(() => (
+      <Sheet open onClose={() => {}} title="Filters" restoreFocusTo={() => undefined} footer={null}>
+        <Button>First facet</Button>
+      </Sheet>
+    ));
+    expect(document.querySelector('[data-fdt="sheet-footer"]')).not.toBeNull();
+    expect(document.querySelector('[data-fdt="sheet-body"]')?.className).toContain('pb-2');
+  });
+
   it('renders no footer row without a footer', () => {
     renderSheet({ open: true });
     expect(document.querySelector('[data-fdt="sheet-footer"]')).toBeNull();

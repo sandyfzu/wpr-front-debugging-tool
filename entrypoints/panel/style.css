@@ -35,3 +35,13 @@
 .fdt-page > [data-fdt='page-body'] {
   animation: panel-page-enter var(--motion-base) var(--ease-entrance) both;
 }
+
+/* ---- Drill-in view swap ----------------------------------------------------
+ * A list's drill detail and the list it returns to (`data-fdt-view-enter`,
+ * set by the list kit on the view that appears) replay the page entrance —
+ * the one sanctioned keyframe for a view swap. Removing and re-adding the
+ * attribute restarts it; reduced motion collapses it via the tokens. */
+
+[data-fdt-view-enter] {
+  animation: panel-page-enter var(--motion-base) var(--ease-entrance) both;
+}

@@ -1,7 +1,8 @@
 /**
  * The detail-presence store: closed by default, publish/clear, the
  * route-change reset (including a publish made during the new page's own
- * mount, and a round trip back to the route that had a detail open), and the
+ * mount, and a round trip back to the route that had a detail open), several
+ * claims on one page (interleavings, release of one, route switch), and the
  * shell-only context hook.
  */
 import { cleanup, render } from '@solidjs/testing-library';
@@ -60,18 +61,20 @@ describe('createDetailPresence', () => {
 
   it('opens and closes on the current route; repeats are idempotent', () => {
     const { store, dispose } = harness();
-    store.setDetailOpen(true);
-    store.setDetailOpen(true);
+    const list = store.claim();
+    list.set(true);
+    list.set(true);
     expect(store.detailOpen()).toBe(true);
-    store.setDetailOpen(false);
-    store.setDetailOpen(false);
+    list.set(false);
+    list.set(false);
     expect(store.detailOpen()).toBe(false);
     dispose();
   });
 
   it('resets on a route change and stays reset on the way back', () => {
     const { store, go, dispose } = harness();
-    store.setDetailOpen(true);
+    const list = store.claim();
+    list.set(true);
     go('javascript');
     expect(store.detailOpen()).toBe(false);
     go('detections');
@@ -81,7 +84,8 @@ describe('createDetailPresence', () => {
 
   it('reads false in the same flush as the route change, before any effect runs', () => {
     const { store, go, dispose } = harness();
-    store.setDetailOpen(true);
+    const list = store.claim();
+    list.set(true);
     batch(() => {
       go('javascript');
       // Inside the batch no effect has run yet: the read must already be keyed
@@ -99,7 +103,8 @@ describe('createDetailPresence', () => {
         seen.push([route(), presence.detailOpen()]);
       });
     });
-    store.setDetailOpen(true);
+    const list = store.claim();
+    list.set(true);
     go('javascript');
     expect(seen).toEqual([
       ['detections', false],
@@ -113,8 +118,9 @@ describe('createDetailPresence', () => {
     let runs = 0;
     const { store, go, dispose } = harness((presence) => {
       const [open] = createSignal(true);
+      const list = presence.claim();
       createEffect(() => {
-        presence.setDetailOpen(open());
+        list.set(open());
         runs += 1;
       });
     });
@@ -131,17 +137,18 @@ describe('createDetailPresence', () => {
   it('keeps a publish the new page makes while mounting (render phase)', () => {
     const { store, go, dispose } = harness((presence, route) => {
       // Render effects run before user effects: the earliest a page can write.
+      const newPage = presence.claim();
       createRenderEffect(
         on(
           route,
           (current) => {
-            if (current === 'javascript') presence.setDetailOpen(true);
+            if (current === 'javascript') newPage.set(true);
           },
           { defer: true }
         )
       );
     });
-    store.setDetailOpen(true);
+    store.claim().set(true);
     go('javascript');
     expect(store.detailOpen()).toBe(true);
     go('stylesheets');
@@ -160,8 +167,9 @@ describe('createDetailPresence', () => {
     expect(runs).toBe(1);
     go('javascript');
     expect(runs).toBe(1);
-    store.setDetailOpen(true);
-    store.setDetailOpen(true);
+    const list = store.claim();
+    list.set(true);
+    list.set(true);
     expect(runs).toBe(2);
     go('stylesheets');
     expect(runs).toBe(3);
@@ -170,12 +178,113 @@ describe('createDetailPresence', () => {
 
   it('gives every factory call its own state (nothing module-level)', () => {
     const first = harness();
-    first.store.setDetailOpen(true);
+    first.store.claim().set(true);
     const second = harness();
     expect(second.store.detailOpen()).toBe(false);
     expect(first.store.detailOpen()).toBe(true);
     first.dispose();
     second.dispose();
+  });
+});
+
+describe('several claims on one page', () => {
+  it('is open while any claim is open, in any open/close order', () => {
+    const { store, dispose } = harness();
+    const runtime = store.claim();
+    const beacon = store.claim();
+    runtime.set(true);
+    beacon.set(true);
+    runtime.set(false);
+    // The other list still shows its detail: one closing never hides it.
+    expect(store.detailOpen()).toBe(true);
+    runtime.set(true);
+    beacon.set(false);
+    expect(store.detailOpen()).toBe(true);
+    runtime.set(false);
+    expect(store.detailOpen()).toBe(false);
+    dispose();
+  });
+
+  it('a release removes only its own claim, for good', () => {
+    const { store, dispose } = harness();
+    const runtime = store.claim();
+    const beacon = store.claim();
+    runtime.set(true);
+    beacon.set(true);
+    runtime.release();
+    expect(store.detailOpen()).toBe(true);
+    // A write after release (an unmounted list) never counts again.
+    runtime.set(true);
+    beacon.set(false);
+    expect(store.detailOpen()).toBe(false);
+    runtime.release();
+    beacon.release();
+    expect(store.detailOpen()).toBe(false);
+    dispose();
+  });
+
+  it('releasing the only open claim closes', () => {
+    const { store, dispose } = harness();
+    const list = store.claim();
+    list.set(true);
+    list.release();
+    expect(store.detailOpen()).toBe(false);
+    dispose();
+  });
+
+  it('a route switch closes every claim; none comes back, a fresh publish counts', () => {
+    const { store, go, dispose } = harness();
+    const runtime = store.claim();
+    const beacon = store.claim();
+    runtime.set(true);
+    beacon.set(true);
+    go('javascript');
+    expect(store.detailOpen()).toBe(false);
+    go('detections');
+    expect(store.detailOpen()).toBe(false);
+    beacon.set(true);
+    expect(store.detailOpen()).toBe(true);
+    runtime.set(false);
+    expect(store.detailOpen()).toBe(true);
+    dispose();
+  });
+
+  it('counts a new page’s claim beside a stale one the switch has not dropped yet', () => {
+    const { store, go, dispose } = harness();
+    const oldPage = store.claim();
+    const newPage = store.claim();
+    oldPage.set(true);
+    batch(() => {
+      go('javascript');
+      newPage.set(true);
+      // The old record is still there (no effect ran): it must not hide the new one.
+      expect(store.detailOpen()).toBe(true);
+    });
+    expect(store.detailOpen()).toBe(true);
+    newPage.set(false);
+    expect(store.detailOpen()).toBe(false);
+    dispose();
+  });
+
+  it('notifies readers only when the aggregate answer changes', () => {
+    let runs = 0;
+    const { store, dispose } = harness((presence) => {
+      createEffect(() => {
+        presence.detailOpen();
+        runs += 1;
+      });
+    });
+    const runtime = store.claim();
+    const beacon = store.claim();
+    runtime.set(true);
+    expect(runs).toBe(2);
+    beacon.set(true);
+    runtime.set(false);
+    runtime.release();
+    expect(runs).toBe(2);
+    beacon.release();
+    expect(runs).toBe(3);
+    dispose();
   });
 });
 

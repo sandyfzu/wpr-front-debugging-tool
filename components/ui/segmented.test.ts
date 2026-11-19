@@ -10,6 +10,8 @@ import {
   SEGMENT_RAISED,
   SEGMENTED_CAPTION,
   SEGMENTED_TRAY,
+  SEGMENTED_TRAY_STRETCH,
+  SEGMENT_STRETCH,
   segmentCountText,
   segmentStateClass
 } from './segmented';
@@ -61,6 +63,18 @@ describe('segmentStateClass', () => {
     expect(SEGMENT_COUNT.split(' ')).toEqual(
       expect.arrayContaining(['tabular-nums', 'text-fg-muted'])
     );
+  });
+
+  it('stretches as the same fill at full width, never the hugging w-fit', () => {
+    const hug = SEGMENTED_TRAY.split(' ');
+    const stretch = SEGMENTED_TRAY_STRETCH.split(' ');
+    expect(stretch).toEqual(expect.arrayContaining(['flex', 'w-full']));
+    expect(stretch).not.toContain('w-fit');
+    expect(stretch).not.toContain('inline-flex');
+    // Everything but the box sizing is shared with the hugging tray.
+    const sizing = new Set(['inline-flex', 'w-fit', 'flex', 'w-full']);
+    expect(stretch.filter((t) => !sizing.has(t))).toEqual(hug.filter((t) => !sizing.has(t)));
+    expect(SEGMENT_STRETCH).toBe('flex-1');
   });
 });
 
