@@ -218,8 +218,11 @@ test.describe('panel find navigation (wire-delivered)', () => {
     extension
   }) => {
     // The filter fixture's header set gives the term `cach` exactly two
-    // matches (cache-control, x-cache); no cookie name on this origin
-    // contains it, so the pins hold whatever the shared profile carried in.
+    // matches (cache-control, x-cache). The restored count below pins this
+    // fixture's 10 headers + 3 page-set cookies, and cookies persist per
+    // origin across suites (the shared worker-scoped profile — e.g. the
+    // sticky-headings suite's 60 `fdt_deep_*`), so they are cleared first.
+    await extension.browserContext.clearCookies();
     const { panel, fixture } = await openPanelForFixture(extension, '/__e2e/header-filter', {
       bootHash: '#/headers-cookies'
     });
