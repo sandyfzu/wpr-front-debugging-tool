@@ -17,6 +17,7 @@
 import {
   ErrorBoundary,
   Match,
+  Show,
   Switch,
   createEffect,
   createMemo,
@@ -52,6 +53,7 @@ import { guardAppearanceWrite } from './appearance-write';
 import { realBuilderEntryDeps, type BuilderEntryDeps } from './top-bar/builder-entry';
 import { readInspectedPageUrl, realInspectedEvalApi } from './report/inspected-page-url';
 import { PAGES } from './pages';
+import { OverviewSkeleton } from './pages/detections/overview-tiles';
 import { focusRouteHeading } from './palette/focus';
 import { PanelOverlays } from './palette/panel-overlays';
 import { createOverlayStore, type OverlayStore } from './palette/overlays';
@@ -472,6 +474,10 @@ function SkeletonPage(props: { route: RouteId }): JSX.Element {
         {/* A zero-minimum track lets the fixed short bar's max-width resolve
             against available space instead of widening the grid intrinsically. */}
         <div class="mt-1 grid grid-cols-1 gap-2">
+          {/* The overview's own shape where it will land. */}
+          <Show when={props.route === 'detections'}>
+            <OverviewSkeleton />
+          </Show>
           <Skeleton class="h-14 w-full" />
           <Skeleton class="h-14 w-full" />
           <Skeleton class="h-14 w-64 max-w-full" />

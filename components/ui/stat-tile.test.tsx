@@ -67,6 +67,32 @@ describe('StatTile', () => {
     }
   });
 
+  it('keeps the label in the text but unpainted with hideLabel (icon included)', () => {
+    render(() => (
+      <StatTile label="Optimizations" icon={Database} hideLabel>
+        4 of 18 optimizations active
+      </StatTile>
+    ));
+    const label = hook('stat-tile-label');
+    expect(label.className).toBe('sr-only');
+    expect(label.textContent).toBe('Optimizations');
+    expect(hook('stat-tile-value').textContent).toBe('4 of 18 optimizations active');
+  });
+
+  it('paints the label by default and with hideLabel false', () => {
+    for (const hideLabel of [undefined, false]) {
+      cleanup();
+      render(() => (
+        <StatTile label="Page cache" hideLabel={hideLabel}>
+          Cached
+        </StatTile>
+      ));
+      expect(hook('stat-tile-label').className).toBe(
+        'flex min-w-0 items-center gap-1.5 text-2xs font-medium text-fg-muted'
+      );
+    }
+  });
+
   it('defaults to the tile value role in the primary tone', () => {
     render(() => <StatTile label="WP Rocket">3.24.1</StatTile>);
     const value = hook('stat-tile-value').className;

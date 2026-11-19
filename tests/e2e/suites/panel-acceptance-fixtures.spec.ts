@@ -11,7 +11,7 @@
  *   marker family, Cloudflare DYNAMIC, the edge hints) plus the platform/
  *   server cards' rows, a value-less row, a redaction-exempt caching key,
  *   and page-set cookies. On this one fixture the Detections cards, the
- *   summary strip and the support report all agree with the pure view
+ *   overview tiles and the support report all agree with the pure view
  *   model over the same served payload (summary/card consistency); the
  *   headers page lists every verdict with its evidence tone; names-only
  *   cookies never carry a value; and both clipboard forms (one row, all
@@ -195,7 +195,7 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
       const served = await readServedPayload(extension, fixture);
 
       // --- Detections: the rendered card set IS the view model over this
-      // payload (ids, names, verdicts), and the summary strip's headline
+      // payload (ids, names, verdicts), and the overview's headline
       // counts exactly what the cards say Active.
       const detections = panel.locator('[data-fdt-page="detections"]');
       await expect(detections.getByRole('heading', { level: 1, name: 'Detections' })).toBeVisible();
@@ -451,9 +451,11 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
       expect(cardIds).not.toContain('server');
       expect(cardIds).not.toContain('known-platform');
       expect(cardIds).not.toContain('cached');
-      // The strip says the absence (WP Rocket not detected on a plain page).
+      // The WP Rocket tile says the absence (neutral) and what it looked for.
+      const wprTile = panel.locator('[data-fdt-overview-tile="wpr"]');
+      await expect(wprTile.locator('[data-fdt="stat-tile-value"]')).toHaveText('Not detected');
       await expect(panel.locator('[data-fdt-summary-fact="wpr"]')).toContainText(
-        'WP Rocket was not detected'
+        'No generator tag, cache signature or optimization unique to WP Rocket found'
       );
 
       // Headers & Cookies on a null capture: the empty state, plus NO

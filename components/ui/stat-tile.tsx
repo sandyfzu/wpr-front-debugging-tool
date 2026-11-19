@@ -52,6 +52,12 @@ export interface StatTileLink {
 export interface StatTileProps {
   /** What the value is (e.g. "Page cache"). */
   label: string;
+  /**
+   * Keep the label out of sight (still in the text, `sr-only`) — for a tile
+   * whose value already says what it is (a sentence such as "4 of 18
+   * optimizations active"), where a painted label would repeat it. Default false.
+   */
+  hideLabel?: boolean;
   /** Icon leading the label (14 px, decorative). */
   icon?: LucideIcon;
   /** Icon tone (default `muted`, the label's own). */
@@ -80,6 +86,7 @@ export interface StatTileProps {
  * the parent grid decides the columns through its container queries.
  *
  * @param props.label The value's label.
+ * @param props.hideLabel Keep the label unpainted (text only).
  * @param props.icon Optional label icon.
  * @param props.iconTone The icon's tone.
  * @param props.media Optional leading visual.
@@ -105,7 +112,11 @@ export function StatTile(props: StatTileProps): JSX.Element {
         <div class="flex min-w-0 flex-1 flex-col gap-1">
           <p
             data-fdt="stat-tile-label"
-            class="flex min-w-0 items-center gap-1.5 text-2xs font-medium text-fg-muted"
+            class={
+              props.hideLabel === true
+                ? 'sr-only'
+                : 'flex min-w-0 items-center gap-1.5 text-2xs font-medium text-fg-muted'
+            }
           >
             <Show when={props.icon}>
               {(icon) => (

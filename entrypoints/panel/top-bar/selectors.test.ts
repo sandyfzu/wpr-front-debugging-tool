@@ -10,6 +10,7 @@ import type { FdtData, WprDetections } from '../../../lib/wp-rocket/types';
 import type { DataState } from '../state/fdt-state-machine';
 import { formatCacheTimestamp } from '../../../lib/detection/describe';
 import {
+  cacheAnswerTone,
   DATA_STALE_AFTER_MS,
   STALE_WINDOW_MINUTES,
   cacheSegment,
@@ -217,6 +218,23 @@ describe('cacheSegment', () => {
         NOW_MS
       )
     ).toMatchObject({ kind: 'bypass-requested', copy: { chip: 'Bypass requested' } });
+  });
+});
+
+describe('cacheAnswerTone', () => {
+  const copy = { chip: 'c', tooltip: 't', report: 'r' };
+  it.each([
+    [{ kind: 'cached', age: '3 min ago', copy }, 'ok'],
+    [{ kind: 'cached', age: null, copy }, 'ok'],
+    [{ kind: 'uncertain-signature', copy }, 'warn'],
+    [{ kind: 'possibly-cached', copy }, 'warn'],
+    [{ kind: 'not-detected', copy }, 'neutral'],
+    [{ kind: 'bypass-requested', copy }, 'neutral'],
+    [{ kind: 'loading' }, null],
+    [{ kind: 'unavailable' }, null],
+    [{ kind: 'not-applicable' }, null]
+  ] as const)('%o → %s', (view, tone) => {
+    expect(cacheAnswerTone(view)).toBe(tone);
   });
 });
 

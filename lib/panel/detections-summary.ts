@@ -1,7 +1,7 @@
 /**
  * The Detections summary: the page-level facts (plugin presence + version,
  * cache state + stamp, platform, server, active-optimization count) read
- * off the SAME status items the cards render — so the summary strip, the
+ * off the SAME status items the cards render — so the overview tiles, the
  * cards and the support report can never disagree about one page.
  *
  * Pure: no clock (relative ages are the renderer's job), no DOM.
@@ -56,10 +56,15 @@ export interface DetectionsSummary {
    * turned off here (`builderTurnsOff`) — the gap's reason — plus how many
    * the extension simulated here (verified; never counted active: WP Rocket
    * did not serve them) and how many carry an unverified simulation marker.
+   * `active` + `collecting` + `off` = `total` ({@link optimizationBucket}).
    */
   readonly optimizations: {
     readonly active: number;
     readonly total: number;
+    /** Enabled but still gathering data (`collecting`), so not active yet. */
+    readonly collecting: number;
+    /** Every other optimization: not served, unknown, or turned off in this tab. */
+    readonly off: number;
     readonly offInTab: number;
     readonly simulated: number;
     readonly unverified: number;
@@ -121,11 +126,29 @@ export function isActiveInTab(item: StatusItem): boolean {
   return item.status === 'active' && !builderTurnsOff(item.builder);
 }
 
+/** The three status buckets every optimization card falls in exactly once. */
+export type OptimizationBucket = 'active' | 'collecting' | 'off';
+
+/**
+ * The status bucket of an optimization card — the one rule the summary's
+ * counts (and any status filter) share: `active` = {@link isActiveInTab};
+ * `collecting` = still gathering data (never active, so the two cannot
+ * overlap); `off` = everything else — not served, an unknown verdict, or
+ * served yet turned off in this tab by the Exclusion Builder.
+ *
+ * @param item An optimization card.
+ * @returns Its bucket.
+ */
+export function optimizationBucket(item: StatusItem): OptimizationBucket {
+  if (isActiveInTab(item)) return 'active';
+  return item.status === 'collecting' ? 'collecting' : 'off';
+}
+
 /**
  * Summarize one card list (the output of `buildStatusItems`).
  *
  * Every fact is read from a card, never from the raw payload, which is what
- * makes strip ↔ card consistency structural: a fact the cards do not state
+ * makes overview ↔ card consistency structural: a fact the cards do not state
  * cannot appear in the summary.
  *
  * @param items The status cards, in render order.
@@ -173,7 +196,7 @@ export function summarizeDetections(
   const serverDetail = byId.get('server')?.detail;
   const platformDetail = byId.get('known-platform')?.detail;
 
-  let active = 0;
+  const buckets: Record<OptimizationBucket, number> = { active: 0, collecting: 0, off: 0 };
   let total = 0;
   let offInTab = 0;
   let simulated = 0;
@@ -183,9 +206,9 @@ export function summarizeDetections(
     total += 1;
     if (item.simulation === 'simulated') simulated += 1;
     else if (item.simulation === 'unverified') unverified += 1;
-    if (isActiveInTab(item)) active += 1;
+    buckets[optimizationBucket(item)] += 1;
     // Served, yet not counted active only because the builder turned it off.
-    else if (item.status === 'active' && builderTurnsOff(item.builder)) offInTab += 1;
+    if (item.status === 'active' && builderTurnsOff(item.builder)) offInTab += 1;
   }
 
   return {
@@ -196,7 +219,15 @@ export function summarizeDetections(
       platformDetail?.kind === 'platform'
         ? { name: platformDetail.name, header: platformDetail.header }
         : null,
-    optimizations: { active, total, offInTab, simulated, unverified },
+    optimizations: {
+      active: buckets.active,
+      total,
+      collecting: buckets.collecting,
+      off: buckets.off,
+      offInTab,
+      simulated,
+      unverified
+    },
     wordpressVersion: facts.wordpressVersion ?? null,
     // A host layer is a cache question only on a page WP Rocket handled.
     cacheLayer: wpr.present ? (facts.cacheLayer ?? null) : null

@@ -137,7 +137,15 @@ describe('PanelApp boot states', () => {
       const placeholders = document.querySelectorAll(
         '[data-fdt-page="fetching"] [data-fdt="skeleton"]'
       );
-      expect(placeholders).toHaveLength(3);
+      // Three page bars everywhere; Detections adds its overview's four tile placeholders.
+      const overview = document.querySelector(
+        '[data-fdt-page="fetching"] [data-fdt="detections-overview-skeleton"]'
+      );
+      expect(overview !== null).toBe(id === 'detections');
+      expect(placeholders).toHaveLength(id === 'detections' ? 7 : 3);
+      expect(overview?.querySelectorAll('[data-fdt="skeleton"]').length ?? 0).toBe(
+        id === 'detections' ? 4 : 0
+      );
       for (const placeholder of placeholders) {
         if (!placeholder.classList.contains('w-full'))
           expect(placeholder.classList).toContain('max-w-full');

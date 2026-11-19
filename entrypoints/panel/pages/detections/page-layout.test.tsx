@@ -2,7 +2,7 @@
  * The Detections layout modes: the pure class selectors (Adaptive pinned to
  * today's grid and card classes, List bounded with no card chrome or lift),
  * the control, and a switch that only swaps classes — filter selection, card
- * nodes, focus, page facts, the strip and the report all stay.
+ * nodes, focus, page facts, the overview and the report all stay.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { createSignal, Show } from 'solid-js';
@@ -164,7 +164,7 @@ describe('DetectionsView layout', () => {
     expect(grid.dataset.fdtLayout).toBe('list');
     expect(grid.className).toBe(detectionsGridClass('list'));
     expect(el('[data-fdt="detections-controls"]').className).toContain(DETECTIONS_LIST_COLUMN);
-    // The strip keeps the page canvas.
+    // The overview keeps the page canvas.
     expect(el('[data-fdt="detections-summary"]').className).not.toContain('max-w-4xl');
     expect(card('wpr').className).toBe(STATUS_LIST_ROW_SURFACE);
     const link = card('delay_js');

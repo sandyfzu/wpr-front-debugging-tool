@@ -3,7 +3,7 @@
  * builder changed carries its modifier badge (icon + short text) and the
  * full sentence as a visible line, spoken once, beside the unchanged served
  * verdict; a fact on a row WP Rocket did not serve shows the modifier alone;
- * the summary strip counts per O-N3; a page with no fact shows nothing.
+ * the overview counts per O-N3; a page with no fact shows nothing.
  */
 import { cleanup, render } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -148,7 +148,7 @@ describe('the modifier on the cards', () => {
   });
 });
 
-describe('the summary strip counts (O-N3)', () => {
+describe('the overview counts (O-N3)', () => {
   it('counts Delay off and Defer page-off as inactive, Lazyload excluded as active', () => {
     render(() => <DetectionsView data={data(null)} now={0} />);
     const plain = activeLine();

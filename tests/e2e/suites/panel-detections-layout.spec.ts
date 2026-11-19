@@ -79,6 +79,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
       const group = root.getByRole('radiogroup', { name: 'Detection layout' });
       const grid = root.locator('[data-fdt="detections-grid"]');
       const link = root.locator('a[data-fdt="status-card"]').first();
+      /** The score ring's rendered side (px): it follows the page container's tier. */
+      const ringSide = (): Promise<number> =>
+        root
+          .locator('[data-fdt="score-ring"]')
+          .evaluate((el) => Math.round(el.getBoundingClientRect().width));
       /** How many document animations are still running (reduced motion: none should linger). */
       const runningAnimations = (): Promise<number> =>
         panel.evaluate(
@@ -91,6 +96,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await panel.setViewportSize({ width: 320, height: 800 });
       await expect(group).toBeHidden();
       expect(await scrollsSideways(panel)).toBe(false);
+      // Polled: container queries settle a frame after the resize.
+      await expect.poll(ringSide, 'ring at compact').toBe(44);
 
       // Wide Adaptive: a multi-column card grid, cards with their own chrome.
       await panel.setViewportSize({ width: 1280, height: 800 });
@@ -98,6 +105,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await expect(radio(panel, 'adaptive')).toBeChecked();
       // Polled: container queries settle a frame after the resize.
       await expect.poll(async () => (await geometry(panel)).lefts.length).toBeGreaterThan(1);
+      await expect.poll(ringSide, 'ring from regular up').toBe(52);
       await expect.poll(async () => (await chrome(link)).border).toBe('1px');
 
       // Filter first, so the switch is seen keeping it.
@@ -140,11 +148,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await lifting.hover();
       await expect.poll(runningAnimations).toBe(0);
       expect((await chrome(lifting)).shadow).toBe('none');
-      // The strip keeps the page canvas (wider than the list column).
-      const stripWidth = await root
+      // The overview keeps the page canvas (wider than the list column).
+      const overviewWidth = await root
         .locator('[data-fdt="detections-summary"]')
         .evaluate((el) => el.getBoundingClientRect().width);
-      expect(stripWidth).toBeGreaterThan(wide.gridWidth);
+      expect(overviewWidth).toBeGreaterThan(wide.gridWidth);
 
       // Arrow back (from the checked radio), then Space on a focused unchecked one.
       await radio(panel, 'list').focus();

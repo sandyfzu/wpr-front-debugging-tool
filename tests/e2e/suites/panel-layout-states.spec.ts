@@ -67,10 +67,14 @@ async function canvasGeometry(panel: Page, id: string): Promise<{ left: number; 
       right: regionRight - box.right,
       overflow: element.scrollWidth - element.clientWidth,
       bodyOverflow: body.scrollWidth - body.clientWidth,
-      barsContained: [...body.querySelectorAll('[data-fdt="skeleton"]')].every((bar) => {
-        const rect = bar.getBoundingClientRect();
-        return rect.left >= contentLeft && rect.right <= contentRight;
-      })
+      // Bars the layout does not render (a placeholder hidden at this width, e.g. the
+      // Detections overview's WP Rocket tile at compact) have no box to contain.
+      barsContained: [...body.querySelectorAll('[data-fdt="skeleton"]')]
+        .filter((bar) => bar.checkVisibility())
+        .every((bar) => {
+          const rect = bar.getBoundingClientRect();
+          return rect.left >= contentLeft && rect.right <= contentRight;
+        })
     };
   });
   const cap = id === 'undefined-references' ? 896 : 1280;

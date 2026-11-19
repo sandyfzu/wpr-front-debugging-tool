@@ -188,6 +188,42 @@ export function cacheSegment(data: FdtData | null, nowMs: number): CacheSegmentV
   }
 }
 
+/** The status kinds a cache answer can wear (ok = cached; warn = conflicting evidence). */
+export type CacheAnswerTone = 'ok' | 'warn' | 'neutral';
+
+/** The cache answers that state a verdict (each carries the copy module's pair). */
+export type CacheVerdictView = Extract<CacheSegmentView, { readonly copy: CacheCopy }>;
+
+/**
+ * The status kind a cache answer wears wherever it is shown (the bar's pill,
+ * the Detections cache tile), so one state never reads in two colors: ok for
+ * cached, warn only for conflicting evidence (a signature without its stamp,
+ * a host marker without a signature), neutral for `not-detected` and the
+ * bypass request (intent, not a fault).
+ *
+ * @param view The cache answer.
+ * @returns Its kind, or null for the states that show no verdict (no data
+ *   yet, unavailable, not applicable) — a verdict view's type drops the null.
+ */
+export function cacheAnswerTone(view: CacheVerdictView): CacheAnswerTone;
+export function cacheAnswerTone(view: CacheSegmentView): CacheAnswerTone | null;
+export function cacheAnswerTone(view: CacheSegmentView): CacheAnswerTone | null {
+  switch (view.kind) {
+    case 'cached':
+      return 'ok';
+    case 'uncertain-signature':
+    case 'possibly-cached':
+      return 'warn';
+    case 'not-detected':
+    case 'bypass-requested':
+      return 'neutral';
+    case 'loading':
+    case 'unavailable':
+    case 'not-applicable':
+      return null;
+  }
+}
+
 /**
  * Resolve the platform/server answer from the captured response headers,
  * case-insensitively (HTTP/2 sends lowercase names): the `server` header's

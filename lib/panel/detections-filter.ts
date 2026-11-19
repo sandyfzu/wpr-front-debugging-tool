@@ -34,7 +34,7 @@ export const DETECTION_FILTER_LABEL = 'Optimization status';
 /**
  * Which bucket an optimization card falls in. Uses the summary's counting
  * rule ({@link isActiveInTab}), so the Active chip's count always equals the
- * strip's "N of M active": a served card the Exclusion Builder turned off
+ * overview's "N of M active": a served card the Exclusion Builder turned off
  * here (feature-wide or page-off) is inactive; excluded rows leave it active.
  *
  * @param item An optimization card.
