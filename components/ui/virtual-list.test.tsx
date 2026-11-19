@@ -569,3 +569,145 @@ describe('VirtualList — scroll requests', () => {
     expect(document.querySelector('[data-fdt-row="0"]')).not.toBeNull();
   });
 });
+
+describe('VirtualList — sticky rows', () => {
+  /** The core itself, over a laid-out viewport (happy-dom lays out none). */
+  const VIEWPORT = { width: 320, height: 400 };
+  const real: VirtualizerFactory = (options) =>
+    createVirtualizer(
+      mergeProps(options, {
+        initialRect: VIEWPORT,
+        observeElementRect: (_: unknown, report: (rect: typeof VIEWPORT) => void) => {
+          report(VIEWPORT);
+          return () => undefined;
+        }
+      })
+    );
+
+  /** Every rendered row's index, in DOM order. */
+  const renderedIndexes = (): number[] =>
+    [...document.querySelectorAll('[data-fdt-virtual-spacer] > [data-index]')].map((el) =>
+      Number(el.getAttribute('data-index'))
+    );
+
+  /** The stuck row element(s). */
+  const stuckRows = (): HTMLElement[] => [
+    ...document.querySelectorAll<HTMLElement>('[data-fdt-virtual-spacer] > [data-fdt-stuck]')
+  ];
+
+  /**
+   * Scroll the list's own scroller to an offset (the core reads it on the
+   * scroll event).
+   *
+   * @param top The scroll offset (px).
+   */
+  function scrollListTo(top: number): void {
+    const scroller = document.querySelector<HTMLElement>('[data-fdt="virtual-list"]');
+    if (scroller === null) throw new Error('no scroller');
+    scroller.scrollTop = top;
+    scroller.dispatchEvent(new Event('scroll'));
+  }
+
+  it('is opt-in: no extractor, no stuck row, no scroll padding without sticky indexes', () => {
+    const p = probe([row(0, 0, 40)], 40);
+    render(() => (
+      <VirtualList count={1} estimateSize={() => 40} createVirtualizer={p.factory}>
+        {(): JSX.Element => <span />}
+      </VirtualList>
+    ));
+    expect(p.options?.rangeExtractor).toBeUndefined();
+    expect(p.options?.scrollPaddingStart).toBeUndefined();
+    expect(stuckRows()).toEqual([]);
+    const scroller = document.querySelector<HTMLElement>('[data-fdt="virtual-list"]');
+    expect(scroller?.style.getPropertyValue('scroll-padding-top')).toBe('');
+    // An empty list of sticky rows is the same as none.
+    cleanup();
+    render(() => (
+      <VirtualList
+        count={1}
+        estimateSize={() => 40}
+        stickyIndexes={[]}
+        createVirtualizer={p.factory}
+      >
+        {(): JSX.Element => <span />}
+      </VirtualList>
+    ));
+    expect(p.options?.rangeExtractor).toBeUndefined();
+  });
+
+  it('passes the scroll padding to the core and to the scroller CSS', () => {
+    const p = probe([row(0, 0, 40)], 40);
+    render(() => (
+      <VirtualList
+        count={1}
+        estimateSize={() => 40}
+        scrollPaddingStart={48}
+        createVirtualizer={p.factory}
+      >
+        {(): JSX.Element => <span />}
+      </VirtualList>
+    ));
+    expect(p.options?.scrollPaddingStart).toBe(48);
+    const scroller = document.querySelector<HTMLElement>('[data-fdt="virtual-list"]');
+    expect(scroller?.style.getPropertyValue('scroll-padding-top')).toBe('48px');
+  });
+
+  it('keeps the active heading rendered and sticky (untranslated) as the list scrolls', () => {
+    render(() => (
+      <VirtualList
+        count={60}
+        estimateSize={() => 40}
+        overscan={1}
+        stickyIndexes={[0, 10, 30]}
+        createVirtualizer={real}
+      >
+        {(item) => <span data-fdt-label>{String(item.index)}</span>}
+      </VirtualList>
+    ));
+    expect(stuckRows().map((el) => el.getAttribute('data-index'))).toEqual(['0']);
+    const [first] = stuckRows();
+    expect(first?.style.position).toBe('sticky');
+    expect(first?.style.top).toBe('0px');
+    expect(first?.style.transform).toBe('');
+    // Row 15 at the top (600 px): heading 10 is outside the overscanned
+    // window (14–…) yet rendered first and stuck; heading 0 is gone.
+    scrollListTo(600);
+    expect(stuckRows().map((el) => el.getAttribute('data-index'))).toEqual(['10']);
+    expect(renderedIndexes()[0]).toBe(10);
+    expect(renderedIndexes()).not.toContain(0);
+    expect(renderedIndexes().slice(1, 3)).toEqual([14, 15]);
+    // Every other row stays translated at its offset.
+    const translated = document.querySelector<HTMLElement>('[data-index="15"]');
+    expect(translated?.style.position).toBe('absolute');
+    expect(translated?.style.transform).toBe('translateY(600px)');
+    // Back above heading 10: it unsticks and returns to its translated slot.
+    scrollListTo(160);
+    expect(stuckRows().map((el) => el.getAttribute('data-index'))).toEqual(['0']);
+    const ten = document.querySelector<HTMLElement>('[data-index="10"]');
+    expect(ten?.style.position).toBe('absolute');
+    expect(ten?.style.transform).toBe('translateY(400px)');
+  });
+
+  it('follows a new sticky list, and drops the stuck row when it empties', () => {
+    const [sticky, setSticky] = createSignal<readonly number[]>([0, 10]);
+    render(() => (
+      <VirtualList
+        count={60}
+        estimateSize={() => 40}
+        overscan={1}
+        stickyIndexes={sticky()}
+        createVirtualizer={real}
+      >
+        {(item) => <span data-fdt-label>{String(item.index)}</span>}
+      </VirtualList>
+    ));
+    scrollListTo(600);
+    expect(stuckRows().map((el) => el.getAttribute('data-index'))).toEqual(['10']);
+    // A filter moved the headings: the window re-extracts at the same range.
+    setSticky([0, 12]);
+    expect(stuckRows().map((el) => el.getAttribute('data-index'))).toEqual(['12']);
+    setSticky([]);
+    expect(stuckRows()).toEqual([]);
+    expect(renderedIndexes()).not.toContain(12);
+  });
+});

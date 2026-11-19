@@ -22,6 +22,8 @@ import {
   isoStamp,
   NO_CACHING_HEADERS_NOTE,
   NO_COOKIES_NOTE,
+  COOKIES_LEAD,
+  sectionIndexes,
   shownStamp,
   type InventoryRow
 } from './inventory';
@@ -63,6 +65,7 @@ describe('buildInventory', () => {
       'header:other:set-cookie#0',
       'header:other:x-empty#0',
       'section:section:cookies',
+      'lead:lead:cookies',
       'cookie:cookie:wpr_a',
       'cookie:cookie:b'
     ]);
@@ -103,10 +106,11 @@ describe('buildInventory', () => {
     );
   });
 
-  it('keeps the cookie section with its note when the capture read no names', () => {
+  it('keeps the cookie section with its lead and note when the capture read no names', () => {
     const inventory = inventoryOf(CAPTURE, { names: [], capturedAt: 5 });
-    expect(inventory.rows.slice(-2)).toEqual([
+    expect(inventory.rows.slice(-3)).toEqual([
       { kind: 'section', id: 'section:cookies', section: 'cookies', count: 0 },
+      { kind: 'lead', id: 'lead:cookies', section: 'cookies', text: COOKIES_LEAD },
       { kind: 'note', id: 'note:cookies', text: NO_COOKIES_NOTE }
     ]);
   });
@@ -117,7 +121,11 @@ describe('buildInventory', () => {
   ] as const)('resolves %s headers to no header rows (the page empty state)', (_label, headers) => {
     const withCookies = inventoryOf(headers, { names: ['a'], capturedAt: 1 });
     expect(withCookies.hasHeaders).toBe(false);
-    expect(shape(withCookies.rows)).toEqual(['section:section:cookies', 'cookie:cookie:a']);
+    expect(shape(withCookies.rows)).toEqual([
+      'section:section:cookies',
+      'lead:lead:cookies',
+      'cookie:cookie:a'
+    ]);
     const bare = inventoryOf(headers);
     expect(bare).toEqual({ hasHeaders: false, hasCookies: false, rows: [] });
   });
@@ -206,6 +214,7 @@ describe("filterInventory — the page's name filter", () => {
     const rows = inventoryOf(CAPTURE, { names: ['wpr_cookie'], capturedAt: 1 }).rows;
     expect(filteredShape(filterInventory(rows, 'wpr'))).toEqual([
       'section:section:cookies',
+      'lead:lead:cookies',
       'cookie:cookie:wpr_cookie(wpr_cookie)'
     ]);
   });
@@ -273,6 +282,34 @@ describe("filterInventory — the page's name filter", () => {
     ]);
   });
 
+  it('keeps a lead with its surviving section and drops it with a section that has no match', () => {
+    const rows = inventoryOf(CAPTURE, { names: ['wpr_cookie'], capturedAt: 1 }).rows;
+    // The lead names the section's limits: it holds for any subset of its rows.
+    expect(filteredShape(filterInventory(rows, 'wpr_c'))).toEqual([
+      'section:section:cookies',
+      'lead:lead:cookies',
+      'cookie:cookie:wpr_cookie(wpr_cookie)'
+    ]);
+    // A query matching only headers drops the cookie section, lead included.
+    expect(shape(filterInventory(rows, 'age'))).not.toContain('lead:lead:cookies');
+  });
+
+  it('never matches a lead by its text, and drops a lead above every heading', () => {
+    const rows: InventoryRow[] = [
+      { kind: 'lead', id: 'lead:orphan', section: 'cookies', text: 'names only' },
+      { kind: 'section', id: 'section:cookies', section: 'cookies', count: 1 },
+      { kind: 'lead', id: 'lead:cookies', section: 'cookies', text: 'names only' },
+      { kind: 'cookie', id: 'cookie:a', name: 'a' }
+    ];
+    expect(inventoryItemName(rows[0] as InventoryRow)).toBeNull();
+    expect(filterInventory(rows, 'names')).toEqual([]);
+    expect(shape(filterInventory(rows, 'a'))).toEqual([
+      'section:section:cookies',
+      'lead:lead:cookies',
+      'cookie:cookie:a'
+    ]);
+  });
+
   it('repeated names all match, each keeping its occurrence row', () => {
     const rows = inventoryOf([
       { name: 'Link', value: '<a>' },
@@ -328,6 +365,21 @@ describe('copy payloads', () => {
   });
 });
 
+describe('sectionIndexes', () => {
+  it('lists the headings of the rendered rows, ascending', () => {
+    const rows = inventoryOf(CAPTURE, { names: ['a'], capturedAt: 1 }).rows;
+    // caching heading + 3, other heading + 4, cookies heading + lead + 1.
+    expect(sectionIndexes(rows)).toEqual([0, 4, 9]);
+    // 'a': all three caching rows, Date, then the cookie (with its lead).
+    expect(sectionIndexes(filterInventory(rows, 'a'))).toEqual([0, 4, 6]);
+  });
+
+  it('is empty for a list without headings', () => {
+    expect(sectionIndexes([])).toEqual([]);
+    expect(sectionIndexes([{ kind: 'cookie', id: 'cookie:a', name: 'a' }])).toEqual([]);
+  });
+});
+
 describe('estimateRowHeight', () => {
   it('seeds every row kind with a positive height close to its render', () => {
     const rows: InventoryRow[] = [
@@ -358,9 +410,12 @@ describe('estimateRowHeight', () => {
         occurrences: 1
       },
       { kind: 'cookie', id: 'c', name: 'n' },
-      { kind: 'note', id: 'n', text: 't' }
+      { kind: 'note', id: 'n', text: 't' },
+      { kind: 'lead', id: 'l', section: 'cookies', text: 't' }
     ];
-    expect(rows.map(estimateRowHeight)).toEqual([40, 64, 44, 62, 44, 32, 32]);
+    // Sections: the 36 px band + 12 px spacing; one-line rows 36 (T-3), a
+    // hint's second line +18; the tinted note's 8 px insets; the lead line.
+    expect(rows.map(estimateRowHeight)).toEqual([48, 48, 36, 54, 36, 36, 40, 32]);
   });
 });
 

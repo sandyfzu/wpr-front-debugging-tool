@@ -53,7 +53,7 @@ export const COOKIES_LEAD =
  */
 export const INVENTORY_NOUN: CountNoun = { one: 'entry', other: 'entries' };
 
-/** One row of the flattened inventory. */
+/** One row of the flattened inventory (headings stick; notes and leads are scaffold). */
 export type InventoryRow =
   | {
       readonly kind: 'section';
@@ -74,7 +74,15 @@ export type InventoryRow =
       readonly occurrences: number;
     }
   | { readonly kind: 'cookie'; readonly id: string; readonly name: string }
-  | { readonly kind: 'note'; readonly id: string; readonly text: string };
+  /** A capture note: what the capture shows by its absence (dropped under a filter). */
+  | { readonly kind: 'note'; readonly id: string; readonly text: string }
+  /** A section's standing lead: its limits, kept with the section under a filter. */
+  | {
+      readonly kind: 'lead';
+      readonly id: string;
+      readonly section: InventorySectionId;
+      readonly text: string;
+    };
 
 /** The page's renderable inventory. */
 export interface Inventory {
@@ -177,9 +185,10 @@ export function headerCopyLabel(row: Extract<InventoryRow, { kind: 'header' }>):
 
 /**
  * Build the page's inventory: the caching group, the other headers, then the
- * cookie names. A payload without the cookie capture (older content scripts)
- * yields no cookie section at all; a capture that read no names yields the
- * section with its one-line note.
+ * cookie names under their lead (both limits of the capture). A payload
+ * without the cookie capture (older content scripts) yields no cookie section
+ * at all; a capture that read no names yields the section, its lead and its
+ * one-line note.
  *
  * @param headers The shared headers model of the payload.
  * @param cookies The payload's cookie capture, or undefined when it lacks one.
@@ -195,12 +204,10 @@ export function buildInventory(
     ...headerSection('other', headers.other, hasHeaders)
   ];
   if (cookies !== undefined) {
-    rows.push({
-      kind: 'section',
-      id: 'section:cookies',
-      section: 'cookies',
-      count: cookies.names.length
-    });
+    rows.push(
+      { kind: 'section', id: 'section:cookies', section: 'cookies', count: cookies.names.length },
+      { kind: 'lead', id: 'lead:cookies', section: 'cookies', text: COOKIES_LEAD }
+    );
     if (cookies.names.length === 0) {
       rows.push({ kind: 'note', id: 'note:cookies', text: NO_COOKIES_NOTE });
     } else {
@@ -241,7 +248,8 @@ export function inventoryItemName(row: InventoryRow): string | null {
  *
  * - a section heading survives only when its section holds a match, and its
  *   count badge states the matching count (the badge never lies about what
- *   the filtered list shows);
+ *   the filtered list shows); its lead survives with it (the section's
+ *   limits hold for any subset of its rows);
  * - the capture notes (`NO_CACHING_HEADERS_NOTE`, `NO_COOKIES_NOTE`) drop —
  *   they describe the capture, and under a filter they would read as
  *   "nothing matches"; the page's filtered-empty state speaks instead;
@@ -261,20 +269,25 @@ export function filterInventory(
   const out: InventoryRow[] = [];
   let pending: {
     section: Extract<InventoryRow, { kind: 'section' }>;
+    leads: InventoryRow[];
     items: InventoryRow[];
   } | null = null;
   const flushSection = (): void => {
     if (pending === null || pending.items.length === 0) return;
     out.push({ ...pending.section, count: pending.items.length });
-    out.push(...pending.items);
+    out.push(...pending.leads, ...pending.items);
   };
   for (const row of rows) {
     if (row.kind === 'section') {
       flushSection();
-      pending = { section: row, items: [] };
+      pending = { section: row, leads: [], items: [] };
       continue;
     }
     if (row.kind === 'note') continue;
+    if (row.kind === 'lead') {
+      pending?.leads.push(row);
+      continue;
+    }
     const name = inventoryItemName(row);
     if (name === null || !name.toLowerCase().includes(needle)) continue;
     if (pending === null) out.push(row);
@@ -285,8 +298,19 @@ export function filterInventory(
 }
 
 /**
+ * The indexes of the section headings in a rendered row list — the rows the
+ * page's list keeps stuck to its top while their section scrolls.
+ *
+ * @param rows The rendered rows, in order.
+ * @returns The headings' indexes, ascending.
+ */
+export function sectionIndexes(rows: readonly InventoryRow[]): number[] {
+  return rows.flatMap((row, index) => (row.kind === 'section' ? [index] : []));
+}
+
+/**
  * The seed height (px) of a row before measurement corrects it — close to
- * the rendered heights so the first paint barely shifts.
+ * the rendered heights at the regular width so the first paint barely shifts.
  *
  * @param row The row to estimate.
  * @returns The seed height in px.
@@ -294,13 +318,17 @@ export function filterInventory(
 export function estimateRowHeight(row: InventoryRow): number {
   switch (row.kind) {
     case 'section':
-      return row.section === 'cookies' ? 64 : 40;
+      // The 36 px band plus the spacing above every heading but the first.
+      return 48;
     case 'header':
       // A hint adds a second line (a withheld value is one line: its
       // marker never carries a hint).
-      return row.header.hint === null ? 44 : 62;
+      return row.header.hint === null ? 36 : 54;
     case 'cookie':
+      return 36;
     case 'note':
+      return 40;
+    case 'lead':
       return 32;
   }
 }
