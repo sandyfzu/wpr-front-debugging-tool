@@ -10,12 +10,17 @@
  *   the choice and moves the appearance row (the page stays clean: the
  *   pick wrote at once);
  * - a pick in the panel moves the open options page's row and menu live
- *   (the row held no unsaved edit).
+ *   (the row held no unsaved edit);
+ * - the menu's code stays off the page's start set (walked from the build
+ *   the way the budget gate walks it), yet a first Enter opens it.
  *
  * Every write goes through shipped code; the suite only resets the item.
  */
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { expect, test } from '../helpers/extension';
+import { startSet } from '../../../scripts/budget-start-set.mjs';
+import { EXTENSION_PATH, expect, test } from '../helpers/extension';
 import { settleFrames } from '../helpers/frames';
 import { openPanelForFixture } from '../helpers/panel-data';
 import {
@@ -39,6 +44,37 @@ const RESTYLE_POLL: { timeout: number; intervals: number[] } = {
 
 /** The badge row's storage id (the dirty-making toggle, last on the page). */
 const BADGE_ROW_ID = 'toolbarBadge';
+
+/**
+ * Code only the appearance menu's own chunk carries: floating-ui's platform
+ * hook (a property name, so minification keeps it) and the Kobalte menu
+ * content's style key. Either in the options start set means the menu's
+ * code moved back onto the page's start, under whatever chunk name.
+ */
+const MENU_CODE_MARKERS: readonly RegExp[] = [
+  /convertOffsetParentRelativeRectToViewportRelativeRect/u,
+  /["'`]--kb-menu-content-transform-origin["'`]/u
+];
+
+/**
+ * The options page's start set in the built bundle: each file the page
+ * loads before it runs (its module scripts, preloads and their static
+ * imports), with its code.
+ *
+ * @returns Each start file's code, by build-relative path.
+ * @throws {@link Error} When the walk could not complete (it would under-count).
+ */
+function optionsStartSet(): ReadonlyMap<string, string> {
+  const present = new Set(
+    readdirSync(EXTENSION_PATH, { recursive: true, encoding: 'utf8' }).map((file) =>
+      file.split(path.sep).join('/')
+    )
+  );
+  const read = (file: string): string => readFileSync(path.join(EXTENSION_PATH, file), 'utf8');
+  const { files, problems } = startSet('options.html', present, read);
+  if (problems.length > 0) throw new Error(`options start set incomplete: ${problems.join('; ')}`);
+  return new Map(files.map((file) => [file, read(file)]));
+}
 
 /** A document's appearance trigger (its name starts with "Appearance:"). */
 function trigger(page: Page): ReturnType<Page['getByRole']> {
@@ -142,6 +178,38 @@ test.describe('the options app bar', () => {
       expect((await label.boundingBox())?.width ?? 0, 'the label at 520 px').toBeGreaterThan(20);
     } finally {
       await resetStoredOptions(extension);
+      await page.close();
+    }
+  });
+
+  test('the menu’s code stays off the start, and a first key press opens it at its first row', async ({
+    extension
+  }) => {
+    await resetStoredOptions(extension);
+    const page = await openOptionsPage(extension, { colorScheme: 'light' });
+    try {
+      // Off the start: no start file is the menu's chunk or carries its code (it is fetched
+      // later, by the idle prefetch or the first press) …
+      const start = optionsStartSet();
+      expect([...start.keys()].some((file) => file.startsWith('chunks/options-'))).toBe(true);
+      for (const [file, source] of start) {
+        expect(file, 'the menu chunk on the start').not.toMatch(/appearance-menu-/u);
+        for (const marker of MENU_CODE_MARKERS)
+          expect(source, `${file} ${String(marker)}`).not.toMatch(marker);
+      }
+      // … yet the trigger is there at once, and Enter opens the menu on the first press.
+      await trigger(page).focus();
+      await page.keyboard.press('Enter');
+      const menu = page.getByRole('menu');
+      await expect(menu).toBeVisible();
+      await expect(menu.getByRole('menuitemradio', { name: 'System' })).toBeFocused();
+      // The real menu answered (the stand-in, if it got the press, handed over).
+      await expect(page.locator('[data-fdt="appearance-menu-stand-in"]')).toHaveCount(0);
+      await expect(trigger(page)).toHaveAttribute('aria-expanded', 'true');
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      await expect(trigger(page)).toBeFocused();
+    } finally {
       await page.close();
     }
   });

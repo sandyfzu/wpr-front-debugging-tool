@@ -296,7 +296,11 @@ function EmptyResult(): JSX.Element {
       description={RESULT_EMPTY.description}
       fill
     >
-      <ul class="grid w-full max-w-120 grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2 pb-6">
+      {/* One column at compact, a clean three from @regular (auto-fit left 2 + 1). */}
+      <ul
+        data-fdt="rucss-empty-preview"
+        class="grid w-full max-w-120 grid-cols-1 gap-2 pb-6 @regular:grid-cols-3"
+      >
         <For each={RESULT_PREVIEW}>
           {([label, value]) => (
             <li class="flex flex-col gap-0.5 rounded-lg border border-line-1 bg-surface-1 p-2.5">

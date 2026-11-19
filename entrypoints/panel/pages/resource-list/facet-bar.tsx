@@ -23,6 +23,7 @@ import X from 'lucide-solid/icons/x';
 import { Button } from '../../../../components/ui/button';
 import { ChoiceGroup } from '../../../../components/ui/choice-group';
 import { FOCUS_RING } from '../../../../components/ui/classes';
+import { createKeyedChoices } from '../../../../components/ui/keyed-choices';
 import { Sheet } from '../../../../components/ui/sheet';
 import {
   activeFacetChips,
@@ -88,6 +89,11 @@ function FacetControl<Row, Id extends string>(props: {
   };
   const toggle = (): ReturnType<typeof toggleState> => toggleState(props.facet, counts(), value());
   const captionId = createUniqueId();
+  // Keyed by value: a pick or a count change patches the segments in place,
+  // so the focused radio survives (a fresh list would rebuild every segment).
+  const segments = createKeyedChoices(() =>
+    props.facet.kind === 'choice' ? choiceSegments(props.facet, counts(), value()) : []
+  );
   return (
     <Show
       when={props.facet.kind === 'choice'}
@@ -110,7 +116,7 @@ function FacetControl<Row, Id extends string>(props: {
           <ChoiceGroup
             variant="segmented"
             label={props.facet.label}
-            options={choiceSegments(props.facet, counts(), value())}
+            options={segments}
             value={value()}
             onChange={pick}
           />
@@ -124,7 +130,7 @@ function FacetControl<Row, Id extends string>(props: {
             variant="segmented"
             stretch
             aria-labelledby={captionId}
-            options={choiceSegments(props.facet, counts(), value())}
+            options={segments}
             value={value()}
             onChange={pick}
           />

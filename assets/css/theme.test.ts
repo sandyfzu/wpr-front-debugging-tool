@@ -201,6 +201,9 @@ const REQUIRED_PAIRS: RequiredPair[] = [
   ...FILL_SURFACES.map((background) => ({ foreground: 'accent-strong', background, min: 3 })),
   // A checked switch's thumb: a `surface-0` dot on the accent track (non-text).
   { foreground: 'surface-0', background: 'accent-strong', min: 3 },
+  // An unchecked switch's thumb: an `fg-muted` dot on its `surface-3` pill —
+  // the off state's only state cue, so it never fades into the pill.
+  { foreground: 'fg-muted', background: 'surface-3', min: 3 },
   // The open session-notes disclosure on a tinted banner (the accent fill
   // misses 3:1 on the dark soft tints): its `accent` border is the non-text
   // indicator, on each banner tint and on its own `surface-2` fill.

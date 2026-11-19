@@ -43,7 +43,6 @@
  */
 import type { JSX } from 'solid-js';
 import {
-  createComputed,
   createEffect,
   createMemo,
   createSignal,
@@ -53,8 +52,8 @@ import {
   Show,
   untrack
 } from 'solid-js';
-import { createStore, reconcile } from 'solid-js/store';
 import { ChoiceGroup, type ChoiceOption } from '../../../../components/ui/choice-group';
+import { createKeyedChoices } from '../../../../components/ui/keyed-choices';
 import { SearchField } from '../../../../components/ui/search-field';
 import { SOURCE_COPY } from '../../../../lib/detection/hud';
 import {
@@ -285,12 +284,9 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
   const [filter, setFilter] = createSignal<DetectionFilterId>('all');
   // Counts read the full row list, so the segments never count a narrowed view.
   const counts = createMemo(() => optimizationCounts(items()));
-  // A store reconciled by value: each segment keeps its object (so its DOM
-  // and focus) while counts and availability change under it.
-  const [options, setOptions] = createStore<ChoiceOption<DetectionFilterId>[]>([]);
-  createComputed(() => {
-    setOptions(reconcile(filterOptions(counts(), filter()), { key: 'value' }));
-  });
+  // Keyed by value: each segment keeps its DOM and focus while counts and
+  // availability change under it.
+  const options = createKeyedChoices(() => filterOptions(counts(), filter()));
   // Read once: the store is a per-mount input (the shell provides one).
   // eslint-disable-next-line solid/reactivity
   const search = props.search ?? createSearchStore();

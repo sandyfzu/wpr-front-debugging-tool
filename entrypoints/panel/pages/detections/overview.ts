@@ -42,6 +42,19 @@ export interface CacheStamp {
   readonly formatted: string;
 }
 
+/**
+ * A stamp's unbreakable chunks — the date, then the time with its zone — so
+ * a narrow tile wraps between them (or before the date), never inside the
+ * date at its hyphens.
+ *
+ * @param formatted The stamp's display form (`YYYY-MM-DD HH:MM:SS UTC`).
+ * @returns The date and the rest; a form without a space stays one chunk.
+ */
+export function cacheStampChunks(formatted: string): readonly string[] {
+  const space = formatted.indexOf(' ');
+  return space < 0 ? [formatted] : [formatted.slice(0, space), formatted.slice(space + 1)];
+}
+
 /** The page-cache tile. */
 export type CacheTileView =
   /** WP Rocket is absent: its cache is not the question here. */

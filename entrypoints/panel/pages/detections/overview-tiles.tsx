@@ -56,6 +56,7 @@ import { formatCount } from '../../../../utils/format-count';
 import type { CacheAnswerTone } from '../../top-bar/selectors';
 import {
   CACHE_EVIDENCE_ROUTE,
+  cacheStampChunks,
   overviewView,
   type CacheTileView,
   type OverviewView,
@@ -314,7 +315,16 @@ function CacheTile(props: { view: CacheTileView }): JSX.Element {
                     <span data-fdt-summary-fact="cache">
                       Cache generated{' '}
                       <time class="text-fg-secondary" datetime={isoInstant(stamp().seconds)}>
-                        {stamp().formatted}
+                        <For each={cacheStampChunks(stamp().formatted)}>
+                          {(chunk, index) => (
+                            <>
+                              {index() > 0 ? ' ' : ''}
+                              <span data-fdt-stamp-chunk class="whitespace-nowrap">
+                                {chunk}
+                              </span>
+                            </>
+                          )}
+                        </For>
                       </time>
                     </span>
                   )}
