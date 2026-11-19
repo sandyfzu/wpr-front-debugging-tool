@@ -17,6 +17,11 @@
  * the same search store (which owns the debounce); the find's cursor names
  * the current row (highlight + scroll). Selection and query survive a data
  * refresh (the body stays mounted); the selection resets with a remount.
+ *
+ * Two variants, one component: the **default** (framed list, hairline rows,
+ * single-select chips — every page today) and the opt-in **calm** one
+ * (`variant: 'calm'`, `./calm-list`: calm rows, chips or combinable facets,
+ * master–detail). The props are a union, so a page passes exactly one shape.
  */
 import type { JSX } from 'solid-js';
 import { createMemo, createSignal, Show } from 'solid-js';
@@ -41,8 +46,9 @@ import { cn } from '../../../../utils/cn';
 import { useSearch } from '../../state/use-fdt-data';
 import { bindSearchField } from '../../state/search-field';
 import { createCurrentMatch, CURRENT_MATCH_ROW } from '../current-match';
-import { NoMatches, PAGE_FILL_SCROLLER } from '../page-frame';
+import { NoMatches, PAGE_FILL_SCROLLER, type NoMatchesAction } from '../page-frame';
 import { createResultsAnnouncement } from '../results-announcement';
+import { CalmFilteredList, type CalmFilteredListProps } from './calm-list';
 import { buildFilterChips, narrowingChipLabel, reconcileRows } from './resource-list-view';
 
 /** The row contract: a unique, stable id (source position) the list keys on. */
@@ -54,8 +60,10 @@ export interface ResourceRow {
 /** The list region's frame — the same box for rows, empty and filtered-empty views. */
 export const LIST_REGION = 'rounded-md border border-line-1 bg-surface-1';
 
-/** Props of {@link FilteredList}. */
-export interface FilteredListProps<Row extends ResourceRow, Id extends string> {
+/** Props of the default variant of {@link FilteredList}. */
+export interface DefaultFilteredListProps<Row extends ResourceRow, Id extends string> {
+  /** The default variant (framed list, hairline rows); omit it. */
+  variant?: 'default';
   /** The list's chips + searched field. */
   definition: ResourcePageDefinition<Row, Id>;
   /** Every row (reactive: a refresh swaps it). */
@@ -89,13 +97,31 @@ export interface FilteredListProps<Row extends ResourceRow, Id extends string> {
   createVirtualizer?: VirtualizerFactory;
 }
 
+/** Props of {@link FilteredList}: the default variant's, or the calm one's. */
+export type FilteredListProps<Row extends ResourceRow, Id extends string> =
+  DefaultFilteredListProps<Row, Id> | CalmFilteredListProps<Row, Id>;
+
 /**
- * Render the filter bar and the list in their current state.
+ * Render the filter bar and the list in their current state, in the
+ * variant the props select (static per list).
  *
  * @param props See {@link FilteredListProps}.
  */
 export function FilteredList<Row extends ResourceRow, Id extends string>(
   props: FilteredListProps<Row, Id>
+): JSX.Element {
+  // eslint-disable-next-line solid/reactivity, solid/components-return-once -- read once on purpose: a list's variant is a module constant
+  if (props.variant === 'calm') return <CalmFilteredList {...props} />;
+  return <DefaultFilteredList {...props} />;
+}
+
+/**
+ * The default variant: today's framed list.
+ *
+ * @param props See {@link DefaultFilteredListProps}.
+ */
+function DefaultFilteredList<Row extends ResourceRow, Id extends string>(
+  props: DefaultFilteredListProps<Row, Id>
 ): JSX.Element {
   const search = useSearch();
   // The definition is static per list; resolving the default chip once keeps
@@ -141,7 +167,7 @@ export function FilteredList<Row extends ResourceRow, Id extends string>(
   });
 
   /** Where focus lands once a `NoMatches` way back removes its button. */
-  const focusAfter = (action: 'clear-search' | 'show-all'): HTMLElement | null | undefined =>
+  const focusAfter = (action: NoMatchesAction): HTMLElement | null | undefined =>
     action === 'clear-search'
       ? controls?.querySelector<HTMLElement>('input[type="search"]')
       : controls?.querySelector<HTMLElement>(`[data-fdt-filter-chip="${allChip}"]`);

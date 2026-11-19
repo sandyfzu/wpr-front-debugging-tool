@@ -146,6 +146,106 @@ describe('noMatchesSentence', () => {
   });
 });
 
+describe('noMatchesSentence with facet values', () => {
+  it('quotes one value as the chip sentence does', () => {
+    expect(noMatchesSentence(undefined, undefined, ['Delayed'])).toBe(
+      'Nothing matches the "Delayed" filter.'
+    );
+  });
+
+  it('lists several values in order, plural, and pairs them with the query', () => {
+    expect(noMatchesSentence(undefined, '', ['Delayed', 'Inline'])).toBe(
+      'Nothing matches the "Delayed", "Inline" filters.'
+    );
+    expect(noMatchesSentence(undefined, ' jq ', ['Delayed', 'Inline'])).toBe(
+      'Nothing in "Delayed", "Inline" matches "jq".'
+    );
+  });
+
+  it('ignores blank values, falls back to the chip, then to the query alone', () => {
+    expect(noMatchesSentence('Inline', 'x', [' ', ''])).toBe('Nothing in "Inline" matches "x".');
+    expect(noMatchesSentence(undefined, 'x', [])).toBe('Nothing matches "x".');
+    expect(noMatchesSentence(undefined, undefined, [' '])).toBe(
+      'Nothing matches the current filters.'
+    );
+  });
+
+  it('values win over a chip label (the two inputs are exclusive; values are what narrows)', () => {
+    expect(noMatchesSentence('Inline', undefined, ['Delayed'])).toBe(
+      'Nothing matches the "Delayed" filter.'
+    );
+  });
+});
+
+describe('NoMatches with facets', () => {
+  it('offers Clear filters (it clears the query too), replacing Clear search', () => {
+    const clearFilters = vi.fn();
+    const clearSearch = vi.fn();
+    render(() => (
+      <NoMatches
+        filterLabels={['Delayed', 'Inline']}
+        query="jq"
+        onClearFilters={clearFilters}
+        onClearSearch={clearSearch}
+      />
+    ));
+    expect(screen.getByText('Nothing in "Delayed", "Inline" matches "jq".')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
+    const button = screen.getByRole('button', { name: 'Clear filters' });
+    expect(button.dataset.fdtNoMatchesAction).toBe('clear-filters');
+    fireEvent.click(button);
+    expect(clearFilters).toHaveBeenCalledOnce();
+    expect(clearSearch).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Clear search while no facet narrows (labels blank or none)', () => {
+    const [labels, setLabels] = createSignal<readonly string[]>([' ']);
+    render(() => (
+      <NoMatches
+        filterLabels={labels()}
+        query="jq"
+        onClearFilters={vi.fn()}
+        onClearSearch={vi.fn()}
+      />
+    ));
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Clear search' })).toBeTruthy();
+    setLabels(['Excluded']);
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
+  });
+
+  it('offers no Clear filters without its handler', () => {
+    render(() => <NoMatches filterLabels={['Delayed']} />);
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('hands focus to the declared target after Clear filters unmounts the view', () => {
+    const [narrowed, setNarrowed] = createSignal(true);
+    render(() => (
+      <div data-fdt-page="javascript">
+        <h1 tabIndex={-1}>JavaScript</h1>
+        <input type="search" aria-label="Search scripts" />
+        <Show when={narrowed()}>
+          <NoMatches
+            filterLabels={['Delayed']}
+            onClearFilters={() => setNarrowed(false)}
+            focusAfter={(action) =>
+              action === 'clear-filters'
+                ? screen.getByRole('searchbox', { name: 'Search scripts' })
+                : null
+            }
+          />
+        </Show>
+      </div>
+    ));
+    const button = screen.getByRole('button', { name: 'Clear filters' });
+    button.focus();
+    fireEvent.click(button);
+    expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search scripts' }));
+  });
+});
+
 describe('NoMatches', () => {
   it('renders the "No matches" title with the sentence and no buttons by default', () => {
     render(() => <NoMatches chipLabel="Inline" />);

@@ -23,6 +23,18 @@ export const SEGMENTED_TRAY =
   'inline-flex w-fit max-w-full flex-wrap items-center gap-0.5 rounded-lg border border-line-1 bg-surface-3 p-0.5';
 
 /**
+ * The stretched tray (a bottom sheet's full-width rows): the same fill, as
+ * wide as its container, segments sharing the width ({@link SEGMENT_STRETCH}).
+ * A separate string, not `w-full` appended to {@link SEGMENTED_TRAY}: the
+ * class joiner resolves no conflict, so `w-fit` would keep winning.
+ */
+export const SEGMENTED_TRAY_STRETCH =
+  'flex w-full max-w-full flex-wrap items-center gap-0.5 rounded-lg border border-line-1 bg-surface-3 p-0.5';
+
+/** A stretched segment's share of its tray: grows, and fills its own wrapper. */
+export const SEGMENT_STRETCH = 'flex-1';
+
+/**
  * The tray's leading caption ("Delay"): muted meta text, sentence case, one
  * line, set 8 px in from the tray's edge and 6 px off its first segment.
  */

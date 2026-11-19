@@ -10,7 +10,14 @@ import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChoiceGroup, type ChoiceGroupVariant, type ChoiceOption } from './choice-group';
 import { describeAxeViolations, runAxeAudit } from './a11y-audit';
-import { SEGMENT_COUNT, SEGMENT_RAISED, SEGMENTED_CAPTION, SEGMENTED_TRAY } from './segmented';
+import {
+  SEGMENT_COUNT,
+  SEGMENT_RAISED,
+  SEGMENT_STRETCH,
+  SEGMENTED_CAPTION,
+  SEGMENTED_TRAY,
+  SEGMENTED_TRAY_STRETCH
+} from './segmented';
 
 afterEach(() => {
   cleanup();
@@ -349,6 +356,61 @@ describe('ChoiceGroup segmented variant', () => {
       ))
     ).toThrow(/"any": count must be a non-negative integer/u);
   });
+
+  it('stretches on request: full-width tray, every item and tile sharing the width', () => {
+    render(() => (
+      <ChoiceGroup
+        variant="segmented"
+        stretch
+        options={DELAY}
+        value="delayed"
+        onChange={() => {}}
+        aria-label="Delay"
+      />
+    ));
+    expect(group().className).toBe(SEGMENTED_TRAY_STRETCH);
+    for (const value of ['any', 'delayed', 'non-delayed']) {
+      expect(item(value).className.split(' ')).toContain(SEGMENT_STRETCH);
+      expect(tile(value).className.split(' ')).toContain('w-full');
+    }
+    // The state look is the plain segmented one (stretch changes geometry only).
+    expect(tile('delayed').className).toContain(SEGMENT_RAISED);
+    expect(tile('any').className).toContain('text-fg-secondary');
+  });
+
+  it('keeps the hugging tray without stretch (stretch={false} = default)', () => {
+    render(() => (
+      <ChoiceGroup
+        variant="segmented"
+        stretch={false}
+        options={DELAY}
+        value="any"
+        onChange={() => {}}
+        aria-label="Delay"
+      />
+    ));
+    expect(group().className).toBe(SEGMENTED_TRAY);
+    expect(item('any').className.split(' ')).not.toContain(SEGMENT_STRETCH);
+    expect(tile('any').className.split(' ')).not.toContain('w-full');
+  });
+
+  it.each([undefined, 'tiles'] as const)(
+    'throws when stretch is asked of the tiles look (%s)',
+    (variant) => {
+      expect(() =>
+        render(() => (
+          <ChoiceGroup
+            variant={variant}
+            stretch
+            options={DELAY}
+            value="any"
+            onChange={() => {}}
+            aria-label="Delay"
+          />
+        ))
+      ).toThrow(/`stretch` needs the segmented variant/u);
+    }
+  );
 
   it('still throws when nothing names the group', () => {
     expect(() =>

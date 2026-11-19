@@ -1,7 +1,7 @@
 /**
  * Test-only harness for the resource-list pages: renders a page body inside
- * the shell's two contexts with a signal-backed data store (so a test can
- * push a refresh) and the real search store, plus layout-free virtualizer
+ * the shell's contexts with a signal-backed data store (so a test can push a
+ * refresh), the real search store and a real detail-presence store, plus layout-free virtualizer
  * doubles (happy-dom has no layout engine) that render a bounded window, as
  * the real virtualizer does — so a list at its 5,000-row cap still mounts
  * only a viewport's worth of rows. No shipped module imports this file.
@@ -16,6 +16,11 @@ import type {
 } from '../../../../components/ui/virtual-list';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import type { DataState } from '../../state/fdt-state-machine';
+import {
+  createDetailPresence,
+  DetailPresenceContext,
+  type DetailPresenceStore
+} from '../../state/detail-presence';
 import { createSearchStore, type SearchStore } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
 
@@ -64,6 +69,8 @@ export const renderWindowedRows: VirtualizerFactory = (options) => ({
 export interface PageHarness {
   /** The real search store the page reads. */
   readonly search: SearchStore;
+  /** The shell's detail presence the page publishes to (route fixed for the test). */
+  readonly presence: DetailPresenceStore;
   /** Replace the store's data (a soft refresh: the page stays mounted). */
   refresh(data: FdtData): void;
   /** The page section element. */
@@ -92,17 +99,26 @@ export function renderPage(
     reload: vi.fn()
   };
   const search = createSearchStore();
-  const view = render((): JSX.Element => (
-    <FdtDataContext.Provider value={store}>
-      <SearchContext.Provider value={search}>
-        <Page createVirtualizer={virtualizer} />
-      </SearchContext.Provider>
-    </FdtDataContext.Provider>
-  ));
+  let presence: DetailPresenceStore | undefined;
+  const view = render((): JSX.Element => {
+    // Built inside the render tree: the store's route effect needs an owner.
+    presence = createDetailPresence(() => 'javascript');
+    return (
+      <FdtDataContext.Provider value={store}>
+        <SearchContext.Provider value={search}>
+          <DetailPresenceContext.Provider value={presence}>
+            <Page createVirtualizer={virtualizer} />
+          </DetailPresenceContext.Provider>
+        </SearchContext.Provider>
+      </FdtDataContext.Provider>
+    );
+  });
+  if (presence === undefined) throw new Error('renderPage: the presence store was not built');
   const root = view.container.querySelector<HTMLElement>('[data-fdt-page]');
   if (root === null) throw new Error('renderPage: the page rendered no [data-fdt-page] root');
   return {
     search,
+    presence,
     root,
     refresh(next) {
       setState({ status: 'refreshing', data: next, requestedAt: 1 });

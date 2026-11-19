@@ -29,8 +29,10 @@ import {
   SEGMENT_BASE,
   SEGMENT_COUNT,
   SEGMENT_COUNT_TYPE,
+  SEGMENT_STRETCH,
   SEGMENTED_CAPTION,
   SEGMENTED_TRAY,
+  SEGMENTED_TRAY_STRETCH,
   segmentCountText,
   segmentStateClass
 } from './segmented';
@@ -66,6 +68,12 @@ export interface ChoiceGroupProps<T extends string> {
   onChange: (value: T) => void;
   /** The look (default `tiles`, today's tiles; `segmented` opts into the tray). */
   variant?: ChoiceGroupVariant;
+  /**
+   * Segmented only: the tray spans its container and the segments share the
+   * width (a bottom sheet's rows). Throws on the tiles look, which has no
+   * stretched form.
+   */
+  stretch?: boolean;
   /**
    * A visible caption leading the options ("Delay"), muted; never blank
    * (throws). It names the group (Kobalte links it as `aria-labelledby`), so
@@ -207,6 +215,34 @@ const CHOICE_LOOKS: Readonly<Record<ChoiceGroupVariant, ChoiceLook>> = {
 };
 
 /**
+ * The segmented look stretched: full-width tray, each item and its tile
+ * filling an equal share (the tile is already a centered flex box).
+ */
+const SEGMENTED_STRETCH_LOOK: ChoiceLook = {
+  ...CHOICE_LOOKS.segmented,
+  group: SEGMENTED_TRAY_STRETCH,
+  item: clsx(CHOICE_LOOKS.segmented.item, SEGMENT_STRETCH),
+  tile: (state) => clsx(CHOICE_LOOKS.segmented.tile(state), 'w-full')
+};
+
+/**
+ * The look a group renders with.
+ *
+ * @param variant The requested variant (default `tiles`).
+ * @param stretch Whether the segmented tray spans its container.
+ * @returns The look.
+ * @throws {@link Error} when `stretch` is asked of the tiles look (a wiring bug).
+ */
+function choiceLook(variant: ChoiceGroupVariant | undefined, stretch: boolean): ChoiceLook {
+  const resolved = variant ?? 'tiles';
+  if (!stretch) return CHOICE_LOOKS[resolved];
+  if (resolved !== 'segmented') {
+    throw new Error('ChoiceGroup: `stretch` needs the segmented variant.');
+  }
+  return SEGMENTED_STRETCH_LOOK;
+}
+
+/**
  * Render a single-choice group.
  *
  * Each option is one tile `<label for>` over a visually hidden native radio:
@@ -219,6 +255,7 @@ const CHOICE_LOOKS: Readonly<Record<ChoiceGroupVariant, ChoiceLook>> = {
  * @param props.value The selected value (null: none checked).
  * @param props.onChange The selection callback.
  * @param props.variant The look (default `tiles`).
+ * @param props.stretch Segmented only: span the container, segments sharing it.
  * @param props.label The visible caption naming the group.
  * @param props['aria-label'] The group's accessible name.
  * @param props['aria-labelledby'] The naming element's id (by reference).
@@ -228,8 +265,8 @@ const CHOICE_LOOKS: Readonly<Record<ChoiceGroupVariant, ChoiceLook>> = {
  * @param props.class Extra classes on the group element.
  * @throws {@link Error} when the group is named neither by `label`, `aria-label`
  *   nor an `aria-labelledby` reference, or `label` is blank (a wiring bug —
- *   the radios would be nameless), or when an option's `count` is not a
- *   non-negative integer.
+ *   the radios would be nameless), when an option's `count` is not a
+ *   non-negative integer, or when `stretch` is set on the tiles look.
  */
 export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>): JSX.Element {
   // Fail fast on an unlabeled group: the getter's call site is the JSX build
@@ -256,7 +293,7 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>): JSX.E
     return { 'aria-label': props['aria-label'], 'aria-labelledby': props['aria-labelledby'] };
   };
   const held = (): boolean => props.held !== undefined;
-  const look = (): ChoiceLook => CHOICE_LOOKS[props.variant ?? 'tiles'];
+  const look = (): ChoiceLook => choiceLook(props.variant, props.stretch === true);
   return (
     // No `name` prop: Kobalte falls back to its per-instance unique group id
     // (`radiogroup-<uid>`), the safe per-group contract — a hardcoded shared

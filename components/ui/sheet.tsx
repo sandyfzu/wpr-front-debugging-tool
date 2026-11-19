@@ -28,7 +28,7 @@
  * primary action in view.
  */
 import type { JSX } from 'solid-js';
-import { createEffect, createSignal, on, onCleanup, Show, untrack } from 'solid-js';
+import { createEffect, createMemo, createSignal, on, onCleanup, Show, untrack } from 'solid-js';
 import { cn } from '../../utils/cn';
 import { transitionEndMs } from '../../utils/css-duration';
 import { ModalDialog } from './dialog';
@@ -49,7 +49,11 @@ export interface SheetProps {
   initialFocus?: () => HTMLElement | undefined;
   /** Controls at the heading's end (e.g. a reset action). */
   actions?: JSX.Element;
-  /** The bottom row pinned in view while the content scrolls (e.g. the apply action). */
+  /**
+   * The bottom row pinned in view while the content scrolls (e.g. the apply
+   * action). Only `undefined` means "no footer": any other value, `null`
+   * included, renders the row.
+   */
   footer?: JSX.Element;
   /** Extra classes on the sheet panel, merged last. */
   class?: string;
@@ -136,6 +140,13 @@ export function Sheet(props: SheetProps): JSX.Element {
     setPresence((state) => nextSheetPresence(state, event));
   };
   const closing = (): boolean => presence().phase === 'closing';
+  // The footer slot, read once per change: a JSX prop is a getter that builds
+  // its nodes on every read. Boxed, so a `null` footer still counts as present
+  // in the `Show` below (only `undefined` drops the row).
+  const footer = createMemo((): { readonly node: JSX.Element } | undefined => {
+    const node = props.footer;
+    return node === undefined ? undefined : { node };
+  });
   /** The current mount's content root (set per mount, cleared on its unmount). */
   let root: HTMLElement | undefined;
   /** The current mount's dialog panel, or null when none is mounted. */
@@ -210,14 +221,16 @@ export function Sheet(props: SheetProps): JSX.Element {
           </div>
           <div
             data-fdt="sheet-body"
-            class={cn('px-4 pt-3', props.footer === undefined ? 'pb-4' : 'pb-2')}
+            class={cn('px-4 pt-3', footer() === undefined ? 'pb-4' : 'pb-2')}
           >
             {props.children}
           </div>
-          <Show when={props.footer !== undefined}>
-            <div data-fdt="sheet-footer" class="sticky bottom-0 bg-surface-2 px-4 pt-2 pb-4">
-              {props.footer}
-            </div>
+          <Show when={footer()}>
+            {(slot) => (
+              <div data-fdt="sheet-footer" class="sticky bottom-0 bg-surface-2 px-4 pt-2 pb-4">
+                {slot().node}
+              </div>
+            )}
           </Show>
         </div>
       </ModalDialog>
