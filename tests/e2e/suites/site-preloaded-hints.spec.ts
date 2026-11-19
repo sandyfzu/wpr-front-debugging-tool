@@ -9,10 +9,11 @@
  * declares DNS prefetch (meta) while Preconnect stays refuted. The suite
  * restores the settings it found (purged after, the hub page re-stored).
  */
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { DNS_PREFETCH_LIMIT } from '../../../lib/detection/hud';
 import { expect, test, type ExtensionDriver } from '../helpers/extension';
+import { facetCount } from '../helpers/javascript-page';
 import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
 import { openSitePage, SITE_URL } from '../helpers/site';
 import { readWprSettings, writeWprSettings, type WprSettings } from '../helpers/site-wpcli';
@@ -80,15 +81,26 @@ async function openHintsPage(extension: ExtensionDriver, tabId: number): Promise
 }
 
 /**
- * A chip's count text.
+ * A facet value's count on the page (`any` is the Source facet's).
  *
  * @param panel The panel page.
- * @param id The chip id.
+ * @param value The value id.
  */
-function chipCount(panel: Page, id: string): ReturnType<Page['locator']> {
-  return panel.locator(
-    `[data-fdt-page="preloaded-resources"] [data-fdt-filter-chip="${id}"] [data-fdt-filter-count]`
-  );
+function hintCount(panel: Page, value: string): Locator {
+  const root = panel.locator('[data-fdt-page="preloaded-resources"]');
+  return facetCount(root, value, value === 'any' ? 'Source' : undefined);
+}
+
+/**
+ * The hint rows whose preview starts with a kind.
+ *
+ * @param panel The panel page.
+ * @param rel The `rel` kind.
+ */
+function rowsOfKind(panel: Page, rel: string): Locator {
+  return panel.locator('[data-fdt="hint-row"]').filter({
+    has: panel.locator('[data-fdt="list-row-preview"]', { hasText: new RegExp(`^${rel} · `) })
+  });
 }
 
 /** The settings found before the suite (restored after). */
@@ -121,13 +133,10 @@ test.describe('Preloaded Resources over the docker site', () => {
     try {
       const truth = await hintTruth(site.page);
       expect(truth.modulepreload, 'WordPress core prints its module preload').toBeGreaterThan(0);
-      await expect(chipCount(panel, 'all')).toHaveText(String(truth.total));
-      await expect(chipCount(panel, 'wp-rocket')).toHaveText(String(truth.stamped));
-      await expect(chipCount(panel, 'modulepreload')).toHaveText(String(truth.modulepreload));
-      const moduleRow = panel
-        .locator('[data-fdt="resource-row"]')
-        .filter({ has: panel.locator('[data-fdt="hint-kind"]', { hasText: /^modulepreload$/ }) })
-        .first();
+      await expect(hintCount(panel, 'any')).toHaveText(String(truth.total));
+      await expect(hintCount(panel, 'wp-rocket')).toHaveText(String(truth.stamped));
+      await expect(hintCount(panel, 'modulepreload')).toHaveText(String(truth.modulepreload));
+      const moduleRow = rowsOfKind(panel, 'modulepreload').first();
       await expect(moduleRow.locator('[data-fdt="hint-attribution"]')).toHaveText('Unattributed');
       await expect(moduleRow.locator('[data-fdt="hint-attribution-mark"]')).toHaveCount(0);
       // No DNS prefetch is stored: no proof-limit note.
@@ -149,11 +158,11 @@ test.describe('Preloaded Resources over the docker site', () => {
     try {
       const truth = await hintTruth(site.page);
       expect(truth.dnsPrefetch, 'core prints the stored domain as a hint').toBeGreaterThan(0);
-      await expect(chipCount(panel, 'all')).toHaveText(String(truth.total));
-      await expect(chipCount(panel, 'dns-prefetch')).toHaveText(String(truth.dnsPrefetch));
-      const dnsRow = panel.locator('[data-fdt="resource-row"]').filter({ hasText: DNS_HOST });
+      await expect(hintCount(panel, 'any')).toHaveText(String(truth.total));
+      await expect(hintCount(panel, 'dns-prefetch')).toHaveText(String(truth.dnsPrefetch));
+      const dnsRow = panel.locator('[data-fdt="hint-row"]').filter({ hasText: DNS_HOST });
       await expect(dnsRow).toHaveCount(1);
-      await expect(dnsRow.locator('[data-fdt="hint-kind"]')).toHaveText('dns-prefetch');
+      await expect(dnsRow.locator('[data-fdt="list-row-preview"]')).toHaveText(/^dns-prefetch · /);
       await expect(dnsRow.locator('[data-fdt="hint-attribution"]')).toHaveText('Unattributed');
       await expect(panel.locator('[data-fdt="resource-note"]')).toHaveText([DNS_PREFETCH_LIMIT]);
       // The declaration decides DNS prefetch, never Preconnect (refuted by the same meta).

@@ -159,7 +159,14 @@
   },
   {
     "surface": "devtools panel JS (all panel chunks)",
-    "globs": ["chunks/panel-*.js", "panel.js", "chunks/fdt-*.js", "chunks/page-identity-*.js"],
+    "globs": [
+      "chunks/panel-*.js",
+      "panel.js",
+      "chunks/fdt-*.js",
+      "chunks/page-identity-*.js",
+      "chunks/code-block-*.js",
+      "chunks/filtered-list-*.js"
+    ],
     "maxKb": {
       "raw": 600
     }

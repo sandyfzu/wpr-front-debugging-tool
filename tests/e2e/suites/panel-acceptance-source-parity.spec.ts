@@ -37,7 +37,7 @@ import {
   panelPageUrl,
   type ExtensionDriver
 } from '../helpers/extension';
-import { pickFacet } from '../helpers/javascript-page';
+import { facetCount, pickFacet } from '../helpers/javascript-page';
 import {
   devtoolsShim,
   openPanelForFixture,
@@ -612,12 +612,12 @@ sourceTest.describe('source-build parity over one served fixture', () => {
           location.hash = '#/lazyload';
         });
         const portLazyPage = round.portPanel.locator('[data-fdt-page="lazyload"]');
-        await expect(
-          portLazyPage.locator('[data-fdt-filter-chip="lazyloaded"] [data-fdt-filter-count]')
-        ).toHaveText(LAZY_IMAGE_COUNT.toString());
-        await expect(
-          portLazyPage.locator('[data-fdt-filter-chip="non-lazyloaded"] [data-fdt-filter-count]')
-        ).toHaveText(PLAIN_IMAGE_COUNT.toString());
+        await expect(facetCount(portLazyPage, 'lazyloaded')).toHaveText(
+          LAZY_IMAGE_COUNT.toString()
+        );
+        await expect(facetCount(portLazyPage, 'non-lazyloaded')).toHaveText(
+          PLAIN_IMAGE_COUNT.toString()
+        );
 
         // --- Preloaded Resources page, both sides. Same new-route-evidence
         //     wait as the lazyload switch: the label is only the incoming
@@ -638,12 +638,12 @@ sourceTest.describe('source-build parity over one served fixture', () => {
           location.hash = '#/preloaded-resources';
         });
         const portPreloadedPage = round.portPanel.locator('[data-fdt-page="preloaded-resources"]');
-        await expect(
-          portPreloadedPage.locator('[data-fdt-filter-chip="images"] [data-fdt-filter-count]')
-        ).toHaveText(PRELOAD_IMAGE_COUNT.toString());
-        await expect(
-          portPreloadedPage.locator('[data-fdt-filter-chip="fonts"] [data-fdt-filter-count]')
-        ).toHaveText(PRELOAD_FONT_COUNT.toString());
+        await expect(facetCount(portPreloadedPage, 'images')).toHaveText(
+          PRELOAD_IMAGE_COUNT.toString()
+        );
+        await expect(facetCount(portPreloadedPage, 'fonts')).toHaveText(
+          PRELOAD_FONT_COUNT.toString()
+        );
         // The feature label delta: the source names the lazyload feature on
         // this page; the port's badge says whether any hint is WP Rocket's.
         await expect(round.sourcePanel.locator('div.bg-gray-800.p-3')).toContainText('Lazyload');

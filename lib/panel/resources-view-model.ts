@@ -271,17 +271,21 @@ export type PreloadedFilterId =
   | 'preconnect'
   | 'dns-prefetch';
 
+/** Each hint kind's words (its chip/facet label and its detail's kind label). */
+export const RESOURCE_HINT_KIND_LABELS: Readonly<Record<ResourceHintRel, string>> = {
+  preload: 'Preload',
+  modulepreload: 'Module preload',
+  preconnect: 'Preconnect',
+  'dns-prefetch': 'DNS prefetch'
+};
+
 /**
- * A chip over one hint kind.
+ * A chip over one hint kind, labeled by {@link RESOURCE_HINT_KIND_LABELS}.
  *
  * @param id The chip id (the kind's own `rel` token).
- * @param label The chip label.
  */
-function kindFilter(
-  id: ResourceHintRel,
-  label: string
-): ResourceFilterRow<PreloadedResource, PreloadedFilterId> {
-  return { id, label, predicate: (row) => row.rel === id };
+function kindFilter(id: ResourceHintRel): ResourceFilterRow<PreloadedResource, PreloadedFilterId> {
+  return { id, label: RESOURCE_HINT_KIND_LABELS[id], predicate: (row) => row.rel === id };
 }
 
 /**
@@ -314,17 +318,17 @@ const UNATTRIBUTED_HINTS: ResourceFilterRow<PreloadedResource, PreloadedFilterId
   predicate: (row) => row.attribution.by === 'page'
 };
 /** Preload chip / Hint value: `rel=preload`. */
-const PRELOAD_HINTS = kindFilter('preload', 'Preload');
+const PRELOAD_HINTS = kindFilter('preload');
 /** Images chip / Preload type value: a preload `as=image`. */
 const IMAGE_PRELOADS = preloadAsFilter('images', 'Images', 'image');
 /** Fonts chip / Preload type value: a preload `as=font`. */
 const FONT_PRELOADS = preloadAsFilter('fonts', 'Fonts', 'font');
 /** Module preload chip / Hint value: `rel=modulepreload`. */
-const MODULEPRELOAD_HINTS = kindFilter('modulepreload', 'Module preload');
+const MODULEPRELOAD_HINTS = kindFilter('modulepreload');
 /** Preconnect chip / Hint value: `rel=preconnect`. */
-const PRECONNECT_HINTS = kindFilter('preconnect', 'Preconnect');
+const PRECONNECT_HINTS = kindFilter('preconnect');
 /** DNS prefetch chip / Hint value: `rel=dns-prefetch`. */
-const DNS_PREFETCH_HINTS = kindFilter('dns-prefetch', 'DNS prefetch');
+const DNS_PREFETCH_HINTS = kindFilter('dns-prefetch');
 
 /**
  * The Preloaded Resources page's pattern: attribution first (WP Rocket's

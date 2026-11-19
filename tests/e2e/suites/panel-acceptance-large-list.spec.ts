@@ -320,16 +320,20 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
         location.hash = '#/lazyload';
       });
       await expect(
-        panel.locator('[data-fdt-page="lazyload"]').locator('[data-fdt-filter-chip="all"]')
-      ).toHaveAccessibleName(/5,000 matching$/);
+        facetSegment(panel.locator('[data-fdt-page="lazyload"]'), 'any', 'Lazyload').locator(
+          'input'
+        )
+      ).toHaveAccessibleName(/5,000$/);
       await panel.evaluate(() => {
         location.hash = '#/preloaded-resources';
       });
       await expect(
-        panel
-          .locator('[data-fdt-page="preloaded-resources"]')
-          .locator('[data-fdt-filter-chip="all"]')
-      ).toHaveAccessibleName(/5,000 matching$/);
+        facetSegment(
+          panel.locator('[data-fdt-page="preloaded-resources"]'),
+          'any',
+          'Source'
+        ).locator('input')
+      ).toHaveAccessibleName(/5,000$/);
       await panel.evaluate(() => {
         location.hash = '#/javascript';
       });

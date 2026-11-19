@@ -1,10 +1,10 @@
 /**
  * Pure presentation rules shared by the resource-list pages (Lazyload,
  * Preloaded Resources): the filtered-empty chip name, query normalization,
- * row reuse across refreshes and resource naming (also used by the
- * JavaScript and Stylesheets URL rows via the shared resource link). No
- * Solid, no DOM — the page component composes these inside its memo
- * chain. Count phrasing and the results announcement are shared rules of
+ * row reuse across refreshes, the URL clip mark, and resource naming + the
+ * URL preview (also the JavaScript and Stylesheets rows' name and preview
+ * line). No Solid, no DOM — the page component composes these inside its
+ * memo chain. Count phrasing and the results announcement are shared rules of
  * `lib/panel/list-behavior`.
  */
 import { defaultChipId, reconcileList } from '../../../../lib/panel/list-behavior';
@@ -88,9 +88,6 @@ function decodeSegment(segment: string): string {
     return segment;
   }
 }
-
-/** Longest resource name echoed inside a control's accessible name. */
-export const LABEL_NAME_MAX = 60;
 
 /**
  * Reuse the previous refresh's row objects where a row is unchanged, so the

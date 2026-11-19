@@ -1,15 +1,21 @@
 /**
  * Pure presentation rules for the Preloaded Resources page (the page's
  * resource-hint inventory): which of its three honest states a report is
- * in, a row's kind chip and attribution chip, row identity across refreshes,
- * the summary notes and the row's seed height.
+ * in, the row views (icon, name, kind + URL preview, attribution chip —
+ * built once per row) and the content key a row keeps across refreshes, the
+ * detail's facts, and the summary notes.
  */
 import { DNS_PREFETCH_LIMIT } from '../../../../lib/detection/hud';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import type { HintAttribution } from '../../../../lib/panel/hint-attribution';
+import { liftFacets, type FacetSet } from '../../../../lib/panel/resource-facets';
 import {
+  PRELOADED_PAGE_FACETS,
+  PRELOADED_PAGE_RESOURCES,
+  RESOURCE_HINT_KIND_LABELS,
   reportHints,
   reportHintsTruncated,
+  type PreloadedFacetId,
   type PreloadedResource
 } from '../../../../lib/panel/resources-view-model';
 import { RESOURCE_HINT_MARKS } from '../../../../lib/wp-rocket/constants';
@@ -19,7 +25,8 @@ import type {
   WprDetections
 } from '../../../../lib/wp-rocket/types';
 import { formatCount } from '../../../../utils/format-count';
-import { listCapped } from '../resource-list/resource-list-view';
+import type { DetailFact } from '../resource-list/detail-section';
+import { listCapped, resourceName, urlPreview } from '../resource-list/resource-list-view';
 import type { StatusKind } from '../../../../components/ui/status-badge';
 
 /**
@@ -59,9 +66,6 @@ export interface HintKindChip {
 export function hintKindChip(row: PreloadedResource): HintKindChip {
   return { rel: row.rel, as: row.rel === 'preload' && row.as !== '' ? row.as : null };
 }
-
-/** Seed height of a hint row (name line + URL line), in px. */
-export const PRELOADED_ROW_ESTIMATE = 55;
 
 /**
  * The summary badge's label: the page lists every hint, and the badge says
@@ -128,6 +132,18 @@ function sameAttribution(a: HintAttribution, b: HintAttribution): boolean {
  */
 function stampAttribute(mark: ResourceHintMark): string {
   return RESOURCE_HINT_MARKS.find((entry) => entry.mark === mark)?.attribute ?? mark;
+}
+
+/**
+ * A stamp as the tag carries it: the attribute, with its value when the
+ * plugin writes one (`data-rocket-async="style"`).
+ *
+ * @param mark The stamp.
+ */
+export function stampMarkup(mark: ResourceHintMark): string {
+  const entry = RESOURCE_HINT_MARKS.find((candidate) => candidate.mark === mark);
+  if (entry === undefined) return mark;
+  return entry.value === undefined ? entry.attribute : `${entry.attribute}="${entry.value}"`;
 }
 
 /**
@@ -229,4 +245,182 @@ export function preloadedNotes(
     notes.push(DNS_PREFETCH_LIMIT);
   }
   return notes;
+}
+
+/** The icon a hint row leads with: by what it fetches (a preload's `as`), or the origin it warms up. */
+export type HintIconId = 'image' | 'font' | 'style' | 'script' | 'origin' | 'file';
+
+/** A preload's `as` type → its icon (any other type reads as a plain file). */
+const PRELOAD_AS_ICONS: Readonly<Record<string, HintIconId>> = {
+  image: 'image',
+  font: 'font',
+  style: 'style',
+  script: 'script'
+};
+
+/**
+ * A row's icon: preconnects and DNS prefetches warm up an origin; a module
+ * preload fetches a script; a preload by its `as` type.
+ *
+ * @param row The hint row.
+ */
+export function hintIcon(row: PreloadedResource): HintIconId {
+  if (row.rel === 'preconnect' || row.rel === 'dns-prefetch') return 'origin';
+  if (row.rel === 'modulepreload') return 'script';
+  return PRELOAD_AS_ICONS[row.as] ?? 'file';
+}
+
+/** One rendered row: the hint plus what its renderer reads, built once. */
+export interface PreloadedRowView {
+  /** The hint (its `id` is its capture position at build time only). */
+  readonly row: PreloadedResource;
+  /** The content key: the same hint keeps it across refreshes (see {@link preloadedRowKeys}). */
+  readonly key: string;
+  /** The row's name: the URL's file name (or host), else the missing-URL words. */
+  readonly name: string;
+  /** The kind (`rel`, a preload's `as`) then the URL without its scheme. */
+  readonly preview: string;
+  /** The capture cut the URL at its length cap. */
+  readonly clipped: boolean;
+  /** The leading icon. */
+  readonly icon: HintIconId;
+  /** Who wrote the hint. */
+  readonly attribution: AttributionChip;
+}
+
+/** Separates a key's fields (never part of a captured `rel`, `as` or URL). */
+const KEY_FIELD = '\u0001';
+
+/**
+ * The content key of every row: kind, type and URL plus the occurrence
+ * among identical hints (a page may print one twice) — never the position,
+ * so a hint added above shifts nothing.
+ *
+ * @param rows The hint rows, in list order.
+ * @returns One unique key per row, same order.
+ */
+export function preloadedRowKeys(rows: readonly PreloadedResource[]): string[] {
+  const seen = new Map<string, number>();
+  return rows.map((row) => {
+    const base = [row.rel, row.as, row.href].join(KEY_FIELD);
+    const occurrence = seen.get(base) ?? 0;
+    seen.set(base, occurrence + 1);
+    return `${base}${KEY_FIELD}${String(occurrence)}`;
+  });
+}
+
+/**
+ * A row's preview line: the kind chip's words, then the URL without its
+ * scheme ("preload · image · cdn.test/hero.webp").
+ *
+ * @param row The hint row.
+ */
+export function hintPreview(row: PreloadedResource): string {
+  const kind = hintKindChip(row);
+  const parts = [kind.rel];
+  if (kind.as !== null) parts.push(kind.as);
+  if (row.href !== '') parts.push(urlPreview(row.href));
+  return parts.join(' · ');
+}
+
+/**
+ * Build the row views (keys, names, previews and chips once per row).
+ *
+ * @param rows The hint rows, in list order.
+ * @param clipped Whether the capture cut a given URL at its length cap.
+ * @returns One view per row, same order.
+ */
+export function preloadedRowViews(
+  rows: readonly PreloadedResource[],
+  clipped: (href: string) => boolean
+): PreloadedRowView[] {
+  const keys = preloadedRowKeys(rows);
+  return rows.map((row, index) => ({
+    row,
+    key: keys[index] ?? '',
+    name: resourceName(row.href) || missingUrlLabel(row),
+    preview: hintPreview(row),
+    clipped: clipped(row.href),
+    icon: hintIcon(row),
+    attribution: attributionChip(row.attribution)
+  }));
+}
+
+/**
+ * Whether two views of one key show the same thing (the attribution and the
+ * clip mark can change under one key; everything else derives from it).
+ *
+ * @param a The previous view.
+ * @param b The fresh view.
+ */
+export function samePreloadedView(a: PreloadedRowView, b: PreloadedRowView): boolean {
+  return samePreloadedRow(a.row, b.row) && a.clipped === b.clipped;
+}
+
+/** The page's facets over row views (the row facets, lifted). */
+export const PRELOADED_VIEW_FACETS: FacetSet<PreloadedRowView, PreloadedFacetId> = liftFacets(
+  PRELOADED_PAGE_FACETS,
+  (view: PreloadedRowView) => view.row
+);
+
+/**
+ * A view's searched field: the hinted URL.
+ *
+ * @param view The row view.
+ */
+export function preloadedSearchField(view: PreloadedRowView): string {
+  return PRELOADED_PAGE_RESOURCES.searchField(view.row);
+}
+
+/**
+ * The detail's caps kind label: the hint kind's own words.
+ *
+ * @param view The row view.
+ */
+export function hintKind(view: PreloadedRowView): string {
+  return RESOURCE_HINT_KIND_LABELS[view.row.rel];
+}
+
+/**
+ * Whether the hint's URL is a file DevTools' Sources panel can list (a
+ * preload or module preload fetches it); a preconnect or DNS prefetch names
+ * an origin it only warms up, so its tile opens a new tab instead.
+ *
+ * @param row The hint row.
+ */
+export function hintFetchesFile(row: PreloadedResource): boolean {
+  return row.rel === 'preload' || row.rel === 'modulepreload';
+}
+
+/** What a hint without a URL says in its detail: an image preload carries only `imagesrcset`. */
+export const SRCSET_ONLY_NOTE =
+  'This image preload carries only imagesrcset: there is no single URL to open.';
+
+/** What any other hint without a URL says in its detail. */
+export const NO_URL_NOTE = 'This hint carries no URL.';
+
+/**
+ * The detail's missing-URL sentence.
+ *
+ * @param row The hint row (its `href` is empty).
+ */
+export function missingUrlNote(row: PreloadedResource): string {
+  return missingUrlLabel(row) === SRCSET_ONLY_LABEL ? SRCSET_ONLY_NOTE : NO_URL_NOTE;
+}
+
+/**
+ * The facts the capture records for a hint — only those that hold.
+ *
+ * @param row The hint row.
+ * @returns The facts, in reading order.
+ */
+export function hintFacts(row: PreloadedResource): DetailFact[] {
+  const facts: DetailFact[] = [{ label: 'Rel', value: row.rel, mono: true }];
+  if (row.as !== '') facts.push({ label: 'As', value: row.as, mono: true });
+  if (row.attribution.by === 'wp-rocket') {
+    facts.push({ label: 'WP Rocket stamp', value: stampMarkup(row.attribution.mark), mono: true });
+    if (row.attribution.feature !== null)
+      facts.push({ label: 'Feature', value: row.attribution.feature, mono: false });
+  }
+  return facts;
 }

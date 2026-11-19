@@ -186,6 +186,9 @@ export function calmRowClass(state: CalmRowState): string {
   );
 }
 
+/** The states cell: chips (or the row's own state content) on one wrapping line. */
+const STATES_CELL = 'flex min-w-0 flex-wrap items-center gap-1 [grid-area:states]';
+
 /** Props of {@link ListRow}. */
 export interface ListRowProps {
   /** The row form (default `two`). */
@@ -212,6 +215,11 @@ export interface ListRowProps {
   sizeShare?: number;
   /** The row's split state chips (the states column / compact third line). */
   chips?: StateChipSplit;
+  /**
+   * The states cell's own content in place of chips — a label that is no
+   * state with a source (e.g. who wrote a resource hint). Wins over `chips`.
+   */
+  stateContent?: JSX.Element;
   /** Trailing controls outside the open button (e.g. the row copy button). */
   actions?: JSX.Element;
 }
@@ -294,23 +302,30 @@ export function ListRow(props: ListRowProps): JSX.Element {
         </Show>
         <Show when={props.columns.states}>
           <Show
-            when={hasChips() ? props.chips : undefined}
+            when={props.stateContent}
             fallback={
-              // A quiet dash in the states column (regular only — a compact
-              // row with no chips takes no third line).
-              <span
-                aria-hidden="true"
-                class="hidden text-2xs text-fg-muted [grid-area:states] @regular:inline"
+              <Show
+                when={hasChips() ? props.chips : undefined}
+                fallback={
+                  // A quiet dash in the states column (regular only — a compact
+                  // row with no chips takes no third line).
+                  <span
+                    aria-hidden="true"
+                    class="hidden text-2xs text-fg-muted [grid-area:states] @regular:inline"
+                  >
+                    —
+                  </span>
+                }
               >
-                —
-              </span>
+                {(chips) => (
+                  <span class={STATES_CELL}>
+                    <StateChips chips={chips()} />
+                  </span>
+                )}
+              </Show>
             }
           >
-            {(chips) => (
-              <span class="flex min-w-0 flex-wrap items-center gap-1 [grid-area:states]">
-                <StateChips chips={chips()} />
-              </span>
-            )}
+            {(content) => <span class={STATES_CELL}>{content()}</span>}
           </Show>
         </Show>
       </span>

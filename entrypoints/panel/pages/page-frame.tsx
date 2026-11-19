@@ -1,19 +1,15 @@
 /**
  * The page seam every panel page body builds on: the frame (entrance, container
- * query root, focus target, the single `h1`), the filtered-empty view, and the
- * external link. Declared once here so page folders never re-invent them.
+ * query root, focus target, the single `h1`) and the filtered-empty view.
+ * Declared once here so page folders never re-invent them.
  */
 import type { JSX } from 'solid-js';
 import { createMemo, onCleanup, Show } from 'solid-js';
-import ExternalLinkIcon from 'lucide-solid/icons/external-link';
 import SearchX from 'lucide-solid/icons/search-x';
 import { Button } from '../../../components/ui/button';
-import { FOCUS_RING } from '../../../components/ui/classes';
 import { EmptyState } from '../../../components/ui/empty-state';
 import { PageHeader } from '../../../components/ui/page-header';
 import { cn } from '../../../utils/cn';
-import { capTitle } from '../../../utils/cap-text';
-import { isHttpUrl } from '../../../utils/urls';
 import { navRoute, type RouteId } from '../routes';
 
 /**
@@ -301,72 +297,5 @@ export function NoMatches(props: NoMatchesProps): JSX.Element {
       description={noMatchesSentence(props.chipLabel, props.query, props.filterLabels)}
       action={action()}
     />
-  );
-}
-
-/** Props of {@link ExternalLink}. */
-export interface ExternalLinkProps {
-  /** The URL — shown verbatim as the text, opened in a new tab when absolute `http(s):`. */
-  href: string;
-  /** Extra classes, merged last so callers win (e.g. a text size). */
-  class?: string;
-}
-
-/**
- * Render a URL as an external link: mono, single-line `truncate` text, a
- * trailing icon, a new tab with `rel="noopener noreferrer"`, and
- * "(opens in a new tab)" in its accessible name.
- *
- * A bounded URL preview rides `title` on the **text span**, not the anchor,
- * avoiding a duplicate link description. The visible text and accessible name
- * retain the full URL, independently of the hover preview.
- *
- * Only absolute `http:`/`https:` URLs become links. Everything else — including
- * relative and protocol-relative values, which raw captured attributes (e.g.
- * `data-lazy-src`) can be — renders as the same text without a link: the
- * panel has no inspected-page URL to resolve them against, and page-captured
- * URLs are untrusted (`javascript:`, `data:` never reach an `href`).
- *
- * Shrinks inside flex rows (`min-w-0`); give the parent a bounded width.
- *
- * @param props See {@link ExternalLinkProps}.
- */
-export function ExternalLink(props: ExternalLinkProps): JSX.Element {
-  const text = (): JSX.Element => (
-    <span class="truncate" title={capTitle(props.href)}>
-      {props.href}
-    </span>
-  );
-  return (
-    <Show
-      when={isHttpUrl(props.href)}
-      fallback={
-        <span
-          data-fdt="external-link"
-          class={cn(
-            'inline-flex max-w-full min-w-0 font-mono text-xs text-fg-primary',
-            props.class
-          )}
-        >
-          {text()}
-        </span>
-      }
-    >
-      <a
-        data-fdt="external-link"
-        href={props.href}
-        target="_blank"
-        rel="noopener noreferrer"
-        class={cn(
-          'inline-flex max-w-full min-w-0 items-center gap-1 rounded-sm font-mono text-xs text-accent hover:underline',
-          FOCUS_RING,
-          props.class
-        )}
-      >
-        {text()}
-        <ExternalLinkIcon size={12} class="shrink-0" aria-hidden="true" />
-        <span class="sr-only"> (opens in a new tab)</span>
-      </a>
-    </Show>
   );
 }

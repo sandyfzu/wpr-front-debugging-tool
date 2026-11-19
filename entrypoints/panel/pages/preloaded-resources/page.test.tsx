@@ -1,18 +1,27 @@
 /**
- * Render suite of the Preloaded Resources page: its summary ("WP Rocket
- * hints" badge, total, notes), the kind and attribution chips, the inventory
- * order (WP Rocket first), the chip filters, its search field and the two
- * distinct empty states. The shared body's search/focus/refresh behavior is
- * pinned once, by the Lazyload suite.
+ * The Preloaded Resources page on the calm list: summary ("WP Rocket
+ * hints" state, total, notes), rows (icon by type, name, kind + URL
+ * preview, attribution chip) in inventory order (WP Rocket first), facets
+ * and search, the detail (attribution and why, the URL's tile — none for a
+ * srcset-only preload —, rel/as/stamp facts, copy), refreshes keeping the
+ * selection by content key, and the two distinct empty states.
  */
 import { cleanup, fireEvent, screen, within } from '@solidjs/testing-library';
+import type { JSX } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DNS_PREFETCH_LIMIT } from '../../../../lib/detection/hud';
+import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import type { FdtData, PreloadedResources } from '../../../../lib/wp-rocket/types';
-import { SEARCH_DEBOUNCE_MS } from '../../state/search';
 import { makeFdtData } from '../../state/fixtures';
-import { renderPage } from '../resource-list/page-harness';
-import { PreloadedResourcesPage } from './page';
+import { SEARCH_DEBOUNCE_MS } from '../../state/search';
+import type { OpenResource } from '../open-resource';
+import {
+  installFakeResizeObserver,
+  type FakeResizeObservers
+} from '../resource-list/fake-resize-observer';
+import { renderPage, type PageHarness } from '../resource-list/page-harness';
+import { PreloadedResourcesPage, type PreloadedResourcesPageProps } from './page';
+import { NO_URL_NOTE, SRCSET_ONLY_NOTE } from './preloaded-view';
 
 /** A payload carrying the given report (Optimize Critical Images detected unless told). */
 function withReport(preloadedResources: PreloadedResources, oci = true): FdtData {
@@ -42,166 +51,367 @@ function fixture(): FdtData {
   });
 }
 
-/** The chip button for an id. */
-function chip(root: HTMLElement, id: string): HTMLButtonElement {
-  const found = root.querySelector<HTMLButtonElement>(`[data-fdt-filter-chip="${id}"]`);
-  if (found === null) throw new Error(`no chip ${id}`);
-  return found;
-}
-
-/** The visible row names, in order. */
-function rowNames(root: HTMLElement): string[] {
-  return [...root.querySelectorAll('[data-fdt="resource-name"]')].map((n) => n.textContent);
-}
-
-/** Each row's kind chip and attribution chip text, in order. */
-function rowChips(): string[][] {
-  return screen
-    .getAllByRole('listitem')
-    .map((item) => [
-      item.querySelector('[data-fdt="hint-kind"]')?.parentElement?.textContent ?? '',
-      item.querySelector('[data-fdt="hint-attribution"]')?.textContent ?? ''
-    ]);
-}
+let observers: FakeResizeObservers;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  observers = installFakeResizeObserver();
 });
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
-describe('PreloadedResourcesPage', () => {
-  it('renders the frame, the "WP Rocket hints" badge and the hint total', () => {
-    const { root } = renderPage(PreloadedResourcesPage, fixture());
+/**
+ * Render the page at a list width (pane from 830).
+ *
+ * @param data The payload.
+ * @param seams The page seams.
+ */
+function mount(data: FdtData = fixture(), seams: PreloadedResourcesPageProps = {}): PageHarness {
+  const harness = renderPage(
+    (props): JSX.Element => <PreloadedResourcesPage {...props} openResource={null} {...seams} />,
+    data
+  );
+  observers.resize(1000);
+  return harness;
+}
+
+/** Every rendered row. */
+function rows(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('[data-fdt="hint-row"]')];
+}
+
+/**
+ * A field's text in a row.
+ *
+ * @param row The row.
+ * @param hook The field's hook.
+ */
+function field(row: HTMLElement | undefined, hook: string): string | undefined {
+  return row?.querySelector(`[data-fdt="${hook}"]`)?.textContent ?? undefined;
+}
+
+/** The rendered rows' names, in order. */
+function names(): string[] {
+  return rows().map((row) => field(row, 'list-row-name') ?? '');
+}
+
+/** Each row's preview and attribution chip text, in order. */
+function rowWords(): string[][] {
+  return rows().map((row) => [
+    field(row, 'list-row-preview') ?? '',
+    field(row, 'hint-attribution') ?? ''
+  ]);
+}
+
+/** Open the row at a position. */
+function openAt(index: number): void {
+  const button = rows()[index]?.querySelector<HTMLButtonElement>('[data-fdt-row-open]');
+  if (button === null || button === undefined) throw new Error(`no row ${String(index)}`);
+  fireEvent.click(button);
+}
+
+/** The side pane (throws when closed). */
+function pane(): HTMLElement {
+  const found = document.querySelector<HTMLElement>('[data-fdt="detail-pane"]');
+  if (found === null) throw new Error('no detail pane');
+  return found;
+}
+
+/** A facet segment's radio. */
+function segment(value: string): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>(
+    `[data-fdt="facet-bar"] [data-fdt-choice-value="${value}"] input`
+  );
+  if (input === null) throw new Error(`no segment ${value}`);
+  return input;
+}
+
+/** Every facet value's count, keyed `facet:value`. */
+function counts(): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const group of document.querySelectorAll('[data-fdt="facet-bar"] [role="radiogroup"]')) {
+    const labelId = group.getAttribute('aria-labelledby') ?? '';
+    const facet = document.getElementById(labelId)?.textContent ?? '';
+    for (const choice of group.querySelectorAll<HTMLElement>('[data-fdt-choice-value]')) {
+      result[`${facet}:${choice.dataset['fdtChoiceValue'] ?? ''}`] =
+        choice.querySelector('[data-fdt-choice-count]')?.textContent ?? '';
+    }
+  }
+  return result;
+}
+
+describe('PreloadedResourcesPage — summary and rows', () => {
+  it('renders the frame, the "WP Rocket hints" state and the hint total', () => {
+    const { root } = mount();
     expect(root.getAttribute('data-fdt-page')).toBe('preloaded-resources');
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Preloaded Resources');
     const summary = root.querySelector('[data-fdt="resource-summary"]');
     expect(summary?.textContent).toContain('WP Rocket hints');
-    expect(summary?.textContent).toContain('detected');
+    expect(summary?.querySelector('[data-fdt="status-badge"]')?.textContent).toBe('Detected');
     expect(root.querySelector('[data-fdt="resource-total"]')?.textContent).toBe('7 hints');
     expect(root.querySelectorAll('[data-fdt="resource-note"]')).toHaveLength(0);
+    expect(document.querySelector('[data-fdt="list-head"]')?.textContent).toBe('HintSource');
+    // The attribution chip is no state with a source: no legend.
+    expect(root.querySelector('[data-fdt="state-source-legend"]')).toBeNull();
   });
 
   it('keeps WP Rocket hints apart, first, grouped by kind; names features only on proof', () => {
-    renderPage(PreloadedResourcesPage, fixture());
-    expect(rowChips()).toEqual([
-      ['preload · image', 'WP Rocket (Optimize Critical Images)'],
+    mount();
+    expect(names()).toEqual([
+      'hero.webp',
+      'No URL (srcset only)',
+      'inter.woff2',
+      'fonts.example',
+      'logo.png',
+      'app.js',
+      'dns.example'
+    ]);
+    expect(rowWords()).toEqual([
+      ['preload · image · cdn.example/wp/hero.webp', 'WP Rocket (Optimize Critical Images)'],
       ['preload · image', 'WP Rocket (Optimize Critical Images)'],
       // Preload fonts is not detected: the shared stamp names WP Rocket only.
-      ['preload · font', 'WP Rocket'],
-      ['preconnect', 'WP Rocket (Preconnect to External Domains)'],
-      ['preload · image', 'Unattributed'],
-      ['modulepreload', 'Unattributed'],
-      ['dns-prefetch', 'Unattributed']
+      ['preload · font · cdn.example/wp/inter.woff2', 'WP Rocket'],
+      ['preconnect · fonts.example/', 'WP Rocket (Preconnect to External Domains)'],
+      ['preload · image · cdn.example/wp/logo.png', 'Unattributed'],
+      ['modulepreload · cdn.example/wp/app.js', 'Unattributed'],
+      ['dns-prefetch · dns.example/', 'Unattributed']
+    ]);
+    // The chip's hover names the stamp and why.
+    expect(
+      rows()[0]?.querySelector('[data-fdt="hint-attribution"] [title]')?.getAttribute('title')
+    ).toBe('data-rocket-preload: written by Optimize Critical Images, detected on this page.');
+  });
+
+  it('leads each row with an icon by what it fetches', () => {
+    mount();
+    const icons = rows().map(
+      (row) =>
+        [...(row.querySelector('[data-fdt="list-row-icon"] svg')?.classList ?? [])].find(
+          (name) => name.startsWith('lucide-') && name !== 'lucide-icon'
+        ) ?? ''
+    );
+    expect(icons).toEqual([
+      'lucide-image',
+      'lucide-image',
+      'lucide-type',
+      'lucide-globe',
+      'lucide-image',
+      'lucide-file-code',
+      'lucide-globe'
     ]);
   });
 
   it('names no feature on an image preload without the critical-images row', () => {
     const data = fixture();
     data.wprDetections.rocket_above_the_fold_optimization.present = false;
-    renderPage(PreloadedResourcesPage, data);
-    expect(rowChips()[0]).toEqual(['preload · image', 'WP Rocket']);
-  });
-
-  it('counts every chip in one pass over the rows', () => {
-    const { root } = renderPage(PreloadedResourcesPage, fixture());
-    const counts = Object.fromEntries(
-      [...root.querySelectorAll<HTMLElement>('[data-fdt-filter-chip]')].map(
-        (button): [string, string | undefined] => [
-          button.dataset['fdtFilterChip'] ?? '',
-          button.querySelector('[data-fdt-filter-count]')?.textContent
-        ]
-      )
-    );
-    expect(counts).toEqual({
-      all: '7',
-      'wp-rocket': '4',
-      unattributed: '3',
-      preload: '4',
-      images: '3',
-      fonts: '1',
-      modulepreload: '1',
-      preconnect: '1',
-      'dns-prefetch': '1'
-    });
-    expect(screen.getByRole('button', { name: 'Show all 7 matching' })).toBe(chip(root, 'all'));
-  });
-
-  it('links absolute URLs, offers a "URL" copy, and is honest about a missing href', () => {
-    renderPage(PreloadedResourcesPage, fixture());
-    expect(screen.getAllByRole('link')).toHaveLength(6);
-    expect(screen.getByRole('button', { name: 'URL (hero.webp) — copy' })).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: /^URL \(.+\) — copy$/ })).toHaveLength(6);
-    expect(
-      within(screen.getAllByRole('listitem')[1] as HTMLElement).getByText('No URL (srcset only)')
-    ).toBeTruthy();
-  });
-
-  it('filters by attribution and kind, then searches by href', () => {
-    const { root } = renderPage(PreloadedResourcesPage, fixture());
-    fireEvent.click(chip(root, 'unattributed'));
-    expect(rowNames(root)).toEqual(['logo.png', 'app.js', 'dns.example']);
-    fireEvent.click(chip(root, 'images'));
-    expect(rowNames(root)).toEqual(['hero.webp', 'logo.png']);
-    fireEvent.click(chip(root, 'all'));
-    const field = screen.getByRole('searchbox', { name: 'Search hint URLs' });
-    fireEvent.input(field, { target: { value: 'WOFF2' } });
-    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
-    expect(rowNames(root)).toEqual(['inter.woff2']);
-  });
-
-  it('notes the DNS prefetch limit when the row is declared beside plain DNS hints', () => {
-    const data = fixture();
-    data.wprDetections.dns_prefetch.present = true;
-    const { root } = renderPage(PreloadedResourcesPage, data);
-    expect(
-      [...root.querySelectorAll('[data-fdt="resource-note"]')].map((note) => note.textContent)
-    ).toEqual([DNS_PREFETCH_LIMIT]);
+    mount(data);
+    expect(rowWords()[0]).toEqual(['preload · image · cdn.example/wp/hero.webp', 'WP Rocket']);
+    expect(rows()[0]?.querySelector('[data-fdt="hint-attribution-mark"]')).toBeNull();
   });
 
   it('shows plain hints alone without any WP Rocket wording', () => {
-    const { root } = renderPage(
-      PreloadedResourcesPage,
+    const { root } = mount(
       withReport({
         present: false,
         hints: [{ rel: 'modulepreload', href: 'https://site.example/m.js', as: '' }]
       })
     );
-    expect(root.querySelector('[data-fdt="resource-summary"]')?.textContent).toContain(
-      'not detected'
+    expect(
+      root.querySelector('[data-fdt="resource-summary"] [data-fdt="status-badge"]')?.textContent
+    ).toBe('Not detected');
+    expect(rowWords()).toEqual([['modulepreload · site.example/m.js', 'Unattributed']]);
+  });
+
+  it('flags a clipped URL on a marked list', () => {
+    const href = `https://cdn.example/${'a'.repeat(PAYLOAD_LIMITS.preloaded.href)}`;
+    mount(
+      withReport({
+        present: false,
+        hints: [{ rel: 'preload', href, as: 'image' }],
+        hintsTruncated: true
+      })
     );
-    expect(rowChips()).toEqual([['modulepreload', 'Unattributed']]);
-    expect(root.querySelector('[data-fdt="hint-attribution-mark"]')).toBeNull();
+    expect(within(rows()[0] as HTMLElement).getByText('Clipped')).toBeTruthy();
+  });
+
+  it('notes the DNS prefetch limit when the row is declared beside plain DNS hints', () => {
+    const data = fixture();
+    data.wprDetections.dns_prefetch.present = true;
+    const { root } = mount(data);
+    expect(
+      [...root.querySelectorAll('[data-fdt="resource-note"]')].map((note) => note.textContent)
+    ).toEqual([DNS_PREFETCH_LIMIT]);
   });
 
   it('reads a capture without the inventory as its WP Rocket preloads, and says so', () => {
-    const { root } = renderPage(
-      PreloadedResourcesPage,
+    const { root } = mount(
       withReport({ present: true, resources: [{ href: 'https://a.example/x.png', type: 'IMAGE' }] })
     );
-    expect(rowChips()).toEqual([['preload · image', 'WP Rocket (Optimize Critical Images)']]);
+    expect(rowWords()).toEqual([
+      ['preload · image · a.example/x.png', 'WP Rocket (Optimize Critical Images)']
+    ]);
     expect(root.querySelector('[data-fdt="resource-note"]')?.textContent).toBe(
       "This capture lists WP Rocket's preloads only. Reload the inspected page to list every resource hint."
     );
   });
+});
 
-  it('says "No resource hints on this page" without any hint', () => {
-    const { root } = renderPage(PreloadedResourcesPage, withReport({ present: false, hints: [] }));
+describe('PreloadedResourcesPage — facets and search', () => {
+  it('counts every facet value', () => {
+    mount();
+    expect(counts()).toEqual({
+      'Source:any': '7',
+      'Source:wp-rocket': '4',
+      'Source:unattributed': '3',
+      'Hint:any': '7',
+      'Hint:preload': '4',
+      'Hint:modulepreload': '1',
+      'Hint:preconnect': '1',
+      'Hint:dns-prefetch': '1',
+      'Preload type:any': '7',
+      'Preload type:images': '3',
+      'Preload type:fonts': '1'
+    });
+  });
+
+  it('combines attribution and type, then searches by URL', () => {
+    mount();
+    fireEvent.click(segment('unattributed'));
+    expect(names()).toEqual(['logo.png', 'app.js', 'dns.example']);
+    fireEvent.click(segment('images'));
+    expect(names()).toEqual(['logo.png']);
+    // Back to Any in both facets.
+    for (const facet of ['Source', 'Preload type']) {
+      const any = within(screen.getByRole('radiogroup', { name: facet })).getByRole('radio', {
+        name: /^Any/
+      });
+      fireEvent.click(any);
+    }
+    expect(names()).toHaveLength(7);
+    fireEvent.input(screen.getByRole('searchbox', { name: 'Search hint URLs' }), {
+      target: { value: 'WOFF2' }
+    });
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(names()).toEqual(['inter.woff2']);
+  });
+});
+
+describe('PreloadedResourcesPage — detail', () => {
+  it('opens a WP Rocket preload: kind, name, attribution and why, tile, facts, copy', () => {
+    mount();
+    openAt(0);
+    expect(pane().querySelector('[data-fdt="detail-kind"]')?.textContent).toBe('Preload');
+    expect(pane().querySelector('[data-fdt="detail-title"]')?.textContent).toBe('hero.webp');
+    expect(pane().querySelector('[data-fdt="hint-attribution"]')?.textContent).toBe(
+      'WP Rocket (Optimize Critical Images)'
+    );
+    expect(pane().querySelector('[data-fdt="hint-attribution-why"]')?.textContent).toBe(
+      'data-rocket-preload: written by Optimize Critical Images, detected on this page.'
+    );
+    expect(pane().querySelector('[data-fdt="source-link-open"]')?.getAttribute('href')).toBe(
+      'https://cdn.example/wp/hero.webp'
+    );
+    expect(pane().querySelector('[data-fdt="hint-facts"]')?.textContent).toBe(
+      'RelpreloadAsimageWP Rocket stampdata-rocket-preloadFeatureOptimize Critical Images'
+    );
+    expect(within(pane()).getByRole('button', { name: 'Hint URL — copy' })).toBeTruthy();
+  });
+
+  it('a srcset-only preload has no tile and no copy, and says why', () => {
+    mount();
+    openAt(1);
+    expect(pane().querySelector('[data-fdt="source-link"]')).toBeNull();
+    expect(pane().querySelector('[data-fdt="hint-no-url"]')?.textContent).toBe(SRCSET_ONLY_NOTE);
+    expect(within(pane()).queryByRole('button', { name: /copy/ })).toBeNull();
+  });
+
+  it('any other hint without a URL says it carries none', () => {
+    mount(withReport({ present: false, hints: [{ rel: 'modulepreload', href: '', as: '' }] }));
+    expect(names()).toEqual(['No URL']);
+    openAt(0);
+    expect(pane().querySelector('[data-fdt="hint-no-url"]')?.textContent).toBe(NO_URL_NOTE);
+  });
+
+  it('opens a file in Sources, an origin in a new tab', () => {
+    const openResource: OpenResource = vi.fn();
+    mount(fixture(), { openResource });
+    const action = (): string | null | undefined =>
+      pane().querySelector('[data-fdt="source-link-open"]')?.getAttribute('data-fdt-action');
+    openAt(0);
+    expect(action()).toBe('sources');
+    openAt(5);
+    expect(pane().querySelector('[data-fdt="detail-kind"]')?.textContent).toBe('Module preload');
+    expect(action()).toBe('sources');
+    openAt(3);
+    expect(pane().querySelector('[data-fdt="detail-kind"]')?.textContent).toBe('Preconnect');
+    expect(action()).toBe('new-tab');
+    openAt(6);
+    expect(pane().querySelector('[data-fdt="detail-kind"]')?.textContent).toBe('DNS prefetch');
+    expect(action()).toBe('new-tab');
+  });
+
+  it('an unattributed hint says why its author is unproven', () => {
+    mount();
+    openAt(4);
+    expect(pane().querySelector('[data-fdt="hint-attribution"]')?.textContent).toBe('Unattributed');
+    expect(pane().querySelector('[data-fdt="hint-attribution-why"]')?.textContent).toContain(
+      'No WP Rocket stamp'
+    );
+    expect(pane().querySelector('[data-fdt="hint-facts"]')?.textContent).toBe('RelpreloadAsimage');
+  });
+
+  it('follows a refresh that attributes the open hint, keeping the selection', () => {
+    const data = fixture();
+    data.wprDetections.auto_preload_fonts.present = false;
+    const page = mount(data);
+    openAt(2);
+    expect(pane().querySelector('[data-fdt="hint-attribution"]')?.textContent).toBe('WP Rocket');
+    const next = fixture();
+    next.wprDetections.auto_preload_fonts.present = true;
+    page.refresh(next);
+    expect(pane().querySelector('[data-fdt="detail-title"]')?.textContent).toBe('inter.woff2');
+    expect(pane().querySelector('[data-fdt="hint-attribution"]')?.textContent).toBe(
+      'WP Rocket (Preload fonts)'
+    );
+  });
+
+  it('keeps the open hint across a refresh that inserts a hint above it', () => {
+    const page = mount();
+    openAt(4);
+    expect(pane().querySelector('[data-fdt="detail-title"]')?.textContent).toBe('logo.png');
+    const next = fixture();
+    // A plain image preload captured first lands right above logo.png.
+    next.preloadedResources.hints?.unshift({
+      rel: 'preload',
+      href: 'https://cdn.example/wp/new.png',
+      as: 'image'
+    });
+    page.refresh(next);
+    expect(names().slice(4, 6)).toEqual(['new.png', 'logo.png']);
+    expect(pane().querySelector('[data-fdt="detail-title"]')?.textContent).toBe('logo.png');
+  });
+});
+
+describe('PreloadedResourcesPage — empty states', () => {
+  it('says "No resource hints on this page" without any hint, compactly', () => {
+    const { root } = mount(withReport({ present: false, hints: [] }));
     expect(screen.getByText('No resource hints on this page')).toBeTruthy();
     expect(screen.queryByText('Hint inventory not collected')).toBeNull();
-    expect(root.querySelector('[data-fdt="filter-bar"]')).toBeNull();
-    expect(root.querySelector('[data-fdt="resource-summary"]')?.textContent).toContain(
-      'not detected'
-    );
+    expect(root.querySelector('[data-fdt="facet-bar"]')).toBeNull();
+    expect(
+      root.querySelector('[data-fdt="resource-summary"] [data-fdt="status-badge"]')?.textContent
+    ).toBe('Not detected');
     // No "0 hints" beside an empty state that already says so.
     expect(root.querySelector('[data-fdt="resource-total"]')).toBeNull();
+    expect(root.querySelector('[data-fdt="empty-state"]')?.className).not.toContain('self-center');
   });
 
   it('says "not collected" for a capture without a hint list, marker or not', () => {
-    const page = renderPage(PreloadedResourcesPage, withReport({ present: false }));
+    const page = mount(withReport({ present: false }));
     for (const report of [{ present: false }, { present: true }]) {
       page.refresh(withReport(report));
       expect(screen.getByText('Hint inventory not collected')).toBeTruthy();
@@ -215,35 +425,11 @@ describe('PreloadedResourcesPage', () => {
   });
 
   it('follows a refresh from rows to the empty state and back', () => {
-    const page = renderPage(PreloadedResourcesPage, fixture());
+    const page = mount();
     page.refresh(withReport({ present: false, hints: [] }));
     expect(screen.getByText('No resource hints on this page')).toBeTruthy();
     page.refresh(fixture());
-    expect(screen.getAllByRole('listitem')).toHaveLength(7);
-  });
-
-  describe('find navigation (the resource-list body’s side)', () => {
-    /** The row carrying the find's current match, if any. */
-    function currentRow(): HTMLElement | null {
-      return document.querySelector<HTMLElement>('[role="listitem"][aria-current="true"]');
-    }
-
-    it('reports the match count and marks the cursor’s row under a live query', () => {
-      const page = renderPage(PreloadedResourcesPage, fixture());
-      page.search.perform('cdn.example');
-      vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
-      const items = screen.getAllByRole('listitem');
-      expect(items).toHaveLength(4); // hero, inter, logo, app
-      expect(page.search.matchCount()).toBe(4);
-      expect(currentRow()).toBe(items[0]);
-      page.search.advance(1);
-      expect(currentRow()).toBe(screen.getAllByRole('listitem')[1]);
-      page.search.advance(-1);
-      page.search.advance(-1); // backward wrap: first → last
-      expect(currentRow()).toBe(items[3]);
-      page.search.cancel();
-      expect(page.search.matchCount()).toBe(0);
-      expect(currentRow()).toBeNull();
-    });
+    observers.resize(1000);
+    expect(rows()).toHaveLength(7);
   });
 });
