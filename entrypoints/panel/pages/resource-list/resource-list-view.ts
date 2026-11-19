@@ -15,6 +15,7 @@ export {
   listCapped
 } from '../../../../lib/panel/list-behavior';
 import type { ResourcePageDefinition } from '../../../../lib/panel/resources-view-model';
+import { parseHttpUrl } from '../../../../utils/urls';
 
 /**
  * The selected chip's label for the filtered-empty sentence, or `undefined`
@@ -131,4 +132,17 @@ export function reconcileRows<Row extends { readonly id: number }>(
  */
 export function urlClipped(truncated: true | undefined, url: string, cap: number): boolean {
   return truncated === true && url.length >= cap - 1;
+}
+
+/**
+ * A resource row's URL preview: the URL without the scheme (host, path,
+ * query — the part that tells two files apart), or the raw text when it is
+ * no http(s) URL.
+ *
+ * @param url The captured URL.
+ */
+export function urlPreview(url: string): string {
+  const parsed = parseHttpUrl(url);
+  if (parsed === null) return url;
+  return `${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
 }

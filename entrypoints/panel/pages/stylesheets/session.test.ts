@@ -9,7 +9,7 @@ import type { PageStylesheetsReply } from '../../../../lib/messaging/page-styles
 import { createStylesheetsRead } from './session';
 import type { StylesheetsOutcome } from './style-view';
 
-const REPLY: PageStylesheetsReply = { styles: [], total: 0 };
+const REPLY: PageStylesheetsReply = { styles: [], total: 0, snapshotId: 'a'.repeat(32) };
 const MISS: StylesheetsOutcome = { kind: 'page-unreachable', miss: 'no-receiver' };
 
 /** Let queued promise callbacks run. */

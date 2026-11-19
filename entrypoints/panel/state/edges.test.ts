@@ -34,7 +34,8 @@ function asksAnswering(answer: Promise<unknown>): TabAsks {
     getScriptRuntimeStatuses: vi.fn(() => Promise.resolve(null)),
     getCurrentVisitVitals: vi.fn(() => Promise.resolve(null)),
     listPageStyles: vi.fn(() => Promise.resolve(null)),
-    listPageStylesheets: vi.fn(() => Promise.resolve(null))
+    listPageStylesheets: vi.fn(() => Promise.resolve(null)),
+    getStyleSourceChunk: vi.fn(() => Promise.resolve(null))
   };
 }
 

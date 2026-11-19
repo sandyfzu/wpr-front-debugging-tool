@@ -1,15 +1,18 @@
 /**
  * The Stylesheets read's production wiring: the inspected tab (resolved per
- * ask, see `../inspected-tab`), a bounded and guarded ask, and the page's
- * load identity from the shell's data store.
+ * ask, see `../inspected-tab`), a bounded and guarded ask, the page's load
+ * identity from the shell's data store, and the bounded CSS chunk reader.
  */
 import { createLogger } from '../../../../lib/logger';
 import { boundedAsk, logAskMiss } from '../../../../lib/messaging/bounded-ask';
 import { parsePageStylesheetsReply } from '../../../../lib/messaging/page-stylesheets';
-import type { TabAsks } from '../../../../lib/messaging/tab-asks';
+import type { StyleSourceRequest } from '../../../../lib/messaging/style-source';
+import { selectTabAsks, type TabAsks } from '../../../../lib/messaging/tab-asks';
+import { devtoolsInspectedTabId } from '../../state/edges';
 import type { DataState } from '../../state/fdt-state-machine';
 import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { askInspectedTab } from '../inspected-tab';
+import { createTopFrameReader } from '../resource-list/top-frame-reader';
 import type { StylesheetsReadDeps } from './session';
 import type { StylesheetsOutcome } from './style-view';
 
@@ -57,3 +60,18 @@ export function realStylesheetsDeps(shell: {
     log
   };
 }
+
+/**
+ * The production CSS chunk reader: the inspected tab's top frame, bounded
+ * (resolves with the untrusted reply; `loadStyleSource` validates it).
+ */
+export const requestStyleSourceChunk: (request: StyleSourceRequest) => Promise<unknown> =
+  createTopFrameReader(
+    { asks: () => selectTabAsks(browser), inspectedTabId: devtoolsInspectedTabId },
+    (asks, tabId, request: StyleSourceRequest) => asks.getStyleSourceChunk(tabId, request),
+    {
+      noTransport: 'This panel cannot reach the page for the style source.',
+      noTab: 'No inspected tab for the style source.',
+      timedOut: 'Style source read timed out.'
+    }
+  );

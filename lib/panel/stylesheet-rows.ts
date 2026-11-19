@@ -107,6 +107,7 @@ const CRITICAL_SNAPSHOT_ROW: CssStyleResource = {
   chars: 0,
   content: `#${CRITICAL_CSS_STYLE_ID}`,
   minified: false,
+  minifyAttribute: false,
   critical: true,
   rocketAsync: false,
   hostedFont: false
@@ -125,7 +126,7 @@ const CRITICAL_SNAPSHOT_ROW: CssStyleResource = {
  * @returns One row per listed style, in document order, after the snapshot row when there is one.
  */
 export function buildStylesheetRows(
-  reply: PageStylesheetsReply,
+  reply: Pick<PageStylesheetsReply, 'styles' | 'total'>,
   facts: StylesheetPageFacts = NO_STYLESHEET_PAGE_FACTS
 ): CssStyleResource[] {
   const rows = reply.styles.map((entry, index): CssStyleResource => {
@@ -142,6 +143,7 @@ export function buildStylesheetRows(
       chars: entry.chars,
       content: external ? entry.href : `${styleIdentity(entry)} ${entry.preview}`.trim(),
       minified: isStylesheetMinified(entry, facts),
+      minifyAttribute: entry.minifyAttribute,
       critical: isLiveCriticalStyle(entry, facts),
       rocketAsync: entry.rocketAsync,
       hostedFont: entry.hostedFont

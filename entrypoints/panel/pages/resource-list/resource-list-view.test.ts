@@ -10,6 +10,7 @@ import {
   listCapped,
   reconcileRows,
   urlClipped,
+  urlPreview,
   defaultChipId,
   narrowingChipLabel,
   normalizeQuery,
@@ -216,5 +217,19 @@ describe('urlClipped', () => {
     expect(urlClipped(true, 'x'.repeat(4095), 4096)).toBe(true);
     expect(urlClipped(true, 'x'.repeat(4094), 4096)).toBe(false);
     expect(urlClipped(undefined, 'x'.repeat(4096), 4096)).toBe(false);
+  });
+});
+
+describe('urlPreview', () => {
+  it('drops the scheme of an http(s) URL and keeps host, path, query and fragment', () => {
+    expect(urlPreview('https://cdn.test:8080/js/a.min.js?ver=1#x')).toBe(
+      'cdn.test:8080/js/a.min.js?ver=1#x'
+    );
+  });
+
+  it('keeps anything else as captured', () => {
+    expect(urlPreview('/relative.js')).toBe('/relative.js');
+    expect(urlPreview('data:text/javascript,1')).toBe('data:text/javascript,1');
+    expect(urlPreview('')).toBe('');
   });
 });

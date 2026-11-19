@@ -143,6 +143,8 @@ export function relayTabAsks(send: RelaySend): TabAsks {
     getScriptRuntimeStatuses: (tabId) => relay(send, { tabId, ask: 'getScriptRuntimeStatuses' }),
     getCurrentVisitVitals: (tabId) => relay(send, { tabId, ask: 'getCurrentVisitVitals' }),
     listPageStyles: (tabId) => relay(send, { tabId, ask: 'listPageStyles' }),
-    listPageStylesheets: (tabId) => relay(send, { tabId, ask: 'listPageStylesheets' })
+    listPageStylesheets: (tabId) => relay(send, { tabId, ask: 'listPageStylesheets' }),
+    getStyleSourceChunk: (tabId, request) =>
+      relay(send, { tabId, ask: 'getStyleSourceChunk', payload: request })
   };
 }

@@ -204,6 +204,12 @@ export interface ListRowProps {
   clipped?: boolean;
   /** The size cell's text (already formatted); omitted → the cell stays empty. */
   size?: string;
+  /**
+   * A relative size bar under the size text (0–1 of the bar's width, past 1
+   * full; none at 0 or below; the page picks the scale). Decorative: the text
+   * carries the value.
+   */
+  sizeShare?: number;
   /** The row's split state chips (the states column / compact third line). */
   chips?: StateChipSplit;
   /** Trailing controls outside the open button (e.g. the row copy button). */
@@ -264,11 +270,26 @@ export function ListRow(props: ListRowProps): JSX.Element {
           </span>
         </Show>
         <Show when={props.columns.size && props.size !== undefined}>
-          <span
-            data-fdt="list-row-size"
-            class="justify-self-end text-2xs text-fg-secondary tabular-nums [grid-area:size]"
-          >
-            {props.size}
+          <span class="flex flex-col items-end gap-1 justify-self-end [grid-area:size]">
+            <span data-fdt="list-row-size" class="text-2xs text-fg-secondary tabular-nums">
+              {props.size}
+            </span>
+            <Show when={(props.sizeShare ?? 0) > 0 ? props.sizeShare : undefined}>
+              {(share) => (
+                <span
+                  data-fdt="list-row-size-bar"
+                  aria-hidden="true"
+                  class="h-1 w-14 overflow-hidden rounded-full bg-surface-4"
+                >
+                  <span
+                    class="block h-full rounded-full bg-accent/50"
+                    style={{
+                      width: `${String(Math.round(Math.min(1, share()) * 100))}%`
+                    }}
+                  />
+                </span>
+              )}
+            </Show>
           </span>
         </Show>
         <Show when={props.columns.states}>

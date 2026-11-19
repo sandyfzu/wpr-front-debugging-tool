@@ -88,6 +88,15 @@ describe('relayTabAsks — requests', () => {
     ]);
   });
 
+  it('relays a style-source chunk with its request as the payload', async () => {
+    const send = sendAnswering({ ok: true, answer: { status: 'gone' } });
+    const read = { snapshotId: '0123456789abcdef0123456789abcdef', styleIndex: 1, offset: 0 };
+    await expect(relayTabAsks(send).getStyleSourceChunk(4, read)).resolves.toEqual({
+      status: 'gone'
+    });
+    expect(send.requests).toEqual([{ tabId: 4, ask: 'getStyleSourceChunk', payload: read }]);
+  });
+
   it('fails a missing inspected tab locally as a no-receiver miss (nothing sent)', async () => {
     const send = sendAnswering({ ok: true, answer: 'x' });
     const asks = relayTabAsks(send);

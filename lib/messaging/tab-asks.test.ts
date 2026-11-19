@@ -83,6 +83,14 @@ describe('the direct transport (the Chromium path)', () => {
     ]);
   });
 
+  it('asks a style-source chunk of the top frame only, with its request', async () => {
+    const read = { snapshotId: '0123456789abcdef0123456789abcdef', styleIndex: 2, offset: 0 };
+    await DIRECT_TAB_ASKS.getStyleSourceChunk(12, read);
+    expect(sendMessage.mock.calls).toEqual([
+      ['getStyleSourceChunk', read, { tabId: 12, frameId: 0 }]
+    ]);
+  });
+
   it('forwards an absent tab as-is (the send fails as the no-receiver case)', async () => {
     await DIRECT_TAB_ASKS.getFdtData(undefined);
     expect(sendMessage.mock.calls).toEqual([['getFdtData', undefined, undefined]]);

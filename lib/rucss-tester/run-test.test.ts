@@ -187,7 +187,8 @@ describe('rucssTabSteps', () => {
       getScriptRuntimeStatuses: vi.fn(),
       getCurrentVisitVitals: vi.fn(),
       listPageStyles: vi.fn(),
-      listPageStylesheets: vi.fn()
+      listPageStylesheets: vi.fn(),
+      getStyleSourceChunk: vi.fn()
     };
   }
 

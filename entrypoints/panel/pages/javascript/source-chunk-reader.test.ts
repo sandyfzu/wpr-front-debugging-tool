@@ -1,11 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TabAsks } from '../../../../lib/messaging/tab-asks';
 import { relayTabAsks } from '../../../../lib/messaging/tab-relay-client';
-import {
-  SOURCE_CHUNK_TIMEOUT_MS,
-  createServedTagReader,
-  createSourceChunkReader
-} from './source-chunk-reader';
+import { SOURCE_CHUNK_TIMEOUT_MS } from '../resource-list/top-frame-reader';
+import { createServedTagReader, createSourceChunkReader } from './source-chunk-reader';
 
 const REQUEST = { snapshotId: '0123456789abcdef0123456789abcdef', scriptIndex: 1, offset: 0 };
 
@@ -23,7 +20,8 @@ function asksAnswering(answer: Promise<unknown>): TabAsks {
     getScriptRuntimeStatuses: vi.fn(() => Promise.resolve(null)),
     getCurrentVisitVitals: vi.fn(() => Promise.resolve(null)),
     listPageStyles: vi.fn(() => Promise.resolve(null)),
-    listPageStylesheets: vi.fn(() => Promise.resolve(null))
+    listPageStylesheets: vi.fn(() => Promise.resolve(null)),
+    getStyleSourceChunk: vi.fn(() => Promise.resolve(null))
   };
 }
 

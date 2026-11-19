@@ -248,8 +248,8 @@
     "surface": "Stylesheets page (panel chunk, loaded on first visit)",
     "globs": ["chunks/stylesheets-*.js"],
     "maxKb": {
-      "raw": 11.4,
-      "gzip": 4.12
+      "raw": 18.3,
+      "gzip": 6.5
     },
     "required": true
   },
@@ -258,8 +258,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/stylesheets-*.js"],
     "maxKb": {
-      "raw": 11.4,
-      "gzip": 4.12
+      "raw": 18.3,
+      "gzip": 6.5
     },
     "required": true
   },
