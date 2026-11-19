@@ -1,10 +1,12 @@
 /**
- * The Beacon Tester page over a session with injected doubles: the form's
- * load states, feature names and live issues, the run card's states and
- * typed recoveries, the results tabs (no results, not part of the run, the
- * candidate list with its Label facet, search and detail, the lazy-render
- * list, the list notes), stale results after a reload, and a refresh keeping
- * the view.
+ * The Beacon Tester page over a session with injected doubles: the tool
+ * layout (instructions row, result column, settings column, heading tree),
+ * the form's load states, sections (seeded open state, live summaries, a
+ * recovery unfolding its field's section), feature names and live issues,
+ * the run's states and typed recoveries, the results tabs (no results, not
+ * part of the run, the candidate list with its Label facet, search and
+ * detail, the lazy-render list, the list notes), stale results after a
+ * reload, and a refresh or a route round trip keeping the view.
  */
 import { cleanup, fireEvent, render, screen, within } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
@@ -28,13 +30,9 @@ import {
   type FakeResizeObservers
 } from '../resource-list/fake-resize-observer';
 import { NO_FEATURE_NOTE } from './form';
-import {
-  BEACON_TESTER_SUBTITLE,
-  createBeaconTesterHandle,
-  BeaconTesterPage,
-  LOAD_FAILED_COPY
-} from './page';
-import { NO_RESULTS_COPY } from './results';
+import { LOAD_FAILED_COPY } from '../settings/settings-column';
+import { BEACON_TESTER_SUBTITLE, createBeaconTesterHandle, BeaconTesterPage } from './page';
+import { NO_RESULTS_COPY, SHOW_SETTINGS_LABEL } from './results';
 import { RUN_DISCLOSURE, RUNNING_COPY, STALE_COPY } from './run-panel';
 import { createBeaconTesterSession, type BeaconTesterSessionDeps } from './session';
 
@@ -143,20 +141,23 @@ function renderPage(
   const handle = createBeaconTesterHandle(() => createBeaconTesterSession(deps), state);
   const reload = options.reload === null ? null : (options.reload ?? vi.fn());
   const search = createSearchStore();
-  render(() => (
-    <FdtDataContext.Provider value={store}>
-      <SearchContext.Provider value={search}>
-        <DetailPresenceContext.Provider value={createDetailPresence(() => 'beacon-tester')}>
-          <BeaconTesterPage
-            handle={handle}
-            reloadInspectedPage={reload}
-            createVirtualizer={everyRow}
-          />
-        </DetailPresenceContext.Provider>
-      </SearchContext.Provider>
-    </FdtDataContext.Provider>
-  ));
-  return { handle, setState, runTest, reload };
+  /** Mount the page body on the handle (again after a `cleanup`: a route round trip). */
+  const mount = () =>
+    render(() => (
+      <FdtDataContext.Provider value={store}>
+        <SearchContext.Provider value={search}>
+          <DetailPresenceContext.Provider value={createDetailPresence(() => 'beacon-tester')}>
+            <BeaconTesterPage
+              handle={handle}
+              reloadInspectedPage={reload}
+              createVirtualizer={everyRow}
+            />
+          </DetailPresenceContext.Provider>
+        </SearchContext.Provider>
+      </FdtDataContext.Provider>
+    ));
+  mount();
+  return { handle, setState, runTest, reload, mount };
 }
 
 /** The Run button. */
@@ -299,10 +300,31 @@ describe('BeaconTesterPage — run', () => {
     expect(outcome()?.getAttribute('data-fdt-beacon-outcome')).toBe('invalid-config');
     expect(outcome()?.textContent).toContain('Viewport height must be a whole number');
     expect(send).not.toHaveBeenCalled();
+    // A folded section unfolds before its field takes the focus.
+    handle.sections.setOpen('device', false);
+    expect(screen.queryByLabelText('Viewport height (px)')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Review settings' }));
     await settle();
-    expect(handle.tab()).toBe('settings');
+    expect(handle.sections.isOpen('device')).toBe(true);
     expect(document.activeElement).toBe(screen.getByLabelText('Viewport height (px)'));
+  });
+
+  it.each([
+    { issue: { kind: 'no-feature' }, why: 'the features group' },
+    { issue: { kind: 'malformed' }, why: 'no field (the settings’ start)' }
+  ] as const)('leads Review settings for $why to the first feature switch', async ({ issue }) => {
+    const { handle } = renderPage({
+      runTest: () => Promise.resolve({ kind: 'invalid-config', issues: [issue] })
+    });
+    await settle();
+    await run();
+    handle.sections.setOpen('features', false);
+    fireEvent.click(screen.getByRole('button', { name: 'Review settings' }));
+    await settle();
+    expect(handle.sections.isOpen('features')).toBe(true);
+    expect(document.activeElement).toBe(
+      screen.getByRole('switch', { name: 'Optimize Critical Images' })
+    );
   });
 
   it('offers Reload page only where the context can reload', async () => {
@@ -351,32 +373,43 @@ describe('BeaconTesterPage — run', () => {
 });
 
 describe('BeaconTesterPage — results', () => {
-  it('offers Run on a results tab before any test, and says why after one without results', async () => {
+  it('explains a results tab before any test — Run sits in the run bar — and says why after one without results', async () => {
     const { handle, runTest } = renderPage({
       runTest: () => Promise.resolve({ kind: 'busy' })
     });
     await settle();
+    const empty = () =>
+      shownPanel().querySelector<HTMLElement>('[data-fdt="beacon-results-empty"]');
+    expect(empty()?.textContent).toContain(NO_RESULTS_COPY.description.aboveTheFold);
     handle.setTab('lazy-render');
-    expect(screen.getByText(NO_RESULTS_COPY.description)).toBeTruthy();
-    fireEvent.click(within(shownPanel()).getByRole('button', { name: 'Run test' }));
+    expect(empty()?.textContent).toContain(NO_RESULTS_COPY.title);
+    expect(empty()?.textContent).toContain(NO_RESULTS_COPY.description.lazyRender);
+    // One Run on the page: the run bar's.
+    expect(within(shownPanel()).queryByRole('button', { name: 'Run test' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Run test' })).toEqual([runButton()]);
+    // The honest empty card: dashed, on the canvas color, filling the column from @wide.
+    const card = empty()?.closest('[data-fdt="card"]');
+    expect(card?.className).toContain('border-dashed');
+    expect(card?.className).toContain('bg-surface-0');
+    expect(card?.className).toContain('@wide:flex-1');
+    fireEvent.click(runButton());
     await settle();
     expect(runTest).toHaveBeenCalledTimes(1);
-    expect(screen.getByText(NO_RESULTS_COPY.ended)).toBeTruthy();
+    expect(within(shownPanel()).getByText(NO_RESULTS_COPY.ended)).toBeTruthy();
   });
 
-  it('holds a results tab’s Run test while the settings load', async () => {
+  it('holds Run while the settings load, and the results tabs offer no Run of their own', async () => {
     let loaded: (settings: BeaconTestSettings) => void = () => undefined;
     const { handle, runTest } = renderPage({
       readSettings: () => new Promise<BeaconTestSettings>((done) => (loaded = done))
     });
     handle.setTab('above-the-fold');
-    const runTestButton = within(shownPanel()).getByRole<HTMLButtonElement>('button', {
-      name: 'Run test'
-    });
-    expect(runTestButton.disabled).toBe(true);
+    expect(within(shownPanel()).queryByRole('button')).toBeNull();
+    expect(runButton().disabled).toBe(true);
     loaded(STORED);
     await settle();
-    expect(runTestButton.disabled).toBe(false);
+    expect(runButton().disabled).toBe(false);
+    expect(within(shownPanel()).queryByRole('button')).toBeNull();
     expect(runTest).not.toHaveBeenCalled();
   });
 
@@ -389,24 +422,51 @@ describe('BeaconTesterPage — results', () => {
     const panel = shownPanel();
     expect(within(panel).queryByRole('button', { name: 'Run test' })).toBeNull();
     expect(within(panel).getByText(NO_RESULTS_COPY.settingsFailed)).toBeTruthy();
-    fireEvent.click(within(panel).getByRole('button', { name: 'Open settings' }));
-    expect(handle.tab()).toBe('settings');
-    expect(screen.getByText(LOAD_FAILED_COPY)).toBeTruthy();
+    fireEvent.click(within(panel).getByRole('button', { name: SHOW_SETTINGS_LABEL }));
+    await settle();
+    const settings = document.querySelector<HTMLElement>('[data-fdt="beacon-settings"]');
+    expect(within(settings as HTMLElement).getByText(LOAD_FAILED_COPY)).toBeTruthy();
+    expect(document.activeElement).toBe(
+      within(settings as HTMLElement).getByRole('button', { name: 'Retry' })
+    );
     expect(runTest).not.toHaveBeenCalled();
   });
 
-  it('leads a feature that was not part of the run back to the settings', async () => {
-    const { handle } = renderPage({
-      runTest: () => Promise.resolve({ ...COMPLETED, results: { ...RESULTS, aboveTheFold: null } })
-    });
-    await settle();
-    await run();
-    expect(handle.tab()).toBe('lazy-render');
-    handle.setTab('above-the-fold');
-    expect(screen.getByText('Not part of this test')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }));
-    expect(handle.tab()).toBe('settings');
-  });
+  it.each([
+    {
+      ran: 'lazyRender',
+      off: 'aboveTheFold',
+      tab: 'above-the-fold',
+      shownFirst: 'lazy-render',
+      name: 'Optimize Critical Images'
+    },
+    {
+      ran: 'aboveTheFold',
+      off: 'lazyRender',
+      tab: 'lazy-render',
+      shownFirst: 'above-the-fold',
+      name: 'Automatic Lazy Rendering'
+    }
+  ] as const)(
+    'leads a feature that was not part of the run to its own switch ($name)',
+    async ({ off, tab, shownFirst, name }) => {
+      const { handle } = renderPage({
+        runTest: () => Promise.resolve({ ...COMPLETED, results: { ...RESULTS, [off]: null } })
+      });
+      await settle();
+      await run();
+      expect(handle.tab()).toBe(shownFirst);
+      handle.setTab(tab);
+      const notPart = shownPanel().querySelector('[data-fdt="beacon-results-off"]');
+      expect(notPart?.textContent).toContain('Not part of this test');
+      expect(notPart?.textContent).toContain(`Turn on ${name} in the settings`);
+      handle.sections.setOpen('features', false);
+      fireEvent.click(within(shownPanel()).getByRole('button', { name: SHOW_SETTINGS_LABEL }));
+      await settle();
+      expect(handle.sections.isOpen('features')).toBe(true);
+      expect(document.activeElement).toBe(screen.getByRole('switch', { name }));
+    }
+  );
 
   it('renders the candidate rows with counts, the left-out note, the Label facet and search', async () => {
     vi.useFakeTimers();
@@ -606,5 +666,223 @@ describe('BeaconTesterPage — instructions card', () => {
         .querySelector('[data-fdt="beacon-instructions"]')
         ?.getAttribute('data-fdt-beacon-instructions')
     ).toBe('stale');
+  });
+});
+
+/** A section's disclosure button. */
+function sectionToggle(section: string): HTMLButtonElement {
+  const toggle = document.querySelector<HTMLButtonElement>(
+    `[data-fdt-beacon-section="${section}"] [data-fdt-beacon-section-toggle]`
+  );
+  if (toggle === null) throw new Error(`no ${section} section`);
+  return toggle;
+}
+
+/** A section's header words: its summary, then its problem (or null). */
+function sectionHeader(section: string): [string | undefined, string | null] {
+  const toggle = sectionToggle(section);
+  return [
+    toggle.querySelector('[data-fdt-beacon-section-summary]')?.textContent,
+    toggle.querySelector('[data-fdt-beacon-section-problem]')?.textContent ?? null
+  ];
+}
+
+describe('BeaconTesterPage — tool layout', () => {
+  it('puts the instructions row first, then the result column (run bar first) before the settings', async () => {
+    renderPage();
+    await settle();
+    const instructions = document.querySelector('[data-fdt="beacon-instructions"]');
+    const result = document.querySelector('[data-fdt="beacon-result-column"]');
+    const settings = document.querySelector('[data-fdt="beacon-settings"]');
+    if (instructions === null || result === null || settings === null) {
+      throw new Error('missing column');
+    }
+    expect(instructions.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+    expect(result.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+    expect(result.getAttribute('aria-label')).toBe('Test results');
+    // Run bar, then the run state, then the results tabs.
+    expect(result.firstElementChild?.querySelector('[data-fdt="beacon-run"]')).not.toBeNull();
+    expect(result.querySelector('[role="tablist"]')).not.toBeNull();
+    expect(settings.querySelector('[role="tablist"]')).toBeNull();
+    expect(result.className).toContain('@wide:[grid-area:result]');
+    expect(settings.className).toContain('@wide:[grid-area:settings]');
+    expect(settings.className).toContain('@wide:overflow-y-auto');
+    expect(result.parentElement?.className).toContain('@wide:grid-cols-[21.25rem_minmax(0,1fr)]');
+    // The two results tabs only: the settings are never a tab.
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Critical images',
+      'Lazy rendering'
+    ]);
+  });
+
+  it('keeps one heading tree: the page h1, the instructions and Settings h2s, a section h3 each', async () => {
+    renderPage();
+    await settle();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(
+      screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)
+    ).toEqual(['Beacon instructions on this page', 'Settings']);
+    expect(
+      screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)
+    ).toEqual([
+      expect.stringContaining('Features'),
+      expect.stringContaining('Device and viewport'),
+      expect.stringContaining('Optimize Critical Images'),
+      expect.stringContaining('Automatic Lazy Rendering')
+    ]);
+  });
+
+  it('shows the save state beside the Settings heading once loaded, never in a card footer', async () => {
+    renderPage();
+    expect(document.querySelector('[data-fdt-save]')).toBeNull();
+    await settle();
+    const save = document.querySelector('[data-fdt-save]');
+    expect(save?.getAttribute('data-fdt-save')).toBe('saved');
+    expect(save?.textContent).toBe('Saved');
+    expect(save?.closest('[data-fdt="beacon-settings"]')).not.toBeNull();
+    expect(document.querySelector('[data-fdt="card-footer"]')).toBeNull();
+  });
+
+  it('holds the settings skeleton, one bar per section, while they load', () => {
+    renderPage({ readSettings: () => new Promise(() => undefined) });
+    expect(document.querySelector('[data-fdt-beacon-form-loading]')?.children).toHaveLength(4);
+    expect(document.querySelector('[data-fdt="beacon-form"]')).toBeNull();
+  });
+
+  it('puts the note beside Run in the run bar, and the running line under it', async () => {
+    let finish: (value: BeaconTestOutcome) => void = () => undefined;
+    renderPage({ runTest: () => new Promise<BeaconTestOutcome>((done) => (finish = done)) });
+    await settle();
+    const bar = document.querySelector('[data-fdt="beacon-run"]');
+    expect(bar?.querySelector('[data-fdt-beacon-disclosure]')?.textContent).toBe(RUN_DISCLOSURE);
+    expect(bar?.contains(runButton())).toBe(true);
+    fireEvent.click(runButton());
+    const running = document.querySelector('[data-fdt-beacon-running]');
+    expect(running?.textContent).toBe(RUNNING_COPY);
+    expect(bar?.contains(running ?? null)).toBe(false);
+    // The tab shows a skeleton of its rows meanwhile (a real wait).
+    expect(shownPanel().querySelector('[data-fdt-beacon-results-loading]')).not.toBeNull();
+    finish(COMPLETED);
+    await settle();
+    expect(document.querySelector('[data-fdt-beacon-running]')).toBeNull();
+  });
+
+  it('gives a shown list about the panel’s height below @wide, and only a shown list', async () => {
+    let finish: (value: BeaconTestOutcome) => void = () => undefined;
+    renderPage({ runTest: () => new Promise<BeaconTestOutcome>((done) => (finish = done)) });
+    await settle();
+    const root = () => document.querySelector('[role="tablist"]')?.parentElement?.className ?? '';
+    expect(root()).not.toContain('100dvh');
+    fireEvent.click(runButton());
+    expect(root()).not.toContain('100dvh');
+    finish({ ...COMPLETED, results: { ...RESULTS, lazyRender: null } });
+    await settle();
+    observers.resize(1000);
+    // A floor, never a fixed height: at short heights the box grows to hold its content.
+    expect(root()).toContain('min-h-[calc(100dvh-6rem)]');
+    expect(root()).toContain('@wide:min-h-0');
+    expect(root()).not.toMatch(/(^|\s)(h-\[|min-h-0(\s|$))/);
+    // Growing from @wide only: a zero flex basis below it would size the box to the floor alone.
+    expect(root()).toContain('@wide:flex-1');
+    expect(root()).not.toMatch(/(^|\s)flex-1(\s|$)/);
+  });
+});
+
+describe('BeaconTesterPage — settings sections', () => {
+  it('folds a feature’s section of defaults while the feature is off; opens features and device', async () => {
+    renderPage({ readSettings: () => Promise.resolve(DEFAULT_BEACON_TEST_SETTINGS) });
+    await settle();
+    expect(sectionToggle('features').getAttribute('aria-expanded')).toBe('true');
+    expect(sectionToggle('device').getAttribute('aria-expanded')).toBe('true');
+    expect(sectionToggle('aboveTheFold').getAttribute('aria-expanded')).toBe('false');
+    expect(sectionToggle('lazyRender').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByLabelText('Candidate elements')).toBeNull();
+    expect(sectionHeader('features')).toEqual(['0 of 2 on', null]);
+    expect(sectionHeader('device')).toEqual(['Desktop · 1,600 × 700 px', null]);
+    expect(sectionHeader('aboveTheFold')).toEqual(['Off · Defaults', null]);
+    expect(sectionHeader('lazyRender')).toEqual(['Off · 1,800 px', null]);
+    // The chevron turns with the state; the button controls the body it shows.
+    const toggle = sectionToggle('aboveTheFold');
+    expect(toggle.querySelector('svg')?.getAttribute('class')).not.toContain('rotate-90');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.querySelector('svg')?.getAttribute('class')).toContain('rotate-90');
+    const body = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    expect(body?.contains(screen.getByLabelText('Candidate elements'))).toBe(true);
+  });
+
+  it('opens a feature’s section when the feature is on', async () => {
+    renderPage();
+    await settle();
+    expect(sectionToggle('aboveTheFold').getAttribute('aria-expanded')).toBe('true');
+    expect(sectionToggle('lazyRender').getAttribute('aria-expanded')).toBe('true');
+    expect(sectionHeader('features')).toEqual(['2 of 2 on', null]);
+    expect(sectionHeader('aboveTheFold')).toEqual(['Defaults', null]);
+  });
+
+  it('sums up each section live, its problems shown even while folded', async () => {
+    const { handle } = renderPage();
+    await settle();
+    fireEvent.input(screen.getByLabelText('Viewport width (px)'), { target: { value: '12a' } });
+    fireEvent.input(screen.getByLabelText('Candidate elements'), {
+      target: { value: 'img\nA[\nB[' }
+    });
+    fireEvent.input(screen.getByLabelText('Lazy-render distance (px)'), {
+      target: { value: '' }
+    });
+    for (const section of ['device', 'aboveTheFold', 'lazyRender'] as const) {
+      handle.sections.setOpen(section, false);
+    }
+    expect(sectionHeader('device')).toEqual(['Desktop', '1 invalid value']);
+    expect(sectionHeader('aboveTheFold')).toEqual(['3 selectors', '2 invalid selectors']);
+    expect(sectionHeader('lazyRender')).toEqual(['', 'Invalid distance']);
+    const problem = sectionToggle('device').querySelector('[data-fdt-beacon-section-problem]');
+    expect(problem?.className).toContain('text-');
+    // Typing never folds or unfolds a section.
+    handle.sections.setOpen('device', true);
+    fireEvent.input(screen.getByLabelText('Viewport width (px)'), { target: { value: '1000' } });
+    expect(sectionHeader('device')).toEqual(['Desktop · 1,000 × 700 px', null]);
+    expect(sectionToggle('aboveTheFold').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('unfolds the selectors’ section for a refused selector before focusing it', async () => {
+    const { handle } = renderPage({
+      readSettings: () => Promise.resolve({ ...STORED, selectorText: 'img\nA[' }),
+      runTest: (draft) =>
+        runBeaconTest(draft, {
+          isValidSelector: (selector) => /^[a-z]+(,[a-z]+)*$/.test(selector),
+          run: vi.fn(),
+          log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+        })
+    });
+    await settle();
+    await run();
+    expect(outcome()?.getAttribute('data-fdt-beacon-outcome')).toBe('invalid-config');
+    handle.sections.setOpen('aboveTheFold', false);
+    fireEvent.click(screen.getByRole('button', { name: 'Review settings' }));
+    await settle();
+    expect(handle.sections.isOpen('aboveTheFold')).toBe(true);
+    expect(document.activeElement).toBe(screen.getByLabelText('Candidate elements'));
+  });
+
+  it('keeps the open sections and the tab across a route round trip', async () => {
+    const { handle, mount } = renderPage();
+    await settle();
+    await run();
+    // The first tab: the one an unmount artefact would move off.
+    expect(handle.tab()).toBe('above-the-fold');
+    fireEvent.click(sectionToggle('device'));
+    expect(handle.sections.isOpen('device')).toBe(false);
+    // Leaving the route unmounts the tab triggers: their artefact change must not stick.
+    cleanup();
+    expect(handle.tab()).toBe('above-the-fold');
+    mount();
+    await settle();
+    expect(handle.tab()).toBe('above-the-fold');
+    expect(sectionToggle('device').getAttribute('aria-expanded')).toBe('false');
   });
 });

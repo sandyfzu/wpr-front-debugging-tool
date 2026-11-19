@@ -1,17 +1,14 @@
 /**
- * The beacon tester's run card: what a run does (shown before the first
- * click), the Run control, and the run's state — running (a real wait,
- * bounded by the deadlines) or the finished outcome with its recoveries,
- * the issues of settings that cannot run, and a line once the results
- * measured an earlier page load. Every state is read from the session;
- * nothing here latches.
+ * The beacon tester's run state, under the shared run bar: running (what
+ * the wait is for, bounded by the deadlines; the result tabs show its
+ * skeleton) or the finished outcome with its recoveries, the issues of
+ * settings that cannot run, and a line once the results measured an
+ * earlier page load; nothing before the first run (the result tabs say
+ * what a run produces). Every state is read from the session; nothing here
+ * latches.
  */
 import type { JSX } from 'solid-js';
 import { createMemo, For, Match, Show, Switch } from 'solid-js';
-import Info from 'lucide-solid/icons/info';
-import Play from 'lucide-solid/icons/play';
-import { Button } from '../../../../components/ui/button';
-import { Card } from '../../../../components/ui/card';
 import type { StatusKind } from '../../../../components/ui/status-badge';
 import { BEACON_TEST_ASK_DEADLINE_MS } from '../../../../lib/beacon-test/deadlines';
 import {
@@ -25,7 +22,7 @@ import { OutcomeNotice } from '../outcome-notice';
 import { RecoveryButtons } from '../recovery-buttons';
 import type { BeaconTesterSession, FinishedBeaconRun } from './session';
 
-/** What a run does, next to Run (no request leaves the browser). */
+/** What a run does, beside Run (no request leaves the browser). */
 export const RUN_DISCLOSURE =
   "Runs WP Rocket's beacon on the inspected page as it is now: nothing is saved to the site and the page is not changed.";
 
@@ -50,7 +47,7 @@ const TONE_KIND: Readonly<Record<BeaconOutcomeView['tone'], StatusKind>> = {
   error: 'error'
 };
 
-/** What the run card's actions do (the page binds them). */
+/** What the outcome's recoveries do (the page binds them). */
 export interface BeaconRunActions {
   /** Reload the inspected page; absent where the context cannot. */
   readonly reloadPage?: () => void;
@@ -58,8 +55,8 @@ export interface BeaconRunActions {
   readonly reviewSettings: (view: BeaconOutcomeView) => void;
 }
 
-/** Props of {@link BeaconRunPanel}. */
-export interface BeaconRunPanelProps {
+/** Props of {@link BeaconRunState}. */
+export interface BeaconRunStateProps {
   session: BeaconTesterSession;
   actions: BeaconRunActions;
 }
@@ -115,52 +112,26 @@ function OutcomeBlock(props: {
 }
 
 /**
- * Render the run card.
+ * Render the run state.
  *
- * @param props See {@link BeaconRunPanelProps}.
+ * @param props See {@link BeaconRunStateProps}.
  */
-export function BeaconRunPanel(props: BeaconRunPanelProps): JSX.Element {
-  const running = (): boolean => props.session.run().status === 'running';
-  const ready = (): boolean => props.session.load().status === 'ready';
+export function BeaconRunState(props: BeaconRunStateProps): JSX.Element {
   /** The finished run, else `undefined`. */
   const finished = () => {
     const state = props.session.run();
     return state.status === 'finished' ? state : undefined;
   };
   return (
-    <Card level={1} class="p-2.5">
-      <div data-fdt="beacon-run" class="flex flex-col gap-2.5">
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Button
-            variant="primary"
-            busy={running()}
-            disabled={!ready()}
-            data-fdt-beacon-run
-            onClick={() => {
-              void props.session.start();
-            }}
-          >
-            <Show when={!running()}>
-              <Play size={12} aria-hidden="true" />
-            </Show>
-            {running() ? 'Running test…' : 'Run test'}
-          </Button>
-          <p class="flex min-w-0 flex-1 basis-60 items-start gap-1.5 text-2xs text-fg-secondary">
-            <Info size={12} class="mt-px shrink-0 text-fg-muted" aria-hidden="true" />
-            <span>{RUN_DISCLOSURE}</span>
-          </p>
-        </div>
-        <Switch>
-          <Match when={running()}>
-            <p data-fdt-beacon-running class="text-2xs text-fg-secondary">
-              {RUNNING_COPY}
-            </p>
-          </Match>
-          <Match when={finished()} keyed>
-            {(run) => <OutcomeBlock run={run} session={props.session} actions={props.actions} />}
-          </Match>
-        </Switch>
-      </div>
-    </Card>
+    <Switch>
+      <Match when={props.session.run().status === 'running'}>
+        <p data-fdt-beacon-running class="text-2xs text-fg-secondary">
+          {RUNNING_COPY}
+        </p>
+      </Match>
+      <Match when={finished()} keyed>
+        {(run) => <OutcomeBlock run={run} session={props.session} actions={props.actions} />}
+      </Match>
+    </Switch>
   );
 }

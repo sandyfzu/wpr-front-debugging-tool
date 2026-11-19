@@ -1,8 +1,8 @@
 /** The Test tab column: a Tab stop exactly while it scrolls, painted in the canvas color, named. */
 import { cleanup, render } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { OverflowWatcher } from '../../../../components/ui/overflow-watch';
-import { PAGE_CANVAS } from '../page-frame';
+import type { OverflowWatcher } from '../../../components/ui/overflow-watch';
+import { PAGE_CANVAS } from './page-frame';
 import { ToolColumn } from './tool-column';
 
 afterEach(() => {

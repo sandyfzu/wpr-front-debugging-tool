@@ -7,7 +7,8 @@
  * search only, no detail).
  *
  * States per list: running (skeleton rows: a real wait), no results yet
- * (Run), the feature was not part of the run (a way back to the settings),
+ * (what a run lists here — Run sits in the run bar above), the feature was
+ * not part of the run (a way to its switch),
  * an unreadable list, empty (what would be here), populated (with a cut or
  * a skipped-records note when one applies), filtered-empty (the shared
  * `NoMatches`, with Clear filters).
@@ -42,15 +43,14 @@ import {
   type LazyRenderRow
 } from '../../../../lib/beacon-test/results-view';
 import type { BeaconFeatureKey } from '../../../../lib/beacon-test/runner-bridge';
-import { cn } from '../../../../utils/cn';
 import { countLabel, formatCount } from '../../../../utils/format-count';
 import { openResourceCapability, type OpenResource } from '../open-resource';
-import { PAGE_FILL_SCROLLER } from '../page-frame';
 import { CalmFilteredList } from '../resource-list/calm-list';
 import { FactList, type DetailFact } from '../resource-list/detail-section';
 import { ListRow, ListRowHead, type ListRowColumns } from '../resource-list/list-row';
 import { resourceName, urlPreview } from '../resource-list/resource-list-view';
 import { SourceLink } from '../resource-list/source-link';
+import { ToolEmptyCard } from '../tool-empty-card';
 import type { SettingsLoadState } from '../settings/stored-settings';
 
 /** The candidates' noun (announcements, counts). */
@@ -96,25 +96,42 @@ export function listNote(list: FeatureList<unknown>): string | null {
 /** The no-results view's words. */
 export const NO_RESULTS_COPY = {
   title: 'No results yet',
-  description: 'Run the test to see what the beacon finds on this page.',
+  /** Before any test: what a run lists in each tab. */
+  description: {
+    aboveTheFold:
+      'Run the test to list the above-the-fold images WP Rocket would preload, the LCP image first.',
+    lazyRender:
+      'Run the test to list the elements far enough below the fold for WP Rocket to render lazily.'
+  } satisfies Readonly<Record<BeaconFeatureKey, string>>,
   /** After a run that ended without results. */
   ended: 'The last test ended without results — its outcome above says why.',
   /** The settings could not be read, so nothing can run. */
   settingsFailed:
-    "The test settings didn't load, so the test can't run yet. Open the settings to retry."
+    "The test settings didn't load, so the test can't run yet. Retry them under Settings."
 } as const;
+
+/** The action leading to the settings (they sit beside or under the results). */
+export const SHOW_SETTINGS_LABEL = 'Go to settings';
 
 /**
  * The no-results line.
  *
  * @param settings The settings' load status.
  * @param ended Whether a test ended (without results).
+ * @param feature The tab's feature.
  * @returns Why there is nothing yet and what to do.
  */
-export function noResultsCopy(settings: SettingsLoadState['status'], ended: boolean): string {
+export function noResultsCopy(
+  settings: SettingsLoadState['status'],
+  ended: boolean,
+  feature: BeaconFeatureKey
+): string {
   if (settings === 'failed') return NO_RESULTS_COPY.settingsFailed;
-  return ended ? NO_RESULTS_COPY.ended : NO_RESULTS_COPY.description;
+  return ended ? NO_RESULTS_COPY.ended : NO_RESULTS_COPY.description[feature];
 }
+
+/** Each tab's icon (its rows and its empty views). */
+const FEATURE_ICONS = { aboveTheFold: ImageIcon, lazyRender: Layers } as const;
 
 /** What every results tab shares. */
 interface ResultsTabProps {
@@ -124,10 +141,10 @@ interface ResultsTabProps {
   ended: boolean;
   /** The settings' load: a test runs only once they are ready. */
   settings: SettingsLoadState['status'];
-  /** Run the test. */
+  /** Run the test (an unreadable list's Run again). */
   onRun: () => void;
-  /** Go to the settings (a feature that did not run). */
-  onShowSettings: () => void;
+  /** Go to the settings: the feature's switch, or their Retry when they failed to load. */
+  onShowSettings: (feature: BeaconFeatureKey) => void;
   createVirtualizer?: VirtualizerFactory;
 }
 
@@ -158,42 +175,47 @@ function FeatureResults<T>(props: FeatureResultsProps<T>): JSX.Element {
         </div>
       </Match>
       <Match when={props.list === undefined}>
-        <div class={cn(PAGE_FILL_SCROLLER, 'grid')}>
-          <EmptyState
-            title={NO_RESULTS_COPY.title}
-            description={noResultsCopy(props.settings, props.ended)}
-            action={
-              // A failed settings load leads to its Retry; a loading one holds Run.
-              props.settings === 'failed' ? (
-                <Button size="sm" variant="primary" onClick={props.onShowSettings}>
-                  Open settings
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={props.settings !== 'ready'}
-                  onClick={props.onRun}
-                >
-                  Run test
-                </Button>
-              )
-            }
-          />
-        </div>
+        {/* Run sits in the run bar right above: the card says what a run lists here. */}
+        <ToolEmptyCard
+          hook="beacon-results-empty"
+          icon={FEATURE_ICONS[props.feature]}
+          title={NO_RESULTS_COPY.title}
+          description={noResultsCopy(props.settings, props.ended, props.feature)}
+          action={
+            props.settings === 'failed' ? (
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  props.onShowSettings(props.feature);
+                }}
+              >
+                {SHOW_SETTINGS_LABEL}
+              </Button>
+            ) : undefined
+          }
+          fill
+        />
       </Match>
       <Match when={props.list === null}>
-        <div class={cn(PAGE_FILL_SCROLLER, 'grid')}>
-          <EmptyState
-            title="Not part of this test"
-            description={`Turn on ${BEACON_FEATURE_LABELS[props.feature]} in the settings and run again.`}
-            action={
-              <Button size="sm" variant="primary" onClick={props.onShowSettings}>
-                Open settings
-              </Button>
-            }
-          />
-        </div>
+        <ToolEmptyCard
+          hook="beacon-results-off"
+          icon={FEATURE_ICONS[props.feature]}
+          title="Not part of this test"
+          description={`Turn on ${BEACON_FEATURE_LABELS[props.feature]} in the settings and run again.`}
+          action={
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                props.onShowSettings(props.feature);
+              }}
+            >
+              {SHOW_SETTINGS_LABEL}
+            </Button>
+          }
+          fill
+        />
       </Match>
       <Match when={props.list?.kind === 'malformed'}>
         <ErrorState

@@ -100,6 +100,31 @@ describe('InstructionsCard', () => {
     expect(document.querySelector('[data-fdt-beacon-instructions-toggle]')).toBeNull();
   });
 
+  it('is one compact info row: title, the words beside it, Details at its end', () => {
+    renderCard(ready(REAL, 'p1'));
+    const heading = screen.getByRole('heading', { level: 2, name: INSTRUCTIONS_TITLE });
+    const row = heading.parentElement;
+    expect(row?.querySelector('[data-fdt-beacon-instructions-summary]')).not.toBeNull();
+    expect(row?.lastElementChild).toBe(toggle());
+    expect(toggle().className).toContain('ms-auto');
+    // The page-level weight stays with the page h1: the row's title reads as a caption.
+    expect(heading.className).toContain('text-xs');
+    // Details open under the row, never inside it.
+    fireEvent.click(toggle());
+    const details = document.querySelector('[data-fdt-beacon-instructions-details]');
+    expect(row?.contains(details)).toBe(false);
+    expect(card().contains(details)).toBe(true);
+  });
+
+  it('puts the no-beacon and unreadable words in the row itself', () => {
+    const { setState } = renderCard(ready({ present: false, status: null, isMobile: null }, 'p1'));
+    const row = () =>
+      screen.getByRole('heading', { level: 2, name: INSTRUCTIONS_TITLE }).parentElement;
+    expect(row()?.textContent).toContain(NO_INSTRUCTIONS_COPY);
+    setState(ready({ present: true, status: null, isMobile: null }, 'p2'));
+    expect(row()?.textContent).toContain(UNREADABLE_INSTRUCTIONS_COPY);
+  });
+
   it('says when the beacon’s instructions could not be read', () => {
     renderCard(ready({ present: true, status: null, isMobile: null }, 'p1'));
     expect(card().dataset['fdtBeaconInstructions']).toBe('unreadable');

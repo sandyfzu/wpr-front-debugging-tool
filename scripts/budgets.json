@@ -217,8 +217,8 @@
     "surface": "Beacon Tester page (panel chunk, loaded on first visit)",
     "globs": ["chunks/beacon-tester-*.js"],
     "maxKb": {
-      "raw": 44.2,
-      "gzip": 14
+      "raw": 46.7,
+      "gzip": 14.7
     },
     "required": true
   },
@@ -227,8 +227,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/beacon-tester-*.js"],
     "maxKb": {
-      "raw": 44.2,
-      "gzip": 14
+      "raw": 46.7,
+      "gzip": 14.7
     },
     "required": true
   },

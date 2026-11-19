@@ -25,23 +25,20 @@
  * and the tab stay.
  */
 import type { JSX } from 'solid-js';
+import ShieldAlert from 'lucide-solid/icons/shield-alert';
 import {
   createComputed,
   createRoot,
   createSignal,
-  For,
-  Match,
   onCleanup,
   Show,
-  Switch,
   type Accessor,
   type Setter
 } from 'solid-js';
-import { ErrorState } from '../../../../components/ui/error-state';
-import { Skeleton } from '../../../../components/ui/skeleton';
 import { TabPanel, Tabs } from '../../../../components/ui/tabs';
 import type { OverflowWatcher } from '../../../../components/ui/overflow-watch';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import { RUCSS_REQUEST_DISCLOSURE } from '../../../../lib/rucss-tester/endpoint';
 import type { RucssOutcomeView } from '../../../../lib/rucss-tester/outcome-view';
 import {
   RUCSS_FIELD_SECTION,
@@ -53,35 +50,22 @@ import { useFdtData } from '../../state/use-fdt-data';
 import { PageFrame } from '../page-frame';
 import { inspectedReloadAction } from '../reload-inspected';
 import { TestModeNotice } from '../test-mode-notice';
+import { RunBar } from '../run-bar';
+import { createSectionsState, type SectionsState } from '../settings/sections';
+import { SettingsColumn } from '../settings/settings-column';
+import { TOOL_AREAS, TOOL_LAYOUT, ToolColumn } from '../tool-column';
 import { fieldId, pairSearchId, RucssForm } from './form';
 import { realRucssTesterDeps } from './real-deps';
-import { RunBar, RunResult } from './run-panel';
-import { createRucssSectionsState, type RucssSectionsState } from './sections';
+import { RunResult } from './run-panel';
 import { createRucssTesterSession, type RucssTesterSession } from './session';
-import { SaveLine } from '../settings/save-line';
 import { StylesList } from './styles-list';
-import { ToolColumn } from './tool-column';
 
 /** The page's one-line intro. */
 export const RUCSS_TESTER_SUBTITLE =
   "Run WP Rocket's Remove Unused CSS on this page and see the result live, until the page reloads.";
 
-/**
- * The Test tab's grid: one column (result first: the run bar leads) below
- * `@wide`; from it the 340 px settings column beside the result, the grid
- * taking the page's remaining height (the fill scroller's floor and
- * containment, `PAGE_FILL_SCROLLER`, at this tier only) so each column
- * scrolls on its own.
- */
-const TEST_LAYOUT =
-  'grid min-w-0 grid-cols-1 gap-4 @wide:min-h-48 @wide:flex-1 @wide:contain-size @wide:grid-cols-[21.25rem_minmax(0,1fr)] @wide:grid-rows-[minmax(0,1fr)] @wide:[grid-template-areas:"settings_result"]';
-
 /** The page's two views. */
 export type RucssTesterTab = 'test' | 'styles';
-
-/** The settings' load failure words. */
-export const LOAD_FAILED_COPY =
-  "The extension's storage did not answer. Retry; if it persists, reload the DevTools panel.";
 
 /** A session plus the view state that should survive the page body. */
 export interface RucssTesterHandle {
@@ -89,7 +73,7 @@ export interface RucssTesterHandle {
   readonly tab: Accessor<RucssTesterTab>;
   readonly setTab: Setter<RucssTesterTab>;
   /** Which settings sections are open. */
-  readonly sections: RucssSectionsState;
+  readonly sections: SectionsState<RucssSettingsSection>;
 }
 
 /** The panel-lifetime handle (created on the page's first mount). */
@@ -104,7 +88,12 @@ let sharedHandle: RucssTesterHandle | null = null;
 export function createRucssTesterHandle(create: () => RucssTesterSession): RucssTesterHandle {
   return createRoot(() => {
     const [tab, setTab] = createSignal<RucssTesterTab>('test');
-    return { session: create(), tab, setTab, sections: createRucssSectionsState() };
+    return {
+      session: create(),
+      tab,
+      setTab,
+      sections: createSectionsState<RucssSettingsSection>((section) => section === 'request')
+    };
   });
 }
 
@@ -232,57 +221,40 @@ export function RucssTesterPage(props: RucssTesterPageProps = {}): JSX.Element {
           label="RUCSS tester views"
           rootClass="flex min-h-0 flex-1 flex-col gap-3"
         >
-          <TabPanel value="test" class={TEST_LAYOUT}>
+          <TabPanel value="test" class={TOOL_LAYOUT}>
             <ToolColumn
               hook="rucss-result-column"
-              area="@wide:[grid-area:result]"
+              area={TOOL_AREAS.result}
               label="Test result"
               watchOverflow={props.watchOverflow}
             >
-              <RunBar session={session} />
+              <RunBar
+                page="rucss"
+                running={session.run().status === 'running'}
+                held={session.load().status !== 'ready'}
+                onRun={() => {
+                  void session.start();
+                }}
+                note={RUCSS_REQUEST_DISCLOSURE}
+                noteIcon={ShieldAlert}
+              />
               <RunResult
                 session={session}
                 actions={{ reloadPage, reviewPatterns, inspectStyles }}
               />
             </ToolColumn>
-            <ToolColumn
-              hook="rucss-settings"
-              area="@wide:[grid-area:settings]"
-              labelledBy="rucss-settings-title"
+            <SettingsColumn
+              page="rucss"
+              load={session.load().status}
+              save={session.save()}
+              onRetry={() => {
+                session.retryLoad();
+              }}
+              sections={RUCSS_SETTINGS_SECTIONS.length}
               watchOverflow={props.watchOverflow}
             >
-              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <h2 id="rucss-settings-title" class="text-sm font-semibold text-fg-primary">
-                  Settings
-                </h2>
-                <Show when={session.load().status === 'ready'}>
-                  <div class="ms-auto min-w-0">
-                    <SaveLine state={session.save()} look="indicator" />
-                  </div>
-                </Show>
-              </div>
-              <Switch>
-                <Match when={session.load().status === 'loading'}>
-                  <div class="grid grid-cols-1 gap-2" data-fdt-rucss-form-loading>
-                    <For each={RUCSS_SETTINGS_SECTIONS}>
-                      {() => <Skeleton class="h-10 w-full rounded-md" />}
-                    </For>
-                  </div>
-                </Match>
-                <Match when={session.load().status === 'failed'}>
-                  <ErrorState
-                    title="Couldn't load the test settings"
-                    message={LOAD_FAILED_COPY}
-                    onRetry={() => {
-                      session.retryLoad();
-                    }}
-                  />
-                </Match>
-                <Match when={session.load().status === 'ready'}>
-                  <RucssForm session={session} sections={handle.sections} />
-                </Match>
-              </Switch>
-            </ToolColumn>
+              <RucssForm session={session} sections={handle.sections} />
+            </SettingsColumn>
           </TabPanel>
           <TabPanel value="styles" class="flex min-h-0 flex-1 flex-col">
             <StylesList

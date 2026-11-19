@@ -7,6 +7,7 @@
  */
 import { countLabel } from '../../utils/format-count';
 import { parseLineList } from '../../utils/line-list';
+import type { SectionSummary } from '../panel/section-summary';
 import type { RucssTesterConfig } from './config';
 import { DEFAULT_INLINE_PRESERVES } from './run-plan';
 
@@ -39,14 +40,6 @@ export interface RucssSettingsProblems {
   readonly pairs: number;
 }
 
-/** What a section's header says beside its title. */
-export interface RucssSectionSummary {
-  /** What the section holds, e.g. "Mobile · 2 safelist entries", or "Empty". */
-  readonly text: string;
-  /** E.g. "1 invalid pattern" (error tone), or null. */
-  readonly problem: string | null;
-}
-
 /** A section holding nothing of the user's. */
 export const EMPTY_SECTION_SUMMARY = 'Empty';
 
@@ -77,7 +70,7 @@ function holdsCss(css: string): boolean {
  *
  * @param config The form's settings.
  */
-function requestSummary(config: RucssTesterConfig): RucssSectionSummary {
+function requestSummary(config: RucssTesterConfig): SectionSummary {
   const safelist = parseLineList(config.safelist).length;
   const parts = [
     config.mobile ? 'Mobile' : 'Desktop',
@@ -94,10 +87,7 @@ function requestSummary(config: RucssTesterConfig): RucssSectionSummary {
  * @param config The form's settings.
  * @param problems The live checks' counts.
  */
-function keepSummary(
-  config: RucssTesterConfig,
-  problems: RucssSettingsProblems
-): RucssSectionSummary {
+function keepSummary(config: RucssTesterConfig, problems: RucssSettingsProblems): SectionSummary {
   const markers = parseLineList(config.inlinePreserve).length;
   const patterns = parseLineList(config.excludeFiles).length;
   const parts = [
@@ -120,10 +110,7 @@ function keepSummary(
  * @param config The form's settings.
  * @param problems The live checks' counts.
  */
-function adjustSummary(
-  config: RucssTesterConfig,
-  problems: RucssSettingsProblems
-): RucssSectionSummary {
+function adjustSummary(config: RucssTesterConfig, problems: RucssSettingsProblems): SectionSummary {
   const pairs = config.replacements.length;
   const parts = [
     holdsCss(config.prepend) ? 'CSS before' : null,
@@ -146,7 +133,7 @@ function adjustSummary(
 export function rucssSectionSummaries(
   config: RucssTesterConfig,
   problems: RucssSettingsProblems
-): Readonly<Record<RucssSettingsSection, RucssSectionSummary>> {
+): Readonly<Record<RucssSettingsSection, SectionSummary>> {
   return {
     request: requestSummary(config),
     keep: keepSummary(config, problems),
