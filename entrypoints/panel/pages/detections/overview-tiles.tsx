@@ -17,9 +17,11 @@
  *   platform the headers identified.
  *
  * Grid (the page container's tiers): 4 columns from `@wide`, else 2×2.
- * Compact: the score tile spans both columns and the WP Rocket tile steps
- * aside — the top bar states the plugin and its version at every width — and
- * the ring shrinks to 44 px.
+ * Compact: the score tile spans both columns over WP Rocket and Page cache,
+ * Stack on the last row, and the ring shrinks to 44 px. The WP Rocket tile
+ * stays at every width: at a phone-width panel it is the one place that
+ * always shows the full version and its evidence (the top bar's compact
+ * pill drops the name and may truncate).
  *
  * States: the shell renders the body only over loaded data, so the tiles
  * always have an answer; before data the shell shows {@link
@@ -75,12 +77,6 @@ const TILE_CELL = 'grid min-w-0';
 
 /** The score tile's cell: both columns at compact, one from regular up. */
 export const SCORE_CELL = 'col-span-2 @regular:col-span-1';
-
-/**
- * The WP Rocket tile's cell: hidden at compact (the top bar's pill states
- * the plugin and its version at every width), so the narrow grid stays 2×2.
- */
-export const WPR_CELL = '@max-regular:hidden';
 
 /**
  * The score ring's side per container tier: 44 px at compact (the score
@@ -479,7 +475,7 @@ function OverviewGrid(props: OverviewTilesProps): JSX.Element {
       <div data-fdt-overview-tile="score" class={`${TILE_CELL} ${SCORE_CELL}`}>
         <ScoreTile score={view().score} />
       </div>
-      <div data-fdt-overview-tile="wpr" class={`${TILE_CELL} ${WPR_CELL}`}>
+      <div data-fdt-overview-tile="wpr" class={TILE_CELL}>
         <WprTile view={view().wpr} />
       </div>
       <div data-fdt-overview-tile="cache" class={TILE_CELL}>
@@ -502,7 +498,7 @@ export function OverviewSkeleton(): JSX.Element {
   return (
     <div data-fdt="detections-overview-skeleton" class={OVERVIEW_GRID}>
       <Skeleton class={`h-18 w-full ${SCORE_CELL}`} />
-      <Skeleton class={`h-18 w-full ${WPR_CELL}`} />
+      <Skeleton class="h-18 w-full" />
       <Skeleton class="h-18 w-full" />
       <Skeleton class="h-18 w-full" />
     </div>

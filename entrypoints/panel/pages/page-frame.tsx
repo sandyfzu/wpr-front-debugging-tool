@@ -46,6 +46,11 @@ export interface PageFrameProps {
    * natural height.
    */
   fill?: boolean;
+  /**
+   * Receives the root — the page's `@container` — so a page whose script
+   * must agree with its tier variants can measure the box they read.
+   */
+  ref?: (element: HTMLElement) => void;
   /** The page content, laid out as a `gap-3` column of sections below the header. */
   children?: JSX.Element;
 }
@@ -68,11 +73,13 @@ export interface PageFrameProps {
  * @param props.subtitle Optional intro line.
  * @param props.actions Optional actions cluster.
  * @param props.fill Full-height flex column for list pages (default `false`).
+ * @param props.ref Optional ref to the root (the `@container`).
  * @param props.children The page sections.
  */
 export function PageFrame(props: PageFrameProps): JSX.Element {
   return (
     <section
+      ref={(element) => props.ref?.(element)}
       class={cn('fdt-page @container', props.fill && 'flex min-h-full flex-col')}
       data-fdt-page={props.id}
     >

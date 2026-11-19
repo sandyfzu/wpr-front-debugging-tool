@@ -687,7 +687,7 @@ describe('the Detections layout choice (shell-owned)', () => {
     render(() => <PanelApp search={shell.search} data={shell.data} />);
     shell.settle(pageData());
     await waitFor(() => {
-      expect(gridLayout()).toBe('adaptive');
+      expect(gridLayout()).toBe('grouped');
     });
     fireEvent.click(screen.getByText('List'));
     expect(gridLayout()).toBe('list');

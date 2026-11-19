@@ -29,8 +29,7 @@ import {
   SERVER_SILENCE,
   VERSION_NOT_EXPOSED,
   WORDPRESS_UNDECLARED,
-  WPR_ABSENT_SENTENCE,
-  WPR_CELL
+  WPR_ABSENT_SENTENCE
 } from './overview-tiles';
 
 afterEach(() => {
@@ -389,9 +388,10 @@ describe('OverviewTiles — grid, refresh, failure', () => {
     ).toEqual(['score', 'wpr', 'cache', 'stack']);
     expect(tile('score').className).toContain(SCORE_CELL);
     expect(SCORE_CELL).toBe('col-span-2 @regular:col-span-1');
-    // Compact: the bar's pill states the plugin, so its tile steps aside (2×2 stays).
-    expect(tile('wpr').className).toContain(WPR_CELL);
-    expect(WPR_CELL).toBe('@max-regular:hidden');
+    // Every tile shows at every width: at compact the WP Rocket tile is the
+    // one place with the full version (no tier hides a cell).
+    for (const id of ['wpr', 'cache', 'stack'] as const)
+      expect(tile(id).className, id).not.toMatch(/(^|\s|:)hidden\b/);
     // The tiles are never interactive themselves: only the evidence link and the trigger.
     expect(
       [...(root?.querySelectorAll('a, button, [tabindex]') ?? [])].map((el) => el.tagName)
@@ -465,6 +465,12 @@ describe('OverviewSkeleton', () => {
     const placeholders = [...(root?.querySelectorAll<HTMLElement>('[data-fdt="skeleton"]') ?? [])];
     expect(placeholders).toHaveLength(4);
     expect(placeholders[0]?.className).toContain(SCORE_CELL);
-    expect(placeholders[1]?.className).toContain(WPR_CELL);
+    expect(placeholders.slice(1).map((el) => el.className.includes(SCORE_CELL))).toEqual([
+      false,
+      false,
+      false
+    ]);
+    // No placeholder is tier-hidden: the skeleton holds the shape of every width.
+    for (const el of placeholders) expect(el.className).not.toMatch(/(^|\s|:)hidden\b/);
   });
 });

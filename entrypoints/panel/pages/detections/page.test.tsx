@@ -1,11 +1,12 @@
 /**
- * The Detections page: frame + heading, the card grid in view-model order
- * with link vs static forms (only mapped ids are anchors; static cards take
- * no tab stop and carry no lift), the status vocabulary, the tooltip
+ * The Detections page, over the List layout (every row, page facts included,
+ * in view-model order; Grouped and Cards: `page-layout.test.tsx`): frame +
+ * heading, the rows with their page links (only mapped ids carry one, the
+ * row itself is never a control), the status vocabulary, the tooltip
  * subtitles, the overview's agreement with the cards, the absence of a
- * duplicate header inventory, `Copy report`, refresh stability (cards keep
- * their DOM and focus), the optimization status filter, and the
- * store wiring.
+ * duplicate header inventory, `Copy report`, refresh stability (rows keep
+ * their DOM and focus), the optimization status filter (All / Active /
+ * Collecting / Off), and the store wiring.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
@@ -15,20 +16,24 @@ import { buildStatusItems } from '../../../../lib/panel/detections-view-model';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { makeFdtData } from '../../state/fixtures';
 import type { DataState } from '../../state/fdt-state-machine';
-import { createDetectionsLayout, DetectionsLayoutContext } from '../../state/detections-layout';
+import {
+  createDetectionsLayout,
+  DetectionsLayoutContext,
+  type DetectionsLayoutStore
+} from '../../state/detections-layout';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { CARD_PAGE_LINKS } from './card-presentation';
 import { DNS_PREFETCH_LIMIT, MOBILE_CACHE_LIMIT } from '../../../../lib/detection/hud';
 import { isOptimizationCard } from '../../../../lib/panel/detections-summary';
 import { platformSegment, wprSegment } from '../../top-bar/selectors';
+import { CARDS_BODY } from './entry-layout';
 import {
-  DETECTIONS_GRID,
   DETECTIONS_SUBTITLE,
   DetectionsPage,
   DetectionsView,
+  filterOptions,
   SHOW_ALL_OPTIMIZATIONS
 } from './page';
-import { CARD_SURFACE_PAIR, STATUS_CARD_SURFACE } from './status-card';
 
 afterEach(() => {
   cleanup();
@@ -77,9 +82,20 @@ function card(id: string): HTMLElement {
 
 const NOW = STAMP * 1000 + 3 * 3_600_000;
 
+/** A layout store on List: the flat full row set these tests read. */
+function listLayout(): DetectionsLayoutStore {
+  const store = createDetectionsLayout();
+  store.setLayout('list');
+  return store;
+}
+
+/** One entry's page link, or null. */
+const link = (id: string): HTMLAnchorElement | null =>
+  card(id).querySelector<HTMLAnchorElement>('a[data-fdt-card-link]');
+
 describe('DetectionsView', () => {
   it('renders the frame: one h1, the intro line, the Copy report action', () => {
-    render(() => <DetectionsView data={richData()} now={NOW} />);
+    render(() => <DetectionsView layoutStore={listLayout()} data={richData()} now={NOW} />);
     expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent)).toEqual([
       'Detections'
     ]);
@@ -91,7 +107,7 @@ describe('DetectionsView', () => {
 
   it('renders one card per view-model item, in its order, as list items', () => {
     const data = richData();
-    render(() => <DetectionsView data={data} now={NOW} />);
+    render(() => <DetectionsView layoutStore={listLayout()} data={data} now={NOW} />);
     expect(cards().map((el) => el.dataset.fdtCardId)).toEqual(
       buildStatusItems(data).map((item) => item.id)
     );
@@ -100,47 +116,50 @@ describe('DetectionsView', () => {
     );
   });
 
-  it('makes only the mapped cards links, and static cards inert', () => {
-    render(() => <DetectionsView data={richData()} now={NOW} />);
+  it('links only the mapped rows to their page; a row is never a control', () => {
+    render(() => <DetectionsView layoutStore={listLayout()} data={richData()} now={NOW} />);
     for (const el of cards()) {
       const id = el.dataset.fdtCardId ?? '';
       const route = CARD_PAGE_LINKS.get(id as never);
+      expect(el.tagName).toBe('DIV');
+      expect(el.hasAttribute('tabindex')).toBe(false);
+      const anchors = el.querySelectorAll('a');
       if (route === undefined) {
-        expect(el.tagName).toBe('DIV');
-        expect(el.hasAttribute('tabindex')).toBe(false);
-        expect(el.className).not.toContain('hover:shadow-elev-2');
+        expect(anchors).toHaveLength(0);
       } else {
-        expect(el.tagName).toBe('A');
-        expect(el.getAttribute('href')).toBe(`#/${route}`);
-        expect(el.className).toContain('focus-visible:outline-2');
-        // Only a link to an active feature is presented as primary (lifts).
-        const active = el.querySelector('[data-fdt="status-badge"]')?.textContent === 'Active';
-        expect(el.className.includes('hover:shadow-elev-2')).toBe(active);
-        // Never a control nested inside the link.
-        expect(el.querySelector('button, a')).toBeNull();
+        // Exactly one control: the page link, with the focus ring.
+        expect(anchors).toHaveLength(1);
+        expect(el.querySelectorAll('button')).toHaveLength(0);
+        expect(link(id)?.getAttribute('href')).toBe(`#/${route}`);
+        expect(link(id)?.className).toContain('focus-visible:outline-2');
       }
     }
-    // The link's name is its own visible content, spoken in reading order
-    // (WCAG 2.5.3: the visible label is part of the accessible name).
-    expect(card('delay_js').hasAttribute('aria-label')).toBe(false);
+    // The link's name is its own visible text plus the row it belongs to
+    // (WCAG 2.5.3: the visible label is part of the name; several rows link
+    // the same page).
+    expect(link('delay_js')?.hasAttribute('aria-label')).toBe(false);
+    expect(link('delay_js')?.textContent).toBe('Open JavaScript, Delay JavaScript execution');
+    expect(link('lazyload')?.textContent).toBe('Open Lazyload, LazyLoad for images');
+    // The row reads name, notes, state, then the link.
     expect(card('delay_js').textContent).toBe(
-      'Delay JavaScript execution, Active, Version 2.0, Open JavaScript'
+      'Delay JavaScript executionVersion 2.0, ActiveOpen JavaScript, Delay JavaScript execution'
     );
-    expect(card('lazyload').textContent).toBe('LazyLoad for images, Active, Open Lazyload');
-    // The off feature's link is quiet: no lift, secondary "Open" line.
-    expect(card('defer_all_js').className).not.toContain('hover:shadow-elev-2');
     expect(card('defer_all_js').textContent).toBe(
-      'Load JavaScript deferred, Not active, Open JavaScript'
+      'Load JavaScript deferred, OffOpen JavaScript, Load JavaScript deferred'
     );
   });
 
-  it('maps verdicts to the vocabulary: active → ok "Active", off → neutral "Not active"', () => {
-    render(() => <DetectionsView data={richData()} now={NOW} />);
+  it('maps verdicts to the vocabulary: active → ok "Active" pill, off → the quiet "Off"', () => {
+    render(() => <DetectionsView layoutStore={listLayout()} data={richData()} now={NOW} />);
     const badge = (id: string) => card(id).querySelector<HTMLElement>('[data-fdt="status-badge"]');
     expect(badge('wpr')?.textContent).toBe('Active');
     expect(badge('wpr')?.className).toContain('text-status-ok');
-    expect(badge('minify_css')?.textContent).toBe('Not active');
-    expect(badge('minify_css')?.className).toContain('text-status-neutral');
+    // Off is plain muted text, no pill: twelve off rows are no twelve chips.
+    expect(badge('minify_css')).toBeNull();
+    const off = card('minify_css').querySelector<HTMLElement>('[data-fdt-card-state]');
+    expect(off?.dataset.fdtCardState).toBe('not-active');
+    expect(off?.textContent).toBe(', Off');
+    expect(off?.querySelector('.text-fg-muted')?.textContent).toBe('Off');
     expect(document.querySelector('.text-status-error')).toBeNull();
     expect(card('minify_css').querySelector('svg')?.getAttribute('class')).toContain(
       'text-status-neutral'
@@ -151,6 +170,7 @@ describe('DetectionsView', () => {
     const base = richData();
     render(() => (
       <DetectionsView
+        layoutStore={listLayout()}
         data={richData({
           wprDetections: {
             ...base.wprDetections,
@@ -198,7 +218,7 @@ describe('DetectionsView', () => {
   });
 
   it('renders typed subtitles: mono versions/server, the cached age and platform as tooltip triggers', () => {
-    render(() => <DetectionsView data={richData()} now={NOW} />);
+    render(() => <DetectionsView layoutStore={listLayout()} data={richData()} now={NOW} />);
     expect(card('wpr').querySelector('.font-mono')?.textContent).toBe('3.20.1');
     expect(card('server').querySelector('.font-mono')?.textContent).toBe('nginx');
     const cachedTrigger = card('cached').querySelector('[data-fdt="tooltip-trigger"]');
@@ -212,6 +232,7 @@ describe('DetectionsView', () => {
     const base = richData().pageHeaders ?? [];
     render(() => (
       <DetectionsView
+        layoutStore={listLayout()}
         data={richData({
           pageHeaders: [
             ...base,
@@ -234,7 +255,7 @@ describe('DetectionsView', () => {
   });
 
   it('shows no Host layers card when no host-layer header was captured', () => {
-    render(() => <DetectionsView data={richData()} now={NOW} />);
+    render(() => <DetectionsView layoutStore={listLayout()} data={richData()} now={NOW} />);
     expect(document.querySelector('[data-fdt-card-id="host-layers"]')).toBeNull();
   });
 
@@ -242,6 +263,7 @@ describe('DetectionsView', () => {
     const base = richData();
     render(() => (
       <DetectionsView
+        layoutStore={listLayout()}
         data={{
           ...base,
           wprDetections: {
@@ -266,6 +288,7 @@ describe('DetectionsView', () => {
     const base = richData();
     render(() => (
       <DetectionsView
+        layoutStore={listLayout()}
         data={{
           ...base,
           wprDetections: {
@@ -284,7 +307,7 @@ describe('DetectionsView', () => {
 
   it('ages the cached subtitle as the clock advances', () => {
     const [now, setNow] = createSignal(NOW);
-    render(() => <DetectionsView data={richData()} now={now()} />);
+    render(() => <DetectionsView layoutStore={listLayout()} data={richData()} now={now()} />);
     const trigger = () => card('cached').querySelector('[data-fdt="tooltip-trigger"]');
     expect(trigger()?.textContent).toBe('Generated 3 h ago');
     setNow(NOW + 24 * 3_600_000);
@@ -293,7 +316,7 @@ describe('DetectionsView', () => {
 
   it('heads the page with the overview tiles, agreeing with the cards and the top bar', () => {
     const data = richData();
-    render(() => <DetectionsView data={data} now={NOW} />);
+    render(() => <DetectionsView layoutStore={listLayout()} data={data} now={NOW} />);
     const headline = document.querySelector('[data-fdt-summary-headline]');
     const activeOptimizations = cards().filter(
       (el) =>
@@ -325,24 +348,28 @@ describe('DetectionsView', () => {
 
   it('still renders every card when the plugin is absent', () => {
     const data = makeFdtData();
-    render(() => <DetectionsView data={data} now={NOW} />);
+    render(() => <DetectionsView layoutStore={listLayout()} data={data} now={NOW} />);
     expect(document.querySelector('[data-fdt-summary-fact="wpr"]')).not.toBeNull();
     expect(cards()).toHaveLength(buildStatusItems(data).length);
   });
 
-  it('lays the cards out as divided rows at compact, a 15 rem card grid from regular', () => {
-    render(() => <DetectionsView data={richData()} now={NOW} />);
+  it('lays Cards out as calm rows at compact, a 15 rem card grid from regular', () => {
+    const store = createDetectionsLayout();
+    store.setLayout('cards');
+    render(() => <DetectionsView layoutStore={store} data={richData()} now={NOW} />);
     const grid = screen.getByRole('list', { name: 'Detection results' });
-    expect(grid.className).toBe(DETECTIONS_GRID);
-    expect(DETECTIONS_GRID).toContain('divide-y');
-    expect(DETECTIONS_GRID).toContain('@regular:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]');
-    // The regular-tier card mirrors the Card primitive's level-1 pair.
-    expect(STATUS_CARD_SURFACE).toContain(`@regular:${CARD_SURFACE_PAIR.surface}`);
-    expect(STATUS_CARD_SURFACE).toContain(`@regular:${CARD_SURFACE_PAIR.line}`);
+    expect(grid.className).toBe(CARDS_BODY);
+    expect(CARDS_BODY).not.toContain('divide-y');
+    expect(CARDS_BODY).toContain('@regular:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]');
+    // The card surface pair from the regular tier.
+    expect(card('wpr').className).toContain('@regular:bg-surface-1');
+    expect(card('wpr').className).toContain('@regular:border-line-1');
   });
 
   it('omits the header-derived cards when nothing was captured', () => {
-    render(() => <DetectionsView data={richData({ pageHeaders: null })} now={NOW} />);
+    render(() => (
+      <DetectionsView layoutStore={listLayout()} data={richData({ pageHeaders: null })} now={NOW} />
+    ));
     expect(document.querySelector('[data-fdt-card-id="server"]')).toBeNull();
     expect(document.querySelector('[data-fdt-card-id="known-platform"]')).toBeNull();
   });
@@ -350,7 +377,9 @@ describe('DetectionsView', () => {
   it.each([null, [], richData().pageHeaders])(
     'leaves the header inventory to Headers & Cookies for capture %j',
     (pageHeaders) => {
-      render(() => <DetectionsView data={richData({ pageHeaders })} now={NOW} />);
+      render(() => (
+        <DetectionsView layoutStore={listLayout()} data={richData({ pageHeaders })} now={NOW} />
+      ));
       expect(screen.queryByText('Response headers')).toBeNull();
       expect(screen.queryByRole('button', { name: /Response headers/ })).toBeNull();
       expect(screen.queryByText('max-age=60')).toBeNull();
@@ -359,20 +388,21 @@ describe('DetectionsView', () => {
 
   it('keeps card nodes and focus across a data refresh', () => {
     const [data, setData] = createSignal(richData());
-    render(() => <DetectionsView data={data()} now={NOW} />);
+    render(() => <DetectionsView layoutStore={listLayout()} data={data()} now={NOW} />);
     const before = card('wpr');
-    const link = card('lazyload');
-    link.focus();
+    const lazyLink = link('lazyload');
+    lazyLink?.focus();
+    expect(document.activeElement).toBe(lazyLink);
     setData(richData({ undefinedReferencesOnPage: ['jQuery'] }));
     expect(card('wpr')).toBe(before);
-    expect(document.activeElement).toBe(link);
+    expect(document.activeElement).toBe(lazyLink);
   });
 
   it('copies the report from the page action', async () => {
     const writeText = vi.fn((): Promise<void> => Promise.resolve());
     vi.stubGlobal('navigator', { clipboard: { writeText } });
     try {
-      render(() => <DetectionsView data={richData()} now={NOW} />);
+      render(() => <DetectionsView layoutStore={listLayout()} data={richData()} now={NOW} />);
       fireEvent.click(screen.getByRole('button', { name: 'Copy report' }));
       await waitFor(() => {
         expect(toastItems().at(-1)?.title).toBe('Report copied');
@@ -389,16 +419,26 @@ describe('DetectionsView', () => {
   });
 });
 
-/** One status filter chip by id. */
-function chip(id: string): HTMLButtonElement {
-  const found = document.querySelector<HTMLButtonElement>(`[data-fdt-filter-chip="${id}"]`);
-  if (!found) throw new Error(`no chip ${id}`);
+/** One status filter segment's radio by id. */
+function segment(id: string): HTMLInputElement {
+  const found = document.querySelector<HTMLInputElement>(
+    `[data-fdt="detections-filter"] [data-fdt-choice-value="${id}"] input`
+  );
+  if (!found) throw new Error(`no segment ${id}`);
   return found;
 }
 
-/** A chip's visible count. */
-function chipCount(id: string): string | null | undefined {
-  return chip(id).querySelector('[data-fdt-filter-count]')?.textContent;
+/** Pick a status filter segment (its label, as a pointer would). */
+function pick(id: string): void {
+  const label = segment(id).closest('[data-fdt="choice"]')?.querySelector('label');
+  if (!label) throw new Error(`no label for ${id}`);
+  fireEvent.click(label);
+}
+
+/** A segment's visible count. */
+function segmentCount(id: string): string | null | undefined {
+  return segment(id).closest('[data-fdt="choice"]')?.querySelector('[data-fdt-choice-count]')
+    ?.textContent;
 }
 
 /** The rendered card ids, in DOM order. */
@@ -420,39 +460,68 @@ function noneActive(): FdtData {
   });
 }
 
+/** {@link richData} plus a beacon still collecting (Collecting rows exist). */
+function collectingData(): FdtData {
+  const base = richData();
+  return richData({
+    wprDetections: {
+      ...base.wprDetections,
+      priority_elements_beacon: { present: true, status: { lrc: true }, isMobile: null }
+    }
+  });
+}
+
 describe('DetectionsView status filter', () => {
-  it('renders All optimizations / Active / Inactive with counts over the optimization cards', () => {
-    const data = richData();
-    render(() => <DetectionsView data={data} now={NOW} />);
-    const group = screen.getByRole('group', { name: 'Optimization status' });
-    const ids = [...group.querySelectorAll<HTMLElement>('[data-fdt-filter-chip]')].map(
-      (el) => el.dataset.fdtFilterChip
+  it('renders All / Active / Collecting / Off with counts over the optimization rows', () => {
+    const data = collectingData();
+    render(() => <DetectionsView layoutStore={listLayout()} data={data} now={NOW} />);
+    const group = screen.getByRole('radiogroup', { name: 'Optimization status' });
+    const ids = [...group.querySelectorAll<HTMLInputElement>('input[type="radio"]')].map(
+      (el) => el.value
     );
-    expect(ids).toEqual(['all', 'active', 'inactive']);
+    expect(ids).toEqual(['all', 'active', 'collecting', 'off']);
     const items = buildStatusItems(data).filter((item) => isOptimizationCard(item.id));
     const active = items.filter((item) => item.status === 'active').length;
-    expect(chipCount('all')).toBe(String(items.length));
-    expect(chipCount('active')).toBe(String(active));
-    expect(chipCount('inactive')).toBe(String(items.length - active));
-    expect(chip('all').getAttribute('aria-pressed')).toBe('true');
-    // Not a search: the page stays outside the find protocol (the layout
-    // choice's radios are the row's only inputs).
+    const collecting = items.filter((item) => item.status === 'collecting').length;
+    expect(collecting).toBeGreaterThan(0);
+    expect(segmentCount('all')).toBe(String(items.length));
+    expect(segmentCount('active')).toBe(String(active));
+    expect(segmentCount('collecting')).toBe(String(collecting));
+    expect(segmentCount('off')).toBe(String(items.length - active - collecting));
+    expect(segment('all').checked).toBe(true);
+    // The segmented look, not the tiles.
+    expect(group.className).toContain('bg-surface-3');
+    // Not a search: the page stays outside the find protocol (radios only).
     expect(
       document.querySelector('[data-fdt="detections-controls"] input:not([type="radio"])')
     ).toBeNull();
-    expect(screen.getByRole('group', { name: 'Optimization status' }).textContent).not.toMatch(
-      /enabled|disabled/i
-    );
+    expect(group.textContent).not.toMatch(/enabled|disabled/i);
+  });
+
+  it('builds the segments with counts, disabling only an empty unselected bucket', () => {
+    const counts = { all: 0, active: 0, collecting: 2, off: 0 };
+    expect(filterOptions(counts, 'all')).toEqual([
+      { value: 'all', label: 'All', count: 0, disabled: false },
+      { value: 'active', label: 'Active', count: 0, disabled: true },
+      { value: 'collecting', label: 'Collecting', count: 2, disabled: false },
+      { value: 'off', label: 'Off', count: 0, disabled: true }
+    ]);
+    expect(filterOptions(counts, 'off').map((option) => option.disabled)).toEqual([
+      false,
+      true,
+      false,
+      false
+    ]);
   });
 
   it('narrows only optimization cards; page facts, badges and why stay', () => {
-    const data = richData();
-    render(() => <DetectionsView data={data} now={NOW} />);
+    const data = collectingData();
+    render(() => <DetectionsView layoutStore={listLayout()} data={data} now={NOW} />);
     const facts = pageFactIds();
     const all = cardIds();
     const wprNode = card('wpr');
-    fireEvent.click(chip('active'));
-    expect(chip('active').getAttribute('aria-pressed')).toBe('true');
+    pick('active');
+    expect(segment('active').checked).toBe(true);
     expect(pageFactIds()).toEqual(facts);
     expect(card('wpr')).toBe(wprNode);
     const activeIds = cardIds().filter((id) => isOptimizationCard(id as never));
@@ -460,60 +529,72 @@ describe('DetectionsView status filter', () => {
     for (const id of activeIds) {
       expect(card(id).querySelector('[data-fdt="status-badge"]')?.textContent).toBe('Active');
     }
-    fireEvent.click(chip('inactive'));
-    const inactiveIds = cardIds().filter((id) => isOptimizationCard(id as never));
-    expect(inactiveIds).not.toContain('delay_js');
-    for (const id of inactiveIds) {
+    pick('collecting');
+    const collectingIds = cardIds().filter((id) => isOptimizationCard(id as never));
+    expect(collectingIds.length).toBeGreaterThan(0);
+    for (const id of collectingIds) {
+      expect(card(id).querySelector('[data-fdt="status-badge"]')?.textContent).toBe('Collecting');
+      // The why travels with the row.
+      expect(card(id).querySelector('[data-fdt-card-why]')).not.toBeNull();
+    }
+    pick('off');
+    const offIds = cardIds().filter((id) => isOptimizationCard(id as never));
+    expect(offIds).not.toContain('delay_js');
+    for (const id of offIds) {
       expect(card(id).querySelector('[data-fdt="status-badge"]')?.textContent).not.toBe('Active');
+      expect(card(id).querySelector('[data-fdt="status-badge"]')?.textContent).not.toBe(
+        'Collecting'
+      );
     }
     expect(pageFactIds()).toEqual(facts);
-    fireEvent.click(chip('all'));
+    pick('all');
     expect(cardIds()).toEqual(all);
   });
 
   it('keeps the overview byte-identical under every filter', () => {
-    render(() => <DetectionsView data={richData()} now={NOW} />);
+    render(() => <DetectionsView layoutStore={listLayout()} data={richData()} now={NOW} />);
     const overview = () => document.querySelector('[data-fdt="detections-summary"]')?.outerHTML;
     const before = overview();
     expect(before).toContain('data-fdt-summary-headline');
-    for (const id of ['inactive', 'active', 'all']) {
-      fireEvent.click(chip(id));
+    for (const id of ['off', 'collecting', 'active', 'all']) {
+      pick(id);
       expect(overview()).toBe(before);
     }
   });
 
   it('disables an empty bucket unless it is the selected one', () => {
-    render(() => <DetectionsView data={noneActive()} now={NOW} />);
-    expect(chipCount('active')).toBe('0');
-    expect(chip('active').disabled).toBe(true);
-    expect(chip('all').disabled).toBe(false);
-    expect(chip('inactive').disabled).toBe(false);
+    render(() => <DetectionsView layoutStore={listLayout()} data={noneActive()} now={NOW} />);
+    expect(segmentCount('active')).toBe('0');
+    expect(segment('active').disabled).toBe(true);
+    expect(segment('all').disabled).toBe(false);
+    expect(segment('off').disabled).toBe(false);
     expect(document.querySelector('[data-fdt="detections-filtered-empty"]')).toBeNull();
   });
 
   it('keeps the selection, card nodes and focus across a refresh', () => {
     const [data, setData] = createSignal(richData());
-    render(() => <DetectionsView data={data()} now={NOW} />);
-    fireEvent.click(chip('active'));
+    render(() => <DetectionsView layoutStore={listLayout()} data={data()} now={NOW} />);
+    pick('active');
     const delay = card('delay_js');
-    delay.focus();
-    const chipNode = chip('active');
+    const delayLink = link('delay_js');
+    delayLink?.focus();
+    const segmentNode = segment('active');
     setData(richData({ undefinedReferencesOnPage: ['jQuery'] }));
-    expect(chip('active')).toBe(chipNode);
-    expect(chip('active').getAttribute('aria-pressed')).toBe('true');
+    expect(segment('active')).toBe(segmentNode);
+    expect(segment('active').checked).toBe(true);
     expect(card('delay_js')).toBe(delay);
-    expect(document.activeElement).toBe(delay);
+    expect(document.activeElement).toBe(delayLink);
   });
 
   it('keeps a bucket a refresh emptied selected, says so, and leads back to All', () => {
     const [data, setData] = createSignal(richData());
-    render(() => <DetectionsView data={data()} now={NOW} />);
-    fireEvent.click(chip('active'));
+    render(() => <DetectionsView layoutStore={listLayout()} data={data()} now={NOW} />);
+    pick('active');
     const facts = pageFactIds();
     setData(noneActive());
-    expect(chip('active').getAttribute('aria-pressed')).toBe('true');
-    // The selected chip stays reachable at zero.
-    expect(chip('active').disabled).toBe(false);
+    expect(segment('active').checked).toBe(true);
+    // The selected segment stays reachable at zero.
+    expect(segment('active').disabled).toBe(false);
     const empty = document.querySelector('[data-fdt="detections-filtered-empty"]');
     expect(empty?.textContent).toContain('"Active"');
     expect(pageFactIds()).toEqual(facts);
@@ -521,9 +602,9 @@ describe('DetectionsView status filter', () => {
     const back = screen.getByRole('button', { name: SHOW_ALL_OPTIMIZATIONS });
     back.focus();
     fireEvent.click(back);
-    expect(chip('all').getAttribute('aria-pressed')).toBe('true');
+    expect(segment('all').checked).toBe(true);
     expect(document.querySelector('[data-fdt="detections-filtered-empty"]')).toBeNull();
-    expect(document.activeElement).toBe(chip('all'));
+    expect(document.activeElement).toBe(segment('all'));
     expect(cardIds().length).toBe(buildStatusItems(noneActive()).length);
   });
 
@@ -533,14 +614,14 @@ describe('DetectionsView status filter', () => {
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
     try {
       const data = richData();
-      render(() => <DetectionsView data={data} now={NOW} />);
+      render(() => <DetectionsView layoutStore={listLayout()} data={data} now={NOW} />);
       fireEvent.click(screen.getByRole('button', { name: 'Copy report' }));
       await waitFor(() => {
         expect(writeText).toHaveBeenCalledTimes(1);
       });
       cleanup();
-      render(() => <DetectionsView data={data} now={NOW} />);
-      fireEvent.click(chip('active'));
+      render(() => <DetectionsView layoutStore={listLayout()} data={data} now={NOW} />);
+      pick('active');
       fireEvent.click(screen.getByRole('button', { name: 'Copy report' }));
       await waitFor(() => {
         expect(writeText).toHaveBeenCalledTimes(2);
@@ -554,11 +635,11 @@ describe('DetectionsView status filter', () => {
 
   it('resets to All on remount', () => {
     const data = richData();
-    render(() => <DetectionsView data={data} now={NOW} />);
-    fireEvent.click(chip('inactive'));
+    render(() => <DetectionsView layoutStore={listLayout()} data={data} now={NOW} />);
+    pick('off');
     cleanup();
-    render(() => <DetectionsView data={data} now={NOW} />);
-    expect(chip('all').getAttribute('aria-pressed')).toBe('true');
+    render(() => <DetectionsView layoutStore={listLayout()} data={data} now={NOW} />);
+    expect(segment('all').checked).toBe(true);
   });
 });
 
@@ -591,7 +672,7 @@ describe('DetectionsPage (store wiring)', () => {
     });
     render(() => (
       <FdtDataContext.Provider value={store}>
-        <DetectionsLayoutContext.Provider value={createDetectionsLayout()}>
+        <DetectionsLayoutContext.Provider value={listLayout()}>
           <DetectionsPage />
         </DetectionsLayoutContext.Provider>
       </FdtDataContext.Provider>
