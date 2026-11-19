@@ -276,19 +276,34 @@ export function desktopUserAgent(userAgent) {
 }
 
 /**
- * The init script standing in for DevTools: stamps `devtools.inspectedWindow.tabId` on both
+ * The init script standing in for DevTools: stamps `devtools.inspectedWindow` on both
  * namespace objects an extension page exposes (`chrome` and the separate `browser`: the panel
  * resolves through `browser` first, so a `chrome`-only stamp is ignored). Mirrors the e2e
- * tier's shim (`tests/e2e/helpers/panel-data.ts`), tab id only.
+ * tier's shim (`tests/e2e/helpers/panel-data.ts`): the tab id, plus a callback-form `eval`
+ * that answers only `location.href` (the top bar's inspected address) with the inspected
+ * page's URL; any other expression gets an exception answer.
  *
  * @param {number} tabId The inspected tab's id.
+ * @param {string} pageUrl The inspected page's URL (`location.href` answer).
  * @returns {string} Script text for `page.addInitScript`.
- * @throws {Error} When the id is not a non-negative integer (it is interpolated into code).
+ * @throws {Error} When the id is not a non-negative integer (it is interpolated into code)
+ *   or the URL is not absolute http(s).
  */
-export function devtoolsShim(tabId) {
+export function devtoolsShim(tabId, pageUrl) {
   if (!Number.isInteger(tabId) || tabId < 0) throw new Error(`invalid tab id: ${String(tabId)}`);
+  if (typeof pageUrl !== 'string' || !/^https?:\/\//.test(pageUrl)) {
+    throw new Error(`invalid page URL: ${String(pageUrl)}`);
+  }
   return `(() => {
-    const inspectedWindow = { tabId: ${String(tabId)} };
+    const href = ${JSON.stringify(pageUrl)};
+    const inspectedWindow = {
+      tabId: ${String(tabId)},
+      eval: (expression, callback) => {
+        if (typeof callback !== 'function') return;
+        if (expression === 'location.href') callback(href, undefined);
+        else callback(undefined, { isException: true, value: 'unsupported in screenshots' });
+      }
+    };
     for (const namespace of [window.chrome, window.browser]) {
       if (namespace !== undefined && namespace !== null) namespace.devtools = { inspectedWindow };
     }
@@ -587,7 +602,7 @@ async function warmUp(context, worker, siteUrl) {
  *
  * @param {import('@playwright/test').BrowserContext} context The browser context.
  * @param {{surface: string, palette: string, width: number, file: string}} shot The shot.
- * @param {{extensionId: string, tabId: number, outDir: string}} run The run's fixed inputs.
+ * @param {{extensionId: string, tabId: number, pageUrl: string, outDir: string}} run The run's fixed inputs.
  * @returns {Promise<{warnings: string[], errorTexts: string[]}>} Its warnings and error views.
  */
 async function captureShot(context, shot, run) {
@@ -604,7 +619,7 @@ async function captureShot(context, shot, run) {
       await page.goto(`${base}/options.html`, { waitUntil: 'load' });
       warnings = await optionsReady(page);
     } else {
-      await page.addInitScript(devtoolsShim(run.tabId));
+      await page.addInitScript(devtoolsShim(run.tabId, run.pageUrl));
       await page.goto(`${base}/panel.html#/${shot.surface}`, { waitUntil: 'load' });
       warnings = await panelReady(page, shot.surface);
     }
@@ -756,6 +771,7 @@ async function main(argv) {
       const { warnings, errorTexts } = await captureShot(context, shot, {
         extensionId,
         tabId,
+        pageUrl,
         outDir: options.outDir
       });
       for (const warning of warnings) console.warn(`[screenshots] ${shot.file}: ${warning}`);

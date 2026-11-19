@@ -127,7 +127,7 @@ const NAV = 'relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden';
 
 /**
  * One journey group: a hairline-topped cluster — never above the first
- * (the shell's brand mark already anchors the rail's top). The hairline
+ * (the rail's top edge already bounds it, below the top bar). The hairline
  * keeps symmetric breathing space: `mt-1.5` above (the boundary's own
  * margin) equals the `pt-1.5` below it, so the hairline never sits flush
  * against the previous group's last row box — its hover rectangle needs

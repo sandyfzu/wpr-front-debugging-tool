@@ -1,7 +1,7 @@
 /**
  * The panel's view of the inspected tab's exclusion session: one ask at
  * mount, then the background's pushes (`exclusionSessionUpdated`) keep it
- * current. Pure state + words (the status bar's builder entry renders
+ * current. Pure state + words (the top bar's builder entry renders
  * them); the transport is injected.
  *
  * The panel says only what the record says about the tab — whether a given
@@ -152,6 +152,18 @@ export function builderEntryView(state: BuilderSessionState): BuilderEntryView {
           'The browser could not intercept this tab’s pages. Open the builder for the cause and the remedy.'
       };
   }
+}
+
+/**
+ * Whether the session state is news worth bar space on a folded bar: a
+ * session that rewrites the page ("On") or cannot ("Unavailable"). The
+ * quiet states — checking, unreadable, "Off" — wait in the "⋯" menu.
+ *
+ * @param view The entry's current words.
+ * @returns True when the badge must stay at a glance.
+ */
+export function builderNeedsGlance(view: BuilderEntryView): boolean {
+  return view.badge !== null && view.badge.kind !== 'neutral';
 }
 
 /** A toast to show after an open: its tone, title and remedy. */

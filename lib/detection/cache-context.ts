@@ -23,8 +23,8 @@
  *   query string the site caches, and a stripped footer then hides its stamp
  *   (the site's cached query strings are not observable from the page).
  *
- * The chip label, tooltip and report line live here too: the strip, the
- * status bar, the page-analysis report and the support report all read this
+ * The chip label, tooltip and report line live here too: the on-page strip,
+ * the panel's top bar, the page-analysis report and the support report all read this
  * module, so one cache state can never be spelled two ways.
  */
 

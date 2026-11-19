@@ -615,7 +615,11 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
           windowBottom: number;
         } => {
           const triggerBox = document
-            .querySelector<HTMLElement>('[aria-haspopup="menu"]')
+            // The rail's own trigger (the top bar's "⋯" menu trigger also
+            // carries aria-haspopup="menu" below 760 px).
+            .querySelector<HTMLElement>(
+              '[data-fdt="panel-nav-overflow-block"] [aria-haspopup="menu"]'
+            )
             ?.getBoundingClientRect();
           const tooltipBox = document
             .querySelector<HTMLElement>('[role="tooltip"]')
@@ -686,7 +690,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       // internally (the designed token-thin hairline), every hidden route
       // stays pointer-reachable through that scroll, and the rail's own
       // scroll-free invariant is untouched by the plate's.
-      for (const height of [90, 120, 170, 220, 240, 250, 260, 275]) {
+      for (const height of [90, 120, 170, 220, 240, 250, 255, 260]) {
         await shrinkTo(page, height);
         await page.getByRole('button', { name: 'More pages' }).click();
         const menu = page.locator('[data-fdt="panel-nav-overflow-menu"]');
@@ -695,13 +699,14 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
         expect(reach.plateOverflowY, `plate overflow at ${String(height)}px`).toBe('auto');
         expect(reach.plateScrollbarGutter, `plate gutter at ${String(height)}px`).toBe('auto');
         expect(reach.plateNoHorizontalOverflow).toBe(true);
-        // The clamp state: at 275 the plate fits without biting (its rows
+        // The clamp state: at 260 the plate fits without biting (its rows
         // truly fit; no scrollbar exists then); below, it bites and the
         // scroll carries the tail. The fit line follows the registry's row
-        // count — with ten rows it sits at 270 px (probed in 5 px steps,
-        // 200–420: 205–240 clamp eight hidden rows in the plate, 245–265
-        // clamp seven; 270–275 fit seven; 280 and up hide six or fewer, all fitting).
-        if (height === 275) {
+        // count and the shell's chrome above the rail (the 44 px top bar) —
+        // with ten rows it sits at 260 px (probed in 5 px steps, 200–420:
+        // 200–215 clamp eight hidden rows in the plate, 220–255 clamp seven;
+        // 260–290 fit six; 295 and up hide five or fewer, all fitting).
+        if (height === 260) {
           expect(reach.plateClamped).toBe(false);
         } else {
           expect(reach.plateClamped, `plate clamped at ${String(height)}px`).toBe(true);

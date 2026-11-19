@@ -390,7 +390,9 @@ test.describe('panel keyboard + a11y', () => {
             outline: active instanceof HTMLElement ? getComputedStyle(active).outlineStyle : ''
           };
         });
-        if (state.name === 'Command palette') {
+        // The wide trigger's name leads with its visible words ("Jump to… —
+        // Command palette"); the icon form is "Command palette" alone.
+        if (state.name.endsWith('Command palette')) {
           expect(state.outline).toBe('solid');
           reached = true;
           break;

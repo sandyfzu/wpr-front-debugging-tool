@@ -149,7 +149,7 @@ settings).
 | `all-off`       | Delay/Defer/Minify/LazyLoad off                                                                       | C1 device-only meta, C2 + decoys, C3 no meta/no footprint   |
 
 Every round asserts the served decoy DOM, the payload (row presence + `source`), the
-on-page strip, the panel cards, summary facts and status bar, the support report, and —
+on-page strip, the panel cards, summary facts and top bar, the support report, and —
 when the edge sent a header — the Headers page. A6/A7 (the "Bypass requested" arms)
 carry `fdt-no-store=1` and first prove a repeat request is still a live render (no
 `Last-Modified`, no `cached@` stamp): without it, the plugin stores any `nowprocket` URL

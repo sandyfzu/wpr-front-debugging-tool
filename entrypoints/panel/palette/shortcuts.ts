@@ -33,6 +33,7 @@ import {
   type ChordBinding
 } from '../../../lib/palette-chord/keydown';
 import { chordsEqual, formatChord, type PaletteChord } from '../../../lib/storage/palette-chord';
+import type { ChordPlatform } from '../../../lib/storage/palette-chord-platform';
 import type { OverlayStore } from './overlays';
 
 const log = createLogger('panel');
@@ -73,7 +74,19 @@ export interface ShortcutRow {
 }
 
 /** The fixed palette toggle as a chord (`mod` is Command on macOS, Ctrl elsewhere). */
-const FIXED_PALETTE_CHORD: PaletteChord = Object.freeze({ code: 'KeyK', mod: true });
+export const FIXED_PALETTE_CHORD: PaletteChord = Object.freeze({ code: 'KeyK', mod: true });
+
+/**
+ * The fixed palette chord as a visible key hint, in the platform's own
+ * notation (`⌘K` on macOS, `Ctrl+K` elsewhere) — the palette trigger's
+ * inline hint, where the two-platform form ("Ctrl / ⌘ K") is too wide.
+ *
+ * @param platform The keyboard convention.
+ * @returns The hint text.
+ */
+export function paletteKeyHint(platform: ChordPlatform): string {
+  return formatChord(FIXED_PALETTE_CHORD, platform);
+}
 
 /**
  * The overlay's rows, in read order. The DevTools rows mirror the browser's

@@ -1,7 +1,8 @@
 /**
- * The panel's app shell: the brand mark above the icon rail (the nav) and
- * the content region beside it that renders the route bodies and the
- * data-state surfaces around them.
+ * The panel's app shell: the top bar (identity, the page's answers and the
+ * shell controls) above the icon rail (the nav) and the content region
+ * beside it that renders the route bodies and the data-state surfaces
+ * around them.
  *
  * Boot states are real states, not theater: `fetching` renders the skeleton,
  * `error` the retry affordance, `ready`/`refreshing` the route body — so a
@@ -25,7 +26,6 @@ import {
   type JSX
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import Rocket from 'lucide-solid/icons/rocket';
 import { ErrorState } from '../../components/ui/error-state';
 import { PageHeader } from '../../components/ui/page-header';
 import { Skeleton } from '../../components/ui/skeleton';
@@ -40,18 +40,15 @@ import { createHashRoute } from './router';
 import { navRoute, type RouteId } from './routes';
 import { PageCanvas } from './pages/page-frame';
 import { DATA_UNAVAILABLE_TITLE, DataUnavailable } from './data-unavailable';
-import { StatusBar } from './status-bar/status-bar';
-import {
-  BuilderEntry,
-  realBuilderEntryDeps,
-  type BuilderEntryDeps
-} from './status-bar/builder-entry';
+import { TopBar } from './top-bar/top-bar';
+import { realBuilderEntryDeps, type BuilderEntryDeps } from './top-bar/builder-entry';
+import { readInspectedPageUrl, realInspectedEvalApi } from './report/inspected-page-url';
 import { PAGES } from './pages';
 import { focusRouteHeading } from './palette/focus';
-import { PaletteTrigger } from './palette/palette-trigger';
 import { PanelOverlays } from './palette/panel-overlays';
 import { createOverlayStore, type OverlayStore } from './palette/overlays';
-import { registerPanelShortcuts } from './palette/shortcuts';
+import { paletteKeyHint, registerPanelShortcuts } from './palette/shortcuts';
+import { navigatorChordPlatform } from '../../lib/palette-chord/follow';
 import {
   createPanelChordBinding,
   realPanelChordDeps,
@@ -69,6 +66,7 @@ import { createDetailPresence, DetailPresenceContext } from './state/detail-pres
 import { devtoolsInspectedTabId, fdtRequestEdges, realMessagingEdges } from './state/edges';
 import { withRelayedPushes } from './state/relayed-pushes';
 import { createHardReloadBudget } from './state/hard-reload-budget';
+import { createShellWidth, type InlineSizeObserver } from './state/shell-width';
 
 const log = createLogger('panel');
 
@@ -100,6 +98,16 @@ export type AppProps = {
    * real chord store and platform report.
    */
   readonly paletteChord?: PanelChordDeps;
+  /**
+   * Reads the inspected page URL for the top bar (tests inject doubles);
+   * absent, the DevTools eval of the inspected page.
+   */
+  readonly readPageUrl?: () => Promise<string | null>;
+  /**
+   * The shell's size observer (tests drive widths by hand); absent, a
+   * `ResizeObserver` on the shell element.
+   */
+  readonly observeShellWidth?: InlineSizeObserver;
 };
 
 /** The error branch's payload (the error state's fields the view reads). */
@@ -109,21 +117,17 @@ interface DataError {
 }
 
 /**
- * The shell header: the brand mark above the nav's icon rail column.
+ * The nav column: the icon rail beside the content.
  *
- * `z-10` is the rail column's paint priority over the status bar's band:
- * below the panel's usable minimum nothing can absorb the loss of height,
- * so the rail column's overflow (its brand row and overflow trigger) would
- * otherwise paint under the footer and become pointer-blocked. At any
- * normal height nothing overflows the row and the rule is inert; the
- * fixed overlays (dialog z-40+, tooltips/menu portals z-50) rank above it
- * unchanged.
+ * `z-10` is the column's paint priority over the content region: below the
+ * panel's usable minimum nothing can absorb the loss of height, so the
+ * column's overflow (its "More pages" trigger) must never paint under a
+ * stacked page element and become pointer-blocked. At any normal height
+ * nothing overflows and the rule is inert; the fixed overlays (dialog
+ * z-40+, tooltips/menu portals z-50) rank above it unchanged. The top bar
+ * carries the same priority.
  */
 const HEADER = 'relative z-10 flex shrink-0 flex-col gap-2 border-r border-line-2 bg-surface-1 p-2';
-
-/** The brand mark: centered over the rail; its name rides the sr-only span. */
-const BRAND =
-  'flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap text-xs font-semibold text-fg-primary';
 
 /**
  * Render the panel shell.
@@ -144,14 +148,19 @@ function reloadPanelDocument(): void {
 }
 
 /**
- * The persistent status strip: the shell's bottom edge, outside the
- * content region's scrolling — an answer never scrolls out and data never
- * pushes the panel's chrome, at every docking geometry.
+ * The shell's column: the top bar, then the rail-and-content row. The bar
+ * sits outside the content region's scrolling — an answer never scrolls
+ * out and data never pushes the panel's chrome, at every docking geometry.
  */
-const BOTTOM_EDGE = 'flex min-h-0 min-w-0 flex-1 flex-col';
+const STACK = 'flex min-h-0 min-w-0 flex-1 flex-col';
 
-/** The rail-and-content row above the strip (the shell's pre-strip geometry, unchanged). */
+/** The rail-and-content row below the top bar. */
 const STACK_ROW = 'flex min-h-0 flex-1';
+
+/** The real page-URL read (best-effort; null outside DevTools). */
+function readRealPageUrl(): Promise<string | null> {
+  return readInspectedPageUrl(realInspectedEvalApi(), browser.runtime);
+}
 
 export function PanelApp(props: AppProps): JSX.Element {
   // All the store injections below are deliberate once-per-mount builds
@@ -202,6 +211,11 @@ export function PanelApp(props: AppProps): JSX.Element {
   const detailPresence = createDetailPresence(router.route);
   // eslint-disable-next-line solid/reactivity
   const paletteChord = createPanelChordBinding(props.paletteChord ?? realPanelChordDeps(log));
+  // eslint-disable-next-line solid/reactivity
+  const shellWidth = createShellWidth(props.observeShellWidth);
+  /** The trigger's key hint: the resolved convention, else the navigator's. */
+  const keyHint = (): string =>
+    paletteKeyHint(paletteChord.binding()?.platform ?? navigatorChordPlatform(navigator));
 
   // The shell — and only the shell — owns the mount lifecycle: every
   // message receiver registers inside `start()`, the global keyboard
@@ -302,29 +316,30 @@ export function PanelApp(props: AppProps): JSX.Element {
     <FdtDataContext.Provider value={data}>
       <SearchContext.Provider value={search}>
         <DetailPresenceContext.Provider value={detailPresence}>
-          <div data-fdt="panel-shell" class="flex h-dvh bg-surface-0 text-fg-primary">
-            <div data-fdt="panel-stack" class={BOTTOM_EDGE}>
+          <div
+            data-fdt="panel-shell"
+            ref={shellWidth.attach}
+            class="flex h-dvh bg-surface-0 text-fg-primary"
+          >
+            <div data-fdt="panel-stack" class={STACK}>
+              <TopBar
+                width={shellWidth.width}
+                palette={{
+                  open: () => overlays.paletteOpen(),
+                  toggle: () => {
+                    overlays.togglePalette();
+                  },
+                  keyHint
+                }}
+                builderEntry={builderEntryDeps}
+                readPageUrl={props.readPageUrl ?? readRealPageUrl}
+              />
               <div class={STACK_ROW}>
-                <header data-fdt="panel-header" class={HEADER}>
-                  {/* The brand block: the mark and the palette trigger — the
-                keyboard layer's mouse entry point — beside the rail's first
-                row (the interim geometry; the band redesign owns the final
-                shape). The brand is not a heading: each page owns the single
-                h1. Its name rides the sr-only span. */}
-                  <div data-fdt="panel-brand-row" class="flex shrink-0 items-center gap-1.5">
-                    <p class={BRAND}>
-                      <Rocket size={14} class="shrink-0 text-accent" aria-hidden="true" />
-                      <span class="sr-only">WPR FDT</span>
-                    </p>
-                    <PaletteTrigger
-                      open={() => overlays.paletteOpen()}
-                      toggle={() => {
-                        overlays.togglePalette();
-                      }}
-                    />
-                  </div>
+                {/* The nav column (not a landmark itself: the top bar is the
+                    page's banner; the nav inside is the navigation landmark). */}
+                <div data-fdt="panel-header" class={HEADER}>
                   <AdaptiveNav route={router.route} data={navData} />
-                </header>
+                </div>
                 <main data-fdt="panel-content" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
                   <ErrorBoundary
                     fallback={(error: unknown) => {
@@ -393,7 +408,6 @@ export function PanelApp(props: AppProps): JSX.Element {
                   </ErrorBoundary>
                 </main>
               </div>
-              <StatusBar trailing={<BuilderEntry deps={builderEntryDeps} />} />
             </div>
             <div role="status" class="sr-only" aria-live="polite" data-fdt="panel-status">
               {statusLine()}

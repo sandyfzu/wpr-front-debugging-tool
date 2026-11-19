@@ -80,7 +80,7 @@ describe('NAV_ROUTES', () => {
     const row = navRoute('headers-cookies');
     expect(row?.label).toBe('Headers & Cookies');
     expect(row?.group).toBe('Inspect');
-    // Its cache answers are the status bar's: the nav says nothing.
+    // Its cache answers are the top bar's: the nav says nothing.
     expect(row?.liveState).toBeUndefined();
   });
 
@@ -353,7 +353,7 @@ describe('nav live-state selectors', () => {
   });
 
   it('leaves the overview row stateless', () => {
-    // The Overview row never duplicates the first-paint status-bar answers.
+    // The Overview row never duplicates the first-paint top bar answers.
     expect(navRoute('detections')?.liveState).toBeUndefined();
   });
 });

@@ -26,7 +26,7 @@
  * The site itself is never changed: sessions are in-browser only, the page
  * is requested as served. One case per test, each in its own tab (a session
  * is per tab), the widget map (on by default) and saved drafts cleared around each. The
- * panel status bar's builder entry is not assertable here: the standalone
+ * panel top bar's builder entry is not assertable here: the standalone
  * panel page's sender has a tab, and the background answers only tab-less
  * (real DevTools) senders.
  */

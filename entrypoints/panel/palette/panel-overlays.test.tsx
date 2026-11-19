@@ -341,8 +341,8 @@ describe('the keyboard overlays in the shell', () => {
 });
 
 describe('focus on route switch', () => {
-  it('a palette open from a focused strip anchor restores to it on close', async () => {
-    // The overlay store restores whatever held focus at open — the strip's
+  it('a palette open from a focused top bar anchor restores to it on close', async () => {
+    // The overlay store restores whatever held focus at open — the top bar's
     // link (a real focusable in the shell, not a test fake) is a legitimate
     // opener: focus it, open through the global key, close, land back.
     bootShellWithData();

@@ -1,6 +1,6 @@
 /**
  * The summary strip's branches: the headline + meter share, the facts the
- * status bar lacks (absolute cache time, platform header) and their
+ * top bar lacks (absolute cache time, platform header) and their
  * omissions (cached without a stamp, plugin without a version, nothing to
  * add), and the plugin-absent explanation.
  */
@@ -124,7 +124,7 @@ describe('SummaryStrip', () => {
     expect(fact('platform')?.textContent).toBe('Kinsta via X-Kinsta-Cache');
   });
 
-  it('adds no facts row when the status bar already says it all (version-less plugin included)', () => {
+  it('adds no facts row when the top bar already says it all (version-less plugin included)', () => {
     // A stamp-less cached page: the bar's "Cached" is the whole cache answer.
     render(() => (
       <SummaryStrip

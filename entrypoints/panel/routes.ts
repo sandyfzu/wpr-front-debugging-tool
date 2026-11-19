@@ -98,9 +98,9 @@ function shownTotal(count: number, partial: boolean): string {
  * Tools).
  *
  * The Overview row carries no live state on purpose: WPR presence, version
- * and cache age are the status bar's first-paint answers, owned there — the
+ * and cache age are the top bar's first-paint answers, owned there — the
  * nav would only duplicate them. Headers & Cookies stays state-free for the
- * same reason: its cache evidence condenses to the status bar's answer.
+ * same reason: its cache evidence condenses to the top bar's answer.
  */
 export const NAV_ROUTES: readonly NavRoute[] = [
   { id: 'detections', label: 'Detections', icon: ShieldCheck, group: 'Overview' },

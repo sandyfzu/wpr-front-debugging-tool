@@ -441,11 +441,11 @@ async function assertCards(panel: Page, round: MatrixRound): Promise<void> {
   if (round.cache.layer === null) await expect(layerFact).toHaveCount(0);
   else await expect(layerFact).toHaveText(`${round.cache.layer} cache-layer marker captured`);
 
-  // The status bar's cache segment reads the same vocabulary (the cached
+  // The top bar's cache answer reads the same vocabulary (the cached
   // form is its age chip, every other state its copy chip as a link).
-  const statusBar = panel.locator('[data-fdt="panel-status-bar"]');
-  if (round.cache.chip === '✓ Cached') await expect(statusBar).toContainText('Cached');
-  else await expect(statusBar.getByRole('link', { name: round.cache.chip })).toBeVisible();
+  const topBar = panel.locator('[data-fdt="panel-top-bar"]');
+  if (round.cache.chip === '✓ Cached') await expect(topBar).toContainText('Cached');
+  else await expect(topBar.getByRole('link', { name: round.cache.chip })).toBeVisible();
 }
 
 /**

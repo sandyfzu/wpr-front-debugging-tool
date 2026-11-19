@@ -1,5 +1,5 @@
 /**
- * The status-bar selectors against contract-genuine data: each segment's
+ * The top-bar selectors against contract-genuine data: each segment's
  * every state (boot → loading, absent → honest non-answer), the platform
  * precedence over the real captured-header shapes, the staleness threshold
  * and its exact flip, and the composed entry point's state mapping.
@@ -16,7 +16,7 @@ import {
   freshnessSegment,
   isDataStale,
   platformSegment,
-  statusBarSegments,
+  topBarSegments,
   wprSegment
 } from './selectors';
 
@@ -356,9 +356,9 @@ describe('isDataStale', () => {
   });
 });
 
-describe('statusBarSegments', () => {
-  it('maps an errored state to unavailable placeholders across the strip', () => {
-    expect(statusBarSegments({ status: 'error', cause: 'x', hardReload: false }, NOW_MS)).toEqual({
+describe('topBarSegments', () => {
+  it('maps an errored state to unavailable placeholders across the bar', () => {
+    expect(topBarSegments({ status: 'error', cause: 'x', hardReload: false }, NOW_MS)).toEqual({
       wpr: { kind: 'unavailable' },
       cache: { kind: 'unavailable' },
       platform: { kind: 'unavailable' },
@@ -366,8 +366,8 @@ describe('statusBarSegments', () => {
     });
   });
 
-  it('maps the unavailable state to unavailable placeholders across the strip', () => {
-    expect(statusBarSegments({ status: 'unavailable', reason: 'x' }, NOW_MS)).toEqual({
+  it('maps the unavailable state to unavailable placeholders across the bar', () => {
+    expect(topBarSegments({ status: 'unavailable', reason: 'x' }, NOW_MS)).toEqual({
       wpr: { kind: 'unavailable' },
       cache: { kind: 'unavailable' },
       platform: { kind: 'unavailable' },
@@ -375,8 +375,8 @@ describe('statusBarSegments', () => {
     });
   });
 
-  it('maps the boot states to loading placeholders across the strip', () => {
-    expect(statusBarSegments({ status: 'idle' }, NOW_MS)).toEqual({
+  it('maps the boot states to loading placeholders across the bar', () => {
+    expect(topBarSegments({ status: 'idle' }, NOW_MS)).toEqual({
       wpr: { kind: 'loading' },
       cache: { kind: 'loading' },
       platform: { kind: 'loading' },
@@ -386,7 +386,7 @@ describe('statusBarSegments', () => {
 
   it('resolves every segment from the carried data while loaded', () => {
     const data = withHeaders([{ name: 'Server', value: 'nginx' }]);
-    const view = statusBarSegments({ status: 'ready', data, fetchedAt: NOW_MS - 10_000 }, NOW_MS);
+    const view = topBarSegments({ status: 'ready', data, fetchedAt: NOW_MS - 10_000 }, NOW_MS);
     expect(view.wpr).toEqual({ kind: 'not-detected' });
     expect(view.cache).toEqual({ kind: 'not-applicable' });
     expect(view.platform).toEqual({ kind: 'captured', value: 'nginx' });

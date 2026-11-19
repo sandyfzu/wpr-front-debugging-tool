@@ -1,5 +1,5 @@
 /**
- * The Detections summary strip — the one answer the status bar does not
+ * The Detections summary strip — the one answer the top bar does not
  * give: how much of WP Rocket is working on this page ("N of M
  * optimizations active", with a small accent meter right after it — and,
  * when the Exclusion Builder turned served features off in this tab, the
@@ -12,7 +12,7 @@
  * shared explanation (the bar has no room for the why); the hosting cache
  * layer when the cache state does not already settle or name it; the
  * WordPress version; and the header that identified the platform. Plugin
- * presence, version, age and server stay the status bar's alone.
+ * presence, version, age and server stay the top bar's alone.
  *
  * Card facts are read off the same card list the grid renders, so the two
  * cannot disagree; the page facts (cache state, layer, WordPress version)

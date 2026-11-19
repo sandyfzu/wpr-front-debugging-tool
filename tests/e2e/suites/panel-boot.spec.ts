@@ -2,7 +2,7 @@
  * The panel's boot through the devtools-contract data path: with a real
  * inspected tab and its content-script-processed page, the panel renders its
  * ready state from the fixture's real detection output — the page body, the
- * honest first-paint strip, the nav rows' live state — and nothing of the
+ * honest first-paint top bar, the nav rows' live state — and nothing of the
  * error state.
  *
  * The harness's seam (`helpers/panel-data.ts`) writes only the value Chrome
@@ -18,8 +18,8 @@
  * same surface — the retry control actually re-running the flight — on a
  * seamless standalone page (no inspected tab ⇒ the same recorded error, so
  * the affordance is exercised where its failure mode lives). Note on the
- * strip's exact values: the depth of the four segments (ages, stamps,
- * navigation) is the status-bar suite's row; this suite pins "the ready boot
+ * top bar's exact values: the depth of the four segments (ages, stamps,
+ * navigation) is the top-bar suite's row; this suite pins "the ready boot
  * renders real answers from the data path".
  */
 import type { Page } from '@playwright/test';
@@ -33,11 +33,10 @@ function h1(panel: Page): Promise<string | null> {
   );
 }
 
-/** The strip's rendered answers (boot-honest answers are whole strings). */
-function stripText(page: Page): Promise<string | null> {
+/** The top bar's rendered answers (boot-honest answers are whole strings). */
+function barText(page: Page): Promise<string | null> {
   return page.evaluate(
-    (): string | null =>
-      document.querySelector('[data-fdt="panel-status-bar"]')?.textContent ?? null
+    (): string | null => document.querySelector('[data-fdt="panel-top-bar"]')?.textContent ?? null
   );
 }
 
@@ -65,11 +64,11 @@ test.describe('panel ready boot (the devtools-contract data path)', () => {
         )
       ).toBe('Detections loaded');
 
-      // The first-paint strip answers from the fixture's real detection: the
+      // The first-paint top bar answers from the fixture's real detection: the
       // marked fixture carries the generator meta (version) plus the served
       // cache-debug comment (cached) — the engine's own facts, never injected.
-      expect(await stripText(panel)).toContain('WP Rocket 3.20.1');
-      expect(await stripText(panel)).toContain('Cached');
+      expect(await barText(panel)).toContain('WP Rocket 3.20.1');
+      expect(await barText(panel)).toContain('Cached');
 
       // The nav's live-state selectors see the same data: the fixture never
       // dispatches the all-scripts-loaded event, so the undefined-references
@@ -129,9 +128,9 @@ test.describe('panel ready boot (the devtools-contract data path)', () => {
       await panel.waitForURL(/#\/lazyload$/);
       await expect.poll(async () => await h1(panel)).toBe('Lazyload');
 
-      // The strip is shell-owned: the route swap never resets its answers.
-      expect(await stripText(panel)).toContain('WP Rocket 3.20.1');
-      expect(await stripText(panel)).toContain('Cached');
+      // The top bar is shell-owned: the route swap never resets its answers.
+      expect(await barText(panel)).toContain('WP Rocket 3.20.1');
+      expect(await barText(panel)).toContain('Cached');
       expect(await panel.getByText("Couldn't load page data").count()).toBe(0);
     } finally {
       await panel.close();

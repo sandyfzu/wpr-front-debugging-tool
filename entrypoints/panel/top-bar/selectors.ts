@@ -1,6 +1,6 @@
 /**
- * The status bar's pure selectors: the panel's data state → the four
- * segments' view models. Everything the strip renders or claims is decided
+ * The top bar's pure selectors: the panel's data state → the four
+ * segments' view models. Everything the bar renders or claims is decided
  * here — the component is placement and wiring only — and the freshness
  * semantics (the staleness threshold and the marker's states) are owned by
  * these selectors alone, so no second surface can fork that definition: a
@@ -45,7 +45,7 @@ export const DATA_STALE_AFTER_MS = 600_000;
  */
 export const STALE_WINDOW_MINUTES = DATA_STALE_AFTER_MS / 60_000;
 
-/** One status-bar segment's identity — the strip's four fixed answers. */
+/** One top-bar answer's identity — the bar's four fixed answers. */
 export type SegmentId = 'wpr' | 'cache' | 'platform' | 'freshness';
 
 /** The plugin presence/version answer's states. */
@@ -93,7 +93,7 @@ export type PlatformSegmentView =
   | { readonly kind: 'unknown' }
   | { readonly kind: 'captured'; readonly value: string };
 
-/** The data-freshness answer's states (the strip's own segment). */
+/** The data-freshness answer's states (the bar's own answer). */
 export type FreshnessSegmentView =
   | { readonly kind: 'loading' }
   | { readonly kind: 'unavailable' }
@@ -111,7 +111,7 @@ export type FreshnessSegmentView =
     };
 
 /** The four segments' views, resolved together from one data state. */
-export interface StatusBarSegments {
+export interface TopBarSegments {
   readonly wpr: WprSegmentView;
   readonly cache: CacheSegmentView;
   readonly platform: PlatformSegmentView;
@@ -258,8 +258,8 @@ export function isDataStale(fetchedAtMs: number, nowMs: number): boolean {
   return nowMs - fetchedAtMs >= DATA_STALE_AFTER_MS;
 }
 
-/** The never-available rowset for an errored data state (the error view explains the cause above the strip). */
-const UNAVAILABLE_SEGMENTS: StatusBarSegments = {
+/** The never-available rowset for an errored data state (the error view explains the cause below the bar). */
+const UNAVAILABLE_SEGMENTS: TopBarSegments = {
   wpr: { kind: 'unavailable' },
   cache: { kind: 'unavailable' },
   platform: { kind: 'unavailable' },
@@ -267,7 +267,7 @@ const UNAVAILABLE_SEGMENTS: StatusBarSegments = {
 };
 
 /**
- * Resolve all four segments from the data state — the strip's one entry
+ * Resolve all four segments from the data state — the bar's one entry
  * point. An errored or unavailable state renders every segment's unavailable placeholder
  * (the error view carries the cause); the loaded states resolve each
  * segment from the carried data, with the freshness answering from the
@@ -276,7 +276,7 @@ const UNAVAILABLE_SEGMENTS: StatusBarSegments = {
  * @param state The panel's current data state.
  * @param nowMs The reading's wall clock (milliseconds).
  */
-export function statusBarSegments(state: DataState, nowMs: number): StatusBarSegments {
+export function topBarSegments(state: DataState, nowMs: number): TopBarSegments {
   if (state.status === 'error' || state.status === 'unavailable') return UNAVAILABLE_SEGMENTS;
   const data = state.status === 'ready' || state.status === 'refreshing' ? state.data : null;
   return {

@@ -9,7 +9,7 @@
  * suite adds: every registry page reachable from the palette on real data,
  * the shortcuts overlay listing the advertised set, the export row's data
  * gate open, and the Reload
- * action's refresh flight re-settling the strip's freshness answer through
+ * action's refresh flight re-settling the top bar's freshness answer through
  * the real machine.
  */
 import type { Page } from '@playwright/test';
@@ -38,11 +38,10 @@ function h1(page: Page): Promise<string | null> {
   );
 }
 
-/** The strip's rendered answers. */
-function stripText(page: Page): Promise<string | null> {
+/** The top bar's rendered answers. */
+function barText(page: Page): Promise<string | null> {
   return page.evaluate(
-    (): string | null =>
-      document.querySelector('[data-fdt="panel-status-bar"]')?.textContent ?? null
+    (): string | null => document.querySelector('[data-fdt="panel-top-bar"]')?.textContent ?? null
   );
 }
 
@@ -92,12 +91,12 @@ async function runTopRow(panel: Page, query: string, expectedRow: string): Promi
   await expect(field).toHaveCount(0);
 }
 
-/** The freshness detail's capture stamp, as the strip renders it. */
+/** The freshness detail's capture stamp, as the top bar renders it. */
 function captureStamp(page: Page): Promise<string | null> {
   return page.evaluate((): string | null => {
-    const strip = document.querySelector<HTMLElement>('[data-fdt="panel-status-bar"]');
-    if (strip === null) return null;
-    const detail = [...strip.querySelectorAll<HTMLElement>('span')].find((node) =>
+    const bar = document.querySelector<HTMLElement>('[data-fdt="panel-top-bar"]');
+    if (bar === null) return null;
+    const detail = [...bar.querySelectorAll<HTMLElement>('span')].find((node) =>
       node.textContent.startsWith('Page data captured at')
     );
     if (detail === undefined) return null;
@@ -142,7 +141,7 @@ test.describe('command palette over the data path', () => {
     }
   });
 
-  test('runs the Reload action: the data machine refetches and the strip re-stamps', async ({
+  test('runs the Reload action: the data machine refetches and the top bar re-stamps', async ({
     extension
   }) => {
     const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
@@ -150,13 +149,13 @@ test.describe('command palette over the data path', () => {
       await expect
         .poll(async () => await h1(panel), { timeout: 15_000, intervals: [50, 100, 250] })
         .toBe('Detections');
-      expect(await stripText(panel)).toContain('Cached');
+      expect(await barText(panel)).toContain('Cached');
       const before = await captureStamp(panel);
       if (before === null || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(before)) {
         throw new Error(`the freshness stamp caption is not stamped text: ${String(before)}`);
       }
 
-      // The strip renders the settle's second-ROUNDED stamp
+      // The top bar renders the settle's second-ROUNDED stamp
       // (`absoluteStampFromMs` forms `formatCacheTimestamp(Math.round(ms / 1000))`),
       // so one rendered string covers a one-second wall window. Waiting (raw
       // wall ms) past its +0.5 s edge makes the flight's re-stamp determinate:
@@ -189,8 +188,8 @@ test.describe('command palette over the data path', () => {
           { timeout: 15_000, intervals: [50, 100, 250] }
         )
         .toBe(true);
-      expect(await stripText(panel)).toContain('Cached');
-      expect(await stripText(panel)).toContain('WP Rocket 3.20.1');
+      expect(await barText(panel)).toContain('Cached');
+      expect(await barText(panel)).toContain('WP Rocket 3.20.1');
     } finally {
       await panel.close();
       await fixture.page.close();

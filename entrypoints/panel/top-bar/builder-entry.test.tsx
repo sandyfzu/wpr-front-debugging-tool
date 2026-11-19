@@ -7,7 +7,12 @@ import type {
   ExclusionSessionSummary,
   ExclusionSessionTabSummary
 } from '../../../lib/messaging/exclusion-panel';
-import { BuilderEntry, type BuilderEntryDeps } from './builder-entry';
+import { createRoot } from 'solid-js';
+import {
+  BuilderEntry,
+  createContainedBuilderEntryModel,
+  type BuilderEntryDeps
+} from './builder-entry';
 
 const TAB = 7;
 
@@ -75,7 +80,11 @@ describe('BuilderEntry', () => {
     d.push({ tabId: TAB, summary: { state: 'inactive' } }, true);
     expect(screen.getByText('Unavailable')).toBeTruthy();
     d.push({ tabId: TAB, summary: { state: 'inactive' } });
-    await screen.findByText('Off');
+    // "Off" is quiet: no badge, its words in the title.
+    await waitFor(() => {
+      expect(entry().getAttribute('title')).toBe('No exclusions applied in this tab.');
+    });
+    expect(screen.queryByText(/^(On|Off|Unavailable)$/)).toBeNull();
   });
 
   it('shows no badge while checking, and none when the ask got no answer', async () => {
@@ -135,9 +144,44 @@ describe('BuilderEntry', () => {
       status: Promise.resolve({ kind: 'reply', reply: { state: 'inactive' } } as const)
     });
     render(() => <BuilderEntry deps={d.api} />);
-    await screen.findByText('Off');
-    expect(entry().textContent).toBe('ExclusionsOff — open the exclusion builder on the page');
-    expect(entry().getAttribute('title')).toBe('No exclusions applied in this tab.');
+    await waitFor(() => {
+      expect(entry().getAttribute('title')).toBe('No exclusions applied in this tab.');
+    });
+    expect(entry().textContent).toBe('Exclusions — open the exclusion builder on the page');
+    d.push({ tabId: TAB, summary: { state: 'active', origin: 'https://example.com' } });
+    await screen.findByText('On');
+    expect(entry().textContent).toBe('ExclusionsOn — open the exclusion builder on the page');
+  });
+
+  it('icon form: a 28 px square, the word sr-only, a news state as a dot plus sr-only words', async () => {
+    const d = deps();
+    render(() => <BuilderEntry deps={d.api} showLabel={false} />);
+    await waitFor(() => {
+      expect(entry().getAttribute('title')).toBe('No exclusions applied in this tab.');
+    });
+    expect(entry().classList).toContain('w-7');
+    expect(screen.getByText('Exclusions').classList).toContain('sr-only');
+    // Quiet "Off": no dot, no badge.
+    expect(document.querySelector('[data-fdt="builder-entry-dot"]')).toBeNull();
+    expect(entry().querySelector('[data-fdt="status-badge"]')).toBeNull();
+    for (const [summary, word, color] of [
+      [{ state: 'active', origin: 'https://example.com' }, 'On', 'text-status-ok'],
+      [{ state: 'unavailable' }, 'Unavailable', 'text-status-error']
+    ] as const) {
+      d.push({ tabId: TAB, summary });
+      await waitFor(() => {
+        expect(document.querySelector('[data-fdt="builder-entry-dot"]')?.classList).toContain(
+          color
+        );
+      });
+      expect(entry().querySelector('[data-fdt="status-badge"]')).toBeNull();
+      expect(entry().textContent).toBe(
+        `Exclusions ${word} — open the exclusion builder on the page`
+      );
+      expect(screen.getByText(` ${word}`, { normalizer: (text) => text }).classList).toContain(
+        'sr-only'
+      );
+    }
   });
 
   it('is held and explained outside a DevTools window (no tab to act on)', () => {
@@ -155,5 +199,57 @@ describe('BuilderEntry', () => {
     const { unmount } = render(() => <BuilderEntry deps={d.api} />);
     unmount();
     expect(d.stop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createContainedBuilderEntryModel', () => {
+  /** Build the contained model in a root; returns its accessor and the root's dispose. */
+  function contained(api: BuilderEntryDeps) {
+    return createRoot((dispose) => ({ model: createContainedBuilderEntryModel(api), dispose }));
+  }
+
+  it('is the working model while nothing throws (same ask, same stop)', async () => {
+    const d = deps();
+    const { model, dispose } = contained(d.api);
+    expect(model()).not.toBeNull();
+    await waitFor(() => {
+      expect(model()?.view().badge?.label).toBe('Off');
+    });
+    expect(d.askStatus).toHaveBeenCalledWith(TAB);
+    dispose();
+    expect(d.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('turns null and logs once when building it throws', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const d = deps();
+    const { model, dispose } = contained({
+      ...d.api,
+      inspectedTabId: () => {
+        throw new Error('devtools gone');
+      }
+    });
+    expect(model()).toBeNull();
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]?.[0])).toMatch(/Exclusion builder entry failed/);
+    dispose();
+    error.mockRestore();
+  });
+
+  it('turns null when its mount work throws (the listener), never past its scope', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const d = deps();
+    const { model, dispose } = contained({
+      ...d.api,
+      listen: () => {
+        throw new Error('messaging down');
+      }
+    });
+    await waitFor(() => {
+      expect(model()).toBeNull();
+    });
+    expect(error).toHaveBeenCalledTimes(1);
+    dispose();
+    error.mockRestore();
   });
 });
