@@ -184,7 +184,9 @@ function Candidates(props: {
 /** The result card before any analysis: an honest empty view naming what Analyse produces. */
 function EmptyResult(): JSX.Element {
   return (
-    <Card class="border-dashed bg-transparent">
+    // Painted with the canvas color, not transparent: the look is the same, but the text then
+    // sits on a background that encloses it, so contrast stays computable below the fold.
+    <Card class="border-dashed bg-surface-0">
       <div data-fdt="lcp-empty">
         <EmptyState
           class="gap-2"

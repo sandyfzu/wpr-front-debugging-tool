@@ -436,6 +436,10 @@ describe('LcpVitalsPage — redesigned layout', () => {
     const empty = find('[data-fdt="lcp-empty"]');
     expect(empty.textContent).toContain(LCP_EMPTY.title);
     expect(empty.textContent).toContain(LCP_EMPTY.description);
+    // Opaque canvas fill (never transparent): its text needs an enclosing background to rate.
+    const frame = empty.closest('[data-fdt="card"]');
+    expect(frame?.classList.contains('bg-surface-0')).toBe(true);
+    expect(frame?.classList.contains('bg-transparent')).toBe(false);
     expect(document.querySelector('[data-fdt-lcp-loading]')).toBeNull();
     expect(document.querySelector('[data-fdt="lcp-result"]')).toBeNull();
     await analyseNow();
