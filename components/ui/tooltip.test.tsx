@@ -156,6 +156,26 @@ describe('Tooltip', () => {
     expect(trigger.getAttribute('aria-current')).toBeNull();
   });
 
+  it('hands the trigger element to a callback ref in the button and anchor forms', async () => {
+    vi.resetModules();
+    const { Tooltip } = await import('./tooltip');
+    const refs: HTMLElement[] = [];
+    render(() => (
+      <>
+        <Tooltip content="Expand" ariaLabel="Expand" ref={(el) => refs.push(el)}>
+          <RefreshCw size={12} />
+        </Tooltip>
+        <Tooltip as="a" href="#/javascript" content="JavaScript" ref={(el) => refs.push(el)}>
+          <span class="sr-only">JavaScript</span>
+        </Tooltip>
+      </>
+    ));
+    expect(refs).toEqual([
+      screen.getByRole('button', { name: 'Expand' }),
+      screen.getByRole('link', { name: 'JavaScript' })
+    ]);
+  });
+
   it('carries the opener-trigger attributes the shell control uses', async () => {
     // The palette trigger's shape: icon-only button whose tooltip wraps a
     // real control — aria-label names it, haspopup/expanded state the

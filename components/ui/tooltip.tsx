@@ -86,6 +86,11 @@ export type TooltipProps = {
    * platform's; the wrapper only adds the attribution surface.
    */
   onClick?: (event: MouseEvent) => void;
+  /**
+   * A callback ref receiving the trigger element (every form) — for callers
+   * that manage focus on the trigger itself.
+   */
+  ref?: (element: HTMLElement) => void;
   /** Extra classes on the trigger element, merged last so callers win. */
   class?: string;
   /** The trigger's content — an icon, or a short label. */
@@ -113,6 +118,7 @@ export type TooltipProps = {
  *   or `menu-trigger` (the composed menu trigger; no click passthrough crosses).
  * @param props.href The anchor trigger's href (`as="a"` only).
  * @param props.ariaCurrent Whether the anchor trigger marks the active page.
+ * @param props.ref A callback ref receiving the trigger element.
  * @param props.class Extra classes on the trigger element.
  * @param props.children The trigger's content.
  */
@@ -137,6 +143,7 @@ export function Tooltip(props: TooltipProps): JSX.Element {
     'aria-label': props.ariaLabel,
     'aria-haspopup': props.ariaHasPopup,
     'aria-expanded': props.ariaExpanded,
+    ref: props.ref,
     children: props.children
   });
   return (

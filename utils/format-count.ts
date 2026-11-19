@@ -11,6 +11,18 @@ export function formatCount(count: number): string {
   return COUNT_FORMAT.format(count);
 }
 
+/**
+ * Format a count that may be a capture floor: the grouped figures, then `+`
+ * when entries beyond the captured list may exist (`5,000+`).
+ *
+ * @param count A non-negative count.
+ * @param partial Whether the count is only a lower bound.
+ * @returns The figures, floor-marked when partial.
+ */
+export function formatCountFloor(count: number, partial: boolean): string {
+  return `${formatCount(count)}${partial ? '+' : ''}`;
+}
+
 /** A noun in its two English count forms ("script" / "scripts"). */
 export interface CountNoun {
   /** The singular form, used for exactly one. */
@@ -32,7 +44,7 @@ export interface CountNoun {
  * @returns The counted phrase.
  */
 export function countLabel(count: number, noun: CountNoun, partial = false): string {
-  return `${formatCount(count)}${partial ? '+' : ''} ${partial ? noun.other : countNoun(count, noun)}`;
+  return `${formatCountFloor(count, partial)} ${partial ? noun.other : countNoun(count, noun)}`;
 }
 
 /**

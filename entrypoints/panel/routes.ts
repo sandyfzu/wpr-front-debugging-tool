@@ -19,13 +19,13 @@ import ShieldCheck from 'lucide-solid/icons/shield-check';
 import TestTubeDiagonal from 'lucide-solid/icons/test-tube-diagonal';
 import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
-import { HINT_NOUN, IMAGE_NOUN } from '../../lib/detection/count-nouns';
+import { HEADER_NOUN, HINT_NOUN, IMAGE_NOUN, SCRIPT_NOUN } from '../../lib/detection/count-nouns';
 import { runtimeOnPage } from '../../lib/detection/simulation-fact';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
-import { listCapped, countLabel } from '../../lib/panel/list-behavior';
+import { listCapped, countLabel, type CountNoun } from '../../lib/panel/list-behavior';
 import { reportHints, reportHintsTruncated } from '../../lib/panel/resources-view-model';
-import { formatCount } from '../../utils/format-count';
+import { formatCount, formatCountFloor } from '../../utils/format-count';
 
 /** Journey groups, in the order the nav renders them. */
 export const NAV_GROUPS = ['Overview', 'Inspect', 'Diagnose', 'Tools'] as const;
@@ -59,6 +59,12 @@ export interface NavLiveState {
   text: string;
   /** The status tone from the shared vocabulary (`status-badge.tsx`). */
   tone: StatusKind;
+  /**
+   * The figure the labeled sidebar's narrow right column shows (e.g. "3/9");
+   * absent, it shows a dot in the tone (the phrase stays the row's
+   * description).
+   */
+  short?: string;
 }
 
 /**
@@ -67,6 +73,23 @@ export interface NavLiveState {
  * the row's current state — or null for "nothing to say right now".
  */
 export type NavLiveStateSelector = (data: FdtData | null) => NavLiveState | null;
+
+/** What a nav row's count selector resolves to: how many items its page lists. */
+export interface NavCount {
+  /** The listed items (the captured list's length). */
+  readonly count: number;
+  /** More may exist beyond the captured list (the count is a lower bound). */
+  readonly partial: boolean;
+  /** What is counted (the tooltip and menu phrase it: "14 scripts"). */
+  readonly noun: CountNoun;
+}
+
+/**
+ * A nav row's count selector: the number of items the page will list, from
+ * loaded data only (the nav never calls it without data). Null when the
+ * payload holds no such list (e.g. no header capture for this tab).
+ */
+export type NavCountSelector = (data: FdtData) => NavCount | null;
 
 /** One row of the nav registry. */
 export interface NavRoute {
@@ -80,16 +103,11 @@ export interface NavRoute {
   group: NavGroup;
   /** Per-row live-state selector (consumed by the adaptive nav, not this shell). */
   liveState?: NavLiveStateSelector;
-}
-
-/**
- * Format a navigation total while keeping its capture-floor marker local.
- * @param count The captured list's length.
- * @param partial Whether more entries may exist beyond the captured list.
- * @returns Grouped digits, suffixed with `+` when only a lower bound is known.
- */
-function shownTotal(count: number, partial: boolean): string {
-  return `${formatCount(count)}${partial ? '+' : ''}`;
+  /**
+   * Per-row item count, shown where the row has no live state to say (the
+   * labeled sidebar's right column, the rail tooltip, the overflow menu).
+   */
+  count?: NavCountSelector;
 }
 
 /**
@@ -100,7 +118,9 @@ function shownTotal(count: number, partial: boolean): string {
  * The Overview row carries no live state on purpose: WPR presence, version
  * and cache age are the top bar's first-paint answers, owned there — the
  * nav would only duplicate them. Headers & Cookies stays state-free for the
- * same reason: its cache evidence condenses to the top bar's answer.
+ * same reason (its cache evidence condenses to the top bar's answer); it
+ * only counts its headers. Stylesheets has no count: the payload carries no
+ * style list (the page reads it live on open).
  */
 export const NAV_ROUTES: readonly NavRoute[] = [
   { id: 'detections', label: 'Detections', icon: ShieldCheck, group: 'Overview' },
@@ -112,6 +132,16 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     label: 'JavaScript',
     icon: FileCode,
     group: 'Inspect',
+    // Every page script, delayed or not (the page's rows), for when Delay JS
+    // is not on the page and the live state stays silent.
+    count: (data) => {
+      const { scripts, truncated } = data.wprDetections.delay_js;
+      return {
+        count: scripts.length,
+        partial: listCapped(truncated, scripts.length, PAYLOAD_LIMITS.delayScripts.count),
+        noun: SCRIPT_NOUN
+      };
+    },
     liveState: (data) => {
       if (data === null || !runtimeOnPage(data.wprDetections.delay_js)) return null;
       const { delayedScripts, scripts, truncated } = data.wprDetections.delay_js;
@@ -120,10 +150,8 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       const partial =
         listCapped(truncated, scripts.length, PAYLOAD_LIMITS.delayScripts.count) ||
         delayedScripts > scripts.length;
-      return {
-        text: `delayed ${formatCount(delayedScripts)}/${shownTotal(scripts.length, partial)}`,
-        tone: 'info'
-      };
+      const ratio = `${formatCount(delayedScripts)}/${formatCountFloor(scripts.length, partial)}`;
+      return { text: `delayed ${ratio}`, tone: 'info', short: ratio };
     }
   },
   // Read live from the page on open (the payload carries no style list), so
@@ -141,8 +169,12 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       const count = images.length;
       const partial = listCapped(truncated, count, PAYLOAD_LIMITS.images.count);
       return count > 0
-        ? { text: countLabel(count, IMAGE_NOUN, partial), tone: 'info' }
-        : { text: 'No images', tone: 'neutral' };
+        ? {
+            text: countLabel(count, IMAGE_NOUN, partial),
+            tone: 'info',
+            short: formatCountFloor(count, partial)
+          }
+        : { text: 'No images', tone: 'neutral', short: '0' };
     }
   },
   {
@@ -162,10 +194,33 @@ export const NAV_ROUTES: readonly NavRoute[] = [
         count,
         PAYLOAD_LIMITS.preloaded.count
       );
-      return { text: countLabel(count, HINT_NOUN, partial), tone: 'info' };
+      return {
+        text: countLabel(count, HINT_NOUN, partial),
+        tone: 'info',
+        short: formatCountFloor(count, partial)
+      };
     }
   },
-  { id: 'headers-cookies', label: 'Headers & Cookies', icon: ScrollText, group: 'Inspect' },
+  {
+    id: 'headers-cookies',
+    label: 'Headers & Cookies',
+    icon: ScrollText,
+    group: 'Inspect',
+    // The captured response headers (no capture for this tab: nothing to count).
+    count: (data) => {
+      const headers = data.pageHeaders;
+      if (headers === null) return null;
+      return {
+        count: headers.length,
+        partial: listCapped(
+          data.pageHeadersTruncated,
+          headers.length,
+          PAYLOAD_LIMITS.headers.count
+        ),
+        noun: HEADER_NOUN
+      };
+    }
+  },
   // Copy delta: the single-singular menu name becomes the plural the page
   // actually implements — tracked for the copy sweep.
   {
@@ -177,7 +232,9 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     liveState: (data) => {
       if (data === null) return null;
       const found = data.undefinedReferencesOnPage.length;
-      if (found > 0) return { text: `${formatCount(found)} found`, tone: 'warn' };
+      if (found > 0) {
+        return { text: `${formatCount(found)} found`, tone: 'warn', short: formatCount(found) };
+      }
       // Nothing found while the page still loads means the finder is
       // watching; once loading settled, a clean page is silence.
       return data.allScriptsLoaded ? null : { text: 'Monitoring', tone: 'neutral' };

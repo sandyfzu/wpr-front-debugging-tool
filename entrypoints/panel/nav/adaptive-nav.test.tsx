@@ -25,15 +25,13 @@ import type { FdtData, WprDetections } from '../../../lib/wp-rocket/types';
 import { makeFdtData } from '../state/fixtures';
 import { createSignal } from 'solid-js';
 import Rocket from 'lucide-solid/icons/rocket';
-import {
-  AdaptiveNav,
-  groupedRoutes,
-  resolveLiveState,
-  OVERFLOW_TRIGGER_LABEL
-} from './adaptive-nav';
+import { AdaptiveNav, groupedRoutes } from './adaptive-nav';
+import { OVERFLOW_TRIGGER_LABEL } from './overflow-nav';
+import { resolveLiveState } from './row-note';
 import { NAV_MIRROR_ROW_ATTR, type RailMeasureFn, type RailWatchFn } from './rail-metrics';
 import type { RailRowBox } from './visible-rows';
 import type { NavLiveStateSelector, NavRoute } from '../routes';
+import type { NavForm } from '../../../lib/panel/nav-mode';
 
 afterEach(() => {
   cleanup();
@@ -57,19 +55,27 @@ const IMAGE_RECORD: WprDetections['lazyload']['images'][number] = {
   excludedReasonsFound: []
 };
 
-/** Render the nav over signal accessors, returning the data side for updates. */
+/** Render the nav over signal accessors, returning the setters for updates. */
 function renderNav(options?: {
   route?: RouteId;
   data?: FdtData | null;
+  form?: NavForm;
   measure?: RailMeasureFn;
   watch?: RailWatchFn;
 }) {
   const [route, setRoute] = createSignal<RouteId>(options?.route ?? 'detections');
   const [data, setData] = createSignal<FdtData | null>(options?.data ?? null);
+  const [form, setForm] = createSignal<NavForm>(options?.form ?? 'rail');
   render(() => (
-    <AdaptiveNav route={route} data={data} measure={options?.measure} watch={options?.watch} />
+    <AdaptiveNav
+      route={route}
+      data={data}
+      form={form}
+      measure={options?.measure}
+      watch={options?.watch}
+    />
   ));
-  return { setRoute, setData };
+  return { setRoute, setData, setForm };
 }
 
 /** The never-resizing watch: the tests drive resizes through their own seam when needed. */
@@ -656,5 +662,190 @@ describe('AdaptiveNav overflow — the “More pages” menu', () => {
     // The rail’s tooltips are the only hover surface while the menu is
     // closed; the menu rows carry their own labeling inline.
     expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+});
+
+describe('AdaptiveNav labeled form', () => {
+  /** Loaded data with delay JS on the page, two lazy images and three headers. */
+  function richData(): FdtData {
+    const wpr = makeFdtData().wprDetections;
+    return makeFdtData({
+      allScriptsLoaded: false,
+      pageHeaders: [
+        { name: 'server', value: 'Apache' },
+        { name: 'x-cache', value: 'HIT' },
+        { name: 'age', value: '3' }
+      ],
+      wprDetections: {
+        ...wpr,
+        delay_js: {
+          present: true,
+          scripts: [DELAYED_RECORD, DELAYED_RECORD, { ...DELAYED_RECORD, delayed: false }],
+          version: '2.0.4',
+          delayedScripts: 2
+        },
+        lazyload: { present: true, images: [IMAGE_RECORD, IMAGE_RECORD] }
+      }
+    });
+  }
+
+  /** The labeled anchor of a route. */
+  function labeledRow(label: string): HTMLAnchorElement {
+    return screen.getByRole<HTMLAnchorElement>('link', { name: label });
+  }
+
+  it('shows each group caption and every label, named by the label alone', () => {
+    renderNav({ form: 'labeled' });
+    const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
+    expect(nav.getAttribute('data-fdt-nav-form')).toBe('labeled');
+    const captions = [
+      ...nav.querySelectorAll('[data-fdt-nav-group] [data-fdt="panel-nav-caption"]')
+    ];
+    expect(captions.map((caption) => caption.textContent)).toEqual([
+      'Overview',
+      'Inspect',
+      'Diagnose',
+      'Tools'
+    ]);
+    // Captions are visual: the lists keep their own names.
+    expect(captions.every((caption) => caption.getAttribute('aria-hidden') === 'true')).toBe(true);
+    expect(screen.getByRole('list', { name: 'Inspect' })).toBeTruthy();
+    const js = labeledRow('JavaScript');
+    expect(js.textContent).toBe('JavaScript');
+    expect(js.getAttribute('href')).toBe('#/javascript');
+    // No tooltip machinery on labeled rows (the label is visible).
+    expect(js.getAttribute('data-fdt')).not.toBe('tooltip-trigger');
+    fireEvent.focus(js);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('puts each note in the right column: short figure, full phrase as description', () => {
+    renderNav({ form: 'labeled', data: richData() });
+    const cases = [
+      ['JavaScript', '2/3', 'delayed 2/3'],
+      ['Lazyload', '2', '2 images'],
+      ['Headers & Cookies', '3', '3 headers']
+    ] as const;
+    for (const [label, short, phrase] of cases) {
+      const row = labeledRow(label);
+      const note = row.querySelector('[data-fdt="panel-nav-note"]');
+      expect(note?.textContent, label).toBe(short);
+      expect(note?.getAttribute('aria-hidden')).toBe('true');
+      const described = document.getElementById(row.getAttribute('aria-describedby') ?? '');
+      expect(described?.textContent, label).toBe(phrase);
+      expect(described?.hidden).toBe(true);
+      expect(row.title).toBe(`${label} · ${phrase}`);
+    }
+    // A row with nothing to say has no note and no description.
+    const stylesheets = labeledRow('Stylesheets');
+    expect(stylesheets.querySelector('[data-fdt="panel-nav-note"]')).toBeNull();
+    expect(stylesheets.hasAttribute('aria-describedby')).toBe(false);
+    expect(stylesheets.title).toBe('Stylesheets');
+  });
+
+  it('shows a tone dot for a state without a figure (Monitoring), quiet colors for counts', () => {
+    renderNav({ form: 'labeled', data: richData() });
+    const references = labeledRow('Undefined References');
+    expect(references.querySelector('[data-fdt="panel-nav-note"]')).toBeNull();
+    const dot = references.querySelector('span[aria-hidden="true"].rounded-full');
+    expect(dot?.classList.contains('text-status-neutral')).toBe(true);
+    expect(
+      document.getElementById(references.getAttribute('aria-describedby') ?? '')?.textContent
+    ).toBe('Monitoring');
+    expect(
+      labeledRow('Headers & Cookies')
+        .querySelector('[data-fdt="panel-nav-note"]')
+        ?.classList.contains('text-fg-muted')
+    ).toBe(true);
+  });
+
+  it('paints a warning count in its status color', () => {
+    renderNav({
+      form: 'labeled',
+      data: makeFdtData({ allScriptsLoaded: true, undefinedReferencesOnPage: ['jQuery', 'wp'] })
+    });
+    const note = labeledRow('Undefined References').querySelector('[data-fdt="panel-nav-note"]');
+    expect(note?.textContent).toBe('2');
+    expect(note?.classList.contains('text-status-warn')).toBe(true);
+  });
+
+  it('marks the active row with the tint, the accent icon and aria-current', () => {
+    const { setRoute } = renderNav({ form: 'labeled', route: 'javascript' });
+    const js = labeledRow('JavaScript');
+    expect(js.getAttribute('aria-current')).toBe('page');
+    expect(js.className).toContain('bg-accent-soft');
+    expect(js.querySelector('svg')?.getAttribute('class')).toContain('text-accent');
+    setRoute('lazyload');
+    expect(js.getAttribute('aria-current')).toBeNull();
+    expect(js.className).not.toContain('bg-accent-soft');
+    expect(js.querySelector('svg')?.getAttribute('class')).not.toContain('text-accent');
+  });
+
+  it('lays the geometry stub out in the labeled form (captions included)', () => {
+    renderNav({ form: 'labeled' });
+    const mirror = document.querySelector('[data-fdt="panel-nav-mirror"]') as HTMLElement;
+    expect(mirror.textContent).toBe('OverviewInspectDiagnoseTools');
+    const stubRow = mirror.querySelector(`[${NAV_MIRROR_ROW_ATTR}]`) as HTMLElement;
+    expect(stubRow.className).toContain('h-8');
+    expect(stubRow.className).toContain('w-full');
+  });
+
+  it('switches forms in place and re-measures at once (no stale slice)', () => {
+    const rail = syntheticRail(1000);
+    const measure = vi.fn(rail.measure);
+    const { setForm } = renderNav({ measure, watch: rail.watch });
+    const calls = measure.mock.calls.length;
+    const before = screen.getByRole('link', { name: 'Detections' });
+    setForm('labeled');
+    expect(measure.mock.calls.length).toBe(calls + 1);
+    const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
+    expect(nav.getAttribute('data-fdt-nav-form')).toBe('labeled');
+    expect(labeledRow('Detections').textContent).toBe('Detections');
+    expect(labeledRow('Detections')).not.toBe(before);
+    setForm('rail');
+    expect(measure.mock.calls.length).toBe(calls + 2);
+    expect(nav.querySelector('[data-fdt="panel-nav-caption"]')).toBeNull();
+  });
+
+  it('keeps focus on the same route’s row across a form switch, both ways', () => {
+    const { setForm } = renderNav({ form: 'labeled' });
+    labeledRow('JavaScript').focus();
+    setForm('rail');
+    const railRow = screen.getByRole('link', { name: 'JavaScript' });
+    expect(railRow.getAttribute('data-fdt')).toBe('tooltip-trigger');
+    expect(document.activeElement).toBe(railRow);
+    setForm('labeled');
+    expect(document.activeElement).toBe(labeledRow('JavaScript'));
+    // An unfocused nav takes no focus on a switch.
+    (document.activeElement as HTMLElement).blur();
+    setForm('rail');
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('offers the overflow as a labeled row with the hidden count', async () => {
+    renderNav({ form: 'labeled', measure: syntheticRail(90).measure, watch: staticWatch() });
+    const trigger = screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL });
+    // Visible label + count; the name is the visible label alone (the count
+    // is aria-hidden; its words ride the tooltip) — no aria-label to drift.
+    expect(trigger.textContent).toBe('More pages8');
+    expect(trigger.hasAttribute('aria-label')).toBe(false);
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    fireEvent.pointerDown(trigger);
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(8);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('carries the count note into the rail tooltip and the menu (full phrase)', async () => {
+    renderNav({
+      data: richData(),
+      measure: syntheticRail(200).measure,
+      watch: staticWatch()
+    });
+    fireEvent.pointerDown(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByRole('menuitem', { name: /Headers & Cookies/ }).textContent).toContain(
+      '3 headers'
+    );
   });
 });

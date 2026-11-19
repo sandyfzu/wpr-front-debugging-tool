@@ -462,6 +462,90 @@ describe('the top bar in the shell', () => {
   });
 });
 
+describe('the sidebar in the shell', () => {
+  /** Mount the shell at a fixed width with a boot pin and a traced writer. */
+  function mountAt(width: number, navPin?: 'auto' | 'labeled' | 'rail') {
+    const shell = makeShell();
+    const writeNavPin = vi.fn(() => Promise.resolve());
+    render(() => (
+      <PanelApp
+        search={shell.search}
+        data={shell.data}
+        navPin={navPin}
+        writeNavPin={writeNavPin}
+        observeShellWidth={(_element, onWidth) => {
+          onWidth(width);
+          return () => undefined;
+        }}
+      />
+    ));
+    shell.settle(pageData());
+    return { writeNavPin };
+  }
+
+  /** The nav column's rendered form. */
+  const form = (): string | null | undefined =>
+    document.querySelector('[data-fdt="panel-header"]')?.getAttribute('data-fdt-nav-form');
+
+  it('is labeled on a wide panel without a pin, the rail on a narrow one', () => {
+    mountAt(1280);
+    expect(form()).toBe('labeled');
+    cleanup();
+    mountAt(900);
+    expect(form()).toBe('rail');
+  });
+
+  it('renders the boot pin from the first frame (no fold flash)', () => {
+    mountAt(1280, 'rail');
+    expect(form()).toBe('rail');
+    cleanup();
+    mountAt(900, 'labeled');
+    expect(form()).toBe('labeled');
+  });
+
+  it('writes the toggled pin through the injected writer', () => {
+    const { writeNavPin } = mountAt(1280);
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    expect(form()).toBe('rail');
+    expect(writeNavPin).toHaveBeenCalledWith('rail');
+  });
+
+  it('folds while a page holds a detail open', async () => {
+    const shell = makeShell();
+    const originalBody = PAGES['detections'];
+    let presence: DetailPresenceStore | undefined;
+    PAGES['detections'] = (): JSX.Element => {
+      presence = useDetailPresence();
+      return <h1>Probe</h1>;
+    };
+    try {
+      render(() => (
+        <PanelApp
+          search={shell.search}
+          data={shell.data}
+          observeShellWidth={(_element, onWidth) => {
+            onWidth(1280);
+            return () => undefined;
+          }}
+        />
+      ));
+      shell.settle(pageData());
+      await waitFor(() => {
+        expect(presence).toBeDefined();
+      });
+      expect(form()).toBe('labeled');
+      const claim = (presence as DetailPresenceStore).claim();
+      claim.set(true);
+      expect(form()).toBe('rail');
+      claim.release();
+      expect(form()).toBe('labeled');
+    } finally {
+      PAGES['detections'] = originalBody;
+      cleanup();
+    }
+  });
+});
+
 describe('the appearance menu in the top bar', () => {
   afterEach(() => {
     toast.clear();

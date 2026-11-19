@@ -245,6 +245,8 @@ test.describe('panel shortcuts (the re-owned overlay chord)', () => {
     try {
       await page.setViewportSize({ width: 700, height: 900 });
       await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      // The shell (and its global key listener) mounts after the boot's storage reads.
+      await expect(page.getByRole('link', { name: 'Detections' })).toBeVisible();
       await page.keyboard.press('/');
       const dialog = page.getByRole('dialog', SHORTCUTS_DIALOG);
       await expect(dialog).toBeVisible();

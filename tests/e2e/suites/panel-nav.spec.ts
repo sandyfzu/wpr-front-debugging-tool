@@ -1,8 +1,9 @@
 /**
- * The panel nav's browser suite: the icon rail is the form at every width
- * (no morphology switch), real hash links carry `aria-current`, the tooltip
- * wiring holds for the anchor rows — and a row's
- * open tooltip never covers its sibling rows (the placement regression the
+ * The panel nav's browser suite: the nav is a vertical column in both forms
+ * (the icon rail below 1080 px, the labeled sidebar from it — the form rule
+ * itself is `panel-sidebar`'s), real hash links carry `aria-current`, the
+ * rail's tooltip wiring holds for the anchor rows — and a row's open tooltip
+ * never covers its sibling rows (the placement regression the
  * below-floating tooltip had).
  *
  * The height axis is the rail's overflow contract: shrinking the panel
@@ -176,6 +177,10 @@ interface NavGeometry {
   /** One row's resolved row layout. */
   firstRowDisplay: string;
   shellFlexDirection: string;
+  /** The nav's rendered form. */
+  form: string | null;
+  /** Page-nav traces inside the top bar (the page nav never lives there). */
+  topBarNavLinks: number;
 }
 
 async function readGeometry(page: Page): Promise<NavGeometry> {
@@ -190,13 +195,20 @@ async function readGeometry(page: Page): Promise<NavGeometry> {
       headerBorderRightWidth: header === null ? '' : getComputedStyle(header).borderRightWidth,
       headerBorderBottomWidth: header === null ? '' : getComputedStyle(header).borderBottomWidth,
       firstRowDisplay: firstRow === null ? '' : getComputedStyle(firstRow).display,
-      shellFlexDirection: shell === null ? '' : getComputedStyle(shell).flexDirection
+      shellFlexDirection: shell === null ? '' : getComputedStyle(shell).flexDirection,
+      form: nav === null ? null : nav.getAttribute('data-fdt-nav-form'),
+      // A nav landmark, or a route link beyond the answers' own Detections link.
+      topBarNavLinks:
+        document.querySelectorAll('[data-fdt="panel-top-bar"] nav').length +
+        [...document.querySelectorAll('[data-fdt="panel-top-bar"] a[href^="#/"]')].filter(
+          (link) => link.getAttribute('href') !== '#/detections'
+        ).length
     };
   });
 }
 
-test.describe('panel nav (icon rail + tooltips)', () => {
-  test('keeps the icon rail at every width — no morphology switch, no top bar', async ({
+test.describe('panel nav (vertical forms + rail tooltips)', () => {
+  test('the nav is vertical in both forms; the top bar holds identity only', async ({
     extension
   }) => {
     const page = await extension.browserContext.newPage();
@@ -206,26 +218,33 @@ test.describe('panel nav (icon rail + tooltips)', () => {
 
       // Narrow: the rail column beside the content.
       const narrow = await readGeometry(page);
+      expect(narrow.form).toBe('rail');
       expect(narrow.navFlexDirection).toBe('column');
       expect(narrow.shellFlexDirection).toBe('row');
       expect(narrow.headerBorderRightWidth).not.toBe('0px');
       expect(narrow.headerBorderBottomWidth).toBe('0px');
 
-      // RESIZE wide in the SAME page: still the rail — the header keeps its
-      // right edge and grows no bottom edge (the top bar is retired).
-      await page.setViewportSize({ width: 1000, height: 700 });
+      // RESIZE wide in the SAME page: the labeled sidebar — still a vertical
+      // column with its right edge, never a horizontal nav.
+      await page.setViewportSize({ width: 1280, height: 700 });
       await page.waitForTimeout(120);
       const wide = await readGeometry(page);
+      expect(wide.form).toBe('labeled');
       expect(wide.navFlexDirection).toBe('column');
       expect(wide.shellFlexDirection).toBe('row');
       expect(wide.headerBorderRightWidth).not.toBe('0px');
       expect(wide.headerBorderBottomWidth).toBe('0px');
       expect(wide.firstRowDisplay).toBe('flex');
 
+      // The top bar carries identity and controls, never the page nav.
+      expect(wide.topBarNavLinks).toBe(0);
+
       // And back again without a reload.
       await page.setViewportSize({ width: 700, height: 900 });
       await page.waitForTimeout(120);
-      expect((await readGeometry(page)).navFlexDirection).toBe('column');
+      const back = await readGeometry(page);
+      expect(back.form).toBe('rail');
+      expect(back.navFlexDirection).toBe('column');
     } finally {
       await page.close();
     }
