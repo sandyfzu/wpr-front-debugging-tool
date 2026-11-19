@@ -11,11 +11,14 @@
  * crash boundary's actionable reload. The stores are injected; no
  * messaging API is touched here.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
-import type { JSX } from 'solid-js';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@solidjs/testing-library';
+import { createSignal, type JSX } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FdtData } from '../../lib/wp-rocket/types';
+import { toast, toastItems } from '../../components/ui/toast-store';
+import type { Appearance } from '../../utils/theme';
 import { PanelApp } from './App';
+import { APPEARANCE_FAILURE_TITLE, APPEARANCE_SAVE_NOTE } from './appearance-write';
 import { createSearchStore, type SearchStore } from './state/search';
 import { useDetailPresence, type DetailPresenceStore } from './state/detail-presence';
 import {
@@ -456,6 +459,90 @@ describe('the top bar in the shell', () => {
       );
     });
     expect(readPageUrl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the appearance menu in the top bar', () => {
+  afterEach(() => {
+    toast.clear();
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Render the shell at a width with an appearance value and writer.
+   *
+   * @param width The measured shell width.
+   * @param write The writer double.
+   * @returns The value setter.
+   */
+  function renderWithAppearance(
+    width: number,
+    write: (next: Appearance) => Promise<void> = () => Promise.resolve()
+  ): (next: Appearance) => void {
+    const shell = makeShell();
+    const [appearance, setAppearance] = createSignal<Appearance>('dark');
+    render(() => (
+      <PanelApp
+        search={shell.search}
+        data={shell.data}
+        appearance={appearance}
+        writeAppearance={write}
+        observeShellWidth={(_element, onWidth) => {
+          onWidth(width);
+          return () => undefined;
+        }}
+      />
+    ));
+    return setAppearance;
+  }
+
+  /** Open the menu and pick a row by its name. */
+  async function pick(name: string): Promise<void> {
+    fireEvent.pointerDown(screen.getByRole('button', { name: /^Appearance: / }));
+    const menu = await screen.findByRole('menu');
+    fireEvent.pointerUp(within(menu).getByRole('menuitemradio', { name }), { button: 0 });
+  }
+
+  it.each([1100, 420])(
+    'sits in the end slot right before "⋯" at %ipx, showing the stored choice',
+    (width) => {
+      const setAppearance = renderWithAppearance(width);
+      const control = document.querySelector('[data-fdt="appearance-menu"]') as HTMLElement;
+      expect(control.closest('[data-fdt-app-bar-slot="end"]')).toBeTruthy();
+      expect(control.nextElementSibling?.getAttribute('data-fdt')).toBe('top-bar-menu-box');
+      expect(screen.getByRole('button', { name: 'Appearance: Dark' })).toBeTruthy();
+      setAppearance('light');
+      expect(screen.getByRole('button', { name: 'Appearance: Light' })).toBeTruthy();
+    }
+  );
+
+  it('renders no appearance menu without a stored value to show', () => {
+    const shell = makeShell();
+    render(() => <PanelApp search={shell.search} data={shell.data} />);
+    expect(document.querySelector('[data-fdt="appearance-menu"]')).toBeNull();
+  });
+
+  it('writes a pick through the surface writer, quietly', async () => {
+    const write = vi.fn(() => Promise.resolve());
+    renderWithAppearance(1100, write);
+    await pick('Light');
+    expect(write.mock.calls).toEqual([['light']]);
+    await Promise.resolve();
+    expect(toastItems()).toEqual([]);
+  });
+
+  it('answers a failed write with the remedy toast and keeps the shown choice', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const write = vi.fn(() => Promise.reject(new Error('Extension context invalidated')));
+    renderWithAppearance(1100, write);
+    await pick('System');
+    await waitFor(() => {
+      expect(toastItems().map((item) => [item.tone, item.title, item.description])).toEqual([
+        ['error', APPEARANCE_FAILURE_TITLE, APPEARANCE_SAVE_NOTE]
+      ]);
+    });
+    // Nothing stored, nothing moved: the control still names the stored choice.
+    expect(screen.getByRole('button', { name: 'Appearance: Dark' })).toBeTruthy();
   });
 });
 

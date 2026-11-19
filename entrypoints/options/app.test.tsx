@@ -301,6 +301,29 @@ describe('the appearance choice (a writer)', () => {
     stop();
   });
 
+  it('a written choice reads saved: Save stays off, and a later Save keeps a newer pick from another surface', async () => {
+    render(() => <App {...PROPS} />);
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: 'Light' })).toBeTruthy();
+    });
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save' });
+    fireEvent.click(screen.getByText('Dark'));
+    await expect.poll(getOptions).toMatchObject({ appearance: 'dark' });
+    // Appearance-only change, written instantly: nothing left to Save.
+    await waitFor(() => {
+      expect(save.disabled).toBe(true);
+    });
+    // The panel picks Light afterwards; the page then saves another row.
+    await optionsStore.setValue(optionsWith('light'));
+    fireEvent.click(screen.getByText(DBUGGER_ROW));
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await expect
+      .poll(getOptions)
+      .toMatchObject({ improvements: { 'wp-dashboard-dbugger-entry': false } });
+    expect((await getOptions()).appearance).toBe('light');
+  });
+
   it('keeps the draft dirty for the Save flow and preserves it when a write fails', async () => {
     const writeAppearance = vi.fn<(next: StoredOptions['appearance']) => Promise<void>>();
     writeAppearance.mockRejectedValueOnce(new Error('Extension context invalidated.'));

@@ -25,7 +25,10 @@
  *
  * The chrome is declared here (the one surface all menus of the design
  * system share); the row anatomy and data binding live with the consumer —
- * the same split the dialog primitive takes.
+ * the same split the dialog primitive takes. Single-choice menus (the
+ * appearance menu) compose `RadioGroup` + `RadioItem` + `ItemIndicator`;
+ * a radio row keeps Kobalte's default of staying open on select unless the
+ * consumer sets `closeOnSelect`.
  */
 import type { ComponentProps, JSX } from 'solid-js';
 import { DropdownMenu as KobalteMenu } from '@kobalte/core';
@@ -64,8 +67,26 @@ export const MENU_ITEM_CLASSES =
 /** The item's inner label slot (what Kobalte wires as the item's accessible name). */
 export const MENU_ITEM_LABEL_CLASSES = 'flex min-w-0 flex-1 items-center gap-2 font-medium';
 
+/**
+ * An icon-only menu trigger in a toolbar (the top bar's "⋯" and appearance
+ * menus): the 28px ghost square; the tooltip trigger adds the focus ring.
+ */
+export const MENU_ICON_TRIGGER_CLASSES =
+  'size-7 rounded-md text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
+
 /** The separator between the menu's groups (the rail's hairline grammar). */
 export const MENU_SEPARATOR_CLASSES = 'mx-1 my-1 border-t border-line-2';
+
+/** A group's caption above its rows (the caps-label grammar; not an item, never focused). */
+export const MENU_GROUP_LABEL_CLASSES =
+  'mx-1 px-2 pt-1 pb-0.5 text-2xs font-medium tracking-wide text-fg-muted uppercase';
+
+/**
+ * The checked-state slot at a radio row's end: a fixed box, so the labels
+ * line up whether or not the row holds the indicator (Kobalte unmounts it
+ * on unchecked rows).
+ */
+export const MENU_INDICATOR_SLOT_CLASSES = 'ml-auto inline-flex size-3.5 shrink-0 text-accent';
 
 /**
  * Trigger attributes for the tooltip-composed menu trigger.
@@ -102,5 +123,16 @@ export const Menu = {
   Content: KobalteMenu.Content,
   Item: KobalteMenu.Item,
   ItemLabel: KobalteMenu.ItemLabel,
-  Separator: KobalteMenu.Separator
+  Separator: KobalteMenu.Separator,
+  /** A group's caption (wires the enclosing group's `aria-labelledby`). */
+  GroupLabel: KobalteMenu.GroupLabel,
+  /**
+   * A single-choice group: controlled through `value` + `onChange`; Kobalte
+   * calls `onChange` only when the pick differs from the current value.
+   */
+  RadioGroup: KobalteMenu.RadioGroup,
+  /** One choice (`role="menuitemradio"`, `aria-checked` from the group's value). */
+  RadioItem: KobalteMenu.RadioItem,
+  /** Renders its children only while its item is checked (the check mark). */
+  ItemIndicator: KobalteMenu.ItemIndicator
 } as const;

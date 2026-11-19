@@ -34,6 +34,12 @@ const FULL_MIN_WIDTH = 760;
 const MENU_NAME = /^More: /;
 
 /**
+ * The appearance control in the bar's end slot: the geometry walks run with
+ * the real button laid out (the fold measures it like any end control).
+ */
+const APPEARANCE_BUTTON = '[data-fdt="appearance-menu"] button';
+
+/**
  * The panel init script carrying the builder entry's two background asks
  * (the background answers builder rows only for tab-less senders — a real
  * DevTools panel — and this standalone panel page is a tab sender): the
@@ -124,14 +130,6 @@ async function makeStale(page: Page): Promise<void> {
     .poll(async () => await barText(page), { timeout: 10_000, intervals: [100, 250] })
     .toMatch(/11 min ago/);
 }
-
-/**
- * The end-slot room the appearance control takes (a 28 px icon button),
- * held by a stylesheet stand-in so the geometry walks budget it whether or
- * not the bar renders the control yet. Remove it once the bar does.
- */
-const APPEARANCE_RESERVE =
-  '[data-fdt-app-bar-slot="end"]::after { content: ""; display: block; flex: none; width: 28px; height: 28px; }';
 
 /** The shared focus ring's reach past a control's box (2 px outline + 1 px offset). */
 const RING_PX = 3;
@@ -491,7 +489,6 @@ test.describe('panel top bar', () => {
     });
     try {
       await waitForAnswers(panel);
-      await panel.addStyleTag({ content: APPEARANCE_RESERVE });
       const menuTrigger = panel.getByRole('button', { name: MENU_NAME });
       // A wide bar: everything inline, no menu.
       await panel.setViewportSize({ width: 1100, height: 700 });
@@ -514,7 +511,7 @@ test.describe('panel top bar', () => {
         await expect(panel.locator('[data-fdt="builder-entry"]')).toHaveCount(0);
       }
 
-      // Geometry at every checkpoint, the appearance control's room held:
+      // Geometry at every checkpoint, the real appearance button laid out:
       // no scroll, both slots fit, every control and its focus ring inside
       // its clip, nothing cut or elided; "⋯" holds whatever folded.
       for (const width of [320, 420, FULL_MIN_WIDTH - 1, FULL_MIN_WIDTH, 1100]) {
@@ -523,6 +520,7 @@ test.describe('panel top bar', () => {
         // shows "⋯"; a wide bar fits everything); then the fold's frames.
         if (width < FULL_MIN_WIDTH) await expect(menuTrigger).toHaveCount(1);
         if (width === 1100) await expect(menuTrigger).toHaveCount(0);
+        await expect(panel.locator(APPEARANCE_BUTTON)).toBeVisible();
         await settleFrames(panel);
         await settleFrames(panel);
         expectBarFits(await readBarGeometry(panel), width, true);
@@ -633,7 +631,6 @@ test.describe('panel top bar', () => {
     });
     try {
       await waitForAnswers(panel);
-      await panel.addStyleTag({ content: APPEARANCE_RESERVE });
       const entry = panel.locator('[data-fdt="builder-entry"]');
       for (const width of [320, 420, FULL_MIN_WIDTH, 1100]) {
         await panel.setViewportSize({ width, height: 700 });
@@ -642,6 +639,7 @@ test.describe('panel top bar', () => {
         if (width < FULL_MIN_WIDTH)
           await expect(entry.locator('[data-fdt="builder-entry-dot"]')).toBeVisible();
         else await expect(entry.locator('[data-fdt="status-badge"]')).toHaveText('On');
+        await expect(panel.locator(APPEARANCE_BUTTON)).toBeVisible();
         await settleFrames(panel);
         await settleFrames(panel);
         expectBarFits(await readBarGeometry(panel), width, true);
@@ -652,7 +650,7 @@ test.describe('panel top bar', () => {
     }
   });
   // The densest real bar: a captured server value, stale data, a news
-  // session (both news badges), the address, the appearance control's room:
+  // session (both news badges), the address, the real appearance button:
   // at every checkpoint around the threshold and the sidebar's, every part
   // is whole or gone (no ellipsis, no cut glyph, no clipped ring).
   for (const [name, session] of [
@@ -670,11 +668,11 @@ test.describe('panel top bar', () => {
         await expect
           .poll(async () => await barText(panel), { timeout: 15_000, intervals: [50, 100, 250] })
           .toContain('3.20.1');
-        await panel.addStyleTag({ content: APPEARANCE_RESERVE });
         await makeStale(panel);
         for (const width of [320, 420, FULL_MIN_WIDTH - 1, FULL_MIN_WIDTH, 800, 820, 1079, 1080]) {
           await panel.setViewportSize({ width, height: 700 });
           await expect(panel.locator('[data-fdt="builder-entry"]')).toBeVisible();
+          await expect(panel.locator(APPEARANCE_BUTTON)).toBeVisible();
           await settleFrames(panel);
           await settleFrames(panel);
           expectBarFits(await readBarGeometry(panel), width, true);
@@ -709,11 +707,11 @@ test.describe('panel top bar', () => {
       await expect
         .poll(async () => await barText(panel), { timeout: 15_000, intervals: [50, 100, 250] })
         .toContain('3.20.1');
-      await panel.addStyleTag({ content: APPEARANCE_RESERVE });
       await makeStale(panel);
       for (const width of [FULL_MIN_WIDTH, 800, 1080, 1280]) {
         await panel.setViewportSize({ width, height: 700 });
         await expect(panel.locator('[data-fdt="builder-entry"]')).toBeVisible();
+        await expect(panel.locator(APPEARANCE_BUTTON)).toBeVisible();
         await settleFrames(panel);
         await settleFrames(panel);
         const at = `at ${String(width)}px`;

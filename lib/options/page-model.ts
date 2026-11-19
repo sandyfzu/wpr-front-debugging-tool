@@ -8,11 +8,13 @@
  *   Corrupt storage never fails the load: the storage contract's validator
  *   degrades it to the documented defaults.
  * - **Dirty tracking:** the edit buffer (draft) is compared against the
- *   loaded options per registry row; Save only ever acts when dirty.
+ *   loaded options per registry row; Save only ever acts when dirty. A row
+ *   persisted outside Save (the appearance row's instant write) moves only
+ *   its own baseline, so it reads clean once written.
  * - **Save:** an awaited write that first re-reads the stored options and
- *   merges the draft onto that fresh value, so unknown boolean fields and
- *   concurrent non-registry options (another surface's writes between this
- *   page's load and save) survive the write. The outcome is typed for the
+ *   applies only the rows edited on this page onto that fresh value, so
+ *   unknown boolean fields and every concurrent write (another surface's,
+ *   between this page's load and save — registry rows included) survive. The outcome is typed for the
  *   UI's toast — never a swallowed error, never an artificial delay.
  * - **Registry discipline:** every option value flows through the immutable
  *   registry rows; the model holds no option copy outside its snapshot.
@@ -21,7 +23,12 @@
 import { createLogger, type Logger } from '../logger';
 import { getOptions, optionsStore, type StoredOptions } from '../storage/options';
 import { isAppearance, type Appearance } from '../../utils/theme';
-import { DRAFTED_OPTION_ROWS, isValidOptionValue, readOption } from './registry';
+import {
+  DRAFTED_OPTION_ROWS,
+  isValidOptionValue,
+  readOption,
+  type DraftedOptionRow
+} from './registry';
 
 /** The actionable message the page renders when the initial load fails. */
 const LOAD_FAILURE_MESSAGE =
@@ -65,18 +72,27 @@ export function isDraftDirty(options: StoredOptions, draft: OptionsDraft): boole
 }
 
 /**
- * Merge a draft onto a base options value — the save's write shape. The
- * base is expected to be a **fresh** validated read (so unknown boolean ids
- * and concurrent non-registry options ride through untouched); only the
- * registry rows the page owns are applied from the draft. A draft value
- * that is not legal for its row (a corrupted buffer) is skipped, keeping
- * the base value — the machine's input guard makes this belt-only.
+ * Merge the page's edits onto a base options value — the save's write
+ * shape. The base is expected to be a **fresh** validated read; only the
+ * rows the user changed on this page (draft ≠ the loaded baseline) are
+ * applied from the draft. Every other field keeps the base value — unknown
+ * boolean ids, non-registry options, and registry rows another surface
+ * wrote meanwhile (the panel's appearance menu, the palette's cycle), so a
+ * Save of one row never reverts a concurrent change of another. A changed
+ * draft value that is not legal for its row (a corrupted buffer) is
+ * skipped, keeping the base value — the machine's input guard makes this
+ * belt-only.
  *
  * @param base The fresh validated options to merge onto.
  * @param draft The page's edit buffer.
- * @returns The new options value to persist (base and draft untouched).
+ * @param baseline The options the draft was loaded from (the dirty baseline).
+ * @returns The new options value to persist (inputs untouched).
  */
-export function optionsWithDraft(base: StoredOptions, draft: OptionsDraft): StoredOptions {
+export function optionsWithDraft(
+  base: StoredOptions,
+  draft: OptionsDraft,
+  baseline: StoredOptions
+): StoredOptions {
   // Fresh group copies: the base's unknown/concurrent fields survive, the
   // base object itself is never mutated. Groups are aliased so the rows'
   // storage keys index the group's own index signature.
@@ -86,6 +102,7 @@ export function optionsWithDraft(base: StoredOptions, draft: OptionsDraft): Stor
   for (const row of DRAFTED_OPTION_ROWS) {
     const value = draft[row.id];
     if (value === undefined) continue; // Belt: a draft always carries every row.
+    if (value === readOption(row, baseline)) continue; // Untouched here: the base wins.
     if (row.kind === 'appearance') {
       if (isAppearance(value)) appearance = value;
     } else if (typeof value === 'boolean') {
@@ -94,6 +111,35 @@ export function optionsWithDraft(base: StoredOptions, draft: OptionsDraft): Stor
     }
   }
   return { improvements, appearance, features };
+}
+
+/**
+ * The draft once a save landed: every row takes the stored value — the
+ * saved edits and the concurrent writes the merge kept — except rows edited
+ * again while the write was in flight, which keep that newer edit (they
+ * re-dirty against the new baseline). Without this, a kept concurrent write
+ * would read as a pending edit of the stale draft and the next Save would
+ * revert it.
+ *
+ * @param stored The options just written (the new baseline).
+ * @param saved The draft the save wrote from.
+ * @param current The draft now (the saved one plus any in-flight edits).
+ * @returns The frozen rebased draft.
+ */
+export function draftAfterSave(
+  stored: StoredOptions,
+  saved: OptionsDraft,
+  current: OptionsDraft
+): OptionsDraft {
+  return Object.freeze(
+    Object.fromEntries(
+      DRAFTED_OPTION_ROWS.map((row) => {
+        const edit = current[row.id];
+        const editedInFlight = edit !== undefined && edit !== saved[row.id];
+        return [row.id, editedInFlight ? edit : readOption(row, stored)] as const;
+      })
+    )
+  );
 }
 
 /** The typed result a completed save hands the UI for its toast. */
@@ -160,6 +206,34 @@ export function createStorageOptionsPageIO(log: Logger = createLogger('options')
 }
 
 /**
+ * Resolve a drafted row for a value the caller is about to record — the
+ * shared input guard of every row-addressed model call.
+ *
+ * @param operation The calling method's name (it leads the message).
+ * @param rowId A drafted registry row id.
+ * @param value The value to record; must be legal for the row.
+ * @returns The row.
+ * @throws {@link Error} When the row id is unknown or the value illegal for
+ *   it — wiring bugs, named by the message.
+ */
+function requireLegalRow(
+  operation: string,
+  rowId: string,
+  value: boolean | Appearance
+): DraftedOptionRow {
+  const row = DRAFTED_OPTION_ROWS.find((candidate) => candidate.id === rowId);
+  if (row === undefined) {
+    throw new Error(`${operation}: unknown option row '${rowId}'.`);
+  }
+  if (!isValidOptionValue(row, value)) {
+    throw new Error(
+      `${operation}: ${JSON.stringify(value)} is not a legal value for the '${rowId}' row.`
+    );
+  }
+  return row;
+}
+
+/**
  * Freeze an options value with its two boolean groups — the shape's values
  * are primitives, so this two-level freeze is the whole state. Everything
  * the model keeps or exposes must be immutable (the snapshots' own
@@ -202,9 +276,23 @@ export interface OptionsPageModel {
    */
   setOption(rowId: string, value: boolean | Appearance): void;
   /**
-   * Persist the draft — only when dirty. The write merges the draft onto a
-   * fresh validated read (unknown fields and concurrent non-registry options
-   * survive), is awaited, and lands as a typed outcome on the snapshot; a
+   * Record that one row's value was persisted outside the Save flow (the
+   * appearance row's instant write succeeded): that row's baseline moves to
+   * the written value, every other row's baseline stays. The row then reads
+   * clean, so a later Save never writes it back over a newer write from
+   * another surface; a failed instant write simply never calls this, and the
+   * row stays a pending edit for Save.
+   *
+   * @param rowId A drafted registry row id.
+   * @param value The value just written — legal for the row.
+   * @throws {@link Error} When the page is not ready, the row id is unknown,
+   *   or the value is illegal for the row — wiring bugs, named by the message.
+   */
+  markOptionStored(rowId: string, value: boolean | Appearance): void;
+  /**
+   * Persist the draft — only when dirty. The write applies the edited rows
+   * onto a fresh validated read (unknown fields and concurrent writes to
+   * untouched rows survive), is awaited, and lands as a typed outcome on the snapshot; a
    * rejection keeps the page dirty (nothing lost) and never throws.
    *
    * @throws {@link Error} When the page is not ready — a wiring bug.
@@ -297,20 +385,27 @@ export function createOptionsPageModel(
           `setOption: the options page is not ready (status '${status}') — no control may edit yet.`
         );
       }
-      const row = DRAFTED_OPTION_ROWS.find((candidate) => candidate.id === rowId);
-      if (row === undefined) {
-        throw new Error(`setOption: unknown option row '${rowId}'.`);
-      }
-      if (!isValidOptionValue(row, value)) {
-        throw new Error(
-          `setOption: ${JSON.stringify(value)} is not a legal value for the '${rowId}' row.`
-        );
-      }
+      requireLegalRow('setOption', rowId, value);
       // Frozen like every draft: the snapshot hands this object out, and a
       // mutable one would let a consumer corrupt the edit buffer.
       draft = Object.freeze({ ...draft, [rowId]: value });
       dirty = isDraftDirty(options, draft);
       lastSave = null; // A new edit supersedes the previous save's toast.
+      notify();
+    },
+
+    markOptionStored(rowId: string, value: boolean | Appearance): void {
+      if (status !== 'ready' || options === null || draft === null) {
+        throw new Error(
+          `markOptionStored: the options page is not ready (status '${status}') — nothing was loaded.`
+        );
+      }
+      requireLegalRow('markOptionStored', rowId, value);
+      // The baseline's one row, written through the same row-write logic as
+      // a save (fresh groups, other rows untouched), frozen for exposure.
+      const written: OptionsDraft = { ...draftFromOptions(options), [rowId]: value };
+      options = freezeExposedOptions(optionsWithDraft(options, written, options));
+      dirty = isDraftDirty(options, draft);
       notify();
     },
 
@@ -332,11 +427,12 @@ export function createOptionsPageModel(
         return;
       }
       const savedDraft = draft;
+      const savedBaseline = options;
       saving = true;
       notify();
       // Fresh read first: the merge base must be what is stored *now*, so
-      // concurrent writers' fields survive the write. Registry rows the
-      // page owns are written from the draft — last-write-wins there.
+      // concurrent writers' fields survive the write. Only the rows edited
+      // on this page are written from the draft — last-write-wins there.
       let fresh: StoredOptions;
       try {
         fresh = await io.read();
@@ -349,7 +445,7 @@ export function createOptionsPageModel(
       }
       // Frozen before it is written or exposed: the merged value becomes
       // the snapshot's baseline and the toast's payload.
-      const merged = freezeExposedOptions(optionsWithDraft(fresh, savedDraft));
+      const merged = freezeExposedOptions(optionsWithDraft(fresh, savedDraft, savedBaseline));
       try {
         await io.write(merged);
       } catch (cause) {
@@ -359,9 +455,10 @@ export function createOptionsPageModel(
         notify();
         return;
       }
-      // The baseline moves to what is stored; the draft keeps any edits made
-      // mid-flight (they re-dirty against the new baseline).
+      // The baseline moves to what is stored; the draft follows it, keeping
+      // only edits made mid-flight (they re-dirty against the new baseline).
       options = merged;
+      draft = draftAfterSave(merged, savedDraft, draft);
       dirty = isDraftDirty(merged, draft);
       saving = false;
       lastSave = { ok: true, wrote: true, options: merged };

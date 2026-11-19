@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FALLBACK, type StoredOptions } from '../storage/options';
 import {
   applyStoredAppearance,
+  followAppearanceWrites,
   pageTheme,
   releaseThemeLock,
   type AppearanceSource
@@ -178,6 +179,79 @@ describe('applyStoredAppearance', () => {
       'Extension context invalidated'
     );
     expect(watchers.size).toBe(0);
+  });
+});
+
+describe('applyStoredAppearance — the choice observer', () => {
+  it('reports the read, every validated write (repeats too) and nothing after stop', async () => {
+    const source = fakeSource(optionsWith('dark'));
+    const seen = vi.fn();
+    const stop = await applyStoredAppearance(document.createElement('div'), source, seen);
+    expect(seen.mock.calls).toEqual([['dark']]);
+    source.write(optionsWith('system'));
+    source.write(optionsWith('system')); // another slot's write: the same choice again
+    source.write('corrupt'); // degrades to the default choice, reported as such
+    expect(seen.mock.calls).toEqual([['dark'], ['system'], ['system'], ['system']]);
+    stop();
+    source.write(optionsWith('light'));
+    expect(seen).toHaveBeenCalledTimes(4);
+  });
+
+  it('reports the racing write, never the stale read it supersedes', async () => {
+    const watchers = new Set<(raw: unknown) => void>();
+    let releaseRead!: (value: StoredOptions) => void;
+    const source: AppearanceSource = {
+      getValue: () =>
+        new Promise<StoredOptions>((resolve) => {
+          releaseRead = resolve;
+        }),
+      watch(onWrite) {
+        watchers.add(onWrite);
+        return () => {
+          watchers.delete(onWrite);
+        };
+      }
+    };
+    const seen = vi.fn();
+    const pending = applyStoredAppearance(document.createElement('div'), source, seen);
+    for (const watcher of [...watchers]) watcher(optionsWith('light'));
+    releaseRead(optionsWith('dark'));
+    await pending;
+    expect(seen.mock.calls).toEqual([['light']]);
+  });
+
+  it('reports nothing when the read fails', async () => {
+    const seen = vi.fn();
+    const source: AppearanceSource = {
+      getValue: () => Promise.reject(new Error('Extension context invalidated')),
+      watch: () => () => undefined
+    };
+    await expect(
+      applyStoredAppearance(document.createElement('div'), source, seen)
+    ).rejects.toThrow('Extension context invalidated');
+    expect(seen).not.toHaveBeenCalled();
+  });
+});
+
+describe('followAppearanceWrites — the write half alone (no read)', () => {
+  it('touches nothing until a write, then applies and reports every validated write until stopped', () => {
+    const root = document.createElement('div');
+    root.setAttribute('data-theme', 'light'); // whatever the document carries stays until a write
+    const source = fakeSource(optionsWith('dark'));
+    const seen = vi.fn();
+    const stop = followAppearanceWrites(root, source, seen);
+    expect(root.getAttribute('data-theme')).toBe('light');
+    expect(seen).not.toHaveBeenCalled();
+    source.write(optionsWith('dark'));
+    expect(root.getAttribute('data-theme')).toBe('dark');
+    source.write('corrupt'); // degrades to the default choice: system = unset
+    expect(root.hasAttribute('data-theme')).toBe(false);
+    expect(seen.mock.calls).toEqual([['dark'], ['system']]);
+    stop();
+    stop(); // idempotent
+    expect(source.armed()).toBe(0);
+    source.write(optionsWith('light'));
+    expect(seen).toHaveBeenCalledTimes(2);
   });
 });
 

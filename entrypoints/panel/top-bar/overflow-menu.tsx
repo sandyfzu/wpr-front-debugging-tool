@@ -30,6 +30,7 @@ import Server from 'lucide-solid/icons/server';
 import { BrandMark } from '../../../components/ui/brand-mark';
 import {
   MENU_CONTENT_CLASSES,
+  MENU_ICON_TRIGGER_CLASSES,
   MENU_ITEM_CLASSES,
   MENU_ITEM_LABEL_CLASSES,
   MENU_SEPARATOR_CLASSES,
@@ -308,7 +309,7 @@ export function TopBarMenu(props: TopBarMenuProps): JSX.Element {
           ariaLabel={words().label}
           ariaHasPopup="menu"
           ariaExpanded={open()}
-          class="relative size-7 rounded-md text-fg-secondary hover:bg-surface-3 hover:text-fg-primary"
+          class={cn('relative', MENU_ICON_TRIGGER_CLASSES)}
         >
           <Ellipsis size={16} aria-hidden="true" />
           {/* The held "Stale" marker, at a glance (the name carries the words). */}

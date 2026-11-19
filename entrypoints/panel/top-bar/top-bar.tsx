@@ -77,9 +77,9 @@ export interface TopBarProps {
   /** Reads the inspected page URL (null when unknown); called once per data settle. */
   readonly readPageUrl: () => Promise<string | null>;
   /**
-   * The appearance control's slot, between Refresh/freshness and "⋯"
-   * (empty until a surface passes its control). It is an end control: the
-   * fold measures the end slot as laid out, so it needs no reserve.
+   * The appearance control's slot, between Refresh/freshness and "⋯" (the
+   * shell passes the appearance menu). It is an end control: the fold
+   * measures the end slot as laid out, so it needs no reserve.
    */
   readonly appearance?: JSX.Element;
   /** The fold's measuring seams (tests; production measures layout). */
