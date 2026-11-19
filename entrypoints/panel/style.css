@@ -8,7 +8,7 @@
  */
 
 /* ---- Mount-only page entrance ----------------------------------------------
- * One fade/slide per page mount, driven by the P0 motion tokens. Explicitly
+ * One fade/slide per page mount, driven by the motion tokens. Explicitly
  * NOT here: staggered per-item entrances, idle/loop animations, state-change
  * transitions — states swap instantly; this is the only frame animation the
  * shell itself performs. `prefers-reduced-motion` collapses it globally via

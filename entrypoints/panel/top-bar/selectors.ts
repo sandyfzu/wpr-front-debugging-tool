@@ -45,6 +45,9 @@ export const DATA_STALE_AFTER_MS = 600_000;
  */
 export const STALE_WINDOW_MINUTES = DATA_STALE_AFTER_MS / 60_000;
 
+/** The downtime line of the bar and its menu: the answers could not be composed. */
+export const STATUS_UNAVAILABLE = 'Status unavailable';
+
 /** One top-bar answer's identity — the bar's four fixed answers. */
 export type SegmentId = 'wpr' | 'cache' | 'platform' | 'freshness';
 

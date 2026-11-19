@@ -419,7 +419,7 @@ describe('detectOptimizeCriticalImages', () => {
         <script data-name="wpr-wpr-beacon" src="/wp-rocket/assets/js/wpr-beacon.min.js"></script>
       </head></html>`
     );
-    // The '' entry for the srcset-only hint is the P1 engine's collection,
+    // The '' entry for the srcset-only hint is the detection engine's collection,
     // pinned here (an absent href resolves to '').
     expect(detectOptimizeCriticalImages(parsed)).toEqual({
       present: true,

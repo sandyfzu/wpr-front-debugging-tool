@@ -7,7 +7,7 @@
  * full-pass ratio cannot express what the engine controls. The asserted
  * comparison is the checks phase only: both engines receive the same
  * pre-parsed document and element lists, and only their checks are timed.
- * Full-pass totals (parse included) are printed for transparency; P3's
+ * Full-pass totals (parse included) are printed for transparency; the
  * content script reports the full pass.
  *
  * Runs locally (its ratio is machine-relative — CI never runs it) via

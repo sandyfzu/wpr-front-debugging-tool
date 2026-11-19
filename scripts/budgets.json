@@ -62,10 +62,18 @@
     "required": true
   },
   {
-    "surface": "options JS",
-    "globs": ["chunks/options-*.js", "options.js"],
+    "surface": "options page start JS (options.html + static imports)",
+    "start": "options.html",
     "maxKb": {
-      "raw": 50
+      "raw": 278
+    }
+  },
+  {
+    "surface": "options page start JS (Firefox)",
+    "build": "firefox-mv2",
+    "start": "options.html",
+    "maxKb": {
+      "raw": 278
     }
   },
   {
@@ -158,24 +166,25 @@
     }
   },
   {
-    "surface": "devtools panel JS (all panel chunks)",
-    "globs": [
-      "chunks/panel-*.js",
-      "panel.js",
-      "chunks/fdt-*.js",
-      "chunks/page-identity-*.js",
-      "chunks/code-block-*.js",
-      "chunks/source-link-*.js"
-    ],
+    "surface": "devtools panel start JS (panel.html + static imports)",
+    "start": "panel.html",
     "maxKb": {
-      "raw": 600
+      "raw": 685
+    }
+  },
+  {
+    "surface": "devtools panel start JS (Firefox)",
+    "build": "firefox-mv2",
+    "start": "panel.html",
+    "maxKb": {
+      "raw": 685
     }
   },
   {
     "surface": "panel cold-start (harness fixture)",
     "kind": "timing",
     "maxMs": 500,
-    "measuredBy": "the P5.1 harness spec (tests/e2e/suites/panel-cold-start.spec.ts)"
+    "measuredBy": "the cold-start harness spec (tests/e2e/suites/panel-cold-start.spec.ts)"
   },
   {
     "surface": "code highlighter (shiki worker, panel)",
@@ -309,6 +318,7 @@
   {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
+    "backstop": true,
     "maxKb": {
       "raw": 2345
     }

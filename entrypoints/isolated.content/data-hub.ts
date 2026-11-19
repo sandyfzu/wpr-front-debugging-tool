@@ -339,8 +339,8 @@ export function onBackForwardRestore(
 
 /**
  * Wire the data hub into this content script: capture, message serving and
- * window-bridge relays. Thin by design — the logic above and the P1 engine
- * carry the tested weight.
+ * window-bridge relays. Thin by design — the logic above and the detection
+ * engine carry the tested weight.
  *
  * @param ctx The content script's context; every listener is cleaned up
  *   through it.

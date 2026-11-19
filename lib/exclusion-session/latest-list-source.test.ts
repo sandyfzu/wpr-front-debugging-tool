@@ -61,7 +61,7 @@ describe('chooseSimulationList', () => {
   });
 
   it('expires a copy dated after now (the clock ran ahead at fetch), trusts one dated now', () => {
-    // Replaces the earlier P21N test that pinned a future-dated copy as fresh.
+    // A future-dated copy never reads as fresh (an earlier version pinned it so).
     expect(chooseSimulationList({ copy: COPY }, BUNDLED, COPY.fetchedAt - 1)).toEqual({
       listRows: BUNDLED,
       listSource: 'bundled',

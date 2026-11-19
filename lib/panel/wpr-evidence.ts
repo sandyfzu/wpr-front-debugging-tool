@@ -12,8 +12,8 @@ import { joinWords } from '../../utils/text';
 import type { FdtData } from '../wp-rocket/types';
 
 /**
- * The panel's word for an absent plugin — the top bar's pill and the
- * overview's WP Rocket tile both answer it, so they can never disagree.
+ * The panel's word for an absent plugin — the top bar's pill, the overview's
+ * WP Rocket tile and the support report all answer it, so they can never disagree.
  */
 export const WPR_NOT_DETECTED = 'Not detected';
 

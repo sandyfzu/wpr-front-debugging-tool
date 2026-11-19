@@ -1,7 +1,7 @@
 /**
- * The list pages' one search rule, shared by the single-chip filter
- * (`./resources-view-model`) and the facet filter (`./resource-facets`) so
- * both answer a query identically: the query matches a page's searched
+ * The list pages' one search rule, applied by the facet filter
+ * (`./resource-facets`) to every list (with facets or search-only) so each
+ * answers a query identically: the query matches a page's searched
  * field case-insensitively, as a substring. Callers pass the query already
  * normalized (`normalizeQuery`, `./list-behavior`); this rule adds no
  * trimming of its own.

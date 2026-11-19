@@ -7,6 +7,13 @@ import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
 import { cn } from '../../../../utils/cn';
 
+/**
+ * A detail body's two columns — facts (2 parts) beside the code (3 parts)
+ * from the detail's regular width, stacked below it.
+ */
+export const DETAIL_COLUMNS =
+  'grid min-w-0 gap-3.5 @regular/detail:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @regular/detail:items-start';
+
 /** One fact line of a detail (an attribute the element carries, a size…). */
 export interface DetailFact {
   readonly label: string;

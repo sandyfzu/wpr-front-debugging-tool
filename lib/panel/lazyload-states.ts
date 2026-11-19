@@ -1,6 +1,6 @@
 /**
  * The Lazyload page's image states — the one declaring site of what each
- * state means, read by both the row chips and the filter chips (a filter
+ * state means, read by both the row chips and the facet values (a value
  * selects exactly the rows that show its chip).
  *
  * Row facts only, from the lazyload scan: WP Rocket's lazy attribute on the
@@ -36,7 +36,7 @@ export interface LazyloadImageState {
 /**
  * Every positive state, most important first: the deliberate local
  * exclusion leads, as on the JavaScript page. Not lazyloaded is no state (no
- * chip); its filter negates Lazyloaded.
+ * chip); its facet value (Non-lazyloaded) negates Lazyloaded.
  */
 export const LAZYLOAD_IMAGE_STATES: readonly LazyloadImageState[] = [
   { id: 'excluded', label: 'Excluded', holds: isFdtExcludedImage },

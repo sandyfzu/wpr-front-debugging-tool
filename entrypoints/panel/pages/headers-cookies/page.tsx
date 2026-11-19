@@ -45,7 +45,7 @@ import ScrollText from 'lucide-solid/icons/scroll-text';
 import { Button } from '../../../../components/ui/button';
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { EmptyState } from '../../../../components/ui/empty-state';
-import { FilterBar } from '../../../../components/ui/filter-bar';
+import { SearchField } from '../../../../components/ui/search-field';
 import { KeyValue } from '../../../../components/ui/key-value';
 import { STATUS_ICONS, STATUS_TEXT_CLASSES } from '../../../../components/ui/status-badge';
 import { Tooltip } from '../../../../components/ui/tooltip';
@@ -361,13 +361,13 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
       <Show when={items().length > 0}>
         {/* Esc in the field is the binding's rule; the ref targets the way-back focus. */}
         <div ref={controls} onKeyDown={field.onKeyDown}>
-          <FilterBar
-            searchQuery={field.value()}
-            onSearchChange={(raw) => {
+          <SearchField
+            value={field.value()}
+            onValueChange={(raw) => {
               field.input(raw);
             }}
-            searchLabel={SEARCH_LABEL}
-            searchPlaceholder={SEARCH_PLACEHOLDER}
+            label={SEARCH_LABEL}
+            placeholder={SEARCH_PLACEHOLDER}
           />
         </div>
       </Show>

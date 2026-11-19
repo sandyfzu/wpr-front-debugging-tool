@@ -8,13 +8,13 @@
 import type { CodeLanguage } from '../../../../components/ui/code-block-langs';
 import {
   JS_PAGE_FACETS,
-  JS_PAGE_RESOURCES,
+  jsScriptSearchField,
   type JsFacetId,
   type JsScriptResource
 } from '../../../../lib/panel/resources-view-model';
 import { liftFacets, type FacetSet } from '../../../../lib/panel/resource-facets';
 import type { DetailFact } from '../resource-list/detail-section';
-import { urlPreview } from '../resource-list/resource-list-view';
+import { MINIFY_STAMP_LABEL, resourceName, urlPreview } from '../resource-list/resource-list-view';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import {
   JS_SCRIPT_STATES,
@@ -42,7 +42,7 @@ import {
   isClassicScriptType,
   isJsonScriptType
 } from '../../../../utils/script-type';
-import { resourceName } from '../resource-list/resource-list-view';
+import { SCRIPT_KIND_LABELS } from '../resource-list/script-words';
 import {
   CALM_VISIBLE_STATE_CHIPS,
   simulatableSource,
@@ -298,7 +298,7 @@ export function scriptName(view: ScriptRowView, inlineOrdinal: number): string {
  * @param view The row view.
  */
 export function scriptKind(view: ScriptRowView): string {
-  return view.row.type === 'inline' ? 'Inline script' : 'External script';
+  return SCRIPT_KIND_LABELS[view.row.type];
 }
 
 /**
@@ -349,7 +349,7 @@ export function scriptFacts(view: ScriptRowView): DetailFact[] {
     facts.push({ label: 'WP Rocket defer', value: WPR_DEFER_ATTRIBUTE, mono: true });
   if (row.minifyAttribute)
     facts.push({
-      label: 'Minify stamp',
+      label: MINIFY_STAMP_LABEL,
       value: `${MINIFY_ATTRIBUTE}="${MINIFY_ATTRIBUTE_VALUE}"`,
       mono: true
     });
@@ -449,5 +449,5 @@ export const JS_VIEW_FACETS: FacetSet<ScriptRowView, JsFacetId> = liftFacets(
  * @param view The row view.
  */
 export function scriptSearchField(view: ScriptRowView): string {
-  return JS_PAGE_RESOURCES.searchField(view.row);
+  return jsScriptSearchField(view.row);
 }

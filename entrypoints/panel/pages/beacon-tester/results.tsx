@@ -31,10 +31,10 @@ import {
 } from '../../../../lib/beacon-test/results';
 import {
   ABOVE_THE_FOLD_FACETS,
-  ABOVE_THE_FOLD_LIST,
+  aboveTheFoldSearchField,
   aboveTheFoldRows,
   LAZY_RENDER_FACETS,
-  LAZY_RENDER_LIST,
+  lazyRenderSearchField,
   lazyRenderRows,
   LCP_LABEL,
   sameAboveTheFoldRow,
@@ -376,12 +376,11 @@ export function AboveTheFoldResults(props: BeaconResultsProps): JSX.Element {
     >
       {() => (
         <CalmFilteredList
-          variant="calm"
           rows={rows()}
           rowKey={(row) => row.key}
           sameRow={sameAboveTheFoldRow}
           facets={ABOVE_THE_FOLD_FACETS}
-          searchField={ABOVE_THE_FOLD_LIST.searchField}
+          searchField={aboveTheFoldSearchField}
           empty={
             <EmptyState
               icon={<ImageIcon size={16} aria-hidden="true" />}
@@ -443,12 +442,11 @@ export function LazyRenderResults(props: LazyRenderResultsProps): JSX.Element {
     >
       {() => (
         <CalmFilteredList
-          variant="calm"
           rows={rows()}
           rowKey={(row) => row.key}
           sameRow={sameLazyRenderRow}
           facets={LAZY_RENDER_FACETS}
-          searchField={LAZY_RENDER_LIST.searchField}
+          searchField={lazyRenderSearchField}
           empty={
             <EmptyState
               icon={<Layers size={16} aria-hidden="true" />}

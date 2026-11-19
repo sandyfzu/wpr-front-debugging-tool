@@ -16,12 +16,21 @@
  * Note: rows here are bundle-size surfaces, and it's worth spelling out both
  * kinds explicitly:
  * - `kind: "bytes"` (the default — every row may omit the field): a bundle
- *   surface with `globs` + `maxKb`, measured from the build output below —
- *   the Chromium build, or the build its optional `build` field names
- *   (`firefox-mv2`: skipped, not failed, while that build is absent); a row
- *   matching no file reads "absent" (not built yet) unless it is marked
- *   `required: true` — then each of its globs must match exactly one file,
- *   so a shipped file renamed, moved or doubled fails the gate;
+ *   surface with `maxKb`, measured from the build output below — the
+ *   Chromium build, or the build its optional `build` field names
+ *   (`firefox-mv2`: skipped, not failed, while that build is absent). Its
+ *   files are named one of two ways:
+ *   - `globs`: a row matching no file reads "absent" (not built yet) unless
+ *     it is marked `required: true` — then each of its globs must match
+ *     exactly one file, so a shipped file renamed, moved or doubled fails the
+ *     gate; `backstop: true` marks a catch-all row (the whole build) that may
+ *     overlap every other row;
+ *   - `start`: an entry page (`panel.html`) whose start set — the JS it loads
+ *     plus every static import, transitively (`./budget-start-set.mjs`) — is
+ *     derived from the build, so no chunk name can rename a start chunk out
+ *     of the row. An unresolvable set fails the row, and a start file another
+ *     non-backstop row also counts fails the gate (a lazily loaded chunk
+ *     pulled onto the start path, or a double count);
  * - `kind: "timing"`: a runtime gate this script cannot measure (no globs,
  *   no `maxKb` — carrying either is malformed). Its `maxMs` is asserted by
  *   the runner named in `measuredBy` (a committed spec); this script only
@@ -42,6 +51,7 @@ import { gzipSync } from 'node:zlib';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { startSet } from './budget-start-set.mjs';
 
 /**
  * The package root: the script lives at `<root>/scripts/`, so `<script dir>/..`
@@ -122,15 +132,72 @@ function listFiles(root, base = '', out = []) {
  * @returns {{ rawBytes: number, gzipBytes: number, files: string[] }} Measured totals.
  */
 export function measureSurface(files, globs, readFile = defaultReadFile) {
-  const matched = files.filter((file) => globs.some((glob) => matchesGlob(file, glob)));
+  return measureFiles(
+    files.filter((file) => globs.some((glob) => matchesGlob(file, glob))),
+    readFile
+  );
+}
+
+/**
+ * Sum raw and gzip sizes of the given files.
+ *
+ * @param {string[]} files The files to measure (POSIX relative paths).
+ * @param {(path: string) => Buffer} readFile File reader.
+ * @returns {{ rawBytes: number, gzipBytes: number, files: string[] }} Measured totals.
+ */
+export function measureFiles(files, readFile) {
   let rawBytes = 0;
   let gzipBytes = 0;
-  for (const file of matched) {
+  for (const file of files) {
     const content = readFile(file);
     rawBytes += content.length;
     gzipBytes += gzipSync(content).length;
   }
-  return { rawBytes, gzipBytes, files: matched };
+  return { rawBytes, gzipBytes, files };
+}
+
+/**
+ * The files of one row: its start set (`start` rows) or its glob matches.
+ *
+ * @param {{globs?: string[], start?: string}} row A validated bytes row.
+ * @param {string[]} files Files under the row's build root.
+ * @param {(path: string) => Buffer} readFile The build's file reader.
+ * @returns {{ files: string[], problems: string[] }} The row's files, and why a start set is incomplete.
+ */
+export function rowFiles(row, files, readFile) {
+  if (row.start === undefined) {
+    return {
+      files: files.filter((file) => row.globs.some((glob) => matchesGlob(file, glob))),
+      problems: []
+    };
+  }
+  return startSet(row.start, new Set(files), (path) => readFile(path).toString('utf8'));
+}
+
+/**
+ * Start files another row counts too (backstop rows excepted): each one is
+ * either a lazily loaded chunk pulled onto the start path or a double count,
+ * and both make the start row's number lie.
+ *
+ * @param {string} startSurface The start row's surface.
+ * @param {string[]} startFiles The start row's files.
+ * @param {Array<{surface: string, globs?: string[], start?: string, backstop?: true}>} others
+ *   The other bytes rows measured in the same build.
+ * @returns {string[]} One line per doubly counted file.
+ */
+export function startOverlaps(startSurface, startFiles, others) {
+  const lines = [];
+  for (const other of others) {
+    if (other.backstop === true || other.globs === undefined) continue;
+    for (const file of startFiles) {
+      if (other.globs.some((glob) => matchesGlob(file, glob))) {
+        lines.push(
+          `${file} is in the start set of "${startSurface}" and also counted by "${other.surface}"`
+        );
+      }
+    }
+  }
+  return lines;
 }
 
 /**
@@ -150,13 +217,14 @@ export function requiredGlobProblems(files, globs) {
  * Measure one bytes row against its own build: skipped while that build is
  * absent (only an optional build can be — the Chromium root is checked
  * first); a required row whose globs do not each match exactly one file is
- * unmatched (a breach); otherwise absent when no file matches, else its
- * totals and breaches.
+ * unmatched, and a start row whose start set cannot be fully resolved is
+ * broken (both breaches); otherwise absent when no file matches, else its
+ * totals, files and breaches.
  *
- * @param {{globs: string[], maxKb: {raw?: number, gzip?: number}, build?: string, required?: boolean}} row A validated bytes row.
+ * @param {{globs?: string[], start?: string, maxKb: {raw?: number, gzip?: number}, build?: string, required?: boolean}} row A validated bytes row.
  * @param {(build: string) => string[] | null} filesOf A build's file list, or null when it is not built.
  * @param {(build: string) => (path: string) => Buffer} readerFor A build's file reader.
- * @returns {{status: 'skipped', build: string} | {status: 'unmatched', problems: Array<{glob: string, matched: number}>} | {status: 'absent'} | {status: 'measured', rawBytes: number, gzipBytes: number, rawOver: boolean, gzipOver: boolean}}
+ * @returns {{status: 'skipped', build: string} | {status: 'unmatched', problems: Array<{glob: string, matched: number}>} | {status: 'broken', problems: string[]} | {status: 'absent'} | {status: 'measured', rawBytes: number, gzipBytes: number, files: string[], rawOver: boolean, gzipOver: boolean}}
  *   The row's outcome.
  */
 export function measureRow(row, filesOf, readerFor) {
@@ -167,12 +235,16 @@ export function measureRow(row, filesOf, readerFor) {
     const problems = requiredGlobProblems(files, row.globs);
     if (problems.length > 0) return { status: 'unmatched', problems };
   }
-  const { rawBytes, gzipBytes, files: hit } = measureSurface(files, row.globs, readerFor(build));
+  const reader = readerFor(build);
+  const selected = rowFiles(row, files, reader);
+  if (selected.problems.length > 0) return { status: 'broken', problems: selected.problems };
+  const { rawBytes, gzipBytes, files: hit } = measureFiles(selected.files, reader);
   if (hit.length === 0) return { status: 'absent' };
   return {
     status: 'measured',
     rawBytes,
     gzipBytes,
+    files: hit,
     rawOver: row.maxKb.raw !== undefined && rawBytes > row.maxKb.raw * 1024,
     gzipOver: row.maxKb.gzip !== undefined && gzipBytes > row.maxKb.gzip * 1024
   };
@@ -189,7 +261,7 @@ function defaultReadFile(relativePath) {
  *
  * @param {unknown} raw The parsed JSON of `scripts/budgets.json` (an array of
  *   rows, per the kind taxonomy in the header).
- * @returns {Array<{kind: 'bytes', surface: string, globs: string[], maxKb: {raw?: number, gzip?: number}, build?: string, required?: true} | {kind: 'timing', surface: string, maxMs: number, measuredBy: string}>}
+ * @returns {Array<{kind: 'bytes', surface: string, globs?: string[], start?: string, maxKb: {raw?: number, gzip?: number}, build?: string, required?: true, backstop?: true} | {kind: 'timing', surface: string, maxMs: number, measuredBy: string}>}
  *   Validated rows in file order, normalized to their kind.
  */
 export function parseBudgetRows(raw) {
@@ -216,12 +288,32 @@ export function parseBudgetRows(raw) {
     const kind = row.kind === undefined ? 'bytes' : row.kind;
     if (kind === 'bytes') {
       const globs = row.globs;
-      if (
+      if (row.start !== undefined) {
+        // A start row's files are its page's start set: globs would name a second set.
+        if (typeof row.start !== 'string' || !/^[^/].*\.html$/.test(row.start)) {
+          problems.push(`${tag} start must name a built page by its relative path (panel.html)`);
+        }
+        if (globs !== undefined)
+          problems.push(`${tag} carries start and globs — name its files once`);
+        if (row.required !== undefined) {
+          problems.push(
+            `${tag} is a start row — its page is always required, so it cannot carry required`
+          );
+        }
+        if (row.backstop !== undefined) {
+          problems.push(
+            `${tag} is a start row — a start set is no catch-all, so it cannot carry backstop`
+          );
+        }
+      } else if (
         !Array.isArray(globs) ||
         globs.length === 0 ||
         globs.some((globPart) => typeof globPart !== 'string' || globPart.trim() === '')
       ) {
         problems.push(`${tag} globs must be a non-empty array of non-empty strings`);
+      }
+      if (row.backstop !== undefined && row.backstop !== true) {
+        problems.push(`${tag} backstop must be true when present`);
       }
       const maxKb = row.maxKb;
       const positive = (key) =>
@@ -280,6 +372,13 @@ export function parseBudgetRows(raw) {
         problems.push(
           `${tag} is a timing row — a timing gate is measured outside the bundle, so it cannot carry required`
         );
+      }
+      for (const field of ['start', 'backstop']) {
+        if (row[field] !== undefined) {
+          problems.push(
+            `${tag} is a timing row — a timing gate is measured outside the bundle, so it cannot carry ${field}`
+          );
+        }
       }
     } else {
       problems.push(`${tag} kind must be "bytes" or "timing", got ${String(kind)}`);
@@ -426,6 +525,12 @@ async function main() {
       console.log(`  ${padded(surface)}  ✗ required: ${detail} (each glob must match exactly 1)`);
       continue;
     }
+    if (result.status === 'broken') {
+      breached = true;
+      console.log(`  ${padded(surface)}  ✗ start set of ${row.start} unresolved:`);
+      for (const problem of result.problems) console.log(`      ${problem}`);
+      continue;
+    }
     if (result.status === 'absent') {
       console.log(`  ${padded(surface)}  absent — surface not built yet, or update row globs`);
       continue;
@@ -440,6 +545,16 @@ async function main() {
         maxKb.gzip !== undefined
       )}  ${String(maxKb.gzip ?? '—').padStart(5)}`
     );
+    if (row.start === undefined) continue;
+    // A start set is derived, so the table names what it counted.
+    console.log(`      ${result.files.length} start files: ${result.files.join(', ')}`);
+    const overlaps = startOverlaps(
+      surface,
+      result.files,
+      byteRows.filter((other) => other !== row && buildDirectory(other) === build)
+    );
+    for (const overlap of overlaps) console.log(`      ✗ ${overlap}`);
+    breached ||= overlaps.length > 0;
   }
   console.log('');
   if (breached) {

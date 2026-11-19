@@ -64,6 +64,7 @@ import {
 } from '../resource-list/list-row';
 import type { DetailCopy } from '../resource-list/master-detail';
 import { StateSourceLegend } from '../resource-list/state-source-legend';
+import { INLINE_CSS_LABEL, NO_STYLES_COPY } from '../resource-list/style-words';
 import { realStylesheetsDeps, requestStyleSourceChunk } from './real-deps';
 import { createStylesheetsRead, type StylesheetsReadDeps } from './session';
 import { StyleDetail } from './style-detail';
@@ -259,7 +260,7 @@ function StylesheetsList(props: StylesheetsListProps): JSX.Element {
     if (view.row.chars === 0) return undefined;
     return {
       text: view.row.preview,
-      label: 'Inline style CSS',
+      label: INLINE_CSS_LABEL,
       loadText: async (signal) => {
         const result = await loadCss(view, props.reply.snapshotId, signal);
         if (result.status !== 'ok')
@@ -307,7 +308,6 @@ function StylesheetsList(props: StylesheetsListProps): JSX.Element {
         </Show>
       </div>
       <CalmFilteredList
-        variant="calm"
         rows={views()}
         rowKey={(view) => view.key}
         sameRow={sameStyleView}
@@ -317,8 +317,8 @@ function StylesheetsList(props: StylesheetsListProps): JSX.Element {
           <EmptyState
             class="self-center"
             icon={<Palette size={16} aria-hidden="true" />}
-            title="No styles on this page"
-            description="The page has no inline style or stylesheet link right now."
+            title={NO_STYLES_COPY.title}
+            description={NO_STYLES_COPY.description}
           />
         }
         noun={STYLE_NOUN}

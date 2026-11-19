@@ -60,7 +60,7 @@ export function SettingsColumn(props: SettingsColumnProps): JSX.Element {
         </h2>
         <Show when={props.load === 'ready'}>
           <div class="ms-auto min-w-0">
-            <SaveLine state={props.save} look="indicator" />
+            <SaveLine state={props.save} />
           </div>
         </Show>
       </div>

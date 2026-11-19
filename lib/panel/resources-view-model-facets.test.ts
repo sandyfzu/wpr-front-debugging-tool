@@ -1,35 +1,50 @@
 /**
- * The JavaScript, Lazyload and Preloaded Resources pages' facets: every
- * single-select chip is reachable as one facet selection selecting exactly
- * its rows (with and without a query) over edge-row fixtures, choice values
- * are mutually exclusive, the overlapping states are toggles, and combined
- * facets narrow as the owner's Delay × Defer × Type example reads.
+ * The JavaScript, Lazyload and Preloaded Resources pages' facets: their
+ * sentence-case words, every single value keeping exactly its rows (with and
+ * without a query) over edge-row fixtures, choice values mutually exclusive,
+ * the overlapping states as toggles, and combined facets narrowing as the
+ * owner's Delay × Defer × Type example reads.
  */
 import { describe, expect, it } from 'vitest';
-import { chipParityMismatches, exclusivityViolations } from './facet-parity.fixtures';
+import {
+  exclusivityViolations,
+  selectionMismatches,
+  type SelectionCase
+} from './facet-checks.fixtures';
 import { UNATTRIBUTED, type HintAttribution } from './hint-attribution';
-import { applyFacets, facetCounts, type FacetSelection } from './resource-facets';
+import { applyFacets, facetCounts, type FacetSet } from './resource-facets';
 import {
   JS_PAGE_FACETS,
-  JS_PAGE_RESOURCES,
+  jsScriptSearchField,
   LAZYLOAD_PAGE_FACETS,
-  LAZYLOAD_PAGE_RESOURCES,
+  lazyloadImageSearchField,
   PRELOADED_PAGE_FACETS,
-  PRELOADED_PAGE_RESOURCES,
+  preloadedHintSearchField,
   type JsFacetId,
-  type JsFilterId,
   type JsScriptResource,
   type LazyloadFacetId,
-  type LazyloadFilterId,
   type LazyloadImageResource,
   type PreloadedFacetId,
-  type PreloadedFilterId,
   type PreloadedResource
 } from './resources-view-model';
 import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
 import type { ResourceHintRel } from '../wp-rocket/types';
 
-/** No search phase (the parity checks cover the query side). */
+/**
+ * A page's facet and value words, in render order.
+ *
+ * @param facets The page's facets.
+ * @returns `[facet label, kind, value labels]` per facet.
+ */
+function words<Row, Id extends string>(facets: FacetSet<Row, Id>): [string, string, string[]][] {
+  return facets.facets.map((facet) => [
+    facet.label,
+    facet.kind,
+    facet.values.map((value) => value.label)
+  ]);
+}
+
+/** No search phase (the selection checks cover the query side). */
 function noSearch(): { field: () => string; query: string } {
   return { field: () => '', query: '' };
 }
@@ -84,18 +99,19 @@ const SCRIPTS: readonly JsScriptResource[] = [
   script({})
 ];
 
-/** Old JavaScript chip → its one facet selection (every chip reachable as one selection). */
-const JS_CHIP_MAP: Record<JsFilterId, FacetSelection<JsFacetId>> = {
-  all: {},
-  delayed: { delay: 'delayed' },
-  'non-delayed': { delay: 'non-delayed' },
-  deferred: { defer: 'deferred' },
-  'non-deferred': { defer: 'non-deferred' },
-  minified: { file: 'minified' },
-  combined: { file: 'combined' },
-  excluded: { excluded: 'yes' },
-  inline: { type: 'inline' },
-  external: { type: 'external' }
+/** Each single value (and no selection) → the {@link SCRIPTS} it keeps. */
+const JS_CASES: Readonly<Record<string, SelectionCase<JsFacetId>>> = {
+  any: { selection: {}, rows: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+  delayed: { selection: { delay: 'delayed' }, rows: [0, 1, 5, 7, 9] },
+  'non-delayed': { selection: { delay: 'non-delayed' }, rows: [2, 3, 4, 6, 8, 10, 11, 12] },
+  // WP Rocket's stamp alone is Deferred; an inline `defer` is not.
+  deferred: { selection: { defer: 'deferred' }, rows: [1, 2, 10] },
+  'non-deferred': { selection: { defer: 'non-deferred' }, rows: [0, 3, 4, 5, 6, 7, 8, 9, 11, 12] },
+  minified: { selection: { file: 'minified' }, rows: [4] },
+  combined: { selection: { file: 'combined' }, rows: [5] },
+  excluded: { selection: { excluded: 'yes' }, rows: [6, 8, 9] },
+  inline: { selection: { type: 'inline' }, rows: [0, 3, 11] },
+  external: { selection: { type: 'external' }, rows: [1, 2, 4, 5, 6, 7, 8, 9, 10, 12] }
 };
 
 describe('JS_PAGE_FACETS', () => {
@@ -109,13 +125,20 @@ describe('JS_PAGE_FACETS', () => {
     ]);
   });
 
-  it('reaches every chip as one selection with the same rows (with and without a query)', () => {
-    expect(chipParityMismatches(SCRIPTS, JS_PAGE_RESOURCES, JS_PAGE_FACETS, JS_CHIP_MAP)).toEqual(
-      []
-    );
-    for (const query of ['cdn', 'SITE.TEST', 'zzz']) {
+  it('words every facet and value in sentence case', () => {
+    expect(words(JS_PAGE_FACETS)).toEqual([
+      ['Delay', 'choice', ['Delayed', 'Non-delayed']],
+      ['Defer', 'choice', ['Deferred', 'Non-deferred']],
+      ['Type', 'choice', ['Inline', 'External']],
+      ['File', 'choice', ['Minified', 'Combined']],
+      ['Excluded', 'toggle', ['Excluded']]
+    ]);
+  });
+
+  it('keeps exactly its rows under each single value (with and without a query)', () => {
+    for (const query of ['', 'cdn', 'SITE.TEST', 'zzz']) {
       expect(
-        chipParityMismatches(SCRIPTS, JS_PAGE_RESOURCES, JS_PAGE_FACETS, JS_CHIP_MAP, query)
+        selectionMismatches(SCRIPTS, JS_PAGE_FACETS, jsScriptSearchField, JS_CASES, query)
       ).toEqual([]);
     }
   });
@@ -186,23 +209,31 @@ const IMAGES: readonly LazyloadImageResource[] = [
   image({ src: '' })
 ];
 
-/** Old Lazyload chip → facet selection. */
-const LAZYLOAD_CHIP_MAP: Record<LazyloadFilterId, FacetSelection<LazyloadFacetId>> = {
-  all: {},
-  lazyloaded: { lazyload: 'lazyloaded' },
-  'non-lazyloaded': { lazyload: 'non-lazyloaded' },
-  excluded: { excluded: 'yes' }
+/** Each single value (and no selection) → the {@link IMAGES} it keeps. */
+const LAZYLOAD_CASES: Readonly<Record<string, SelectionCase<LazyloadFacetId>>> = {
+  any: { selection: {}, rows: [0, 1, 2, 3, 4] },
+  lazyloaded: { selection: { lazyload: 'lazyloaded' }, rows: [0, 1] },
+  'non-lazyloaded': { selection: { lazyload: 'non-lazyloaded' }, rows: [2, 3, 4] },
+  // The marker on a lazyloaded image proves no exclusion.
+  excluded: { selection: { excluded: 'yes' }, rows: [2] }
 };
 
 describe('LAZYLOAD_PAGE_FACETS', () => {
-  it('reaches every chip as one selection with the same rows (with and without a query)', () => {
+  it('words every facet and value in sentence case', () => {
+    expect(words(LAZYLOAD_PAGE_FACETS)).toEqual([
+      ['Lazyload', 'choice', ['Lazyloaded', 'Non-lazyloaded']],
+      ['Excluded', 'toggle', ['Excluded']]
+    ]);
+  });
+
+  it('keeps exactly its rows under each single value (with and without a query)', () => {
     for (const query of ['', 'cdn', 'KEPT']) {
       expect(
-        chipParityMismatches(
+        selectionMismatches(
           IMAGES,
-          LAZYLOAD_PAGE_RESOURCES,
           LAZYLOAD_PAGE_FACETS,
-          LAZYLOAD_CHIP_MAP,
+          lazyloadImageSearchField,
+          LAZYLOAD_CASES,
           query
         )
       ).toEqual([]);
@@ -273,28 +304,37 @@ const HINTS: readonly PreloadedResource[] = [
   hint('dns-prefetch', '', UNATTRIBUTED, 'https://cdn.test')
 ];
 
-/** Old Preloaded Resources chip → facet selection. */
-const PRELOADED_CHIP_MAP: Record<PreloadedFilterId, FacetSelection<PreloadedFacetId>> = {
-  all: {},
-  'wp-rocket': { source: 'wp-rocket' },
-  unattributed: { source: 'unattributed' },
-  preload: { hint: 'preload' },
-  images: { 'preload-type': 'images' },
-  fonts: { 'preload-type': 'fonts' },
-  modulepreload: { hint: 'modulepreload' },
-  preconnect: { hint: 'preconnect' },
-  'dns-prefetch': { hint: 'dns-prefetch' }
+/** Each single value (and no selection) → the {@link HINTS} it keeps. */
+const PRELOADED_CASES: Readonly<Record<string, SelectionCase<PreloadedFacetId>>> = {
+  any: { selection: {}, rows: [0, 1, 2, 3, 4, 5, 6, 7] },
+  'wp-rocket': { selection: { source: 'wp-rocket' }, rows: [0, 2, 6] },
+  unattributed: { selection: { source: 'unattributed' }, rows: [1, 3, 4, 5, 7] },
+  preload: { selection: { hint: 'preload' }, rows: [0, 1, 2, 3, 4] },
+  // `as="image"` on a module preload is no image preload.
+  images: { selection: { 'preload-type': 'images' }, rows: [0, 1, 4] },
+  fonts: { selection: { 'preload-type': 'fonts' }, rows: [2] },
+  modulepreload: { selection: { hint: 'modulepreload' }, rows: [5] },
+  preconnect: { selection: { hint: 'preconnect' }, rows: [6] },
+  'dns-prefetch': { selection: { hint: 'dns-prefetch' }, rows: [7] }
 };
 
 describe('PRELOADED_PAGE_FACETS', () => {
-  it('reaches every chip as one selection with the same rows (with and without a query)', () => {
+  it('words every facet and value in sentence case', () => {
+    expect(words(PRELOADED_PAGE_FACETS)).toEqual([
+      ['Source', 'choice', ['WP Rocket', 'Unattributed']],
+      ['Hint', 'choice', ['Preload', 'Module preload', 'Preconnect', 'DNS prefetch']],
+      ['Preload type', 'choice', ['Images', 'Fonts']]
+    ]);
+  });
+
+  it('keeps exactly its rows under each single value (with and without a query)', () => {
     for (const query of ['', 'cdn', 'IMAGE']) {
       expect(
-        chipParityMismatches(
+        selectionMismatches(
           HINTS,
-          PRELOADED_PAGE_RESOURCES,
           PRELOADED_PAGE_FACETS,
-          PRELOADED_CHIP_MAP,
+          preloadedHintSearchField,
+          PRELOADED_CASES,
           query
         )
       ).toEqual([]);

@@ -57,8 +57,7 @@ async function searchGeometry(
   root: Locator
 ): Promise<{ row: number; field: number; cap: number; beside: number } | null> {
   return await root.evaluate((page) => {
-    const bar =
-      page.querySelector('[data-fdt="facet-bar"]') ?? page.querySelector('[data-fdt="filter-bar"]');
+    const bar = page.querySelector('[data-fdt="facet-bar"]');
     const input = page.querySelector<HTMLInputElement>('input[type="search"]');
     if (!(bar instanceof HTMLElement) || !(input instanceof HTMLInputElement)) return null;
     const filters = bar.querySelector('[data-fdt="facet-filters-button"]');
@@ -163,7 +162,7 @@ test('keeps grouped names, bounded titles and full copy/link values on all list 
             // tier, its full row below it (beside the Filters button on a
             // compact facet bar) — no per-page width cap, real geometry.
             const sample = await searchGeometry(root);
-            if (sample === null) throw new Error('filter bar or search field missing');
+            if (sample === null) throw new Error('facet bar or search field missing');
             if (width === 1280) {
               expect(sample.field).toBeLessThanOrEqual(sample.cap + 1);
               expect(sample.field).toBeLessThan(sample.row - 10);

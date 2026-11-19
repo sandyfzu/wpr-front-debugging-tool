@@ -6,6 +6,13 @@
  */
 import type { TabAsks } from '../../../../lib/messaging/tab-asks';
 
+/** A detail read's transport failures, one muted line each (the script and style details share them). */
+export const READ_FAILURE_NOTES = {
+  'invalid-request': 'The page refused the request — refresh to try again.',
+  unreachable: 'The page did not answer — refresh to try again.',
+  unreadable: 'The page answered something unreadable — refresh to try again.'
+} as const;
+
 /** How long one read may take before it fails. */
 export const SOURCE_CHUNK_TIMEOUT_MS = 5000;
 

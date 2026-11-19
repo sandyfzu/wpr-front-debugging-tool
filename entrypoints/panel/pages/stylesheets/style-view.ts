@@ -11,7 +11,7 @@ import { getRealOptionName } from '../../../../lib/options-map/get-real-option-n
 import { liftFacets, type FacetSet } from '../../../../lib/panel/resource-facets';
 import {
   CSS_PAGE_FACETS,
-  CSS_PAGE_RESOURCES,
+  cssStyleSearchField,
   type CssFacetId
 } from '../../../../lib/panel/stylesheet-rows';
 import { styleIdentity } from '../../../../lib/panel/style-identity';
@@ -30,7 +30,7 @@ import {
 import { countLabel, formatCompactCount, formatCount } from '../../../../utils/format-count';
 import type { AskRunState } from '../ask-run';
 import type { DetailFact } from '../resource-list/detail-section';
-import { urlPreview } from '../resource-list/resource-list-view';
+import { MINIFY_STAMP_LABEL, urlPreview } from '../resource-list/resource-list-view';
 import {
   CALM_VISIBLE_STATE_CHIPS,
   splitStateChips,
@@ -38,7 +38,12 @@ import {
   type StateChipSplit
 } from '../resource-list/state-chips';
 import type { StateSource } from '../resource-list/state-sources';
-import { EMPTY_STYLE_PREVIEW, mediaDetail, styleName } from '../resource-list/style-words';
+import {
+  EMPTY_STYLE_PREVIEW,
+  mediaDetail,
+  sizeShare,
+  styleName
+} from '../resource-list/style-words';
 
 /** The rows' noun. */
 export const STYLE_NOUN = { one: 'style', other: 'styles' } as const;
@@ -180,21 +185,6 @@ export function stylePreview(row: CssStyleResource): string {
 }
 
 /**
- * The size bar's share: the square root of the style's part of the largest
- * one, so a 20 KB sheet next to 100-character ones still reads as a bar and
- * the small ones stay visible (never below 2 %).
- *
- * @param chars The style's characters.
- * @param max The largest inline style's characters.
- * @returns The share (0–1), or undefined for an empty style or nothing to compare.
- */
-export function sizeShare(chars: number, max: number): number | undefined {
-  // An empty style draws no bar (its "0" says it all).
-  if (max <= 0 || chars <= 0) return undefined;
-  return Math.max(0.02, Math.sqrt(Math.min(chars, max) / max));
-}
-
-/**
  * Build the row views (chips, names and sizes once per row).
  *
  * @param rows The classified styles, in list order.
@@ -285,7 +275,7 @@ export const CSS_VIEW_FACETS: FacetSet<StyleRowView, CssFacetId> = liftFacets(
  * @param view The row view.
  */
 export function styleSearchField(view: StyleRowView): string {
-  return CSS_PAGE_RESOURCES.searchField(view.row);
+  return cssStyleSearchField(view.row);
 }
 
 /**
@@ -322,7 +312,7 @@ export function styleFacts(view: StyleRowView): DetailFact[] {
     });
   if (row.minifyAttribute)
     facts.push({
-      label: 'Minify stamp',
+      label: MINIFY_STAMP_LABEL,
       value: `${MINIFY_ATTRIBUTE}="${MINIFY_ATTRIBUTE_VALUE}"`,
       mono: true
     });

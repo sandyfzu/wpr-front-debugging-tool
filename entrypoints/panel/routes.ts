@@ -96,7 +96,7 @@ export interface NavRoute {
   id: RouteId;
   /** Explanation-heavy routes use the same shorter canvas in every data state. */
   reading?: boolean;
-  /** User-facing label (P15 copy sweep owns its final wording). */
+  /** User-facing label (sentence case; the nav, palette and page titles read it). */
   label: string;
   /** The row's lucide icon (the nav renders it when it has room for it). */
   icon: LucideIcon;
@@ -111,9 +111,8 @@ export interface NavRoute {
 }
 
 /**
- * The nav registry, in render order — today's pages. Future rows land
- * additively here with their named owners: Compare (P17 — decision-gated optional SBS panel home,
- * Tools).
+ * The nav registry, in render order — today's pages. A new page lands
+ * additively here as one row.
  *
  * The Overview row carries no live state on purpose: WPR presence, version
  * and cache age are the top bar's first-paint answers, owned there — the

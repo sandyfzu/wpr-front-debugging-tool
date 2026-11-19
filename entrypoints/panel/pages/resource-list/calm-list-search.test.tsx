@@ -1,10 +1,9 @@
 /**
- * The default variant of the panel's filter/search/list body (`FilteredList`
- * without `variant`), rendered as a page over a payload's image rows with
- * their single-select chips: search wiring (field ↔ store, debounce, find
- * bar, Esc, echoes), chips + announcements, the filtered-empty ways back
- * and focus, refresh reuse and keys, and the empty state. The calm variant
- * has its own suite (`calm-list.test.tsx`).
+ * The list kit (`CalmFilteredList`) rendered as a page over a payload's
+ * image rows with their facets: search wiring (field ↔ store, debounce, find
+ * bar, Esc, echoes), facets + announcements, the filtered-empty way back and
+ * its focus, refresh reuse and keys, and the empty state. Facet bar tiers,
+ * the master–detail and presence: `calm-list.test.tsx`.
  */
 import { cleanup, fireEvent, screen, within } from '@solidjs/testing-library';
 import type { JSX } from 'solid-js';
@@ -12,9 +11,11 @@ import { createMemo } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { IMAGE_NOUN } from '../../../../lib/detection/count-nouns';
+import { liftFacets } from '../../../../lib/panel/resource-facets';
 import {
   buildLazyloadRows,
-  LAZYLOAD_PAGE_RESOURCES,
+  LAZYLOAD_PAGE_FACETS,
+  lazyloadImageSearchField,
   type LazyloadImageResource
 } from '../../../../lib/panel/resources-view-model';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
@@ -22,9 +23,16 @@ import { makeFdtData, makeLazyImage } from '../../state/fixtures';
 import { SEARCH_DEBOUNCE_MS } from '../../state/search';
 import { useFdtData } from '../../state/use-fdt-data';
 import { PageFrame } from '../page-frame';
-import { FilteredList } from './filtered-list';
+import { CalmFilteredList } from './calm-list';
+import { installFakeResizeObserver, type FakeResizeObservers } from './fake-resize-observer';
 import { laggedVirtualizer, renderPage, type PageHarness } from './page-harness';
 import { resourceName } from './resource-list-view';
+
+/** An image row with its list key (its URL plus its occurrence, as the pages key rows). */
+interface KeyedImage {
+  readonly key: string;
+  readonly row: LazyloadImageResource;
+}
 
 /**
  * Whether two image rows carry the same data.
@@ -32,17 +40,35 @@ import { resourceName } from './resource-list-view';
  * @param a One row.
  * @param b The other.
  */
-function sameRow(a: LazyloadImageResource, b: LazyloadImageResource): boolean {
+function sameRow(a: KeyedImage, b: KeyedImage): boolean {
   return (
-    a.src === b.src &&
-    a.lazyloaded === b.lazyloaded &&
-    a.excludedReasons.join('\n') === b.excludedReasons.join('\n')
+    a.row.src === b.row.src &&
+    a.row.lazyloaded === b.row.lazyloaded &&
+    a.row.excludedReasons.join('\n') === b.row.excludedReasons.join('\n')
   );
 }
 
 /**
- * A page body over the payload's images: the default list with the image
- * chips, each row a name and one focusable control.
+ * Key the rows by URL plus occurrence (a repeated image stays two rows).
+ *
+ * @param rows The rows, in list order.
+ * @returns The keyed rows.
+ */
+function keyed(rows: readonly LazyloadImageResource[]): KeyedImage[] {
+  const seen = new Map<string, number>();
+  return rows.map((row) => {
+    const occurrence = seen.get(row.src) ?? 0;
+    seen.set(row.src, occurrence + 1);
+    return { key: `${row.src}#${String(occurrence)}`, row };
+  });
+}
+
+/** The page's facets over keyed rows (as the pages lift them over their views). */
+const FACETS = liftFacets(LAZYLOAD_PAGE_FACETS, (image: KeyedImage) => image.row);
+
+/**
+ * A page body over the payload's images: the list with the image facets,
+ * each row a name and one focusable control.
  *
  * @param props.createVirtualizer The virtualizer double.
  */
@@ -51,14 +77,16 @@ function ImagesPage(props: { createVirtualizer?: VirtualizerFactory }): JSX.Elem
   const rows = createMemo(() => {
     const state = store.state();
     return state.status === 'ready' || state.status === 'refreshing'
-      ? buildLazyloadRows(state.data.wprDetections.lazyload)
+      ? keyed(buildLazyloadRows(state.data.wprDetections.lazyload))
       : [];
   });
   return (
     <PageFrame id="lazyload" title="Images" subtitle="Test list" fill>
-      <FilteredList
-        definition={LAZYLOAD_PAGE_RESOURCES}
+      <CalmFilteredList
+        facets={FACETS}
+        searchField={(image) => lazyloadImageSearchField(image.row)}
         rows={rows()}
+        rowKey={(image) => image.key}
         sameRow={sameRow}
         empty={<p>No images</p>}
         noun={IMAGE_NOUN}
@@ -66,10 +94,10 @@ function ImagesPage(props: { createVirtualizer?: VirtualizerFactory }): JSX.Elem
         searchLabel="Search image URLs"
         searchPlaceholder="Search image URLs…"
         estimateSize={() => 40}
-        renderRow={(row) => (
+        renderRow={(image) => (
           <span>
-            <span data-fdt="resource-name">{resourceName(row.src)}</span>
-            <button type="button">{`Copy ${resourceName(row.src)}`}</button>
+            <span data-fdt="resource-name">{resourceName(image.row.src)}</span>
+            <button type="button">{`Copy ${resourceName(image.row.src)}`}</button>
           </span>
         )}
         createVirtualizer={props.createVirtualizer}
@@ -84,7 +112,7 @@ function withImages(images: FdtData['wprDetections']['lazyload']['images']): Fdt
   return { ...base, wprDetections: { ...base.wprDetections, lazyload: { present: true, images } } };
 }
 
-/** The standard fixture: two lazyloaded, three not (tool marker, reasons, none). */
+/** The standard fixture: two lazyloaded, three not (reasons, none, none). */
 function fixture(): FdtData {
   return withImages([
     makeLazyImage({ src: 'https://cdn.example/up/hero.webp', lazyloadDetected: true }),
@@ -104,10 +132,12 @@ function rowNames(root: HTMLElement): string[] {
   return [...root.querySelectorAll('[data-fdt="resource-name"]')].map((n) => n.textContent);
 }
 
-/** The chip button for an id. */
-function chip(root: HTMLElement, id: string): HTMLButtonElement {
-  const found = root.querySelector<HTMLButtonElement>(`[data-fdt-filter-chip="${id}"]`);
-  if (found === null) throw new Error(`no chip ${id}`);
+/** A Lazyload facet segment by value (the inline bar). */
+function segment(root: HTMLElement, value: string): HTMLInputElement {
+  const found = root.querySelector<HTMLInputElement>(
+    `[data-fdt="facet-bar"] [data-fdt-choice-value="${value}"] input`
+  );
+  if (found === null) throw new Error(`no segment ${value}`);
   return found;
 }
 
@@ -127,20 +157,37 @@ function announced(root: HTMLElement): string {
   return root.querySelector('[data-fdt="resource-results-status"]')?.textContent ?? '';
 }
 
+let observers: FakeResizeObservers;
+
+/**
+ * Render the page on a regular-width list (the facets inline).
+ *
+ * @param data The payload.
+ * @param virtualizer The virtualizer double.
+ * @returns The harness.
+ */
+function mount(data: FdtData, virtualizer?: VirtualizerFactory): PageHarness {
+  const page = renderPage(ImagesPage, data, virtualizer);
+  observers.resize(600);
+  return page;
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
+  observers = installFakeResizeObserver();
 });
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
-describe('FilteredList (default) — chips, search and states', () => {
+describe('CalmFilteredList — facets, search and states', () => {
   let page: PageHarness;
 
   beforeEach(() => {
-    page = renderPage(ImagesPage, fixture());
+    page = mount(fixture());
   });
 
   it('lists every row as a listitem with its set size and position', () => {
@@ -150,37 +197,18 @@ describe('FilteredList (default) — chips, search and states', () => {
     expect(items[4]?.getAttribute('aria-posinset')).toBe('5');
   });
 
-  it('puts per-chip counts on the chips', () => {
-    expect(screen.getByRole('button', { name: 'Show all 5 matching' })).toBe(
-      chip(page.root, 'all')
-    );
-    expect(screen.getByRole('button', { name: 'Lazyloaded 2 matching' })).toBe(
-      chip(page.root, 'lazyloaded')
-    );
-  });
-
-  it('narrows by chip and announces the committed result', () => {
-    fireEvent.click(chip(page.root, 'lazyloaded'));
+  it('narrows by a facet value and announces the committed result', () => {
+    fireEvent.click(segment(page.root, 'lazyloaded'));
     expect(rowNames(page.root)).toEqual(['hero.webp', 'gallery.jpg']);
-    expect(chip(page.root, 'lazyloaded').getAttribute('aria-pressed')).toBe('true');
+    expect(segment(page.root, 'lazyloaded').checked).toBe(true);
     expect(announced(page.root)).toBe('Showing 2 of 5 images');
   });
 
-  it('keeps focus on a chip across its own selection and a refresh (stable chip buttons)', () => {
-    const lazy = chip(page.root, 'lazyloaded');
-    lazy.focus();
-    fireEvent.click(lazy);
-    expect(document.activeElement).toBe(lazy);
-    expect(chip(page.root, 'lazyloaded')).toBe(lazy);
-    page.refresh(fixture());
-    expect(document.activeElement).toBe(lazy);
-  });
-
-  it('streams the field into the search store and composes the query with the chip', () => {
+  it('streams the field into the search store and composes the query with the facets', () => {
     type('JPG');
     expect(page.search.query()).toBe('JPG');
     expect(rowNames(page.root)).toEqual(['excluded.jpg', 'plain.jpg', 'gallery.jpg']);
-    fireEvent.click(chip(page.root, 'non-lazyloaded'));
+    fireEvent.click(segment(page.root, 'non-lazyloaded'));
     expect(rowNames(page.root)).toEqual(['excluded.jpg', 'plain.jpg']);
     expect(announced(page.root)).toBe('Showing 2 of 5 images');
   });
@@ -268,20 +296,12 @@ describe('FilteredList (default) — chips, search and states', () => {
     expect(page.search.query()).toBe('hero');
   });
 
-  it('renders NoMatches naming chip and query, with both ways back', () => {
-    fireEvent.click(chip(page.root, 'lazyloaded'));
+  it('renders NoMatches naming the query, and hands focus to the field after Clear search', () => {
     type('zzz');
     expect(screen.queryByRole('list')).toBeNull();
     expect(screen.getByText('No matches')).toBeTruthy();
-    expect(screen.getByText('Nothing in "Lazyloaded" matches "zzz".')).toBeTruthy();
-    expect(announced(page.root)).toBe('No images match');
-    fireEvent.click(screen.getByRole('button', { name: 'Show all' }));
-    expect(chip(page.root, 'all').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByText('Nothing matches "zzz".')).toBeTruthy();
-  });
-
-  it('hands focus to the search field after Clear search', () => {
-    type('zzz');
+    expect(announced(page.root)).toBe('No images match');
     const clear = screen.getByRole('button', { name: 'Clear search' });
     clear.focus();
     fireEvent.click(clear);
@@ -289,20 +309,11 @@ describe('FilteredList (default) — chips, search and states', () => {
     expect(field().value).toBe('');
     expect(rowNames(page.root)).toHaveLength(5);
   });
-
-  it('hands focus to the default chip after Show all', () => {
-    fireEvent.click(chip(page.root, 'lazyloaded'));
-    page.refresh(withImages([makeLazyImage({ lazyloadDetected: false })]));
-    const showAll = screen.getByRole('button', { name: 'Show all' });
-    showAll.focus();
-    fireEvent.click(showAll);
-    expect(document.activeElement).toBe(chip(page.root, 'all'));
-  });
 });
 
-describe('FilteredList (default) — refresh and edge states', () => {
+describe('CalmFilteredList — refresh and edge states', () => {
   it('keeps a focused row control (and its row) across a soft refresh', () => {
-    const page = renderPage(ImagesPage, fixture());
+    const page = mount(fixture());
     const copy = screen.getByRole('button', { name: 'Copy logo.png' });
     copy.focus();
     page.refresh(fixture());
@@ -311,7 +322,7 @@ describe('FilteredList (default) — refresh and edge states', () => {
   });
 
   it('remounts only the row whose content changed on refresh', () => {
-    const page = renderPage(ImagesPage, fixture());
+    const page = mount(fixture());
     const before = screen.getAllByRole('listitem');
     const images = fixture().wprDetections.lazyload.images.map((image, index) =>
       index === 3 ? { ...image, excludedReasonsFound: ['data-src'] } : image
@@ -322,21 +333,20 @@ describe('FilteredList (default) — refresh and edge states', () => {
     expect(after[3]).not.toBe(before[3]);
   });
 
-  it('keeps every surviving row element through a chip change, with updated set positions', () => {
-    const page = renderPage(ImagesPage, fixture());
+  it('keeps every surviving row element through a facet change, with updated set positions', () => {
+    const page = mount(fixture());
     const hero = screen.getAllByRole('listitem')[0];
     const gallery = screen.getAllByRole('listitem')[4];
-    fireEvent.click(chip(page.root, 'lazyloaded'));
+    fireEvent.click(segment(page.root, 'lazyloaded'));
     const items = screen.getAllByRole('listitem');
     expect(items).toEqual([hero, gallery]);
     expect(items.map((item) => item.getAttribute('aria-setsize'))).toEqual(['2', '2']);
     expect(items.map((item) => item.getAttribute('aria-posinset'))).toEqual(['1', '2']);
   });
 
-  it('keeps surviving rows mounted while the virtualizer lags a chip change (rows by key)', () => {
+  it('keeps surviving rows mounted while the virtualizer lags a facet change (rows by key)', () => {
     const lagged = laggedVirtualizer();
-    const page = renderPage(
-      ImagesPage,
+    const page = mount(
       withImages([
         makeLazyImage({ src: 'https://a/0.jpg', lazyloadDetected: false }),
         makeLazyImage({ src: 'https://a/1.jpg', lazyloadDetected: true }),
@@ -347,20 +357,20 @@ describe('FilteredList (default) — refresh and edge states', () => {
     const rowNamed = (name: string): Element | undefined =>
       screen.getAllByRole('listitem').find((item) => item.textContent.includes(name));
     const before = rowNamed('2.jpg');
-    fireEvent.click(chip(page.root, 'lazyloaded'));
+    fireEvent.click(segment(page.root, 'lazyloaded'));
     lagged.flush();
     expect(rowNamed('2.jpg')).toBe(before);
     expect(rowNames(page.root)).toEqual(['1.jpg', '2.jpg']);
   });
 
   it('leaves list width to the page frame', () => {
-    renderPage(ImagesPage, fixture());
+    mount(fixture());
     expect(screen.getByRole('list', { name: 'Images' }).className).not.toContain('max-w-');
   });
 
-  it('keeps the chip, the query and the field text across a refresh', () => {
-    const page = renderPage(ImagesPage, fixture());
-    fireEvent.click(chip(page.root, 'non-lazyloaded'));
+  it('keeps the facet pick, the query and the field text across a refresh', () => {
+    const page = mount(fixture());
+    fireEvent.click(segment(page.root, 'non-lazyloaded'));
     type('jpg');
     page.refresh(
       withImages([
@@ -368,7 +378,7 @@ describe('FilteredList (default) — refresh and edge states', () => {
         makeLazyImage({ src: 'https://cdn.example/new.png', lazyloadDetected: false })
       ])
     );
-    expect(chip(page.root, 'non-lazyloaded').getAttribute('aria-pressed')).toBe('true');
+    expect(segment(page.root, 'non-lazyloaded').checked).toBe(true);
     expect(field().value).toBe('jpg');
     expect(rowNames(page.root)).toEqual(['new.jpg']);
     // The line stays truthful through a refresh (the refreshed count is
@@ -379,20 +389,21 @@ describe('FilteredList (default) — refresh and edge states', () => {
     ).toBe('off');
   });
 
-  it('disables an empty chip, but keeps a selected chip that a refresh emptied', () => {
-    const page = renderPage(ImagesPage, withImages([makeLazyImage({ lazyloadDetected: true })]));
-    expect(chip(page.root, 'non-lazyloaded').disabled).toBe(true);
-    fireEvent.click(chip(page.root, 'lazyloaded'));
+  it('keeps a picked value that a refresh emptied selectable, with Clear filters back', () => {
+    const page = mount(withImages([makeLazyImage({ lazyloadDetected: true })]));
+    expect(segment(page.root, 'non-lazyloaded').disabled).toBe(true);
+    fireEvent.click(segment(page.root, 'lazyloaded'));
     page.refresh(withImages([makeLazyImage({ lazyloadDetected: false })]));
-    expect(chip(page.root, 'lazyloaded').disabled).toBe(false);
-    expect(chip(page.root, 'lazyloaded').getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Show all' })).toBeTruthy();
+    expect(segment(page.root, 'lazyloaded').disabled).toBe(false);
+    expect(segment(page.root, 'lazyloaded').checked).toBe(true);
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeTruthy();
   });
 
-  it('shows the empty view without filters, and switches with refreshes', () => {
-    const page = renderPage(ImagesPage, withImages([]));
+  it('shows the empty view without controls, and switches with refreshes', () => {
+    const page = mount(withImages([]));
     expect(screen.getByText('No images')).toBeTruthy();
-    expect(page.root.querySelector('[data-fdt="filter-bar"]')).toBeNull();
+    expect(page.root.querySelector('[data-fdt="facet-bar"]')).toBeNull();
+    expect(screen.queryByRole('searchbox')).toBeNull();
     expect(screen.queryByRole('list')).toBeNull();
     page.refresh(fixture());
     expect(screen.getAllByRole('listitem')).toHaveLength(5);
@@ -400,12 +411,9 @@ describe('FilteredList (default) — refresh and edge states', () => {
     expect(screen.getByText('No images')).toBeTruthy();
   });
 
-  it('keeps both rows when the same image appears twice (keys are positions, not URLs)', () => {
+  it('keeps both rows when the same image appears twice (occurrence keys)', () => {
     const src = 'https://cdn.example/up/twice.jpg';
-    const { root } = renderPage(
-      ImagesPage,
-      withImages([makeLazyImage({ src }), makeLazyImage({ src })])
-    );
+    const { root } = mount(withImages([makeLazyImage({ src }), makeLazyImage({ src })]));
     expect(rowNames(root)).toEqual(['twice.jpg', 'twice.jpg']);
   });
 });

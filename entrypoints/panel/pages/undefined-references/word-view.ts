@@ -8,8 +8,8 @@
  * carries. No Solid, no DOM: the page renders these.
  */
 import type { ScriptOrigin } from '../../../../lib/panel/undefined-refs';
-import type { ResourcePageDefinition } from '../../../../lib/panel/resources-view-model';
 import { recoverOriginalScript } from '../../../../lib/wp-rocket/minify-url-recovery';
+import { SCRIPT_KIND_LABELS } from '../resource-list/script-words';
 import {
   displayWord,
   exclusionPattern,
@@ -95,7 +95,7 @@ export function wordDefinitionCount(view: WordRowView): string | undefined {
 export const PREVIEW_DEFINITIONS = 3;
 
 /** The label an inline definition carries (it has no URL to name it by). */
-export const INLINE_DEFINITION_LABEL = 'Inline script';
+export const INLINE_DEFINITION_LABEL = SCRIPT_KIND_LABELS.inline;
 
 /**
  * One definition's short label: a script file's name (the identifying part,
@@ -152,16 +152,6 @@ export function wordKind(row: WordRow): string {
 export function wordSearchField(row: WordRow): string {
   return displayWord(row.word);
 }
-
-/**
- * The list's filter input: one identity chip (the bar then shows the search
- * field alone — the words have no dimension worth a chip) and the searched
- * field, so the page joins the panel's one search/find protocol.
- */
-export const WORD_LIST: ResourcePageDefinition<WordRow, 'all'> = {
-  filters: [{ id: 'all', label: 'All', predicate: () => true }],
-  searchField: wordSearchField
-};
 
 /**
  * What a script definition's copy action carries:

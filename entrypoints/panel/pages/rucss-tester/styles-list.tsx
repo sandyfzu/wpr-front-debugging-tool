@@ -34,6 +34,8 @@ import {
   ListRowHead,
   type ListRowColumns
 } from '../resource-list/list-row';
+import { NO_STYLES_COPY } from '../resource-list/style-words';
+import { INSPECT_STYLES_LABEL } from './run-panel';
 import type { InventoryState } from './session';
 import { inventoryRowViews, type InventoryRowView } from './styles-view';
 
@@ -161,7 +163,7 @@ export function StylesList(props: StylesListProps): JSX.Element {
             description={INVENTORY_IDLE.description}
             action={
               <Button size="sm" variant="primary" data-fdt-rucss-inspect onClick={props.onInspect}>
-                Inspect page styles
+                {INSPECT_STYLES_LABEL}
               </Button>
             }
           />
@@ -199,8 +201,8 @@ export function StylesList(props: StylesListProps): JSX.Element {
                 when={reply().styles.length > 0}
                 fallback={
                   <EmptyState
-                    title="No styles on this page"
-                    description="The page has no inline style or stylesheet link right now."
+                    title={NO_STYLES_COPY.title}
+                    description={NO_STYLES_COPY.description}
                   />
                 }
               >

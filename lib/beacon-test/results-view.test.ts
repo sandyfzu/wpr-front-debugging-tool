@@ -1,18 +1,17 @@
-/** Beacon results as list rows: URL choice, facts and detail, chips by label, search, and row identity. */
+/** Beacon results as list rows: URL choice, facts and detail, the label facet, search, and row identity. */
 import { describe, expect, it } from 'vitest';
-import { chipParityMismatches } from '../panel/facet-parity.fixtures';
+import { selectionMismatches } from '../panel/facet-checks.fixtures';
 import { applyFacets, facetCounts } from '../panel/resource-facets';
-import { filterAndSearch, filterCounts } from '../panel/resources-view-model';
 import type { AboveTheFoldCandidate } from './results';
 import {
   ABOVE_THE_FOLD_FACETS,
-  ABOVE_THE_FOLD_LIST,
   aboveTheFoldRows,
+  aboveTheFoldSearchField,
   candidateFacts,
   candidateUrl,
   LAZY_RENDER_FACETS,
-  LAZY_RENDER_LIST,
   lazyRenderRows,
+  lazyRenderSearchField,
   sameAboveTheFoldRow,
   sameLazyRenderRow
 } from './results-view';
@@ -130,7 +129,22 @@ describe('aboveTheFoldRows', () => {
   });
 });
 
-describe('ABOVE_THE_FOLD_LIST', () => {
+/**
+ * The ids of the above-the-fold rows a query keeps (no facet picked).
+ *
+ * @param rows The rows.
+ * @param query The query.
+ */
+function searchedIds(rows: ReturnType<typeof aboveTheFoldRows>, query: string): number[] {
+  return applyFacets(
+    rows,
+    ABOVE_THE_FOLD_FACETS,
+    {},
+    { field: aboveTheFoldSearchField, query }
+  ).map((row) => row.id);
+}
+
+describe('aboveTheFoldSearchField', () => {
   const rows = aboveTheFoldRows({
     kind: 'ok',
     items: [LCP, BG, PICTURE, candidate({ label: 'future-label', src: 'x.gif' })],
@@ -138,18 +152,8 @@ describe('ABOVE_THE_FOLD_LIST', () => {
     truncated: false
   });
 
-  it('counts by the beacon label (an unknown label only under All)', () => {
-    expect(filterCounts(rows, ABOVE_THE_FOLD_LIST)).toEqual({
-      all: 4,
-      lcp: 1,
-      'above-the-fold': 2
-    });
-    expect(filterAndSearch(rows, ABOVE_THE_FOLD_LIST, 'lcp', '').map((row) => row.id)).toEqual([0]);
-  });
-
   it('searches URLs, kinds, labels and the detail, case-insensitively', () => {
-    const ids = (query: string) =>
-      filterAndSearch(rows, ABOVE_THE_FOLD_LIST, 'all', query).map((row) => row.id);
+    const ids = (query: string) => searchedIds(rows, query);
     expect(ids('HERO-2X')).toEqual([0]);
     expect(ids('bg.png')).toEqual([1]);
     expect(ids('image/avif')).toEqual([2]);
@@ -171,8 +175,7 @@ describe('ABOVE_THE_FOLD_LIST', () => {
       dropped: 0,
       truncated: false
     });
-    const ids = (query: string) =>
-      filterAndSearch(withMore, ABOVE_THE_FOLD_LIST, 'all', query).map((row) => row.id);
+    const ids = (query: string) => searchedIds(withMore, query);
     expect(ids('480px')).toEqual([0]);
     expect(ids('fetchpriority')).toEqual([]); // a name is a term, not a value
     expect(ids('high')).toEqual([0]);
@@ -190,21 +193,21 @@ describe('ABOVE_THE_FOLD_FACETS', () => {
     truncated: false
   });
 
-  it('reaches every label chip as one selection with the same rows (with and without a query)', () => {
-    const mapping = {
-      all: {},
-      lcp: { label: 'lcp' },
-      'above-the-fold': { label: 'above-the-fold' }
+  it('keeps exactly its rows under each label (with and without a query)', () => {
+    const cases = {
+      any: { selection: {}, rows: [0, 1, 2, 3] },
+      lcp: { selection: { label: 'lcp' }, rows: [0] },
+      'above-the-fold': { selection: { label: 'above-the-fold' }, rows: [1, 2] }
     };
     for (const query of ['', 'a.test', 'PICTURE']) {
       expect(
-        chipParityMismatches(rows, ABOVE_THE_FOLD_LIST, ABOVE_THE_FOLD_FACETS, mapping, query)
+        selectionMismatches(rows, ABOVE_THE_FOLD_FACETS, aboveTheFoldSearchField, cases, query)
       ).toEqual([]);
     }
   });
 
   it('counts by label; an unknown label only under Any', () => {
-    const search = { field: ABOVE_THE_FOLD_LIST.searchField, query: '' };
+    const search = { field: aboveTheFoldSearchField, query: '' };
     expect(facetCounts(rows, ABOVE_THE_FOLD_FACETS, {}, search).byFacet.label).toEqual({
       any: 4,
       lcp: 1,
@@ -214,7 +217,7 @@ describe('ABOVE_THE_FOLD_FACETS', () => {
 });
 
 describe('LAZY_RENDER_FACETS', () => {
-  it('declares no facet: the search alone narrows, as the chip-less list does', () => {
+  it('declares no facet: the search alone narrows', () => {
     const rows = lazyRenderRows({
       kind: 'ok',
       items: ['abc123', 'def456'],
@@ -223,17 +226,12 @@ describe('LAZY_RENDER_FACETS', () => {
     });
     expect(LAZY_RENDER_FACETS.facets).toEqual([]);
     expect(
-      applyFacets(
-        rows,
-        LAZY_RENDER_FACETS,
-        {},
-        { field: LAZY_RENDER_LIST.searchField, query: 'DEF' }
-      )
-    ).toEqual(filterAndSearch(rows, LAZY_RENDER_LIST, 'all', 'DEF'));
+      applyFacets(rows, LAZY_RENDER_FACETS, {}, { field: lazyRenderSearchField, query: 'DEF' })
+    ).toEqual([rows[1]]);
   });
 });
 
-describe('LAZY_RENDER_LIST', () => {
+describe('lazyRenderRows', () => {
   it('lists hashes in order and searches them', () => {
     const rows = lazyRenderRows({
       kind: 'ok',
@@ -245,7 +243,12 @@ describe('LAZY_RENDER_LIST', () => {
       { id: 0, key: 'abc123#0', hash: 'abc123' },
       { id: 1, key: 'def456#0', hash: 'def456' }
     ]);
-    expect(filterAndSearch(rows, LAZY_RENDER_LIST, 'all', 'DEF').map((row) => row.id)).toEqual([1]);
+    expect(rows.map(lazyRenderSearchField)).toEqual(['abc123', 'def456']);
+    expect(
+      applyFacets(rows, LAZY_RENDER_FACETS, {}, { field: lazyRenderSearchField, query: 'DEF' }).map(
+        (row) => row.id
+      )
+    ).toEqual([1]);
   });
 });
 

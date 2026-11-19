@@ -8,7 +8,9 @@ import {
   measureSurface,
   parseBudgetRows,
   readPinnedNode,
-  runtimeProblem
+  rowFiles,
+  runtimeProblem,
+  startOverlaps
 } from './check-budgets.mjs';
 
 /* Pure pieces of the budget gate (incl. the per-row outcome `measureRow`); the CLI `main()` (output discovery + table
@@ -122,7 +124,7 @@ describe('parseBudgetRows', () => {
     surface: 'panel cold-start (harness fixture)',
     kind: 'timing',
     maxMs: 500,
-    measuredBy: 'the P5.1 harness spec'
+    measuredBy: 'the cold-start harness spec'
   };
 
   it('parses kindless rows as bytes rows', () => {
@@ -319,5 +321,119 @@ describe('required rows', () => {
         () => reader
       )
     ).toEqual({ status: 'skipped', build: 'firefox-mv2' });
+  });
+});
+
+describe('start rows', () => {
+  const row = { kind: 'bytes', surface: 'panel start', start: 'panel.html', maxKb: { raw: 1 } };
+  /** A built page, its entry and the entry's one static import (plus a lazy chunk). */
+  const contents = new Map([
+    ['panel.html', Buffer.from('<script type="module" src="/chunks/panel-A.js"></script>')],
+    ['chunks/panel-A.js', Buffer.from('import"./shared-B.js";const l=()=>import("./lazy-C.js");')],
+    // 300 bytes of valid JS: start chunks are parsed, so filler must be code, not NUL bytes.
+    ['chunks/shared-B.js', Buffer.from('export const b=1;'.padEnd(300))],
+    ['chunks/lazy-C.js', Buffer.alloc(5000)]
+  ]);
+  const files = [...contents.keys()];
+  const reader = () => (path) => contents.get(path) ?? Buffer.alloc(0);
+
+  it('parses a start row; rejects one that also names globs, required or backstop, or no page', () => {
+    expect(parseBudgetRows([row])).toEqual([row]);
+    expect(() => parseBudgetRows([{ ...row, globs: ['panel.js'] }])).toThrow(
+      /carries start and globs/
+    );
+    expect(() => parseBudgetRows([{ ...row, required: true }])).toThrow(
+      /start row .* cannot carry required/
+    );
+    expect(() => parseBudgetRows([{ ...row, backstop: true }])).toThrow(
+      /start row .* cannot carry backstop/
+    );
+    for (const start of ['', '/panel.html', 'panel.js', 7]) {
+      expect(() => parseBudgetRows([{ ...row, start }])).toThrow(/start must name a built page/);
+    }
+    expect(() =>
+      parseBudgetRows([
+        { surface: 't', kind: 'timing', maxMs: 5, measuredBy: 'a spec', start: 'a.html' }
+      ])
+    ).toThrow(/timing row.*start/);
+  });
+
+  it('accepts backstop: true on a glob row only', () => {
+    const backstop = { surface: 'all', globs: ['*.js'], maxKb: { raw: 9 }, backstop: true };
+    expect(parseBudgetRows([backstop])).toEqual([{ ...backstop, kind: 'bytes' }]);
+    expect(() => parseBudgetRows([{ ...backstop, backstop: false }])).toThrow(
+      /backstop must be true when present/
+    );
+    expect(() =>
+      parseBudgetRows([
+        { surface: 't', kind: 'timing', maxMs: 5, measuredBy: 'a spec', backstop: true }
+      ])
+    ).toThrow(/timing row.*backstop/);
+  });
+
+  it('measures the derived start set only (the lazy chunk stays out) and names its files', () => {
+    expect(rowFiles(row, files, reader())).toEqual({
+      files: ['chunks/panel-A.js', 'chunks/shared-B.js'],
+      problems: []
+    });
+    const measured = measureRow(row, () => files, reader);
+    const entryBytes = contents.get('chunks/panel-A.js').length;
+    expect(measured).toMatchObject({
+      status: 'measured',
+      rawBytes: entryBytes + 300,
+      files: ['chunks/panel-A.js', 'chunks/shared-B.js'],
+      rawOver: false
+    });
+  });
+
+  it('fails a start row whose set cannot be resolved instead of measuring part of it', () => {
+    expect(
+      measureRow(row, () => files.filter((file) => file !== 'chunks/shared-B.js'), reader)
+    ).toEqual({
+      status: 'broken',
+      problems: ['chunks/panel-A.js loads ./shared-B.js: chunks/shared-B.js is not in the build']
+    });
+    expect(measureRow(row, () => [], reader)).toEqual({
+      status: 'broken',
+      problems: ['panel.html is not in the build']
+    });
+  });
+
+  it('fails a start row whose chunk does not parse, naming the chunk and its first error', () => {
+    const broken = new Map(contents).set('chunks/shared-B.js', Buffer.from('{{{ import"./x.js";'));
+    expect(
+      measureRow(
+        row,
+        () => files,
+        () => (path) => broken.get(path)
+      )
+    ).toEqual({
+      status: 'broken',
+      problems: [
+        "chunks/shared-B.js does not parse (1:20 '}' expected.): its imports cannot be read"
+      ]
+    });
+  });
+
+  it('still skips a start row while its build is absent', () => {
+    expect(measureRow({ ...row, build: 'firefox-mv2' }, () => null, reader)).toEqual({
+      status: 'skipped',
+      build: 'firefox-mv2'
+    });
+  });
+
+  it('flags a start file another row counts, except a backstop or another start row', () => {
+    const start = ['chunks/panel-A.js', 'chunks/stylesheets-S.js'];
+    expect(
+      startOverlaps('panel start', start, [
+        { surface: 'Stylesheets page', globs: ['chunks/stylesheets-*.js'] },
+        { surface: 'options JS', globs: ['chunks/options-*.js'] },
+        { surface: 'whole build', globs: ['chunks/*.js'], backstop: true },
+        { surface: 'options start', start: 'options.html' }
+      ])
+    ).toEqual([
+      'chunks/stylesheets-S.js is in the start set of "panel start" and also counted by "Stylesheets page"'
+    ]);
+    expect(startOverlaps('panel start', start, [])).toEqual([]);
   });
 });

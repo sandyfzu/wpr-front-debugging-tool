@@ -23,12 +23,13 @@ import { cutToUnits } from '../../../../utils/cap-text';
 import { formatCount } from '../../../../utils/format-count';
 import type { CodeBlockSeams } from '../javascript/code-seams';
 import type { OpenResource } from '../open-resource';
-import { CodeSection, FactList } from '../resource-list/detail-section';
+import { CodeSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
 import { createOnDemand } from '../resource-list/on-demand';
 import { SourceLink } from '../resource-list/source-link';
+import { READ_FAILURE_NOTES } from '../resource-list/top-frame-reader';
 import { StateChips } from '../resource-list/state-chip-list';
 import { splitStateChips } from '../resource-list/state-chips';
-import { NO_HREF_NAME } from '../resource-list/style-words';
+import { INLINE_CSS_LABEL, NO_HREF_NAME } from '../resource-list/style-words';
 import { CRITICAL_SNAPSHOT_DETAIL, styleFacts, type StyleRowView } from './style-view';
 
 /** Props of {@link StyleDetail}. */
@@ -53,10 +54,8 @@ export const STYLE_SOURCE_NOTES: Readonly<
   Record<'gone' | 'invalid-request' | 'not-inline' | 'unreachable' | 'unreadable', string>
 > = {
   gone: 'This style is no longer on the page — refresh the list.',
-  'invalid-request': 'The page refused the request — refresh to try again.',
   'not-inline': 'The page holds no CSS for this element — refresh the list.',
-  unreachable: 'The page did not answer — refresh to try again.',
-  unreadable: 'The page answered something unreadable — refresh to try again.'
+  ...READ_FAILURE_NOTES
 };
 
 /**
@@ -86,7 +85,7 @@ export function StyleDetail(props: StyleDetailProps): JSX.Element {
   const row = () => props.view().row;
   return (
     <div data-fdt="style-detail" class="@container/detail min-w-0">
-      <div class="grid min-w-0 gap-3.5 @regular/detail:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @regular/detail:items-start">
+      <div class={DETAIL_COLUMNS}>
         <div class="flex min-w-0 flex-col gap-3.5">
           <ChipLine view={props.view()} />
           <Show when={row().type === 'external'}>
@@ -217,7 +216,7 @@ function InlineCss(props: {
               <CodeBlock
                 text={cutToUnits(css().text, STYLE_DISPLAY_MAX_CHARS)}
                 lang="css"
-                label="Inline style CSS"
+                label={INLINE_CSS_LABEL}
                 class="min-w-0"
                 loadHighlighter={props.codeBlock?.loadHighlighter}
                 createObserver={props.codeBlock?.createObserver}

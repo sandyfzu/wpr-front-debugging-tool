@@ -1,6 +1,6 @@
 /**
- * The panel's text field — the command palette's and the filter bars' single
- * input. A native `<input>` in the shared chip density so every field looks,
+ * The panel's text field — the command palette's, the list search field's
+ * and the tool forms' input. A native `<input>` in the shared chip density so every field looks,
  * measures and focuses identically across surfaces.
  */
 import type { JSX } from 'solid-js';

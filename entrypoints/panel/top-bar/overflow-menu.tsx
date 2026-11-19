@@ -46,7 +46,7 @@ import { ANSWER_TARGETS, FreshnessAnswer, type SegmentsAccessor } from './answer
 import type { BuilderEntryModel } from './builder-entry';
 import { FoldBox } from './fold';
 import type { PageAddress } from './page-address';
-import type { TopBarSegments } from './selectors';
+import { STATUS_UNAVAILABLE, type TopBarSegments } from './selectors';
 
 const log = createLogger('panel');
 
@@ -253,7 +253,7 @@ function AnswerRows(props: {
         log.error('Top bar menu answers crashed — the menu renders its downtime line', {
           cause: cause instanceof Error ? { message: cause.message } : cause
         });
-        return <p class={cn(PLATE_TEXT, 'text-fg-muted')}>Status unavailable</p>;
+        return <p class={cn(PLATE_TEXT, 'text-fg-muted')}>{STATUS_UNAVAILABLE}</p>;
       }}
     >
       <Show when={props.rows.includes('freshness')}>

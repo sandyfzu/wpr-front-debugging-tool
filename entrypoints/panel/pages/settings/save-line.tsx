@@ -1,9 +1,7 @@
 /**
- * The save state of a tool's settings form: where the form stands against
- * the store, always in view — a sentence in a form card's footer (`line`,
- * the default) or a short indicator beside the settings heading
- * (`indicator`). A refused or failed save shows its own message in either
- * look — never swallowed.
+ * The save state of a tool's settings form: a short indicator beside the
+ * settings heading, always in view. A refused or failed save shows its own
+ * message — never swallowed.
  */
 import type { JSX } from 'solid-js';
 import { Match, Show, Switch } from 'solid-js';
@@ -15,28 +13,20 @@ import type { ConfigSaveState } from './config-writer';
 /** The writer states that carry no message of their own. */
 type QuietSaveStatus = 'saved' | 'pending' | 'saving';
 
-/** The save line's words per state (failures carry their own message). */
+/** The indicator's words per state (failures carry their own message): short beside a heading. */
 export const SAVE_COPY: Readonly<Record<QuietSaveStatus, string>> = {
-  saved: 'Settings saved for every site.',
+  saved: 'Saved',
   pending: 'Unsaved changes…',
   saving: 'Saving…'
 };
 
-/** The indicator's words: short beside a heading; the saved one keeps the full sentence as its title. */
-export const SAVE_INDICATOR_COPY: Readonly<Record<QuietSaveStatus, string>> = {
-  ...SAVE_COPY,
-  saved: 'Saved'
-};
-
-/** How the save state reads. */
-export type SaveLineLook = 'line' | 'indicator';
+/** The saved indicator's title: the full sentence its one word stands for. */
+export const SAVED_TITLE = 'Settings saved for every site.';
 
 /** Props of {@link SaveLine}. */
 export interface SaveLineProps {
   /** The writer's state. */
   state: ConfigSaveState;
-  /** The look (default `line`). */
-  look?: SaveLineLook;
 }
 
 /**
@@ -45,7 +35,6 @@ export interface SaveLineProps {
  * @param props See {@link SaveLineProps}.
  */
 export function SaveLine(props: SaveLineProps): JSX.Element {
-  const indicator = (): boolean => props.look === 'indicator';
   return (
     <Switch>
       <Match
@@ -73,16 +62,13 @@ export function SaveLine(props: SaveLineProps): JSX.Element {
         {(status) => (
           <p
             data-fdt-save={status()}
-            class={cn(
-              'text-2xs text-fg-muted',
-              indicator() && 'inline-flex items-center gap-1 whitespace-nowrap'
-            )}
-            title={indicator() && status() === 'saved' ? SAVE_COPY.saved : undefined}
+            class="inline-flex items-center gap-1 text-2xs whitespace-nowrap text-fg-muted"
+            title={status() === 'saved' ? SAVED_TITLE : undefined}
           >
-            <Show when={indicator() && status() === 'saved'}>
+            <Show when={status() === 'saved'}>
               <Check size={12} class={STATUS_TEXT_CLASSES.ok} aria-hidden="true" />
             </Show>
-            {(indicator() ? SAVE_INDICATOR_COPY : SAVE_COPY)[status()]}
+            {SAVE_COPY[status()]}
           </p>
         )}
       </Match>

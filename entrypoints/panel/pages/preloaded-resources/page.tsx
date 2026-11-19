@@ -152,7 +152,6 @@ export function PreloadedResourcesPage(props: PreloadedResourcesPageProps): JSX.
         notes={notes()}
       />
       <CalmFilteredList
-        variant="calm"
         rows={views()}
         rowKey={(view) => view.key}
         sameRow={samePreloadedView}

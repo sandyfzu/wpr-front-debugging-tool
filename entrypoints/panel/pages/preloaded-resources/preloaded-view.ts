@@ -11,7 +11,7 @@ import type { HintAttribution } from '../../../../lib/panel/hint-attribution';
 import { liftFacets, type FacetSet } from '../../../../lib/panel/resource-facets';
 import {
   PRELOADED_PAGE_FACETS,
-  PRELOADED_PAGE_RESOURCES,
+  preloadedHintSearchField,
   RESOURCE_HINT_KIND_LABELS,
   reportHints,
   reportHintsTruncated,
@@ -369,7 +369,7 @@ export const PRELOADED_VIEW_FACETS: FacetSet<PreloadedRowView, PreloadedFacetId>
  * @param view The row view.
  */
 export function preloadedSearchField(view: PreloadedRowView): string {
-  return PRELOADED_PAGE_RESOURCES.searchField(view.row);
+  return preloadedHintSearchField(view.row);
 }
 
 /**

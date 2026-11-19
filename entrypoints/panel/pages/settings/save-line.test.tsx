@@ -1,70 +1,54 @@
-/** The save line: each writer state's words, failures in their own message and error color. */
+/** The save indicator: each writer state's words, the saved check + title, failures in their own message and error color. */
 import { cleanup, render } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ConfigSaveState } from './config-writer';
-import { SAVE_COPY, SAVE_INDICATOR_COPY, SaveLine } from './save-line';
+import { SAVE_COPY, SAVED_TITLE, SaveLine } from './save-line';
 
 afterEach(() => {
   cleanup();
 });
 
-/** The rendered line. */
+/** The rendered indicator. */
 function line(): HTMLElement {
   const element = document.querySelector<HTMLElement>('[data-fdt-save]');
-  if (element === null) throw new Error('no save line');
+  if (element === null) throw new Error('no save indicator');
   return element;
 }
 
 describe('SaveLine', () => {
-  it.each(['saved', 'pending', 'saving'] as const)('says %s in muted words', (status) => {
+  it('says Saved with a check, the full sentence in its title', () => {
+    render(() => <SaveLine state={{ status: 'saved' }} />);
+    expect(line().getAttribute('data-fdt-save')).toBe('saved');
+    expect(line().textContent).toBe('Saved');
+    expect(SAVE_COPY.saved).toBe('Saved');
+    expect(line().getAttribute('title')).toBe(SAVED_TITLE);
+    expect(SAVED_TITLE).toBe('Settings saved for every site.');
+    expect(line().querySelector('svg')?.getAttribute('class')).toContain('text-status-ok');
+    expect(line().className).toContain('text-fg-muted');
+  });
+
+  it.each(['pending', 'saving'] as const)('says %s in muted words, no check or title', (status) => {
     render(() => <SaveLine state={{ status }} />);
     expect(line().getAttribute('data-fdt-save')).toBe(status);
     expect(line().textContent).toBe(SAVE_COPY[status]);
     expect(line().className).toContain('text-fg-muted');
+    expect(line().querySelector('svg')).toBeNull();
+    expect(line().hasAttribute('title')).toBe(false);
+  });
+
+  it('keeps the pending and saving words', () => {
+    expect(SAVE_COPY.pending).toBe('Unsaved changes…');
+    expect(SAVE_COPY.saving).toBe('Saving…');
   });
 
   it.each<ConfigSaveState>([
     { status: 'refused', message: 'Too large.' },
     { status: 'failed', message: "Couldn't save." }
-  ])('shows a $status save with its own message', (state) => {
+  ])('shows a $status save with its own message in the error color', (state) => {
     render(() => <SaveLine state={state} />);
     expect(line().getAttribute('data-fdt-save')).toBe('failed');
     expect(line().textContent).toBe('message' in state ? state.message : '');
     expect(line().className).not.toContain('text-fg-muted');
-  });
-});
-
-describe('SaveLine — indicator', () => {
-  it('says Saved with a check, the full sentence in its title', () => {
-    render(() => <SaveLine state={{ status: 'saved' }} look="indicator" />);
-    expect(line().getAttribute('data-fdt-save')).toBe('saved');
-    expect(line().textContent).toBe(SAVE_INDICATOR_COPY.saved);
-    expect(line().getAttribute('title')).toBe(SAVE_COPY.saved);
-    expect(line().querySelector('svg')?.getAttribute('class')).toContain('text-status-ok');
-    expect(line().className).toContain('text-fg-muted');
-  });
-
-  it.each(['pending', 'saving'] as const)(
-    'says %s in the line words, no check or title',
-    (status) => {
-      render(() => <SaveLine state={{ status }} look="indicator" />);
-      expect(line().textContent).toBe(SAVE_COPY[status]);
-      expect(line().querySelector('svg')).toBeNull();
-      expect(line().hasAttribute('title')).toBe(false);
-    }
-  );
-
-  it('shows a failed save with its own message, as the line does', () => {
-    render(() => <SaveLine state={{ status: 'failed', message: 'Quota.' }} look="indicator" />);
-    expect(line().getAttribute('data-fdt-save')).toBe('failed');
-    expect(line().textContent).toBe('Quota.');
     expect(line().className).toContain('text-status-error');
-  });
-
-  it('leaves the default line without the indicator parts', () => {
-    render(() => <SaveLine state={{ status: 'saved' }} />);
-    expect(line().querySelector('svg')).toBeNull();
-    expect(line().hasAttribute('title')).toBe(false);
-    expect(line().className).toBe('text-2xs text-fg-muted');
   });
 });

@@ -1,5 +1,5 @@
 /**
- * The options page: the P9A page model mounted with its real storage IO, its
+ * The options page: its page model mounted with the real storage IO, its
  * registry-driven section cards, and the supplemental behaviors the settings
  * surface owns — the appearance choice (persisting instantly so every open
  * surface restyles through their existing storage watches), the instant rows

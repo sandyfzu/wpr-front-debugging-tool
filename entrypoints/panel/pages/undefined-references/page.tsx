@@ -87,12 +87,12 @@ import {
 import { COPIED_FLASH_MS } from '../../../../components/ui/copy-flash';
 import { WordDetail } from './word-detail';
 import {
-  WORD_LIST,
   wordDefinitionCount,
   wordKind,
   wordPreview,
   wordRow,
   wordRowView,
+  wordSearchField,
   type WordRow,
   type WordRowView
 } from './word-view';
@@ -404,12 +404,11 @@ function WordsState(props: WordsStateProps): JSX.Element {
         </Show>
       </div>
       <CalmFilteredList
-        variant="calm"
         rows={rows()}
         rowKey={(row) => row.key}
         // A row is its word: the same word is the same row (its answer is read live).
         sameRow={(a, b) => a.word === b.word}
-        definition={WORD_LIST}
+        searchField={wordSearchField}
         noun={UNDEFINED_REFERENCE_NOUN}
         listLabel="Undefined references"
         searchLabel="Search undefined references"

@@ -621,7 +621,7 @@ describe('parsePageCookies', () => {
   });
 
   it('caps the capture stamp at the platform representable-instant ceiling', () => {
-    // The audit's P2-2 repro shapes: a stamp past what `new Date` can
+    // An audit's repro shapes: a stamp past what `new Date` can
     // represent must not cross the boundary (downstream date math).
     expect(parsePageCookies({ names: ['wprocket'], capturedAt: 9e15 })).toBeNull();
     expect(parsePageCookies({ names: ['wprocket'], capturedAt: 1e21 })).toBeNull();

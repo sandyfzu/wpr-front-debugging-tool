@@ -32,6 +32,7 @@ import type { LiveScriptRecord } from '../../../../lib/script-runtime/read-live'
 import type { DetailFact } from '../resource-list/detail-section';
 import type { DetailCopy } from '../resource-list/master-detail';
 import { resourceName, urlPreview } from '../resource-list/resource-list-view';
+import { SCRIPT_KIND_LABELS, SCRIPT_URL_COPY_LABEL } from '../resource-list/script-words';
 
 /** One script's row. */
 export interface RuntimeRow {
@@ -245,7 +246,7 @@ export function outsideFilterCounts(rows: readonly RuntimeRow[]): OutsideFilterC
  */
 export function runtimeKind(row: RuntimeRow): string {
   if (row.script.structuredData) return 'Structured data';
-  return row.script.sourceKind === 'url' ? 'External script' : 'Inline script';
+  return SCRIPT_KIND_LABELS[row.script.sourceKind === 'url' ? 'external' : 'inline'];
 }
 
 /**
@@ -295,11 +296,11 @@ export function keptCode(script: LiveScriptRecord): string {
 export function runtimeCopy(row: RuntimeRow): DetailCopy | undefined {
   const script = row.script;
   if (script.sourceKind === 'url') {
-    return urlClipped(script) ? undefined : { text: script.source, label: 'Script URL' };
+    return urlClipped(script) ? undefined : { text: script.source, label: SCRIPT_URL_COPY_LABEL };
   }
   if (script.fullText === '') return undefined;
   return wholeCode(script)
-    ? { text: script.fullText, label: 'Inline script' }
+    ? { text: script.fullText, label: SCRIPT_KIND_LABELS.inline }
     : { text: keptCode(script), label: PARTIAL_CODE_COPY_LABEL };
 }
 

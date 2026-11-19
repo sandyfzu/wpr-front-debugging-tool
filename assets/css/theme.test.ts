@@ -191,8 +191,8 @@ const REQUIRED_PAIRS: RequiredPair[] = [
   // Text laid over accent fills (buttons, badges); deliberately NOT paired with
   // the decorative gradient endpoints — text on a gradient uses a solid fill.
   { foreground: 'on-accent', background: 'accent-strong', min: 4.5 },
-  // The inverted pair: an `on-accent` pill inside an accent fill (the
-  // selected filter chip's count) — same ratio by symmetry, pinned by name.
+  // The inverted pair: `accent-strong` text on an `on-accent` pill (a count
+  // badge inside an accent fill) — same ratio by symmetry, pinned by name.
   { foreground: 'accent-strong', background: 'on-accent', min: 4.5 },
   // The accent fill itself is a non-text state indicator (pressed chip,
   // checked switch, open disclosure, primary action): 3:1 against every
@@ -682,7 +682,7 @@ describe('accent fill hover/press states', () => {
     expect(mixes.length).toBeGreaterThanOrEqual(2);
     expect(brightened.length).toBeGreaterThanOrEqual(3);
     expect(accentPrimitives).toEqual(
-      expect.arrayContaining(['button.tsx', 'filter-bar.tsx', 'choice-group.tsx'])
+      expect.arrayContaining(['button.tsx', 'choice-group.tsx', 'switch.tsx'])
     );
     expect(unmodeledMixes, 'accent color-mix() forms the derivation cannot read').toEqual([]);
     expect(unmodeledUtilities, 'fill-changing pointer utilities with no model').toEqual([]);

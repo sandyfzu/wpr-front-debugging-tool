@@ -2,7 +2,7 @@
  * Combinable facet filters for the list pages: each facet narrows the rows
  * by one dimension (a script's Delay state, its type…), the selected values
  * of every facet AND together, and the search query composes on top with
- * the same rule the single-chip filter uses (`./row-search`).
+ * the list search's one rule (`./row-search`).
  *
  * Two facet kinds share one shape:
  * - `choice`: mutually exclusive values (a row matches at most one), plus
