@@ -26,6 +26,7 @@ function asksAnswering(answer: Promise<unknown>): TabAsks {
     processPageData: vi.fn(() => Promise.resolve(true)),
     getFdtData: vi.fn(() => answer),
     getScriptSourceChunk: vi.fn(() => Promise.resolve(null)),
+    getServedScriptTag: vi.fn(() => Promise.resolve(null)),
     startRucssTest: vi.fn(() => Promise.resolve(null)),
     applyRucssTest: vi.fn(() => Promise.resolve(null)),
     runBeaconTest: vi.fn(() => Promise.resolve(null)),

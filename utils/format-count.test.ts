@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { countLabel, countNoun, formatCount, type CountNoun } from './format-count';
+import {
+  countLabel,
+  countNoun,
+  formatCompactCount,
+  formatCompactFloor,
+  formatCount,
+  type CountNoun
+} from './format-count';
 
 describe('formatCount', () => {
   it.each([
@@ -27,5 +34,33 @@ describe('countNoun', () => {
   it('is the rule countLabel phrases with (plural kept for a capture floor)', () => {
     expect(countLabel(1, SCRIPTS)).toBe(`1 ${countNoun(1, SCRIPTS)}`);
     expect(countLabel(1, SCRIPTS, true)).toBe('1+ scripts');
+  });
+});
+
+describe('formatCompactCount', () => {
+  it.each([
+    [0, '0'],
+    [742, '742'],
+    [999, '999'],
+    [1000, '1K'],
+    [18_611, '18.6K'],
+    [524_288, '524.3K'],
+    [1_250_000, '1.3M']
+  ])('formats %d as %s', (count, text) => {
+    expect(formatCompactCount(count)).toBe(text);
+  });
+});
+
+describe('formatCompactFloor', () => {
+  it.each([
+    [0, '0'],
+    [742, '742'],
+    [1999, '1.9K'],
+    [524_288, '524.2K'],
+    [999_960, '999.9K'],
+    [1_000_000, '1M'],
+    [1_049_999, '1M']
+  ])('rounds %d down to %s', (count, text) => {
+    expect(formatCompactFloor(count)).toBe(text);
   });
 });

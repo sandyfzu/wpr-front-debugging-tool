@@ -225,6 +225,13 @@ describe('CodeBlock', () => {
     expect(controls().root?.className).toContain('bg-surface-1');
   });
 
+  it('backs its sideways scroller with the block’s own background (scrolled text stays on it)', () => {
+    render(() => <CodeBlock text="x" lang="json" createObserver={() => manualGate()} />);
+    const { area, root } = controls();
+    expect(area?.parentElement).toBe(root);
+    expect(area?.className).toContain('bg-inherit');
+  });
+
   it('mounts the highlighted markup in a div — never a pre inside a pre', async () => {
     const gate = manualGate();
     render(() => (

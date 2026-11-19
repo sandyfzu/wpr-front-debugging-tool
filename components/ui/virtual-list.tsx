@@ -14,6 +14,7 @@ import type { VirtualItem } from '@tanstack/solid-virtual';
 import { createLogger } from '../../lib/logger';
 import { attachEntryMask } from './virtual-list-entry';
 import { focusedElementOf, preserveMovedFocus } from './virtual-list-focus';
+import { snapshotKeys, type KeySnapshot } from './virtual-list-keys';
 
 /** The virtual row type the wrapper renders (re-exported for consumers/tests). */
 export type { VirtualItem };
@@ -264,6 +265,16 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
    */
   const factoryOf = (): VirtualizerFactory => own.createVirtualizer ?? defaultVirtualizerFactory;
 
+  // The caller's keys, re-issued under a new function identity whenever they
+  // change: the core re-keys its rows only when `count` or the key function's
+  // identity changes, so rows swapped at an equal count would keep their old
+  // keys (and the list would render rows no longer listed). Reading every key
+  // here tracks the caller's rows; unchanged keys keep the same snapshot.
+  const itemKeys = createMemo<KeySnapshot | undefined>((previous) => {
+    const keyOf = own.getItemKey;
+    return keyOf === undefined ? undefined : snapshotKeys(previous, keyOf, own.count);
+  });
+
   // Options are a lazy getter object: reads happen when the virtualizer pulls
   // them (inside the adapter's own update cycle), so count/filter changes
   // re-flow without recreating the instance — and the props stay reactive
@@ -281,7 +292,7 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
       return own.overscan ?? DEFAULT_OVERSCAN;
     },
     get getItemKey() {
-      return own.getItemKey;
+      return itemKeys()?.at;
     },
     get gap() {
       return own.gap;

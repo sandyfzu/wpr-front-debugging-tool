@@ -6,6 +6,12 @@
 import type { Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { expect, openFixturePage, panelPageUrl, test } from '../helpers/extension';
+import {
+  closeScriptDetail,
+  openScriptDetail,
+  scriptDetail,
+  scriptRowNamed
+} from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
 import { resetStoredOptions } from '../helpers/options';
 
@@ -382,7 +388,24 @@ test('JavaScript virtual lists and nested code keep fixed native bars at narrow 
           horizontal: el.scrollWidth > el.clientWidth
         }))
       ).toEqual({ gutter: 8, horizontal: false });
-      const code = panel.getByRole('group', { name: 'Inline script 2', exact: true });
+      // The list owns vertical overflow; its page ancestor must not become a
+      // second vertical scroller at normal height — neither with the list
+      // alone nor with a detail open (the detail owns its own scroller).
+      await expect
+        .poll(
+          () =>
+            list.evaluate((el) => {
+              const area = el.closest('[data-fdt="panel-content"]');
+              if (!area) throw new Error('Scripts list has no page scroll area');
+              return area.scrollHeight <= area.clientHeight;
+            }),
+          { message: `one vertical scroller at ${String(width)}px (list)` }
+        )
+        .toBe(true);
+      // The code pane lives in the row's detail (pane from the split width,
+      // drill-in below it), opened for this width; it owns horizontal overflow.
+      await openScriptDetail(panel, scriptRowNamed(panel, 'Inline script #2'));
+      const code = scriptDetail(panel).getByRole('group', { name: 'Inline script 2', exact: true });
       await expect(code).toBeVisible();
       expect(
         await code.evaluate((el) => ({
@@ -396,21 +419,22 @@ test('JavaScript virtual lists and nested code keep fixed native bars at narrow 
           () => document.documentElement.scrollWidth === document.documentElement.clientWidth
         )
       ).toBe(true);
-      // The code pane owns horizontal overflow and the list owns vertical overflow;
-      // their page ancestor must not become a second vertical scroller at normal height.
       await expect
-        .poll(() =>
-          list.evaluate((el) => {
-            const area = el.closest('[data-fdt="panel-content"]');
-            if (!area) throw new Error('Scripts list has no page scroll area');
-            return area.scrollHeight <= area.clientHeight;
-          })
+        .poll(
+          () =>
+            list.evaluate((el) => {
+              const area = el.closest('[data-fdt="panel-content"]');
+              if (!area) throw new Error('Scripts list has no page scroll area');
+              return area.scrollHeight <= area.clientHeight;
+            }),
+          { message: `one vertical scroller at ${String(width)}px (detail open)` }
         )
         .toBe(true);
       await test.info().attach(`javascript-scrollbars-${String(width)}`, {
         body: await panel.screenshot(),
         contentType: 'image/png'
       });
+      await closeScriptDetail(panel);
     }
     await list.hover();
     await panel.mouse.wheel(0, 600);

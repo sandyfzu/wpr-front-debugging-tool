@@ -7,7 +7,8 @@
  */
 import { cleanup, render } from '@solidjs/testing-library';
 import type { JSX } from 'solid-js';
-import { createSignal } from 'solid-js';
+import { createSignal, mergeProps } from 'solid-js';
+import { createVirtualizer } from '@tanstack/solid-virtual';
 import { createStore, reconcile } from 'solid-js/store';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -380,6 +381,44 @@ describe('VirtualList — row identity follows the key', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     renderKeyed(storeProbe([row(0, 0, 40, 'a'), row(1, 40, 40, 'b')]));
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('re-keys the real virtualizer when rows swap at an equal count', () => {
+    // The default factory (TanStack's core): it caches row keys until the
+    // count or the key function's identity changes — a search replacing one
+    // match by another keeps the count, so only the wrapper's key snapshot
+    // re-keys it (without it, the old rows stayed rendered).
+    const [rows, setRows] = createSignal(['md-19', 'md-20']);
+    // The core itself, over a laid-out viewport (happy-dom lays out none).
+    const VIEWPORT = { width: 320, height: 400 };
+    const real: VirtualizerFactory = (options) =>
+      createVirtualizer(
+        mergeProps(options, {
+          initialRect: VIEWPORT,
+          observeElementRect: (_: unknown, report: (rect: typeof VIEWPORT) => void) => {
+            report(VIEWPORT);
+            return () => undefined;
+          }
+        })
+      );
+    render(() => (
+      <VirtualList
+        count={rows().length}
+        estimateSize={() => 40}
+        getItemKey={(index) => rows()[index] ?? `missing-${String(index)}`}
+        createVirtualizer={real}
+      >
+        {(item) => <span data-fdt-label>{String(item.key)}</span>}
+      </VirtualList>
+    ));
+    const labels = (): string[] =>
+      [...document.querySelectorAll('[data-fdt-label]')].map((label) => label.textContent);
+    expect(labels()).toEqual(['md-19', 'md-20']);
+    setRows(['md-07', 'md-08']);
+    expect(labels()).toEqual(['md-07', 'md-08']);
+    // Same keys again: still the listed rows.
+    setRows(['md-07', 'md-08']);
+    expect(labels()).toEqual(['md-07', 'md-08']);
   });
 });
 

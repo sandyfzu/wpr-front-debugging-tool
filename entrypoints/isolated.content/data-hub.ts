@@ -23,6 +23,11 @@
  */
 
 import { createScriptSnapshotId, readScriptSourceChunk } from '../../lib/messaging/script-source';
+import {
+  keepServedScriptTags,
+  readServedScriptTag,
+  type ServedScriptTag
+} from '../../lib/messaging/served-script-tag';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { onMessage, sendMessage } from '../../lib/messaging/index';
 import { windowMessenger } from '../../lib/messaging/window-bridge';
@@ -139,6 +144,12 @@ export interface PageData {
   wordpressVersion: string | null;
   /** The page carries WP Rocket's generator meta, readable or degraded (never on a bypass render). */
   wprGeneratorMeta: boolean;
+  /**
+   * Each script's served opening tag, rebuilt from the parsed snapshot in
+   * document order (bounded; `null` past the keep budget). Hub-side only:
+   * read one at a time by `getServedScriptTag`, never part of a payload.
+   */
+  servedScriptTags: readonly (ServedScriptTag | null)[];
 }
 
 /**
@@ -211,7 +222,8 @@ export async function processSerializedPage(
     detections,
     preloadedResources,
     wordpressVersion,
-    wprGeneratorMeta: page.featureMeta.attributePresent
+    wprGeneratorMeta: page.featureMeta.attributePresent,
+    servedScriptTags: keepServedScriptTags(page.scripts)
   };
 }
 
@@ -557,6 +569,16 @@ export function setupDataHub(ctx: ContentScriptContext): void {
       data === null || ctx.isInvalid
         ? { status: 'unavailable' }
         : readScriptSourceChunk(data.detections.delay_js.scripts, scriptSnapshotId, request)
+    )
+  );
+  ctx.onInvalidated(
+    onMessage('getServedScriptTag', ({ data: request }) =>
+      // Same snapshot as the source reads: a replaced snapshot answers `gone`.
+      readServedScriptTag(
+        ctx.isInvalid ? null : (data?.servedScriptTags ?? null),
+        scriptSnapshotId,
+        request
+      )
     )
   );
   ctx.onInvalidated(

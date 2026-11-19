@@ -26,6 +26,13 @@ import { navRoute, type RouteId } from '../routes';
  */
 export const PAGE_FILL_SCROLLER = 'min-h-48 flex-1 contain-size';
 
+/**
+ * The panel canvas every page sits on (the shell's own background), for a
+ * page layer that must be opaque without looking like a surface: a frameless
+ * scroller backing its rows, an overlay covering the view beneath it.
+ */
+export const PAGE_CANVAS = 'bg-surface-0';
+
 /** Props of {@link PageFrame}. */
 export interface PageFrameProps {
   /** The route the body renders — tags the root for focus management and tests. */

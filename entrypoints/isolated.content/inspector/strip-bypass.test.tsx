@@ -157,7 +157,8 @@ describe('the hub-read snapshot', () => {
         detections: BYPASS_RENDER,
         preloadedResources: { present: false },
         wordpressVersion: null,
-        wprGeneratorMeta
+        wprGeneratorMeta,
+        servedScriptTags: []
       },
       cacheState,
       bypassAttested

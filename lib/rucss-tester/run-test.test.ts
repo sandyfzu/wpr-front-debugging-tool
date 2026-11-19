@@ -179,6 +179,7 @@ describe('rucssTabSteps', () => {
       processPageData: vi.fn(),
       getFdtData: vi.fn(),
       getScriptSourceChunk: vi.fn(),
+      getServedScriptTag: vi.fn(),
       startRucssTest: vi.fn(() => Promise.resolve(start)),
       applyRucssTest: vi.fn(() => Promise.resolve(apply)),
       runBeaconTest: vi.fn(),

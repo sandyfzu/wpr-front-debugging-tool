@@ -9,8 +9,8 @@
  * footprints, a server/platform header pair) fulfilled by each context's
  * own route interception from one shared `{ body, headers }` build. Every
  * assertion reads rendered state on both sides — the Detections cards'
- * names/verdicts/subtitles, the resource pages' chip counts and filter
- * results, and the undefined-references page's definition search — and the
+ * names/verdicts/subtitles, the resource pages' chip (JavaScript: facet)
+ * counts and filter results, and the undefined-references page's definition search — and the
  * deltas the port ships on purpose are pinned next to the comparison.
  *
  * Known intentional deltas this file pins (provenance recorded with the
@@ -37,6 +37,7 @@ import {
   panelPageUrl,
   type ExtensionDriver
 } from '../helpers/extension';
+import { pickFacet } from '../helpers/javascript-page';
 import {
   devtoolsShim,
   openPanelForFixture,
@@ -406,17 +407,19 @@ function sourceRowCount(panel: Page): Promise<number> {
 }
 
 /**
- * One port chip's count span text.
+ * One port facet segment's count text (the JavaScript page's facets: each
+ * value counts the rows it keeps, as the chips did).
  *
  * @param panel The port panel page.
- * @param chipId The chip id.
+ * @param valueId The facet value id.
  */
-function portChipCount(panel: Page, chipId: string): Promise<string | null> {
+function portFacetCount(panel: Page, valueId: string): Promise<string | null> {
   return panel.evaluate(
     (id) =>
-      document.querySelector(`[data-fdt-filter-chip="${id}"] [data-fdt-filter-count]`)
-        ?.textContent ?? null,
-    chipId
+      document.querySelector(
+        `[data-fdt="choice"][data-fdt-choice-value="${id}"] [data-fdt-choice-count]`
+      )?.textContent ?? null,
+    valueId
   );
 }
 
@@ -543,7 +546,7 @@ sourceTest.describe('source-build parity over one served fixture', () => {
         await expect(
           round.sourcePanel.locator('div.rounded-lg.shadow-inner > button').first()
         ).toBeVisible();
-        // The source's summary numbers are the chips' counts on the port side.
+        // The source's summary numbers are the facet counts on the port side.
         const originSummary = await sourceSummaryCounts(round.sourcePanel, [
           'Delayed',
           'Non-delayed',
@@ -560,32 +563,32 @@ sourceTest.describe('source-build parity over one served fixture', () => {
         expect(originSummary['Inline']).toBe(SCRIPT_COUNTS.inline);
         expect(originSummary['External']).toBe(SCRIPT_COUNTS.external);
         expect(originSummary['Total']).toBe(SCRIPT_COUNTS.total);
-        expect(await portChipCount(round.portPanel, 'delayed')).toBe(
+        expect(await portFacetCount(round.portPanel, 'delayed')).toBe(
           SCRIPT_COUNTS.delayed.toString()
         );
-        expect(await portChipCount(round.portPanel, 'non-delayed')).toBe(
+        expect(await portFacetCount(round.portPanel, 'non-delayed')).toBe(
           SCRIPT_COUNTS.nonDelayed.toString()
         );
-        expect(await portChipCount(round.portPanel, 'deferred')).toBe(
+        expect(await portFacetCount(round.portPanel, 'deferred')).toBe(
           SCRIPT_COUNTS.portDeferred.toString()
         );
-        expect(await portChipCount(round.portPanel, 'non-deferred')).toBe(
+        expect(await portFacetCount(round.portPanel, 'non-deferred')).toBe(
           SCRIPT_COUNTS.portNonDeferred.toString()
         );
-        expect(await portChipCount(round.portPanel, 'inline')).toBe(
+        expect(await portFacetCount(round.portPanel, 'inline')).toBe(
           SCRIPT_COUNTS.inline.toString()
         );
-        expect(await portChipCount(round.portPanel, 'external')).toBe(
+        expect(await portFacetCount(round.portPanel, 'external')).toBe(
           SCRIPT_COUNTS.external.toString()
         );
 
         // One filter result parity: the source's Delayed click renders exactly
-        // its count (its lists are not virtualized); the port's count line
-        // states the same number.
+        // its count (its lists are not virtualized); the port's Delayed facet
+        // pick leaves its count line stating the same number.
         await round.sourcePanel.getByRole('button', { name: 'Delayed', exact: true }).click();
         expect(await sourceRowCount(round.sourcePanel)).toBe(SCRIPT_COUNTS.delayed);
-        await round.portPanel.locator('[data-fdt-filter-chip="delayed"]').click();
-        await expect(round.portPanel.locator('[data-fdt="script-results-status"]')).toHaveText(
+        await pickFacet(round.portPanel, 'delayed');
+        await expect(round.portPanel.locator('[data-fdt="resource-results-status"]')).toHaveText(
           `Showing ${SCRIPT_COUNTS.delayed.toLocaleString('en-US')} of ${SCRIPT_COUNTS.total.toLocaleString('en-US')} scripts`
         );
 

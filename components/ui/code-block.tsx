@@ -597,7 +597,11 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
         onBlur={() => setFocused(false)}
         class={cn(
           // Never masked: a mask would clip this element's focus ring.
-          'overflow-x-auto rounded-b',
+          // Opaque in the block's own background (no visible change): a long
+          // line scrolled sideways stays backed by this scroller — over a
+          // transparent one it sits past the block's box, and contrast
+          // checks report it undeterminable.
+          'overflow-x-auto rounded-b bg-inherit',
           FOCUS_RING,
           // Shared `pre` typography for the one `pre` either surface renders
           // (the fallback's own, or shiki's inside the highlighted wrapper);

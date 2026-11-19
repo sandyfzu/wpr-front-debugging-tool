@@ -12,27 +12,35 @@
  * assertions.
  *
  * Round 1 rides the whole scripted interaction budget (route/view switches,
- * a chip filter change, a typed search commit, and the panel-wide find's
- * large-list result navigation — perform into a viewport-deep single match,
- * then a match set far enough to wrap both ways) with a PerformanceObserver
- * armed from before the panel's module graph. The readback asserts the
- * standing bars over the warm phase (none of the actions leaves a long task
- * over 50 ms; total blocking time under 200 ms) and records the cold mount
- * honestly: its per-entry durations are attached, its ceiling is the
- * standing `panel cold-start ≤ 500 ms` row, not this budget.
+ * a facet change, a typed search commit, opening a row's detail, and the
+ * panel-wide find's large-list result navigation — perform into a
+ * viewport-deep single match, then a match set far enough to wrap both ways)
+ * with a PerformanceObserver armed from before the panel's module graph.
+ * Each action is its own timeline phase (by timestamp), so the readback
+ * names the longest task per action. It asserts the standing bars over the
+ * warm phases (no action leaves a long task over 50 ms; total blocking time
+ * under 200 ms) and records the cold mount honestly: its per-entry durations
+ * are attached, its ceiling is the standing `panel cold-start ≤ 500 ms` row,
+ * not this budget.
  *
  * Round 2 pins the round's behavioral quality on the same fixture: the find
- * lands on a specific deep row with real scroll, wraps across a large match
- * set, lands again under a variable-height expansion (a 40-line inline row
- * expanded above the target), a live find resets with its route, sequential
- * keyboard entry lands rendered content (never the overscan), and the
- * find-active list state passes strict axe — with the one named reviewed
+ * lands on a specific deep row with real scroll, lands again beside an open
+ * detail pane (the list narrowed by it, the selection kept inside the
+ * match set), a live find resets with its route, sequential keyboard entry
+ * lands rendered content (never the overscan), and the find-active list
+ * state with its pane passes strict axe — with the one named reviewed
  * allowance carried from the layout suite (a virtual row partially clipped
  * at a scroller's edge), resolved explicitly, never silent.
  */
 import type { Page } from '@playwright/test';
 import type { DriverPage, ExtensionDriver } from '../helpers/extension';
 import { expect, test } from '../helpers/extension';
+import {
+  facetSegment,
+  openScriptDetail,
+  pickFacet,
+  scriptDetail
+} from '../helpers/javascript-page';
 import { openPanelForFixture, relaySearchAction } from '../helpers/panel-data';
 import { runPanelAxe, type PanelAxeAudit } from '../helpers/audit';
 
@@ -139,8 +147,10 @@ function rows(): readonly RowShape[] {
 const INVENTORY_ROWS = rows();
 
 /** How many rows carry one shape (the chips' and summary's expected counts). */
-function countOf(kind: 'delayed' | 'inline' | 'external' | 'deferred'): number {
+function countOf(kind: 'delayed' | 'inline' | 'external' | 'deferred' | 'delayed-inline'): number {
   switch (kind) {
+    case 'delayed-inline':
+      return INVENTORY_ROWS.filter((row) => row.delayed && row.inline).length;
     case 'delayed':
       return INVENTORY_ROWS.filter((row) => row.delayed).length;
     case 'inline':
@@ -273,19 +283,37 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
     try {
       await assertCapturedShape(extension, fixture);
       const jsPage = panel.locator('[data-fdt-page="javascript"]');
-      // Cold phase precondition: the whole captured list is mounted, its
-      // identity chip naming the exact count (and its capture-floor state).
-      const allChip = jsPage.locator('[data-fdt-filter-chip="all"]');
-      await expect(allChip).toHaveAccessibleName(/5,000 matching$/);
+      // Cold phase precondition: the whole captured list is mounted, the
+      // Delay facet's Any naming the exact count (and its capture-floor state).
+      const anyDelay = facetSegment(jsPage, 'any', 'Delay');
+      await expect(anyDelay.locator('input')).toHaveAccessibleName(/5,000$/);
       await expect(jsPage.locator('[data-fdt="script-total"]')).toHaveText('5,000 scripts');
+      const status = jsPage.locator('[data-fdt="resource-results-status"]');
 
-      // The warm phase starts with the first scripted action.
-      await panel.evaluate(() => {
-        const perf = (window as unknown as { __fdtPerf?: { setPhase: (s: string) => void } })
-          .__fdtPerf;
-        if (perf === undefined) throw new Error('the performance collector did not install');
-        perf.setPhase('warm');
-      });
+      // The collector is live: a deliberate 70 ms block is observed (a dead
+      // observer would pass every budget below trivially).
+      await setPerfPhase(panel, 'probe');
+      await panel.evaluate(
+        () =>
+          // A page task of its own (a protocol-evaluated script is not one).
+          new Promise<void>((resolve) => {
+            setTimeout(() => {
+              const until = performance.now() + 70;
+              while (performance.now() < until) {
+                // Busy-wait: one long task by construction.
+              }
+              resolve();
+            }, 0);
+          })
+      );
+      await expect
+        .poll(async () => (await peekLongest(panel, 'probe')) >= 60, {
+          message: 'the long-task observer saw the probe block'
+        })
+        .toBe(true);
+
+      // The warm phases start with the first scripted action.
+      await setPerfPhase(panel, 'routes');
 
       // --- Route/view switches: two other list pages mount their own rows.
       await panel.evaluate(() => {
@@ -305,30 +333,51 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
       await panel.evaluate(() => {
         location.hash = '#/javascript';
       });
-      await expect(allChip).toHaveAccessibleName(/5,000 matching$/);
+      await expect(anyDelay.locator('input')).toHaveAccessibleName(/5,000$/);
 
-      // --- Chip filter change: delayed narrows to its exact count.
-      const delayedChip = jsPage.locator('[data-fdt-filter-chip="delayed"]');
-      await expect(delayedChip.locator('[data-fdt-filter-count]')).toHaveText(
+      // --- Facet changes: Delay = delayed narrows to its exact count, then
+      // Type = inline combines with it, then both back to Any.
+      await setPerfPhase(panel, 'facet');
+      await expect(facetSegment(jsPage, 'delayed').locator('[data-fdt-choice-count]')).toHaveText(
         countOf('delayed').toLocaleString('en-US')
       );
-      await delayedChip.click();
-      await expect(jsPage.locator('[data-fdt="script-results-status"]')).toHaveText(
+      await pickFacet(jsPage, 'delayed');
+      await expect(status).toHaveText(
         `Showing ${countOf('delayed').toLocaleString('en-US')} of 5,000 scripts`
       );
-      await jsPage.locator('[data-fdt-filter-chip="all"]').click();
+      await pickFacet(jsPage, 'inline');
+      await expect(status).toHaveText(
+        `Showing ${countOf('delayed-inline').toLocaleString('en-US')} of 5,000 scripts`
+      );
+      await pickFacet(jsPage, 'any', 'Type');
+      await pickFacet(jsPage, 'any', 'Delay');
+      await expect(status).toHaveText('Showing all 5,000 scripts');
 
       // --- Typed search over the shared field.
+      await setPerfPhase(panel, 'search');
       const field = panel.locator('input[type="search"]');
       await field.fill('row-4900');
-      const status = jsPage.locator('[data-fdt="script-results-status"]');
       await expect(status).toHaveText('Showing 1 of 5,000 scripts');
       await field.press('Escape');
       await expect(status).toHaveText('Showing all 5,000 scripts');
 
+      // --- Opening a row's detail (the pane, with its on-demand reads), a
+      // step to the next row, and closing it again.
+      await setPerfPhase(panel, 'open');
+      const firstRow = jsPage.locator('[data-fdt="script-row"]').first();
+      await openScriptDetail(panel, firstRow);
+      await panel.keyboard.press('ArrowDown');
+      await expect(jsPage.locator('[data-fdt="script-row"]').nth(1)).toHaveAttribute(
+        'data-selected',
+        ''
+      );
+      await panel.keyboard.press('Escape');
+      await expect(scriptDetail(panel)).toHaveCount(0);
+
       // --- The find's large-list result navigation over the relay seam:
       // a single deep match, then a wide set whose cursor wraps a whole
       // viewport-span across the list's far end.
+      await setPerfPhase(panel, 'find');
       await relaySearchAction(extension, {
         action: 'performSearch',
         query: 'row-4900',
@@ -366,16 +415,13 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
       await expect(field).toHaveValue('');
 
       // --- The timeline read.
-      const audit = await panel.evaluate(() => {
-        const perf = (window as unknown as { __fdtPerf?: PerfState }).__fdtPerf;
-        if (perf === undefined) throw new Error('the performance collector did not install');
-        perf.observer.disconnect();
-        return { tasks: perf.tasks, tbtByPhase: perf.tbtByPhase };
-      });
+      const audit = await readPerf(panel);
       await info.attach('large-list-longtasks.json', {
-        body: JSON.stringify(audit.tasks),
+        body: JSON.stringify(audit),
         contentType: 'application/json'
       });
+      // The receipt's per-action numbers (longest task, ms) ride the report.
+      console.log(`[large-list] longest task per phase (ms): ${JSON.stringify(audit.longest)}`);
       const coldOver50 = audit.tasks.filter((task) => task.phase === 'cold' && task.duration > 50);
       // Not asserted — the cold mount's ceiling is the standing cold-start
       // row; the copies land in the attached artifact for the receipt.
@@ -384,12 +430,15 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
           body: JSON.stringify(coldOver50),
           contentType: 'application/json'
         });
-      const warmOver50 = audit.tasks.filter((task) => task.phase === 'warm' && task.duration > 50);
+      const warm = (phase: string): boolean => phase !== 'cold' && phase !== 'probe';
+      const warmOver50 = audit.tasks.filter((task) => warm(task.phase) && task.duration > 50);
       expect(
         warmOver50,
         `warm long tasks over 50 ms: ${JSON.stringify(warmOver50.slice(0, 3))}`
       ).toEqual([]);
-      const warmTbt = audit.tbtByPhase['warm'] ?? 0;
+      const warmTbt = Object.entries(audit.tbtByPhase)
+        .filter(([phase]) => warm(phase))
+        .reduce((sum, [, tbt]) => sum + tbt, 0);
       expect(
         warmTbt,
         `warm-phase TBT (sum of task time past 50 ms) is ${String(warmTbt)} ms`
@@ -401,7 +450,7 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
     }
   });
 
-  test('find lands exact deep rows, survives a variable-height expansion, resets with its route, and audits strict', async ({
+  test('find lands exact deep rows, lands again beside an open detail, resets with its route, and audits strict', async ({
     extension
   }, info) => {
     await extension.browserContext.route(FIXTURE_PATTERN, async (route) => {
@@ -414,9 +463,10 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
     try {
       await assertCapturedShape(extension, fixture);
       const jsPage = panel.locator('[data-fdt-page="javascript"]');
-      await expect(jsPage.locator('[data-fdt-filter-chip="all"]')).toHaveAccessibleName(
-        /5,000 matching$/
+      await expect(facetSegment(jsPage, 'any', 'Delay').locator('input')).toHaveAccessibleName(
+        /5,000$/
       );
+      const status = jsPage.locator('[data-fdt="resource-results-status"]');
 
       // --- One exact deep match over the wire, with real scroll.
       await relaySearchAction(extension, {
@@ -462,27 +512,23 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
       expect(landed, 'Tab reached the list within one page of tab stops').not.toBeNull();
       expect(landed?.visible ?? false, 'the landed control is rendered content').toBe(true);
 
-      // --- Variable heights: expand one tall inline row, then find again;
-      // the landing is still exact while the grown row sits above the
-      // target (measured geometry, not just first estimates).
-      const tallIndex = INVENTORY_ROWS.findIndex(
-        (row) => row.inline && row.delayed && row.content.split('\n').length >= 40
-      );
+      // --- A detail open beside the list: select a row inside the next
+      // find's match set (typed over the live one-match find — the list
+      // shows the typed match, never the find's — then the search cleared:
+      // the pane keeps it), then find again; the landing is exact in the
+      // list the pane narrows, and the selection survives (it is a match).
       const search = panel.locator('input[type="search"]');
-      await search.fill(rowToken(tallIndex));
-      await expect(panel.locator('[data-fdt="script-results-status"]')).toHaveText(
-        'Showing 1 of 5,000 scripts'
-      );
-      const tallRow = panel.locator('[data-fdt="virtual-list"]').getByRole('listitem').first();
-      await expect(tallRow).toContainText(rowToken(tallIndex));
-      const toggle = tallRow.locator('[data-fdt="script-code-toggle"]').first();
-      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-      await toggle.click();
-      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-
-      // Find beneath the grown row: the landing is exact even though the
-      // rows between the controller and the target carry one expanded
-      // member (measured geometry, not bare first estimates).
+      await search.fill(rowToken(2003));
+      await expect(status).toHaveText('Showing 1 of 5,000 scripts');
+      // One match replaced by another (an equal count): the row is the typed one.
+      const typed = jsPage.locator('[data-fdt="script-row"]');
+      await expect(typed).toHaveCount(1);
+      await expect(typed).toContainText(rowToken(2003));
+      await openScriptDetail(panel, typed);
+      const pane = panel.locator('[data-fdt="detail-pane"]');
+      await search.fill('');
+      await expect(status).toHaveText('Showing all 5,000 scripts');
+      await expect(pane).toBeVisible();
       await relaySearchAction(extension, {
         action: 'performSearch',
         query: 'row-200',
@@ -490,11 +536,15 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
       });
       await expect.poll(() => markedRowToken(panel)).toBe('row-2000');
       await expect
-        .poll(() => markedRowGeometry(panel), { message: 'row-2000 visible under the expansion' })
+        .poll(() => markedRowGeometry(panel), { message: 'row-2000 visible beside the pane' })
         .toMatchObject({ inView: true });
+      await expect(pane).toBeVisible();
+      await expect(
+        jsPage.locator('[data-fdt="script-row"][data-selected]', { hasText: rowToken(2003) })
+      ).toHaveCount(1);
 
-      // --- The find-active state (marker on a deep row, one expanded
-      // member above it) audits strict at the wide tier. Palettes ride the
+      // --- The find-active state (marker on a deep row, the pane open
+      // beside it) audits strict at the wide tier. Palettes ride the
       // counts-titles round; this is the changed landing state.
       await panel.setViewportSize({ width: 1280, height: 800 });
       const audit = await auditFindActive(panel);
@@ -511,9 +561,7 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
       });
       await expect.poll(() => markedRowToken(panel)).toBeNull();
       await expect(panel.locator('input[type="search"]')).toHaveValue('');
-      await expect(jsPage.locator('[data-fdt="script-results-status"]')).toHaveText(
-        'Showing all 5,000 scripts'
-      );
+      await expect(status).toHaveText('Showing all 5,000 scripts');
     } finally {
       await panel.close();
       await fixture.page.close();
@@ -522,36 +570,108 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
   });
 });
 
+/** One observed long task, tagged with the phase live at its start. */
+interface PerfTask {
+  readonly phase: string;
+  readonly duration: number;
+  readonly startTime: number;
+}
+
 /** Shape of the collector installed by {@link PERF_OBSERVER} (for the TS view). */
 interface PerfState {
-  phase: string;
-  tasks: { phase: string; duration: number; startTime: number }[];
-  tbtByPhase: Record<string, number>;
+  /** Phase boundaries in timeline order (`cold` from time 0). */
+  phases: { name: string; at: number }[];
+  tasks: { duration: number; startTime: number }[];
   observer: PerformanceObserver;
-  setPhase(next: string): void;
+}
+
+/**
+ * Start a named warm phase: long tasks starting from now count for it (by
+ * their own start time, so a late observer callback never misfiles one).
+ *
+ * @param panel The panel page.
+ * @param name The phase (one scripted action).
+ */
+async function setPerfPhase(panel: Page, name: string): Promise<void> {
+  await panel.evaluate((phase) => {
+    const perf = (window as unknown as { __fdtPerf?: PerfState }).__fdtPerf;
+    if (perf === undefined) throw new Error('the performance collector did not install');
+    perf.phases.push({ name: phase, at: performance.now() });
+  }, name);
+}
+
+/**
+ * The longest task (ms) observed so far in one phase, without stopping the
+ * collector (the liveness probe's read).
+ *
+ * @param panel The panel page.
+ * @param name The phase.
+ * @returns The longest duration, 0 when none was observed.
+ */
+async function peekLongest(panel: Page, name: string): Promise<number> {
+  return await panel.evaluate((phase) => {
+    const perf = (window as unknown as { __fdtPerf?: PerfState }).__fdtPerf;
+    if (perf === undefined) throw new Error('the performance collector did not install');
+    const start = perf.phases.find((entry) => entry.name === phase)?.at ?? Infinity;
+    const next = perf.phases.find((entry) => entry.at > start)?.at ?? Infinity;
+    return Math.max(
+      0,
+      ...perf.tasks
+        .filter((task) => task.startTime >= start && task.startTime < next)
+        .map((task) => task.duration)
+    );
+  }, name);
+}
+
+/**
+ * Stop the collector and read its tasks, each filed under the phase it
+ * started in, with each phase's total blocking time and longest task.
+ *
+ * @param panel The panel page.
+ * @returns The filed tasks, TBT and longest task (ms) per phase.
+ */
+async function readPerf(panel: Page): Promise<{
+  tasks: PerfTask[];
+  tbtByPhase: Record<string, number>;
+  longest: Record<string, number>;
+}> {
+  const raw = await panel.evaluate(() => {
+    const perf = (window as unknown as { __fdtPerf?: PerfState }).__fdtPerf;
+    if (perf === undefined) throw new Error('the performance collector did not install');
+    perf.observer.disconnect();
+    return { phases: perf.phases, tasks: perf.tasks };
+  });
+  const tasks = raw.tasks.map((task): PerfTask => {
+    const phase = raw.phases.filter((entry) => entry.at <= task.startTime).at(-1)?.name ?? 'cold';
+    return { phase, duration: task.duration, startTime: task.startTime };
+  });
+  const tbtByPhase: Record<string, number> = {};
+  const longest: Record<string, number> = {};
+  for (const entry of raw.phases) {
+    tbtByPhase[entry.name] = 0;
+    longest[entry.name] = 0;
+  }
+  for (const task of tasks) {
+    tbtByPhase[task.phase] = (tbtByPhase[task.phase] ?? 0) + Math.max(0, task.duration - 50);
+    longest[task.phase] = Math.max(longest[task.phase] ?? 0, Math.round(task.duration));
+  }
+  return { tasks, tbtByPhase, longest };
 }
 
 /**
  * The init script arming the collector before the panel's module graph.
- * Long-task entries are tagged with the phase live at their observation, so
- * the readback splits the cold mount (boot + the first 5,000-row render)
- * from the scripted warm actions. Measurement only — no app state.
+ * Long-task entries keep their start time; the readback files each under
+ * the phase live at that time, so the cold mount (boot + the first
+ * 5,000-row render) splits from each scripted warm action. Measurement only
+ * — no app state.
  */
 const PERF_OBSERVER = `(() => {
   if (!PerformanceObserver.supportedEntryTypes.includes('longtask'))
     throw new Error('Long-task observation unavailable');
-  const collector = { phase: 'cold', tasks: [], tbtByPhase: {} };
-  collector.setPhase = (next) => { collector.phase = next; };
+  const collector = { phases: [{ name: 'cold', at: 0 }], tasks: [] };
   collector.observer = new PerformanceObserver((list) => {
-    for (const entry of list.getEntries()) {
-      collector.tasks.push({
-        phase: collector.phase,
-        duration: entry.duration,
-        startTime: entry.startTime
-      });
-      collector.tbtByPhase[collector.phase] =
-        (collector.tbtByPhase[collector.phase] ?? 0) + Math.max(0, entry.duration - 50);
-    }
+    for (const entry of list.getEntries())
+      collector.tasks.push({ duration: entry.duration, startTime: entry.startTime });
   });
   collector.observer.observe({ type: 'longtask', buffered: false });
   window.__fdtPerf = collector;

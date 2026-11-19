@@ -62,7 +62,7 @@ import {
   type RuntimeSourceFilter
 } from './runtime-rows';
 import { createRuntimeStatesSession, type RuntimeStatesSession } from './runtime-session';
-import type { CodeBlockSeams } from './script-row';
+import type { CodeBlockSeams } from './code-seams';
 import { pruneKeyedFlags, toggleRowFlag } from '../../../../lib/panel/list-behavior';
 
 /** The recoveries' button labels. */

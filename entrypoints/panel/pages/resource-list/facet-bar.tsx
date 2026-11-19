@@ -210,7 +210,8 @@ export function FacetBar<Row, Id extends string>(props: FacetBarProps<Row, Id>):
             </For>
           </div>
         </Show>
-        <div class={props.compact ? 'min-w-0 flex-1' : 'ms-auto'}>{search()}</div>
+        {/* Wide: the field's own bounded width (an intrinsic-width wrapper would shrink it to its placeholder's start). */}
+        <div class={props.compact ? 'min-w-0 flex-1' : 'ms-auto w-80 max-w-full'}>{search()}</div>
         <Show when={props.compact}>
           <Button
             ref={filtersButton}
