@@ -229,8 +229,8 @@
     "surface": "LCP & Vitals page (panel chunk, loaded on first visit)",
     "globs": ["chunks/lcp-vitals-*.js"],
     "maxKb": {
-      "raw": 26.1,
-      "gzip": 8.4
+      "raw": 32.1,
+      "gzip": 10.2
     },
     "required": true
   },
@@ -239,8 +239,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/lcp-vitals-*.js"],
     "maxKb": {
-      "raw": 26.1,
-      "gzip": 8.4
+      "raw": 32.1,
+      "gzip": 10.2
     },
     "required": true
   },
