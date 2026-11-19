@@ -4,6 +4,8 @@ import { createSignal, For } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   MENU_GROUP_LABEL_CLASSES,
+  MENU_ICON_TRIGGER_CLASSES,
+  MENU_ICON_TRIGGER_SIZE,
   MENU_INDICATOR_SLOT_CLASSES,
   Menu,
   MenuTooltipTrigger
@@ -52,6 +54,13 @@ async function openRadioMenu(
   fireEvent.pointerDown(screen.getByRole('button', { name: 'Open' }));
   return { menu: await screen.findByRole('menu'), setValue };
 }
+
+describe('MENU_ICON_TRIGGER_SIZE', () => {
+  it("is the icon trigger's 28px square, declared once for the trigger and any reserved box", () => {
+    expect(MENU_ICON_TRIGGER_SIZE).toBe('size-7');
+    expect(MENU_ICON_TRIGGER_CLASSES.split(' ')).toContain(MENU_ICON_TRIGGER_SIZE);
+  });
+});
 
 describe('Menu radio parts', () => {
   it('render a captioned group of radio rows checked from the value', async () => {

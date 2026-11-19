@@ -11,6 +11,10 @@
  *   loaded options per registry row; Save only ever acts when dirty. A row
  *   persisted outside Save (the appearance row's instant write) moves only
  *   its own baseline, so it reads clean once written.
+ * - **Outside writes:** a row another surface stored (the panel's
+ *   appearance menu, the palette's cycle) moves that row's baseline; the
+ *   draft follows only while the row has no unsaved edit here, so the page
+ *   shows the stored value live and never clobbers a pending edit.
  * - **Save:** an awaited write that first re-reads the stored options and
  *   applies only the rows edited on this page onto that fresh value, so
  *   unknown boolean fields and every concurrent write (another surface's,
@@ -290,6 +294,23 @@ export interface OptionsPageModel {
    */
   markOptionStored(rowId: string, value: boolean | Appearance): void;
   /**
+   * Take a value another writer stored for one row (an observed storage
+   * write — this page's own echoes included). The row's baseline moves to
+   * it; its draft follows only when the row was clean (draft = baseline),
+   * so an unsaved edit here is kept and re-dirties against the new
+   * baseline. While a load or a save is in flight the value is held (the
+   * latest per row) and taken once it settles — never mid-save, where the
+   * save's own rebase would read the follow as an edit; with the page idle
+   * and not ready (a failed load), it is dropped: the retry reads fresh.
+   * Notifies only when the state changed.
+   *
+   * @param rowId A drafted registry row id.
+   * @param value The stored value — legal for the row.
+   * @throws {@link Error} When the row id is unknown or the value illegal
+   *   for it — wiring bugs, named by the message.
+   */
+  followStoredOption(rowId: string, value: boolean | Appearance): void;
+  /**
    * Persist the draft — only when dirty. The write applies the edited rows
    * onto a fresh validated read (unknown fields and concurrent writes to
    * untouched rows survive), is awaited, and lands as a typed outcome on the snapshot; a
@@ -320,6 +341,59 @@ export function createOptionsPageModel(
   let saving = false;
   let lastSave: OptionsSaveOutcome | null = null;
   let failure: string | null = null;
+  /** Stored values observed while a load or save was in flight (latest per row). */
+  const heldStored = new Map<string, boolean | Appearance>();
+
+  /**
+   * Move one row's baseline to a stored value through the same row-write
+   * logic as a save (fresh groups, other rows untouched), frozen for
+   * exposure. Callers hold a ready state.
+   *
+   * @param baseline The current baseline.
+   * @param rowId A validated drafted row id.
+   * @param value A value legal for the row.
+   * @returns The new baseline.
+   */
+  function baselineWith(
+    baseline: StoredOptions,
+    rowId: string,
+    value: boolean | Appearance
+  ): StoredOptions {
+    const written: OptionsDraft = { ...draftFromOptions(baseline), [rowId]: value };
+    return freezeExposedOptions(optionsWithDraft(baseline, written, baseline));
+  }
+
+  /**
+   * Apply one observed stored value to the ready state (the follow rule:
+   * baseline moves, a clean draft follows).
+   *
+   * @param row The row the value belongs to.
+   * @param value A value legal for the row.
+   * @returns Whether anything changed.
+   */
+  function takeStored(row: DraftedOptionRow, value: boolean | Appearance): boolean {
+    if (options === null || draft === null) return false;
+    const stored = readOption(row, options);
+    // Same baseline: a clean draft already equals it, a dirty one is kept.
+    if (stored === value) return false;
+    const clean = draft[row.id] === stored;
+    options = baselineWith(options, row.id, value);
+    if (clean) draft = Object.freeze({ ...draft, [row.id]: value });
+    dirty = isDraftDirty(options, draft);
+    return true;
+  }
+
+  /**
+   * Take every value held while the page was busy, now that it settled
+   * ready and idle (no notify: the settling transition publishes).
+   */
+  function takeHeldStored(): void {
+    for (const [rowId, value] of heldStored) {
+      const row = DRAFTED_OPTION_ROWS.find((candidate) => candidate.id === rowId);
+      if (row !== undefined) takeStored(row, value);
+    }
+    heldStored.clear();
+  }
 
   /** Publish a frozen copy of the current state, shaped by the status. */
   function notify(): void {
@@ -364,6 +438,7 @@ export function createOptionsPageModel(
         io.log.error('Loading the options failed — the page offers a retry', cause);
         status = 'failed';
         failure = LOAD_FAILURE_MESSAGE;
+        heldStored.clear(); // The retry reads fresh.
         notify();
         return;
       } finally {
@@ -376,6 +451,8 @@ export function createOptionsPageModel(
       draft = draftFromOptions(loaded);
       dirty = false;
       lastSave = null;
+      // A write observed during the read may be newer than the read.
+      takeHeldStored();
       notify();
     },
 
@@ -401,12 +478,19 @@ export function createOptionsPageModel(
         );
       }
       requireLegalRow('markOptionStored', rowId, value);
-      // The baseline's one row, written through the same row-write logic as
-      // a save (fresh groups, other rows untouched), frozen for exposure.
-      const written: OptionsDraft = { ...draftFromOptions(options), [rowId]: value };
-      options = freezeExposedOptions(optionsWithDraft(options, written, options));
+      options = baselineWith(options, rowId, value);
       dirty = isDraftDirty(options, draft);
       notify();
+    },
+
+    followStoredOption(rowId: string, value: boolean | Appearance): void {
+      const row = requireLegalRow('followStoredOption', rowId, value);
+      if (loading || saving) {
+        heldStored.set(rowId, value);
+        return;
+      }
+      if (status !== 'ready') return; // Idle and not loaded: the retry reads fresh.
+      if (takeStored(row, value)) notify();
     },
 
     async save(): Promise<void> {
@@ -440,6 +524,7 @@ export function createOptionsPageModel(
         io.log.error('Saving the options failed — the fresh-options read rejected', cause);
         saving = false;
         lastSave = { ok: false, message: SAVE_FAILURE_MESSAGE };
+        takeHeldStored();
         notify();
         return;
       }
@@ -452,6 +537,7 @@ export function createOptionsPageModel(
         io.log.error('Saving the options failed — the write rejected', cause);
         saving = false;
         lastSave = { ok: false, message: SAVE_FAILURE_MESSAGE };
+        takeHeldStored();
         notify();
         return;
       }
@@ -462,6 +548,9 @@ export function createOptionsPageModel(
       dirty = isDraftDirty(merged, draft);
       saving = false;
       lastSave = { ok: true, wrote: true, options: merged };
+      // Writes observed mid-save (this save's own echo included) land on the
+      // rebased state; the echo equals the new baseline, a no-op.
+      takeHeldStored();
       notify();
     }
   };

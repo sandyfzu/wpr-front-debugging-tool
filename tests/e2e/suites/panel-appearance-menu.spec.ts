@@ -153,8 +153,8 @@ test.describe('the panel appearance menu', () => {
     try {
       await expectShown(panel, 'Appearance: System (Light)', 'light');
       await pick(panel, 'system', 'dark');
-      // The open options page restyles live (its appearance row keeps its
-      // own draft until the page reloads — the options page's model).
+      // The open options page restyles live (its clean appearance row and
+      // menu follow too — pinned by options-app-bar).
       await stampRealm(options);
       await expectDocumentTheme(options, 'dark');
       expect((await readDocumentTheme(options)).background).toBe(PAGE_SURFACE_0.dark);

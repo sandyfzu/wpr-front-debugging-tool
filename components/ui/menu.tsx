@@ -68,11 +68,16 @@ export const MENU_ITEM_CLASSES =
 export const MENU_ITEM_LABEL_CLASSES = 'flex min-w-0 flex-1 items-center gap-2 font-medium';
 
 /**
+ * The icon trigger's 28px square on its own, so a box reserved for a trigger
+ * not mounted yet keeps exactly its size (no shift when it arrives).
+ */
+export const MENU_ICON_TRIGGER_SIZE = 'size-7';
+
+/**
  * An icon-only menu trigger in a toolbar (the top bar's "⋯" and appearance
  * menus): the 28px ghost square; the tooltip trigger adds the focus ring.
  */
-export const MENU_ICON_TRIGGER_CLASSES =
-  'size-7 rounded-md text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
+export const MENU_ICON_TRIGGER_CLASSES = `${MENU_ICON_TRIGGER_SIZE} rounded-md text-fg-secondary hover:bg-surface-3 hover:text-fg-primary`;
 
 /** The separator between the menu's groups (the rail's hairline grammar). */
 export const MENU_SEPARATOR_CLASSES = 'mx-1 my-1 border-t border-line-2';

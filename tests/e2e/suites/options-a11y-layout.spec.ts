@@ -49,7 +49,7 @@ interface WalkStop {
   row: string | null;
   /** The focused radio's tile value (the choice the arrows landed on). */
   choice: string | null;
-  /** The button's own text (Save/Refresh now). */
+  /** The button's own text (Save/Refresh now), else its accessible name (an icon button). */
   text: string | null;
   /** The stop's box (for the in-viewport assert). */
   box: { left: number; right: number; top: number; bottom: number };
@@ -74,6 +74,8 @@ const EXPECTED_STOPS: Array<{
   arrow?: boolean;
 }> = [
   { tag: 'BUTTON', row: null, choice: null, text: 'Save' },
+  // The app bar's appearance menu (icon only: its name, System under the light OS).
+  { tag: 'BUTTON', row: null, choice: null, text: 'Appearance: System (Light)' },
   { tag: 'INPUT', row: 'wp-dashboard-dbugger-entry', choice: null, text: null },
   { tag: 'INPUT', row: 'appearance', choice: 'system', text: null },
   { tag: 'INPUT', row: 'appearance', choice: 'dark', text: null, arrow: true },
@@ -156,7 +158,10 @@ test.describe('options layout & a11y', () => {
               choice:
                 active.closest('[data-fdt="choice"]')?.getAttribute('data-fdt-choice-value') ??
                 null,
-              text: active.tagName === 'BUTTON' ? active.textContent.trim() : null,
+              text:
+                active.tagName === 'BUTTON'
+                  ? active.textContent.trim() || active.getAttribute('aria-label')
+                  : null,
               box: { left: box.left, right: box.right, top: box.top, bottom: box.bottom },
               ring:
                 css.boxShadow !== 'none' ||

@@ -1,8 +1,9 @@
 /**
  * The options page's row rendering: the registry's three section cards
- * (Improvements / Appearance / Features) projected as designed controls —
+ * (Improvements / Appearance / Features, calm rows with no hairlines)
+ * projected as designed controls —
  * boolean rows ride the shared switch, the appearance tri-state rides the
- * shared choice group, the instant rows (gate, shortcut) render from
+ * shared choice group's segmented tray, the instant rows (gate, shortcut) render from
  * `./instant-rows`; every label+description pair is wired
  * (labelled/described) keyboard-complete. The gate cascade is data-driven:
  * a row carrying the registry's `onPage` marker disables with its note
@@ -13,10 +14,10 @@
 
 import type { JSX } from 'solid-js';
 import { For, Match, Show, Switch as Branch } from 'solid-js';
-import { Card } from '../../components/ui/card';
 import { Switch } from '../../components/ui/switch';
 import { ChoiceGroup, type ChoiceOption } from '../../components/ui/choice-group';
 import { APPEARANCES, type Appearance } from '../../utils/theme';
+import { cn } from '../../utils/cn';
 import {
   isDraftedOptionRow,
   onPageDisabledNote,
@@ -28,6 +29,13 @@ import {
   type OptionRow
 } from '../../lib/options/registry';
 import { ChordRow, PageUiGateRow, type InstantRowsScope } from './instant-rows';
+import { SectionCard } from './section-card';
+import {
+  OPTION_ROW,
+  OPTION_ROW_LINE,
+  OPTION_ROW_STACKED,
+  SWITCH_ROW_LINE_INDENT
+} from './row-look';
 
 /** The appearance row's three tiles, in the vocabulary's registry order. */
 const APPEARANCE_LABELS: Record<Appearance, string> = {
@@ -69,16 +77,6 @@ function describedBy(row: OptionRow): string {
   return `option-${row.id}-description`;
 }
 
-/** A section card's header: the title (an h2) over its one-line description. */
-function SectionHeader(props: { title: string; description: string }): JSX.Element {
-  return (
-    <div data-fdt="options-section-heading" class="flex flex-col gap-0.5">
-      <h2 class="text-sm font-medium text-fg-primary">{props.title}</h2>
-      <p class="text-2xs text-fg-secondary">{props.description}</p>
-    </div>
-  );
-}
-
 /**
  * One boolean option as the shared switch + its wired description; held
  * with the cascade's note while the gate disables it.
@@ -90,7 +88,7 @@ function BooleanRow(props: {
 }): JSX.Element {
   const noteId = (): string => `option-${props.row.id}-note`;
   return (
-    <div data-fdt="option-row" data-fdt-option={props.row.id} class="px-0.5 py-2">
+    <div data-fdt="option-row" data-fdt-option={props.row.id} class={OPTION_ROW}>
       <Switch
         label={props.row.label}
         aria-describedby={
@@ -104,12 +102,12 @@ function BooleanRow(props: {
           props.scope.edit(props.row, next);
         }}
       />
-      <p id={describedBy(props.row)} class="text-2xs leading-snug text-fg-secondary">
+      <p id={describedBy(props.row)} class={cn(OPTION_ROW_LINE, SWITCH_ROW_LINE_INDENT)}>
         {props.row.description}
       </p>
       <Show when={props.disabledNote}>
         {(note) => (
-          <p id={noteId()} class="text-2xs leading-snug text-fg-secondary">
+          <p id={noteId()} class={cn(OPTION_ROW_LINE, SWITCH_ROW_LINE_INDENT)}>
             {note()}
           </p>
         )}
@@ -121,17 +119,14 @@ function BooleanRow(props: {
 /** The appearance tri-state as the shared choice group + its wired description. */
 function AppearanceRow(props: { row: AppearanceOptionRow; scope: OptionRowScope }): JSX.Element {
   return (
-    <div
-      data-fdt="option-row"
-      data-fdt-option={props.row.id}
-      class="flex flex-col gap-1.5 px-0.5 py-2"
-    >
+    <div data-fdt="option-row" data-fdt-option={props.row.id} class={OPTION_ROW_STACKED}>
       {/* The row's label is announced by the group itself (aria-label below);
           the visible span is its render twin, hidden from readers twice. */}
       <span aria-hidden="true" class="text-xs font-medium text-fg-primary">
         {props.row.label}
       </span>
       <ChoiceGroup
+        variant="segmented"
         options={APPEARANCE_CHOICES}
         value={props.scope.read(props.row) as Appearance}
         onChange={(next) => {
@@ -140,7 +135,7 @@ function AppearanceRow(props: { row: AppearanceOptionRow; scope: OptionRowScope 
         aria-label={props.row.label}
         aria-describedby={describedBy(props.row)}
       />
-      <p id={describedBy(props.row)} class="text-2xs leading-snug text-fg-secondary">
+      <p id={describedBy(props.row)} class={OPTION_ROW_LINE}>
         {props.row.description}
       </p>
     </div>
@@ -201,16 +196,15 @@ export function OptionSections(props: {
           optionRowsIn(section.id).filter((row) => props.drafted || !isDraftedOptionRow(row));
         return (
           <Show when={rows().length > 0}>
-            <Card
-              level={1}
-              header={<SectionHeader title={section.title} description={section.description} />}
+            <SectionCard
+              headingHook="options-section-heading"
+              title={section.title}
+              description={section.description}
             >
-              <div class="divide-y divide-line-1">
-                <For each={rows()}>
-                  {(row) => <OptionRowView row={row} scope={props.scope} instant={props.instant} />}
-                </For>
-              </div>
-            </Card>
+              <For each={rows()}>
+                {(row) => <OptionRowView row={row} scope={props.scope} instant={props.instant} />}
+              </For>
+            </SectionCard>
           </Show>
         );
       }}

@@ -22,6 +22,13 @@ import type { InstantSettingSnapshot } from '../../lib/options/instant-setting';
 import { chordFiringCaveat } from '../../lib/options/chord-capture';
 import type { ChordOptionRow, PageUiGateOptionRow } from '../../lib/options/registry';
 import { ChordField } from './chord-field';
+import {
+  OPTION_ROW,
+  OPTION_ROW_LINE,
+  OPTION_ROW_STACKED,
+  SWITCH_ROW_LINE_INDENT
+} from './row-look';
+import { cn } from '../../utils/cn';
 
 /** How the instant rows reach their settings and writers (wired by the page). */
 export interface InstantRowsScope {
@@ -86,10 +93,19 @@ function readFailed(snapshot: InstantSettingSnapshot<unknown>): boolean {
   return snapshot.status === 'failed' || snapshot.status === 'retrying';
 }
 
-/** The row's description (shared shape with the drafted rows). */
-function Description(props: { rowId: string; text: string }): JSX.Element {
+/**
+ * The row's description (shared shape with the drafted rows).
+ *
+ * @param props.rowId The row's id (the description's element id).
+ * @param props.text The registry copy.
+ * @param props.indent Whether the line sits under a switch's label text.
+ */
+function Description(props: { rowId: string; text: string; indent?: boolean }): JSX.Element {
   return (
-    <p id={descriptionId(props.rowId)} class="text-2xs leading-snug text-fg-secondary">
+    <p
+      id={descriptionId(props.rowId)}
+      class={cn(OPTION_ROW_LINE, props.indent === true && SWITCH_ROW_LINE_INDENT)}
+    >
       {props.text}
     </p>
   );
@@ -110,7 +126,7 @@ export function PageUiGateRow(props: {
     return gate.status === 'ready' ? gate : null;
   };
   return (
-    <div data-fdt="option-row" data-fdt-option={props.row.id} class="px-0.5 py-2">
+    <div data-fdt="option-row" data-fdt-option={props.row.id} class={OPTION_ROW}>
       <Branch>
         <Match when={readFailed(props.scope.gate())}>
           <span class="text-xs font-medium text-fg-primary">{props.row.label}</span>
@@ -133,12 +149,22 @@ export function PageUiGateRow(props: {
         </Match>
         <Match when={props.scope.gate().status === 'loading'}>
           <div class="flex min-h-6 items-center gap-1.5">
-            <Skeleton class="h-3.5 w-7 rounded-full" />
+            {/* The switch's 36 px hit box around its 28 px pill: the label
+                lands where the ready switch puts it (no shift). */}
+            <span class="inline-flex w-9 shrink-0 justify-center">
+              <Skeleton class="h-3.5 w-7 rounded-full" />
+            </span>
             <span class="text-xs font-medium text-fg-primary">{props.row.label}</span>
           </div>
         </Match>
       </Branch>
-      <Description rowId={props.row.id} text={props.row.description} />
+      {/* Under the label text beside a switch (or its skeleton); flush under
+          the failure line, which has no toggle. */}
+      <Description
+        rowId={props.row.id}
+        text={props.row.description}
+        indent={!readFailed(props.scope.gate())}
+      />
     </div>
   );
 }
@@ -180,11 +206,7 @@ export function ChordRow(props: {
       .join(' ');
 
   return (
-    <div
-      data-fdt="option-row"
-      data-fdt-option={props.row.id}
-      class="flex flex-col gap-1.5 px-0.5 py-2"
-    >
+    <div data-fdt="option-row" data-fdt-option={props.row.id} class={OPTION_ROW_STACKED}>
       {/* Once the field renders, its name carries the label (aria-label, label
           first) and this text is its render twin, hidden from readers — never
           a <label for>, whose click would start a recording. Before that it
@@ -254,7 +276,7 @@ export function ChordRow(props: {
       <Description rowId={props.row.id} text={props.row.description} />
       <Show when={props.disabledNote}>
         {(note) => (
-          <p id={noteId()} class="text-2xs leading-snug text-fg-secondary">
+          <p id={noteId()} class={OPTION_ROW_LINE}>
             {note()}
           </p>
         )}

@@ -8,12 +8,17 @@
  *    combined with `index.html`'s paint lock the first painted frame is the
  *    resolved palette (a failed read paints the token default instead, never
  *    a wrong or stuck-hidden page);
- * 3. the Solid app mounts and its model takes over.
+ * 3. the Solid app mounts and its model takes over, handed the stored
+ *    choice the follow reports (one subscription feeds the palette, the
+ *    appearance row and the app bar's menu).
  */
+import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { onUncaughtError, onUnhandledRejection } from '../../lib/uncaught-errors';
 import { createLogger } from '../../lib/logger';
 import { applyStoredAppearance, releaseThemeLock } from '../../lib/appearance/appearance';
+import { FALLBACK } from '../../lib/storage/options';
+import type { Appearance } from '../../utils/theme';
 import './style.css';
 import App from './App';
 
@@ -32,11 +37,15 @@ if (!root) throw new Error('#root element missing from options/index.html');
  * frame, only the release does, in the resolved palette.
  */
 async function boot(mountPoint: HTMLElement): Promise<void> {
+  // The choice the document follows: the read, then every validated write.
+  const [storedAppearance, setStoredAppearance] = createSignal<Appearance>(FALLBACK.appearance);
   try {
     // The follow handle lives for the page's lifetime (tokens.css resolves a
     // stored `system` through the OS media query; the page's own writes and
     // other surfaces' writes re-apply through the armed watch).
-    await applyStoredAppearance(document.documentElement);
+    await applyStoredAppearance(document.documentElement, undefined, (appearance) => {
+      setStoredAppearance(appearance);
+    });
   } catch (cause) {
     log.warn(
       "Stored appearance could not be read — following the system scheme (the token stylesheet's default)",
@@ -49,7 +58,12 @@ async function boot(mountPoint: HTMLElement): Promise<void> {
   // The product name + version come from the manifest at boot — never a
   // re-typed constant — and the h1 reads the plural name the browser shows.
   const manifest = browser.runtime.getManifest();
-  render(() => <App name={manifest.name} version={manifest.version} />, mountPoint);
+  render(
+    () => (
+      <App name={manifest.name} version={manifest.version} storedAppearance={storedAppearance} />
+    ),
+    mountPoint
+  );
 }
 
 void boot(root).catch((cause: unknown) => {
