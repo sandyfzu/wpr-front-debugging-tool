@@ -5,7 +5,8 @@
  * not cut by the row, inside the page — while the full URL stays one step
  * away: the Lazyload rows' link (its `title` carrying it) beneath, the
  * JavaScript and Stylesheets rows' URL preview beneath and their detail's
- * source-link tile (href + `title`); the page never scrolls sideways; at a
+ * source-link tile (href + `title`, its file name whole inside the tile);
+ * the page never scrolls sideways; at a
  * regular-tier 768 px width the settled names stay whole too. The palette
  * check reads the rendered `color-scheme` (no stored Dark/Light override),
  * not just the emulated media. The fixture's URLs are deliberately deep so
@@ -74,9 +75,9 @@ function nameFirstPage(): string {
 
 /**
  * One name's fit: whether its text is cut by its own box, and how far its
- * box ends past the page's right edge (≤ 0 = inside).
+ * box ends past its container's right edge (≤ 0 = inside).
  *
- * @param page The page root.
+ * @param page The container: the page root, or the detail's tile.
  * @param name The name element.
  */
 async function nameFit(page: Locator, name: Locator): Promise<{ cut: boolean; overflow: number }> {
@@ -210,6 +211,29 @@ for (const colorScheme of ['light', 'dark'] as const) {
             await expect(link).toHaveAttribute('href', fileUrlPattern(expected));
             const tile = detail.locator('[data-fdt="source-link-open"]');
             expect((await tile.getAttribute('title'))?.startsWith(DEEP)).toBe(true);
+            // The tile names the file whole however deep the path: only its
+            // directory elides, and the file stays inside the tile.
+            const file = tile.locator('[data-fdt="source-link-file"]');
+            await expect(file).toHaveText(expected);
+            await expect(file).toBeVisible();
+            const fileFit = await nameFit(tile, file);
+            expect(fileFit.cut, `${expected} tile file name whole`).toBe(false);
+            expect(fileFit.overflow, `${expected} tile file inside the tile`).toBeLessThanOrEqual(
+              0.5
+            );
+            // Nor clamped away below the path's visible lines.
+            const path = tile.locator('[data-fdt="source-link-path"]');
+            const clip = await path.evaluate((element) => {
+              const shown = element.querySelector('[data-fdt="source-link-file"]');
+              return {
+                hidden: element.scrollHeight - element.clientHeight,
+                below:
+                  (shown?.getBoundingClientRect().bottom ?? Infinity) -
+                  element.getBoundingClientRect().bottom
+              };
+            });
+            expect(clip.hidden, `${expected} tile path never clamped`).toBeLessThanOrEqual(0.5);
+            expect(clip.below, `${expected} tile file within the path`).toBeLessThanOrEqual(0.5);
             await closeScriptDetail(panel);
           }
         }

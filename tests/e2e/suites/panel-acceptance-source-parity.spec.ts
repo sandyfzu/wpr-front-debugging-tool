@@ -49,6 +49,7 @@ import {
   sourceTest,
   type SourceBuildDriver
 } from '../helpers/source-build';
+import { openWordDetail, wordRows } from '../helpers/undefined-references-page';
 import { STATUS_LABELS } from '../../../lib/panel/detections-summary';
 
 /** The source round's fixture version stamp (the generator meta's). */
@@ -683,19 +684,26 @@ sourceTest.describe('source-build parity over one served fixture', () => {
         RESOURCES
       );
       try {
-        // --- Port: the word card answers with the file origin (its display
-        //     form is the file's name; the source's is the full URL — the
-        //     display delta — so the origin identity rides the href).
+        // --- Port: the word's row names the file, its detail answers with
+        //     the file origin (its display form is the tile's path; the
+        //     source's is the full URL — the display delta — so the origin
+        //     identity rides the href).
         await expect(
           portRound.panel.getByRole('heading', { name: 'Undefined References', level: 1 })
         ).toBeVisible();
-        await expect(portRound.panel.locator('[data-fdt-word]')).toHaveText('wocketInventory');
+        await expect(wordRows(portRound.panel).locator('[data-fdt="list-row-name"]')).toHaveText(
+          'wocketInventory'
+        );
+        await expect(wordRows(portRound.panel).locator('[data-fdt="list-row-preview"]')).toHaveText(
+          'wocket-definer.js'
+        );
+        await openWordDetail(portRound.panel, 'wocketInventory');
         const portDefinition = portRound.panel
-          .locator('[data-fdt-definition="url"] [data-fdt="script-link"]')
+          .locator('[data-fdt-definition="url"] [data-fdt="source-link-path"]')
           .first();
         await expect(portDefinition).toContainText('wocket-definer.js');
         const portHref = await portRound.panel
-          .locator('[data-fdt-definition="url"] a')
+          .locator('[data-fdt-definition="url"] [data-fdt="source-link-open"]')
           .first()
           .getAttribute('href');
         expect(portHref).toBe(`${ORIGIN_A}/errors/wocket-definer.js`);

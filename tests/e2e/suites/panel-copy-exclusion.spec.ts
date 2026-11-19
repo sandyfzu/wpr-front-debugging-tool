@@ -1,10 +1,11 @@
 /**
  * The undefined-references page's exclusion copy on the real panel canvas:
- * the found-verdict row's Copy-as-exclusion control runs the page's real
- * search (the panel seam's `inspect` stub answers for the resource table a
- * real DevTools window serves; everything after it is shipped code — the
- * adapter's shape checks, the definition search, the store flow, the card,
- * the shared copy button), and the copy's feedback is the phase contract:
+ * the found word's detail (opened from its row) carries the
+ * Copy-as-exclusion control, after the page's real search (the panel seam's
+ * `inspect` stub answers for the resource table a real DevTools window
+ * serves; everything after it is shipped code — the adapter's shape checks,
+ * the definition search, the store flow, the row + detail, the shared copy
+ * button), and the copy's feedback is the phase contract:
  * a pending hold keeps keyboard focus and swallows repeat activation, the
  * confirmation toast names the WP Rocket setting to paste into, a rejected
  * write names the pattern to type by hand, and the in-place wording swaps
@@ -13,10 +14,13 @@
 import { expect, test } from '../helpers/extension';
 import { openPanelForFixture } from '../helpers/panel-data';
 import { ORIGIN_A } from '../helpers/extension';
+import { openWordDetail } from '../helpers/undefined-references-page';
 
+/** The fixture's undefined word (thrown inline, assigned by the definer file). */
+const WORD = 'wocketInventory';
 /** The definition file the search answers with (`/errors/wocket-definer.js`). */
 const DEFINER_PATH = '/errors/wocket-definer.js';
-/** The exclusion pattern the row copies: the file's path, its host dropped. */
+/** The exclusion pattern the definition copies: the file's path, its host dropped. */
 const PATTERN = DEFINER_PATH;
 /** The row control's full accessible name (the file identifies it apart). */
 const COPY_NAME = 'Copy as exclusion: wocket-definer.js';
@@ -27,10 +31,12 @@ async function openExclusionPanel(...args: Parameters<typeof openPanelForFixture
   await expect(
     opened.panel.getByRole('heading', { name: 'Undefined References', level: 1 })
   ).toBeVisible();
-  // The card answers when the real search over the stubbed resource has run.
+  // The detail answers when the real search over the stubbed resource has run.
+  await openWordDetail(opened.panel, WORD);
   const copy = opened.panel.getByRole('button', { name: COPY_NAME });
   await expect(copy).toBeVisible();
-  await expect(opened.panel.locator('[data-fdt="script-location"]')).toHaveText('errors/');
+  // The definition's source tile shows the served file's path.
+  await expect(opened.panel.locator('[data-fdt="source-link-path"]')).toHaveText(DEFINER_PATH);
   return { ...opened, copy };
 }
 
@@ -163,7 +169,7 @@ const DOCKER_ORIGINAL_PATH = '/wp-content/mu-plugins/assets/fdt-delayed-definer.
 /** The real remote-mirror capture (the klaviyo delay row), served minified with a hidden host. */
 const KLAVIYO_SERVED =
   'https://wp-rocket.me/wp-content/cache/min/1/onsite/js/PD7as8/klaviyo.js?ver=1791299187';
-/** The klaviyo row's hostless payload — the host-hidden row's final answer. */
+/** The klaviyo definition's hostless payload — the host-hidden script's final answer. */
 const KLAVIYO_HOSTLESS = '/onsite/js/PD7as8/klaviyo.js';
 
 test('the minified served URL copies the original path, not the cache path', async ({
@@ -178,7 +184,8 @@ test('the minified served URL copies the original path, not the cache path', asy
   });
   const { panel, fixture } = opened;
   try {
-    // The row presents the SERVED file (what actually loaded); the link opens it.
+    await openWordDetail(panel, WORD);
+    // The tile presents the SERVED file (what actually loaded) and opens it.
     const copy = panel.getByRole('button', {
       name: 'Copy as exclusion: fdt-delayed-definer.js'
     });
@@ -221,7 +228,8 @@ test('a remote-mirror row copies the hostless original path — no notice, no pe
   });
   const { panel, fixture } = opened;
   try {
-    // The hostless pattern is the row's final answer the moment it renders:
+    await openWordDetail(panel, WORD);
+    // The hostless pattern is the definition's final answer the moment it renders:
     // the control is ready immediately (no resolution wait) and no notice
     // ever appears (the path matches both minify states; no host to resolve).
     const copy = panel.getByRole('button', {
