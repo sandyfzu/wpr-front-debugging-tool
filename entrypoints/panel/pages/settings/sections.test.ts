@@ -1,22 +1,25 @@
 /** The sections' open state: choice over seeded defaults over the built-in rule; one seed only. */
 import { createRoot } from 'solid-js';
 import { describe, expect, it } from 'vitest';
-import { createRucssSectionsState, type RucssSectionsState } from './sections';
+import { createSectionsState, type SectionsState } from './sections';
+
+/** The sections of the test page. */
+type Section = 'request' | 'keep' | 'adjust';
 
 /**
- * Run `body` with a fresh state inside a root.
+ * Run `body` with a fresh state (only `request` open before the seed) inside a root.
  *
  * @param body The test body.
  */
-function withState(body: (state: RucssSectionsState) => void): void {
+function withState(body: (state: SectionsState<Section>) => void): void {
   createRoot((dispose) => {
-    body(createRucssSectionsState());
+    body(createSectionsState<Section>((section) => section === 'request'));
     dispose();
   });
 }
 
-describe('createRucssSectionsState', () => {
-  it('opens only the request before anything is seeded', () => {
+describe('createSectionsState', () => {
+  it('follows the built-in rule before anything is seeded', () => {
     withState((state) => {
       expect(state.isOpen('request')).toBe(true);
       expect(state.isOpen('keep')).toBe(false);
@@ -53,6 +56,16 @@ describe('createRucssSectionsState', () => {
       state.seed({ request: true, keep: false, adjust: false });
       expect(state.isOpen('adjust')).toBe(true);
       expect(state.isOpen('keep')).toBe(false);
+    });
+  });
+
+  it('asks the built-in rule per section', () => {
+    createRoot((dispose) => {
+      const state = createSectionsState<Section>((section) => section !== 'adjust');
+      expect(state.isOpen('request')).toBe(true);
+      expect(state.isOpen('keep')).toBe(true);
+      expect(state.isOpen('adjust')).toBe(false);
+      dispose();
     });
   });
 });

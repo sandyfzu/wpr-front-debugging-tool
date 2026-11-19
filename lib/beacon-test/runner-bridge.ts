@@ -23,8 +23,11 @@ export type BeaconBailReason =
   /** The page is scrolled: the beacon measures only from the top. */
   | 'page-scrolled';
 
-/** Which beacon feature a script error came from. */
-export type BeaconFeatureKey = 'aboveTheFold' | 'lazyRender';
+/** The beacon's features, in report and form order (one declaring site for the keys and their type). */
+export const BEACON_FEATURE_KEYS = ['aboveTheFold', 'lazyRender'] as const;
+
+/** One beacon feature (a script error names the one it came from). */
+export type BeaconFeatureKey = (typeof BEACON_FEATURE_KEYS)[number];
 
 /** How a run ended. `results` is the beacon's raw output — validate before use. */
 export type BeaconRunEnd =

@@ -1,6 +1,5 @@
 /**
- * The tester's result side: the run bar (the Run control beside what a run
- * sends, shown before the first click) above the run's state — never run
+ * The tester's result side under the shared run bar: the run's state — never run
  * (an empty card naming what a test produces once Run is available; a
  * skeleton of it while the settings load, a held line when they failed —
  * the settings column offers the Retry), running (a skeleton shaped
@@ -13,14 +12,11 @@
  */
 import type { JSX } from 'solid-js';
 import { createMemo, For, Match, Show, Switch } from 'solid-js';
-import Play from 'lucide-solid/icons/play';
 import RotateCw from 'lucide-solid/icons/rotate-cw';
-import ShieldAlert from 'lucide-solid/icons/shield-alert';
 import TestTubeDiagonal from 'lucide-solid/icons/test-tube-diagonal';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
 import { CopyButton } from '../../../../components/ui/copy-button';
-import { EmptyState } from '../../../../components/ui/empty-state';
 import { KeyValueList } from '../../../../components/ui/key-value';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import {
@@ -29,7 +25,6 @@ import {
   type StatusKind
 } from '../../../../components/ui/status-badge';
 import { RUCSS_RUN_WORST_CASE_MS } from '../../../../lib/rucss-tester/deadlines';
-import { RUCSS_REQUEST_DISCLOSURE } from '../../../../lib/rucss-tester/endpoint';
 import {
   describeRucssOutcome,
   type RucssOutcomeView,
@@ -43,6 +38,7 @@ import {
 import { cn } from '../../../../utils/cn';
 import { countLabel, formatCount } from '../../../../utils/format-count';
 import { OutcomeNotice } from '../outcome-notice';
+import { ToolEmptyCard } from '../tool-empty-card';
 import type { RucssTesterSession } from './session';
 
 /** The running line (the bound is the panel's worst-case wait: start, build and apply in turn). */
@@ -287,75 +283,27 @@ function OutcomeBlock(props: {
   );
 }
 
-/**
- * The run bar: Run, and what a run sends beside it (wrapping under it when
- * the column is narrow). Run is held until the settings are loaded.
- *
- * @param props.session The session.
- */
-export function RunBar(props: { session: RucssTesterSession }): JSX.Element {
-  const running = (): boolean => props.session.run().status === 'running';
-  return (
-    <Card>
-      <div data-fdt="rucss-run" class="flex flex-wrap items-center gap-x-3.5 gap-y-2">
-        <Button
-          variant="primary"
-          busy={running()}
-          disabled={props.session.load().status !== 'ready'}
-          data-fdt-rucss-run
-          onClick={() => {
-            void props.session.start();
-          }}
-        >
-          <Show when={!running()}>
-            <Play size={12} aria-hidden="true" />
-          </Show>
-          {running() ? 'Running test…' : 'Run test'}
-        </Button>
-        <p
-          data-fdt-rucss-disclosure
-          class="flex min-w-0 flex-1 basis-60 items-start gap-1.5 text-2xs text-fg-secondary"
-        >
-          <ShieldAlert size={12} class="mt-px shrink-0 text-fg-muted" aria-hidden="true" />
-          <span>{RUCSS_REQUEST_DISCLOSURE}</span>
-        </p>
-      </div>
-    </Card>
-  );
-}
-
-/**
- * The result side before any run: an honest empty card naming what a test
- * produces. Painted in the canvas color, not transparent: same look, but
- * its text sits on a background that encloses it, so contrast stays
- * computable below the fold.
- */
+/** The result side before any run: an honest empty card naming what a test produces. */
 function EmptyResult(): JSX.Element {
   return (
-    <Card class="flex flex-col justify-center border-dashed bg-surface-0 @wide:flex-1">
-      <div data-fdt="rucss-empty" class="flex flex-col items-center gap-3">
-        <EmptyState
-          class="gap-2 pb-0"
-          icon={
-            <span class="grid size-11 place-items-center rounded-lg bg-accent-soft text-accent">
-              <TestTubeDiagonal size={22} aria-hidden="true" />
-            </span>
-          }
-          title={RESULT_EMPTY.title}
-          description={RESULT_EMPTY.description}
-        />
-        <ul class="grid w-full max-w-120 grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2 pb-6">
-          <For each={RESULT_PREVIEW}>
-            {([label, value]) => (
-              <li class="flex flex-col gap-0.5 rounded-lg border border-line-1 bg-surface-1 p-2.5">
-                <span class="text-2xs text-fg-muted">{label}</span>
-                <span class="text-xs font-semibold text-fg-primary">{value}</span>
-              </li>
-            )}
-          </For>
-        </ul>
-      </div>
-    </Card>
+    <ToolEmptyCard
+      hook="rucss-empty"
+      icon={TestTubeDiagonal}
+      title={RESULT_EMPTY.title}
+      description={RESULT_EMPTY.description}
+      fill
+    >
+      <ul class="grid w-full max-w-120 grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2 pb-6">
+        <For each={RESULT_PREVIEW}>
+          {([label, value]) => (
+            <li class="flex flex-col gap-0.5 rounded-lg border border-line-1 bg-surface-1 p-2.5">
+              <span class="text-2xs text-fg-muted">{label}</span>
+              <span class="text-xs font-semibold text-fg-primary">{value}</span>
+            </li>
+          )}
+        </For>
+      </ul>
+    </ToolEmptyCard>
   );
 }
 

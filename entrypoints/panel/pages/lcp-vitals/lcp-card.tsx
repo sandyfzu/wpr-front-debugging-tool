@@ -20,7 +20,6 @@ import ScanSearch from 'lucide-solid/icons/scan-search';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
-import { EmptyState } from '../../../../components/ui/empty-state';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import { Switch } from '../../../../components/ui/switch';
 import { LCP_PARTS, type LcpBreakdown } from '../../../../lib/lcp-analysis/breakdown';
@@ -41,6 +40,7 @@ import type { LcpAnalysisOutcome } from '../../../../lib/lcp-analysis/run-analys
 import { formatCount } from '../../../../utils/format-count';
 import { OutcomeNotice } from '../outcome-notice';
 import { RecoveryButtons } from '../recovery-buttons';
+import { ToolEmptyCard } from '../tool-empty-card';
 import type { LcpVitalsSession } from './session';
 
 /** What an analysis does, next to Analyse. */
@@ -184,22 +184,12 @@ function Candidates(props: {
 /** The result card before any analysis: an honest empty view naming what Analyse produces. */
 function EmptyResult(): JSX.Element {
   return (
-    // Painted with the canvas color, not transparent: the look is the same, but the text then
-    // sits on a background that encloses it, so contrast stays computable below the fold.
-    <Card class="border-dashed bg-surface-0">
-      <div data-fdt="lcp-empty">
-        <EmptyState
-          class="gap-2"
-          icon={
-            <span class="grid size-11 place-items-center rounded-lg bg-accent-soft text-accent">
-              <ScanSearch size={22} aria-hidden="true" />
-            </span>
-          }
-          title={LCP_EMPTY.title}
-          description={LCP_EMPTY.description}
-        />
-      </div>
-    </Card>
+    <ToolEmptyCard
+      hook="lcp-empty"
+      icon={ScanSearch}
+      title={LCP_EMPTY.title}
+      description={LCP_EMPTY.description}
+    />
   );
 }
 

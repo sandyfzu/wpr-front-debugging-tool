@@ -19,7 +19,11 @@ import {
   type ThresholdField
 } from '../beacon-test/config';
 import { readBeaconResults, type BeaconTestResults } from '../beacon-test/results';
-import type { BeaconBailReason, BeaconFeatureKey } from '../beacon-test/runner-bridge';
+import {
+  BEACON_FEATURE_KEYS,
+  type BeaconBailReason,
+  type BeaconFeatureKey
+} from '../beacon-test/runner-bridge';
 
 /** Panel → tab: run one beacon test with this configuration. */
 export interface BeaconTestRequest {
@@ -135,9 +139,6 @@ export function parseBeaconTestRequest(input: unknown): BeaconTestRequest | null
   return config === null ? null : { config };
 }
 
-/** The features a script error may name, in report order. */
-const FEATURE_KEYS: readonly BeaconFeatureKey[] = ['aboveTheFold', 'lazyRender'];
-
 /**
  * Guard a run's script-error list: distinct known feature keys.
  *
@@ -145,10 +146,10 @@ const FEATURE_KEYS: readonly BeaconFeatureKey[] = ['aboveTheFold', 'lazyRender']
  * @returns A frozen copy, or null.
  */
 function readScriptErrors(value: unknown): readonly BeaconFeatureKey[] | null {
-  if (!Array.isArray(value) || value.length > FEATURE_KEYS.length) return null;
+  if (!Array.isArray(value) || value.length > BEACON_FEATURE_KEYS.length) return null;
   const errors: BeaconFeatureKey[] = [];
   for (const entry of value as unknown[]) {
-    const key = FEATURE_KEYS.find((name) => name === entry);
+    const key = BEACON_FEATURE_KEYS.find((name) => name === entry);
     if (key === undefined || errors.includes(key)) return null;
     errors.push(key);
   }

@@ -7,7 +7,14 @@
 import { describe, expect, it } from 'vitest';
 import type { AboveTheFoldCandidate } from '../../../../lib/beacon-test/results';
 import { aboveTheFoldRows, type AboveTheFoldRow } from '../../../../lib/beacon-test/results-view';
-import { candidateDetailFacts, candidateName, candidatePreview, NO_IMAGE_URL } from './results';
+import {
+  candidateDetailFacts,
+  candidateName,
+  candidatePreview,
+  NO_IMAGE_URL,
+  NO_RESULTS_COPY,
+  noResultsCopy
+} from './results';
 
 /**
  * A candidate record with every field empty unless overridden.
@@ -123,5 +130,31 @@ describe('candidate rows', () => {
       { label: 'Element', value: 'bg-img', mono: true },
       { label: 'note', value: 'x', mono: true, multiline: false }
     ]);
+  });
+});
+
+describe('noResultsCopy', () => {
+  it('says what a run lists in the tab before any test', () => {
+    expect(noResultsCopy('ready', false, 'aboveTheFold')).toBe(
+      NO_RESULTS_COPY.description.aboveTheFold
+    );
+    expect(noResultsCopy('loading', false, 'lazyRender')).toBe(
+      NO_RESULTS_COPY.description.lazyRender
+    );
+    expect(NO_RESULTS_COPY.description.aboveTheFold).toContain('LCP image first');
+    expect(NO_RESULTS_COPY.description.lazyRender).toContain('render lazily');
+  });
+
+  it('points at the outcome after a test that ended without results', () => {
+    for (const feature of ['aboveTheFold', 'lazyRender'] as const) {
+      expect(noResultsCopy('ready', true, feature)).toBe(NO_RESULTS_COPY.ended);
+    }
+  });
+
+  it('names the failed settings first, whatever ran before', () => {
+    for (const ended of [false, true]) {
+      expect(noResultsCopy('failed', ended, 'aboveTheFold')).toBe(NO_RESULTS_COPY.settingsFailed);
+    }
+    expect(NO_RESULTS_COPY.settingsFailed).toMatch(/Retry them under Settings\.$/);
   });
 });
