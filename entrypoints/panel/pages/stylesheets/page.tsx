@@ -1,9 +1,12 @@
 /**
  * The Stylesheets page: every inline style and stylesheet link on the
- * inspected page, with what WP Rocket did to each (state chips, at most
- * three then "+N"), counted on filter chips, searchable, virtualized —
- * read live from the page (the payload carries no style list), classified
- * with the detection's page facts. Loaded on first visit (its own chunk).
+ * inspected page as one calm list (name, one-line preview, an inline
+ * style's size with its bar, two state chips + "+N") filtered by combinable
+ * facets (Type × WP Rocket CSS, Async / Minified / Font) and the search,
+ * each row opening its detail (side pane from the split width, drill-in
+ * below it) with the full CSS read on demand — read live from the page (the
+ * payload carries no style list), classified with the detection's page
+ * facts. Loaded on first visit (its own chunk).
  *
  * State matrix (the shell owns loading, fetch errors and crashes; this body
  * renders on `ready`/`refreshing`):
@@ -12,16 +15,19 @@
  * - **failed** — the read missed the page: the named miss + Retry;
  * - **no-styles** — the page has none (and the snapshot saw no critical
  *   style): an empty state;
- * - **filtered-empty** / **populated** — `FilteredList`'s (`NoMatches` with
- *   the ways back; the list);
+ * - **filtered-empty** / **populated** — the calm list's (`NoMatches` with
+ *   the ways back; the list and the selected row's detail);
  * - **capped** — the page has more styles than one read lists: a muted note;
  * - **refreshing** — Refresh busy, the list stays; a refresh that missed
  *   says so above the kept list.
- * A Refresh (or a payload refresh) keeps the chip, the query and unchanged
- * rows; a new page load re-reads on its own.
+ * A Refresh (or a payload refresh) keeps the facets, the query, unchanged
+ * rows and the selection (rows are keyed by content, never position); a new
+ * page load re-reads on its own.
  */
-import type { JSX } from 'solid-js';
+import type { Accessor, JSX } from 'solid-js';
 import { createMemo, Match, Show, Switch } from 'solid-js';
+import Code from 'lucide-solid/icons/code';
+import FileCode from 'lucide-solid/icons/file-code';
 import Palette from 'lucide-solid/icons/palette';
 import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import { Button } from '../../../../components/ui/button';
@@ -29,9 +35,15 @@ import { EmptyState } from '../../../../components/ui/empty-state';
 import { ErrorState } from '../../../../components/ui/error-state';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import { createLogger } from '../../../../lib/logger';
 import type { PageStylesheetsReply } from '../../../../lib/messaging/page-stylesheets';
+import {
+  loadStyleSource,
+  type StyleSourceRequest,
+  type StyleSourceResult
+} from '../../../../lib/messaging/style-source';
 import { countLabel } from '../../../../lib/panel/list-behavior';
-import { buildStylesheetRows, CSS_PAGE_RESOURCES } from '../../../../lib/panel/stylesheet-rows';
+import { buildStylesheetRows } from '../../../../lib/panel/stylesheet-rows';
 import {
   NO_STYLESHEET_PAGE_FACTS,
   sameStylesheetPageFacts,
@@ -40,33 +52,62 @@ import {
 } from '../../../../lib/panel/style-states';
 import { useFdtData } from '../../state/use-fdt-data';
 import { PAGE_ASK_MISS_COPY } from '../page-ask-miss';
+import type { CodeBlockSeams } from '../javascript/code-seams';
+import { openResourceCapability, type OpenResource } from '../open-resource';
 import { PageFrame } from '../page-frame';
-import { FilteredList } from '../resource-list/filtered-list';
+import { CalmFilteredList } from '../resource-list/calm-list';
+import {
+  calmRowEstimate,
+  ListRow,
+  ListRowHead,
+  type ListRowColumns
+} from '../resource-list/list-row';
+import type { DetailCopy } from '../resource-list/master-detail';
 import { StateSourceLegend } from '../resource-list/state-source-legend';
-import { realStylesheetsDeps } from './real-deps';
+import { realStylesheetsDeps, requestStyleSourceChunk } from './real-deps';
 import { createStylesheetsRead, type StylesheetsReadDeps } from './session';
-import { StyleRow } from './style-row';
+import { StyleDetail } from './style-detail';
 import {
   CSS_CHIP_SOURCES,
-  estimateStyleRow,
+  CSS_VIEW_FACETS,
   listCutNote,
-  sameStyleRow,
+  sameStyleView,
   STYLE_NOUN,
+  styleKind,
   styleRowViews,
+  styleSearchField,
   type StyleRowView
 } from './style-view';
+
+const log = createLogger('stylesheets');
+
+/** The list's optional columns (rows and head share them). */
+const COLUMNS: ListRowColumns = { size: true, states: true };
+
+/** The copy failure's remedy (the CSS is read when copied). */
+const COPY_REMEDY = 'Refresh the list and try copying again.';
 
 /** The page's title and one-line intro. */
 export const STYLESHEETS_TITLE = 'Stylesheets';
 export const STYLESHEETS_SUBTITLE =
   'Every inline style and stylesheet link on the page, and what WP Rocket did to each.';
 
-/** Props of {@link StylesheetsPage} — test seams only; the shell passes none. */
-export interface StylesheetsPageProps {
-  /** The page ask (tests inject a double); absent, the inspected tab's. */
-  listStylesheets?: StylesheetsReadDeps['listStylesheets'];
+/** The seams the list and its detail take (production omits them all). */
+interface StylesheetsListSeams {
   /** The virtualizer seam (tests inject a layout-free double). */
   createVirtualizer?: VirtualizerFactory;
+  /** One CSS chunk read (default: the inspected tab's top frame). */
+  readStyleChunk?: (request: StyleSourceRequest) => Promise<unknown>;
+  /** "Open in Sources" seam (`null`: none); production detects DevTools' own. */
+  openResource?: OpenResource | null;
+  /** Code block seams (tests only). */
+  codeBlock?: CodeBlockSeams;
+}
+
+/** Props of {@link StylesheetsPage} — test seams only; the shell passes none. */
+export interface StylesheetsPageProps extends StylesheetsListSeams {
+  /** The page ask (tests inject a double); absent, the inspected tab's. */
+  listStylesheets?: StylesheetsReadDeps['listStylesheets'];
 }
 
 /**
@@ -132,6 +173,9 @@ export function StylesheetsPage(props: StylesheetsPageProps): JSX.Element {
               refreshMiss={view().refreshMiss}
               onRefresh={read.refresh}
               createVirtualizer={props.createVirtualizer}
+              readStyleChunk={props.readStyleChunk}
+              openResource={props.openResource}
+              codeBlock={props.codeBlock}
             />
           )}
         </Match>
@@ -141,19 +185,18 @@ export function StylesheetsPage(props: StylesheetsPageProps): JSX.Element {
 }
 
 /** Props of {@link StylesheetsList}. */
-interface StylesheetsListProps {
+interface StylesheetsListProps extends StylesheetsListSeams {
   reply: PageStylesheetsReply;
   facts: StylesheetPageFacts;
   refreshing: boolean;
   refreshMiss: keyof typeof PAGE_ASK_MISS_COPY | null;
   onRefresh: () => void;
-  createVirtualizer?: VirtualizerFactory;
 }
 
 /**
  * The summary strip (the row total, Refresh, the cut and refresh-miss
- * lines) over the filter/search/list body. One memo chain: reply + facts →
- * row views; the list reconciles them by id.
+ * lines) over the facets/search/list body. One memo chain: reply + facts →
+ * row views; the list reconciles them by content key.
  *
  * @param props See {@link StylesheetsListProps}.
  */
@@ -162,6 +205,70 @@ function StylesheetsList(props: StylesheetsListProps): JSX.Element {
     styleRowViews(buildStylesheetRows(props.reply, props.facts))
   );
   const cut = createMemo(() => listCutNote(props.reply));
+  const openResource =
+    // eslint-disable-next-line solid/reactivity -- read once on purpose: the seam is fixed per page
+    props.openResource === undefined ? openResourceCapability(browser) : props.openResource;
+
+  /**
+   * Read a live inline style's CSS from the list it came from.
+   *
+   * @param view The row.
+   * @param snapshotId The list's snapshot.
+   * @param signal Cancels between chunks (the detail closed or moved, the copy ended).
+   */
+  const loadCss = (
+    view: StyleRowView,
+    snapshotId: string,
+    signal: AbortSignal
+  ): Promise<StyleSourceResult> =>
+    loadStyleSource(
+      { snapshotId, styleIndex: view.row.id },
+      props.readStyleChunk ?? requestStyleSourceChunk,
+      log,
+      signal
+    );
+
+  /**
+   * The detail's CSS read for a row: `null` for a link or the snapshot row;
+   * a new read per list (snapshot) and per row object (a moved row is a new one).
+   *
+   * @param view The row accessor.
+   */
+  const cssRead = (
+    view: Accessor<StyleRowView>
+  ): Accessor<((signal: AbortSignal) => Promise<StyleSourceResult>) | null> =>
+    createMemo(() => {
+      const current = view();
+      // Tracked: every new list (snapshot) is a new read of the row.
+      const snapshotId = props.reply.snapshotId;
+      if (current.row.type !== 'inline' || current.row.source !== 'live') return null;
+      return (signal) => loadCss(current, snapshotId, signal);
+    });
+
+  /**
+   * The detail header's copy: a link's URL, an inline style's full CSS
+   * (read when copied); nothing for the snapshot row or an empty style.
+   *
+   * @param view The row.
+   */
+  const detailCopy = (view: StyleRowView): DetailCopy | undefined => {
+    if (view.row.source === 'snapshot') return undefined;
+    if (view.row.type === 'external') {
+      return view.row.href === '' ? undefined : { text: view.row.href, label: 'Stylesheet URL' };
+    }
+    if (view.row.chars === 0) return undefined;
+    return {
+      text: view.row.preview,
+      label: 'Inline style CSS',
+      loadText: async (signal) => {
+        const result = await loadCss(view, props.reply.snapshotId, signal);
+        if (result.status !== 'ok')
+          throw new Error(`The style's CSS could not be read (${result.status}).`);
+        return result.text;
+      },
+      loadFailure: COPY_REMEDY
+    };
+  };
   return (
     <>
       <div
@@ -199,10 +306,13 @@ function StylesheetsList(props: StylesheetsListProps): JSX.Element {
           )}
         </Show>
       </div>
-      <FilteredList
-        definition={CSS_PAGE_RESOURCES}
+      <CalmFilteredList
+        variant="calm"
         rows={views()}
-        sameRow={sameStyleRow}
+        rowKey={(view) => view.key}
+        sameRow={sameStyleView}
+        facets={CSS_VIEW_FACETS}
+        searchField={styleSearchField}
         empty={
           <EmptyState
             class="self-center"
@@ -215,10 +325,37 @@ function StylesheetsList(props: StylesheetsListProps): JSX.Element {
         listLabel="Stylesheets"
         searchLabel="Search stylesheets"
         searchPlaceholder="Search URLs, ids and CSS…"
-        estimateSize={estimateStyleRow}
-        renderRow={(row) => <StyleRow view={row} />}
         rowHook="stylesheet-row"
+        head={<ListRowHead columns={COLUMNS} icon name="Style" size="Chars" states="WP Rocket" />}
         legend={<StateSourceLegend sources={CSS_CHIP_SOURCES} />}
+        estimateSize={(view, compact) => calmRowEstimate('two', compact, view.chips.length > 0)}
+        renderRow={(view) => (
+          <ListRow
+            columns={COLUMNS}
+            // The JavaScript page's icon pair (already on the panel's start: no new bytes).
+            icon={view.row.type === 'inline' ? Code : FileCode}
+            name={view.name}
+            mono={view.monoName}
+            preview={view.preview}
+            size={view.size}
+            sizeShare={view.sizeShare}
+            chips={view.rowChips}
+          />
+        )}
+        detail={{
+          kind: styleKind,
+          title: (view) => view.name,
+          copy: detailCopy,
+          body: (view) => (
+            <StyleDetail
+              view={view}
+              openResource={openResource}
+              readSource={cssRead(view)}
+              codeBlock={props.codeBlock}
+            />
+          ),
+          backLabel: 'Stylesheets'
+        }}
         createVirtualizer={props.createVirtualizer}
       />
     </>

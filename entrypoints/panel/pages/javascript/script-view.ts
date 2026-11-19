@@ -14,6 +14,8 @@ import {
   type JsScriptResource
 } from '../../../../lib/panel/resources-view-model';
 import { liftFacets, type FacetSet } from '../../../../lib/panel/resource-facets';
+import type { DetailFact } from '../resource-list/detail-section';
+import { urlPreview } from '../resource-list/resource-list-view';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import {
   JS_SCRIPT_STATES,
@@ -41,7 +43,6 @@ import {
   isClassicScriptType,
   isJsonScriptType
 } from '../../../../utils/script-type';
-import { parseHttpUrl } from '../../../../utils/urls';
 import { resourceName } from '../resource-list/resource-list-view';
 import {
   CALM_VISIBLE_STATE_CHIPS,
@@ -248,19 +249,6 @@ export function collapsedPreview(text: string): string {
   return out.slice(0, last >= 0xd800 && last <= 0xdbff ? end - 1 : end);
 }
 
-/**
- * An external script's preview: its URL without the scheme (host, path,
- * query — the part that tells two files apart), or the raw text when it is
- * no http(s) URL.
- *
- * @param url The captured URL.
- */
-export function urlPreview(url: string): string {
-  const parsed = parseHttpUrl(url);
-  if (parsed === null) return url;
-  return `${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
-}
-
 /** The preview's words for an inline row with no code to show. */
 export const NO_CODE_PREVIEW: Readonly<Record<'blank' | 'not-captured', string>> = {
   blank: 'Empty inline script',
@@ -366,14 +354,6 @@ export function lineCount(count: number): string {
   return countLabel(count, LINE_NOUN);
 }
 
-/** One fact of the detail's attribute list. */
-export interface ScriptFact {
-  readonly label: string;
-  readonly value: string;
-  /** The value is markup or an identifier (rendered mono). */
-  readonly mono: boolean;
-}
-
 /**
  * The detail's facts — only the ones that hold: the delay and defer markers,
  * the original type, the minify stamp, the local exclusion marker, and an
@@ -382,9 +362,9 @@ export interface ScriptFact {
  * @param view The row view.
  * @returns The facts, in reading order.
  */
-export function scriptFacts(view: ScriptRowView): ScriptFact[] {
+export function scriptFacts(view: ScriptRowView): DetailFact[] {
   const { row } = view;
-  const facts: ScriptFact[] = [];
+  const facts: DetailFact[] = [];
   if (row.delayed) facts.push({ label: 'Delayed', value: 'Delay JS type', mono: false });
   if (row.originalType !== null)
     facts.push({ label: 'Original type', value: row.originalType, mono: true });

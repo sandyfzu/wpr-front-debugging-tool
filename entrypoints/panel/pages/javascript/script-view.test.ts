@@ -31,8 +31,7 @@ import {
   scriptRowView,
   scriptSearchField,
   scriptSize,
-  scriptStateChips,
-  urlPreview
+  scriptStateChips
 } from './script-view';
 import { UNVERIFIED_SIMULATION_SUFFIX } from '../resource-list/state-chips';
 
@@ -264,20 +263,6 @@ describe('collapsedPreview', () => {
   it('scans a huge script only as far as its preview', () => {
     const huge = `a${' '.repeat(5)}b${'c'.repeat(600_000)}`;
     expect(collapsedPreview(huge)).toBe(`a b${'c'.repeat(PREVIEW_CHARS - 3)}`);
-  });
-});
-
-describe('urlPreview', () => {
-  it('drops the scheme of an http(s) URL and keeps host, path, query and fragment', () => {
-    expect(urlPreview('https://cdn.test:8080/js/a.min.js?ver=1#x')).toBe(
-      'cdn.test:8080/js/a.min.js?ver=1#x'
-    );
-  });
-
-  it('keeps anything else as captured', () => {
-    expect(urlPreview('/relative.js')).toBe('/relative.js');
-    expect(urlPreview('data:text/javascript,1')).toBe('data:text/javascript,1');
-    expect(urlPreview('')).toBe('');
   });
 });
 

@@ -13,7 +13,7 @@
  * drill-in) facts and code sit side by side; the 350 px pane stacks them.
  */
 import type { Accessor, JSX } from 'solid-js';
-import { For, Match, Show, Switch, createMemo } from 'solid-js';
+import { Match, Show, Switch, createMemo } from 'solid-js';
 import { CodeBlock, HIGHLIGHT_MAX_CHARS } from '../../../../components/ui/code-block';
 import type { CodeLanguage } from '../../../../components/ui/code-block-langs';
 import { Skeleton } from '../../../../components/ui/skeleton';
@@ -23,6 +23,7 @@ import type {
   ServedScriptTagError
 } from '../../../../lib/messaging/served-script-tag';
 import type { OpenResource } from '../open-resource';
+import { CodeSection, FactList } from '../resource-list/detail-section';
 import { createOnDemand, type OnDemandState } from '../resource-list/on-demand';
 import { SourceLink } from '../resource-list/source-link';
 import { StateChips } from '../resource-list/state-chip-list';
@@ -113,25 +114,7 @@ export function ScriptDetail(props: ScriptDetailProps): JSX.Element {
               />
             </Show>
           </Show>
-          <Show when={facts().length > 0}>
-            <dl
-              data-fdt="script-facts"
-              class="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 text-2xs"
-            >
-              <For each={facts()}>
-                {(fact) => (
-                  <>
-                    <dt class="text-fg-muted">{fact.label}</dt>
-                    <dd
-                      class={fact.mono ? 'font-mono break-all text-fg-primary' : 'text-fg-primary'}
-                    >
-                      {fact.value}
-                    </dd>
-                  </>
-                )}
-              </For>
-            </dl>
-          </Show>
+          <FactList facts={facts()} hook="script-facts" />
         </div>
         <div class="flex min-w-0 flex-col gap-3.5">
           <Show when={props.view().row.type === 'inline'}>
@@ -169,35 +152,6 @@ function ChipLine(props: { view: ScriptRowView }): JSX.Element {
         <StateChips chips={splitStateChips(props.view.chips, props.view.chips.length)} />
       </div>
     </Show>
-  );
-}
-
-/**
- * A titled code section: caps heading (+ a muted aside) over its content.
- *
- * @param props.title The heading.
- * @param props.aside The muted text after it ("12 lines").
- * @param props.hook The section's `data-fdt` hook.
- * @param props.children The section body.
- */
-function CodeSection(props: {
-  title: string;
-  aside?: string;
-  hook: string;
-  children: JSX.Element;
-}): JSX.Element {
-  return (
-    <section data-fdt={props.hook} class="flex min-w-0 flex-col gap-1.5">
-      <h3 class="flex items-baseline gap-2 text-2xs font-semibold tracking-wide text-fg-muted uppercase">
-        {props.title}
-        <Show when={props.aside}>
-          {(aside) => (
-            <span class="font-normal tracking-normal normal-case tabular-nums">{aside()}</span>
-          )}
-        </Show>
-      </h3>
-      {props.children}
-    </section>
   );
 }
 

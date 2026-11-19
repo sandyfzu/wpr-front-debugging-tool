@@ -112,13 +112,18 @@ export function parsePageStyleEntry(input: unknown): PageStyleEntry | null {
  *
  * @param input The boundary value.
  * @param parseEntry The entry guard (null on any violation).
- * @returns The rebuilt reply, or null on any violation (an entry included).
+ * @param extraKeys Reply keys a wider inventory adds beside `styles` and
+ *   `total` (default none: any other key fails); the caller guards their
+ *   values itself.
+ * @returns The rebuilt reply (`styles` and `total` only), or null on any
+ *   violation (an entry included).
  */
 export function parseStyleInventory<Entry>(
   input: unknown,
-  parseEntry: (item: unknown) => Entry | null
+  parseEntry: (item: unknown) => Entry | null,
+  extraKeys: readonly string[] = []
 ): { readonly styles: readonly Entry[]; readonly total: number } | null {
-  if (!isRecord(input) || !hasOnlyKeys(input, ['styles', 'total'])) return null;
+  if (!isRecord(input) || !hasOnlyKeys(input, ['styles', 'total', ...extraKeys])) return null;
   const raw = ownValue(input, 'styles');
   const total = ownValue(input, 'total');
   if (!Array.isArray(raw) || raw.length > PAGE_STYLE_LIMITS.count || !isCount(total)) return null;

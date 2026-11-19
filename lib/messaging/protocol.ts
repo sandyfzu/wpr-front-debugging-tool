@@ -53,6 +53,7 @@ import type { ChordPlatform } from '../storage/palette-chord-platform';
 import type { DeviceSimState, DeviceSimUpdate } from '../device-simulation/state';
 import type { ScriptSourceRequest, ScriptSourceReply } from './script-source';
 import type { ServedScriptTagReply, ServedScriptTagRequest } from './served-script-tag';
+import type { StyleSourceReply, StyleSourceRequest } from './style-source';
 import type { DbUpdateResult, DetectionSummary } from './validate';
 import type {
   ExclusionApplyReply,
@@ -287,7 +288,13 @@ export interface ProtocolMap {
    * Panel → tab (top frame, `frameId: 0`; relayable): list the page's
    * styles as they are now, every stylesheet link counted (async-swapped
    * preloads included) with its WP Rocket stamps — the Stylesheets page's
-   * inventory. Read-only.
+   * inventory, kept by the page as its latest snapshot (`snapshotId`).
+   * Read-only.
    */
   listPageStylesheets(): PageStylesheetsReply;
+  /**
+   * Panel → tab (top frame; relayable): one chunk of an inline style's CSS
+   * from the latest stylesheet snapshot (`gone` once replaced or detached).
+   */
+  getStyleSourceChunk(data: StyleSourceRequest): StyleSourceReply;
 }

@@ -8,7 +8,8 @@
  *   WP Rocket stamps its tag carries.
  *
  * Read-only: nothing on the page changes, and only a short preview of each
- * inline style's CSS leaves the page.
+ * inline style's CSS leaves the page with a list (the full CSS is read on
+ * demand, see `./style-snapshot`).
  */
 import { carriesMinifyAttribute } from '../../../lib/detection/minify-footprint';
 import {
@@ -106,6 +107,14 @@ export function describeStylesheet(element: Element): PageStylesheetEntry {
   };
 }
 
+/** One list read: the bounded entries, the full count, and the described elements. */
+interface StyleListRead<Entry> {
+  readonly styles: Entry[];
+  readonly total: number;
+  /** The elements `styles` describes, same order (what a snapshot keeps). */
+  readonly elements: Element[];
+}
+
 /**
  * Read one list: every kept element counts, the first
  * `PAGE_STYLE_LIMITS.count` are described.
@@ -113,21 +122,25 @@ export function describeStylesheet(element: Element): PageStylesheetEntry {
  * @param doc The page's document.
  * @param rule The list's elements.
  * @param describe Builds one entry.
- * @returns The bounded list and the full count.
+ * @returns The bounded list, the full count and the described elements.
  */
 function collectStyleList<Entry>(
   doc: Document,
   rule: StyleListRule,
   describe: (element: Element) => Entry
-): { styles: Entry[]; total: number } {
+): StyleListRead<Entry> {
   const styles: Entry[] = [];
+  const elements: Element[] = [];
   let total = 0;
   for (const element of doc.querySelectorAll(rule.selector)) {
     if (!rule.keeps(element)) continue;
     total += 1;
-    if (styles.length < PAGE_STYLE_LIMITS.count) styles.push(describe(element));
+    if (styles.length < PAGE_STYLE_LIMITS.count) {
+      styles.push(describe(element));
+      elements.push(element);
+    }
   }
-  return { styles, total };
+  return { styles, total, elements };
 }
 
 /**
@@ -137,15 +150,21 @@ function collectStyleList<Entry>(
  * @returns The bounded inventory (`total` counts every match).
  */
 export function collectPageStyles(doc: Document): PageStylesReply {
-  return collectStyleList(doc, STRIPPED_STYLES, describeStyle);
+  const { styles, total } = collectStyleList(doc, STRIPPED_STYLES, describeStyle);
+  return { styles, total };
 }
 
 /**
- * List the page's stylesheets with their WP Rocket stamps, now.
+ * List the page's stylesheets with their WP Rocket stamps, now, and the
+ * elements listed (the caller keeps them as the list's snapshot).
  *
  * @param doc The page's document.
- * @returns The bounded inventory (`total` counts every match).
+ * @returns The bounded inventory (`total` counts every match) and its elements.
  */
-export function collectPageStylesheets(doc: Document): PageStylesheetsReply {
-  return collectStyleList(doc, PAGE_STYLESHEETS, describeStylesheet);
+export function collectPageStylesheets(doc: Document): {
+  readonly reply: Omit<PageStylesheetsReply, 'snapshotId'>;
+  readonly elements: readonly Element[];
+} {
+  const { styles, total, elements } = collectStyleList(doc, PAGE_STYLESHEETS, describeStylesheet);
+  return { reply: { styles, total }, elements };
 }

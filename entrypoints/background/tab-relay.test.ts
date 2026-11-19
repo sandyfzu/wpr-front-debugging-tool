@@ -43,6 +43,7 @@ function deps(
     getCurrentVisitVitals: vi.fn(() => Promise.resolve(answer)),
     listPageStyles: vi.fn(() => Promise.resolve(answer)),
     listPageStylesheets: vi.fn(() => Promise.resolve(answer)),
+    getStyleSourceChunk: vi.fn(() => Promise.resolve(answer)),
     ...asks
   };
   return {

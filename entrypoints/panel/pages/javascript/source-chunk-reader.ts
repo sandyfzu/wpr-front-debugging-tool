@@ -6,63 +6,10 @@
  */
 import type { ScriptSourceRequest } from '../../../../lib/messaging/script-source';
 import type { ServedScriptTagRequest } from '../../../../lib/messaging/served-script-tag';
-import type { TabAsks } from '../../../../lib/messaging/tab-asks';
-
-/** How long one read may take before it fails. */
-export const SOURCE_CHUNK_TIMEOUT_MS = 5000;
-
-/** What a reader runs against (production: the selected asks and the inspected tab). */
-export interface SourceChunkReaderDeps {
-  /** The tab transport, or null when this panel can reach no tab. */
-  asks: () => TabAsks | null;
-  /** The inspected tab, or null outside a DevTools window. */
-  inspectedTabId: () => number | null;
-  /** The wait bound; defaults to {@link SOURCE_CHUNK_TIMEOUT_MS}. */
-  timeoutMs?: number;
-}
-
-/** The words one kind of read fails with (they name the action it serves). */
-interface ReadWords {
-  readonly noTransport: string;
-  readonly noTab: string;
-  readonly timedOut: string;
-}
-
-/**
- * Build a bounded top-frame reader over one tab ask.
- *
- * @param deps See {@link SourceChunkReaderDeps}.
- * @param ask The ask to send.
- * @param words The failures' messages.
- * @returns A reader resolving with the untrusted reply (the caller validates
- *   it); it rejects with an {@link Error} when there is no transport or
- *   inspected tab, the read fails, or the wait runs out.
- */
-function createTopFrameReader<Request>(
-  deps: SourceChunkReaderDeps,
-  ask: (asks: TabAsks, tabId: number, request: Request) => Promise<unknown>,
-  words: ReadWords
-): (request: Request) => Promise<unknown> {
-  return async (request) => {
-    const asks = deps.asks();
-    if (asks === null) throw new Error(words.noTransport);
-    const tabId = deps.inspectedTabId();
-    if (tabId === null) throw new Error(words.noTab);
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        ask(asks, tabId, request),
-        new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(() => {
-            reject(new Error(words.timedOut));
-          }, deps.timeoutMs ?? SOURCE_CHUNK_TIMEOUT_MS);
-        })
-      ]);
-    } finally {
-      clearTimeout(timeout);
-    }
-  };
-}
+import {
+  createTopFrameReader,
+  type SourceChunkReaderDeps
+} from '../resource-list/top-frame-reader';
 
 /**
  * Build the segment reader the source assembler drives.

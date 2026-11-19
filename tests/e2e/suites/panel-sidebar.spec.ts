@@ -10,16 +10,18 @@
  * the "More pages" overflow in the labeled form at short heights (the nav
  * never scrolls; nav ⊕ menu = the registry).
  *
- * The automatic fold while a list detail is open needs a page that mounts
- * the master–detail list kit; until one does it is pinned at render level
- * (`App.test.tsx`, `sidebar.test.tsx`), with this suite's geometry facts.
+ * The automatic fold while a list detail is open runs on the Stylesheets
+ * page over an inspected fixture (the master–detail list kit): opening a
+ * row's pane folds the labeled sidebar to the rail, closing it restores
+ * the labeled form — one switch each way, focus kept on the list.
  *
- * The panel boots as a plain extension page (no inspected tab → the error
- * body); the nav is shell chrome and renders the same either way.
+ * Otherwise the panel boots as a plain extension page (no inspected tab →
+ * the error body); the nav is shell chrome and renders the same either way.
  */
 import type { Page } from '@playwright/test';
 import { expect, panelPageUrl, test, type ExtensionDriver } from '../helpers/extension';
 import { settleFrames } from '../helpers/frames';
+import { openPanelForFixture } from '../helpers/panel-data';
 
 /** The registry routes in nav order (the nav ⊕ menu cover them exactly once). */
 const REGISTRY_ROWS = [
@@ -352,6 +354,73 @@ test.describe('labeled sidebar overflow (the height-shrink affordance)', () => {
       await expect(trigger).toBeFocused();
     } finally {
       await page.close();
+    }
+  });
+});
+
+test.describe('panel sidebar (automatic fold while a detail is open)', () => {
+  test('a pane folds the labeled sidebar to the rail and closing restores it, no flip-flop', async ({
+    extension
+  }) => {
+    const { panel, fixture } = await openPanelForFixture(extension, '/stylesheets/chips.html', {
+      bootHash: '#/stylesheets'
+    });
+    try {
+      await panel.setViewportSize({ width: 1280, height: 900 });
+      const rows = panel.locator('[data-fdt="stylesheet-row"]');
+      await expect(rows.first()).toBeVisible();
+      await settleFrames(panel);
+      expect((await readNav(panel)).form).toBe('labeled');
+      // Every form switch from here on, in order.
+      await panel.evaluate(() => {
+        const column = document.querySelector('[data-fdt="panel-header"]');
+        if (column === null) throw new Error('the nav column is not mounted');
+        const forms: (string | null)[] = [];
+        new MutationObserver(() => {
+          forms.push(column.getAttribute('data-fdt-nav-form'));
+        }).observe(column, { attributes: true, attributeFilter: ['data-fdt-nav-form'] });
+        (window as unknown as { __navForms: (string | null)[] }).__navForms = forms;
+      });
+      const forms = (): Promise<(string | null)[]> =>
+        panel.evaluate(() => (window as unknown as { __navForms: (string | null)[] }).__navForms);
+
+      // Keyboard open: Enter on the row's open button opens the pane beside the list.
+      const open = rows.nth(1).locator('[data-fdt-row-open]');
+      await open.focus();
+      await panel.keyboard.press('Enter');
+      await expect(panel.locator('[data-fdt="detail-pane"]')).toBeVisible();
+      await expect.poll(async () => (await readNav(panel)).form).toBe('rail');
+      await settleFrames(panel);
+      expect(await forms()).toEqual(['rail']);
+      await expect(open).toBeFocused();
+      expect((await readNav(panel)).horizontalScroll).toBe(false);
+
+      // Moving through rows keeps the pane open: no switch back and forth.
+      await panel.keyboard.press('ArrowDown');
+      await expect(rows.nth(2).locator('[data-fdt-row-open]')).toBeFocused();
+      await settleFrames(panel);
+      expect(await forms()).toEqual(['rail']);
+
+      // Esc closes the pane: labeled again, focus stays on the row.
+      await panel.keyboard.press('Escape');
+      await expect(panel.locator('[data-fdt="detail-pane"]')).toHaveCount(0);
+      await expect.poll(async () => (await readNav(panel)).form).toBe('labeled');
+      await settleFrames(panel);
+      expect(await forms()).toEqual(['rail', 'labeled']);
+      await expect(rows.nth(2).locator('[data-fdt-row-open]')).toBeFocused();
+
+      // A pointer open and the pane's own close button: the same single switch each way.
+      await rows.nth(3).locator('[data-fdt-row-open]').click();
+      await expect.poll(async () => (await readNav(panel)).form).toBe('rail');
+      await panel.locator('[data-fdt="detail-close"]').click();
+      await expect.poll(async () => (await readNav(panel)).form).toBe('labeled');
+      await settleFrames(panel);
+      expect(await forms()).toEqual(['rail', 'labeled', 'rail', 'labeled']);
+      // The closing pane hands focus back to its row.
+      await expect(rows.nth(3).locator('[data-fdt-row-open]')).toBeFocused();
+    } finally {
+      await panel.close();
+      await fixture.page.close();
     }
   });
 });

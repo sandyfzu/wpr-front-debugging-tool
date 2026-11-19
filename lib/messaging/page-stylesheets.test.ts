@@ -34,6 +34,8 @@ const INLINE: PageStylesheetEntry = {
   rocketAsync: false
 };
 
+/** A well-formed snapshot id. */
+const ID = '0123456789abcdef0123456789abcdef';
 describe('parsePageStylesheetEntry', () => {
   it('rebuilds a valid entry of either kind', () => {
     expect(parsePageStylesheetEntry(LINK)).toEqual(LINK);
@@ -67,31 +69,50 @@ describe('parsePageStylesheetEntry', () => {
 
 describe('parsePageStylesheetsReply', () => {
   it('rebuilds a valid reply, a cut one included', () => {
-    expect(parsePageStylesheetsReply({ styles: [LINK, INLINE], total: 2 })).toEqual({
-      styles: [LINK, INLINE],
-      total: 2
-    });
-    expect(parsePageStylesheetsReply({ styles: [LINK], total: 9_000 })?.total).toBe(9_000);
+    expect(parsePageStylesheetsReply({ styles: [LINK, INLINE], total: 2, snapshotId: ID })).toEqual(
+      {
+        styles: [LINK, INLINE],
+        total: 2,
+        snapshotId: ID
+      }
+    );
+    expect(parsePageStylesheetsReply({ styles: [LINK], total: 9_000, snapshotId: ID })?.total).toBe(
+      9_000
+    );
   });
 
   it('refuses a short total, an over-long list, one bad entry and extra keys', () => {
-    expect(parsePageStylesheetsReply({ styles: [LINK, INLINE], total: 1 })).toBeNull();
+    expect(
+      parsePageStylesheetsReply({ styles: [LINK, INLINE], total: 1, snapshotId: ID })
+    ).toBeNull();
     expect(
       parsePageStylesheetsReply({
         styles: Array.from({ length: PAGE_STYLE_LIMITS.count + 1 }, () => LINK),
-        total: PAGE_STYLE_LIMITS.count + 1
+        total: PAGE_STYLE_LIMITS.count + 1,
+        snapshotId: ID
       })
     ).toBeNull();
     expect(
-      parsePageStylesheetsReply({ styles: [LINK, { ...INLINE, rocketAsync: 0 }], total: 2 })
+      parsePageStylesheetsReply({
+        styles: [LINK, { ...INLINE, rocketAsync: 0 }],
+        total: 2,
+        snapshotId: ID
+      })
     ).toBeNull();
     // A RUCSS-inventory entry (no facts) is not a stylesheet entry.
     const plain: Record<string, unknown> = { ...LINK };
     delete plain.minifyAttribute;
     delete plain.rocketAsync;
     delete plain.hostedFont;
-    expect(parsePageStylesheetsReply({ styles: [plain], total: 1 })).toBeNull();
-    expect(parsePageStylesheetsReply({ styles: [], total: 0, more: 1 })).toBeNull();
+    expect(parsePageStylesheetsReply({ styles: [plain], total: 1, snapshotId: ID })).toBeNull();
+    expect(parsePageStylesheetsReply({ styles: [], total: 0, snapshotId: ID, more: 1 })).toBeNull();
     expect(parsePageStylesheetsReply(null)).toBeNull();
+  });
+
+  it('requires the snapshot id, in its random-id shape', () => {
+    expect(parsePageStylesheetsReply({ styles: [], total: 0 })).toBeNull();
+    for (const snapshotId of ['', 'abc', `${ID}0`, 'g'.repeat(32), 7, null]) {
+      expect(parsePageStylesheetsReply({ styles: [], total: 0, snapshotId })).toBeNull();
+    }
   });
 });

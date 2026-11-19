@@ -68,6 +68,8 @@ export interface CssStyleResource {
   readonly minified: boolean;
   /** The critical-path style (see {@link isLiveCriticalStyle}; always on the snapshot row). */
   readonly critical: boolean;
+  /** The link carries Minify CSS's exact stamp beside an `href` (a tag fact; `minified` is the verdict). */
+  readonly minifyAttribute: boolean;
   /** The link carries Load CSS asynchronously's stamp. */
   readonly rocketAsync: boolean;
   /** The link carries Self-host Google Fonts' attribute. */

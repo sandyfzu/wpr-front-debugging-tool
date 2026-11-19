@@ -3,8 +3,8 @@
  * (the narrowest supported) in both palettes, every URL row on the
  * JavaScript, Stylesheets and Lazyload pages shows its file name whole —
  * not cut by the row, inside the page — while the full URL stays one step
- * away: the Stylesheets and Lazyload rows' link (its `title` carrying it)
- * beneath, the JavaScript row's URL preview beneath and its detail's
+ * away: the Lazyload rows' link (its `title` carrying it) beneath, the
+ * JavaScript and Stylesheets rows' URL preview beneath and their detail's
  * source-link tile (href + `title`); the page never scrolls sideways; at a
  * regular-tier 768 px width the settled names stay whole too. The palette
  * check reads the rendered `color-scheme` (no stored Dark/Light override),
@@ -37,10 +37,10 @@ const PAGES = [
   },
   {
     route: 'stylesheets',
-    row: '[data-fdt="stylesheet-row"]:has([data-fdt="resource-name"])',
-    name: '[data-fdt="resource-name"]',
+    row: '[data-fdt="stylesheet-row"]',
+    name: '[data-fdt="list-row-name"]',
     names: ['style.min.css', 'print.css'],
-    url: 'row'
+    url: 'detail'
   },
   {
     route: 'lazyload',

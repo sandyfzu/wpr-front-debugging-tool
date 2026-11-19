@@ -144,6 +144,24 @@ describe('ListRow', () => {
     expect(dash?.className).toContain('@regular:inline');
   });
 
+  it('draws a decorative size bar under the size when the page gives a share, clamped to 0–100 %', () => {
+    const bar = (share: number | undefined): HTMLElement | null => {
+      const { container, unmount } = render(() => (
+        <ListRow columns={BOTH} name="a" size="1K" sizeShare={share} />
+      ));
+      const found = container.querySelector<HTMLElement>('[data-fdt="list-row-size-bar"]');
+      const copy = found === null ? null : (found.cloneNode(true) as HTMLElement);
+      unmount();
+      return copy;
+    };
+    const half = bar(0.5);
+    expect(half?.getAttribute('aria-hidden')).toBe('true');
+    expect(half?.querySelector('span')?.style.width).toBe('50%');
+    expect(bar(1.7)?.querySelector('span')?.style.width).toBe('100%');
+    expect(bar(-1)).toBeNull();
+    expect(bar(undefined)).toBeNull();
+  });
+
   it('flags a clipped value with a Clipped badge before the preview', () => {
     const { container } = render(() => (
       <ListRow columns={NONE} name="a" preview="https://x" clipped />

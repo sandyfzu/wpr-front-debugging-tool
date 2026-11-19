@@ -606,7 +606,8 @@ describe('JavaScript page — complete source reads', () => {
       getScriptRuntimeStatuses: () => Promise.resolve(null),
       getCurrentVisitVitals: () => Promise.resolve(null),
       listPageStyles: () => Promise.resolve(null),
-      listPageStylesheets: () => Promise.resolve(null)
+      listPageStylesheets: () => Promise.resolve(null),
+      getStyleSourceChunk: () => Promise.resolve(null)
     };
     const relayed: TabRelayRequest[] = [];
     const deps = {

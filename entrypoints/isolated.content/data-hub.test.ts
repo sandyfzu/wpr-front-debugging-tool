@@ -56,6 +56,20 @@ describe('processSerializedPage', () => {
     );
   });
 
+  it('reads inline script text as the page wrote it from the hub’s XML snapshot', async () => {
+    // The XML snapshot escapes raw-text element text; served markup is read as is.
+    const html =
+      '<!doctype html><html><head><script>if (a &gt; b &amp;&amp; c &lt; d) go("&amp;lt;");</script></head><body></body></html>';
+    const snapshot = await processSerializedPage(html, undefined, 'xml-snapshot');
+    expect(snapshot.detections.delay_js.scripts[0]?.content).toBe(
+      'if (a > b && c < d) go("&lt;");'
+    );
+    const markup = await processSerializedPage(html);
+    expect(markup.detections.delay_js.scripts[0]?.content).toBe(
+      'if (a &gt; b &amp;&amp; c &lt; d) go("&amp;lt;");'
+    );
+  });
+
   it("keeps each script's served tag at the record's document position", async () => {
     const html =
       '<!doctype html><html><head><script type="rocketlazyloadscript" data-rocket-src="/a.js" defer></script>' +
