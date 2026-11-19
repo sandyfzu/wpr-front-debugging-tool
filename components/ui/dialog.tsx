@@ -77,7 +77,7 @@ export interface ModalDialogProps {
    * / stopPropagation decisions per key.
    */
   onKeyDownCapture?: (event: KeyboardEvent) => void;
-  /** The `aria-labelledby` heading (rendered visually-hidden in the panel). */
+  /** The `aria-labelledby` heading (visually hidden unless {@link showTitle}). */
   title: string;
   /** The optional `aria-describedby` line under the title. */
   description?: string;
@@ -86,6 +86,19 @@ export interface ModalDialogProps {
    * with no visible trigger affordance; default off).
    */
   closeButton?: boolean;
+  /**
+   * The look (default `default`, today's). `panel` — the devtools panel's
+   * overlays only: the close control on the control corner, a step larger,
+   * set into the plate's padding beside a visible title. Opt-in so an
+   * injected UI's dialog keeps its look.
+   */
+  variant?: ModalDialogVariant;
+  /**
+   * Render the title visibly, as the plate's heading (default false: the
+   * title only names the dialog for assistive tech — devtools-grade overlays
+   * present their own fields and lists).
+   */
+  showTitle?: boolean;
   /** Extra classes on the dialog panel, merged last so callers win. */
   class?: string;
   /** Extra classes on the scrim, merged last so callers win (a variant's own motion). */
@@ -122,6 +135,46 @@ export interface ModalDialogProps {
  */
 export const DIALOG_PANEL_CLASSES =
   'fixed left-1/2 top-16 z-50 flex max-h-[calc(100dvh-5rem)] w-[min(30rem,calc(100%-1.5rem))] -translate-x-1/2 flex-col rounded-lg border border-line-2 bg-surface-2 shadow-elev-3';
+
+/** The dialog's looks (see {@link ModalDialogProps.variant}). */
+export type ModalDialogVariant = 'default' | 'panel';
+
+/**
+ * What a look styles — class strings for the dialog's own chrome; the plate
+ * ({@link DIALOG_PANEL_CLASSES}) is shared by every look and callers extend
+ * it through {@link ModalDialogProps.class}.
+ */
+interface DialogLook {
+  /**
+   * The explicit close control (rendered with {@link ModalDialogProps.closeButton}):
+   * its corner position, square size, radius and pointer feedback. The
+   * shared focus ring is merged on top, never repeated here.
+   */
+  readonly close: string;
+  /**
+   * The title's type when {@link ModalDialogProps.showTitle} renders it
+   * visibly (otherwise it is `sr-only` in every look); end padding, where
+   * set, keeps a long title clear of the close control.
+   */
+  readonly title: string;
+}
+
+/**
+ * Every look — adding one is one row here. `default` is the shipped look
+ * (injected UIs rely on it); `panel` is the devtools panel's.
+ */
+export const DIALOG_LOOKS: Readonly<Record<ModalDialogVariant, DialogLook>> = {
+  default: {
+    close:
+      'absolute end-1.5 top-1.5 inline-grid size-6 place-items-center rounded text-fg-muted hover:bg-surface-3 hover:text-fg-primary',
+    title: 'text-sm font-semibold text-fg-primary'
+  },
+  panel: {
+    close:
+      'absolute end-2.5 top-2.5 inline-grid size-7 place-items-center rounded-control text-fg-muted hover:bg-surface-3 hover:text-fg-primary',
+    title: 'pe-8 text-sm font-semibold text-fg-primary'
+  }
+};
 
 /** The scrim: above the shell (z-40); the plate (z-50), tooltips (z-50) and the toasts' region (z-[60]) rank above it. */
 const OVERLAY_CLASSES = 'fixed inset-0 z-40 bg-[var(--scrim)]';
@@ -204,8 +257,9 @@ function dismissOnScrimPress(scrim: HTMLElement, modal: boolean, dismiss: () => 
 /**
  * Render the modal dialog (mount-driven — render inside a `<Show>` while open).
  *
- * The title is visually hidden: devtools-grade overlays present their own
- * fields/lists, not a heading block — assistive tech still names the dialog.
+ * The title is visually hidden unless {@link ModalDialogProps.showTitle}:
+ * devtools-grade overlays present their own fields/lists, not a heading
+ * block — assistive tech still names the dialog.
  *
  * @param props.onClose The dismissal callback (Escape / outside pointer / the
  *   optional close button).
@@ -213,6 +267,8 @@ function dismissOnScrimPress(scrim: HTMLElement, modal: boolean, dismiss: () => 
  * @param props.title The dialog's accessible name (visually hidden).
  * @param props.description The accessible description (optional, hidden).
  * @param props.closeButton Whether the explicit dismissal control renders.
+ * @param props.variant The look (default `default`).
+ * @param props.showTitle Whether the title renders visibly (default false).
  * @param props.class Extra classes on the panel.
  * @param props.overlayClass Extra classes on the scrim.
  * @param props.mount The injected UI's render node (mounted mode).
@@ -224,6 +280,8 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
   // the root and the scrim must agree, and the mount never changes per mount.
   // eslint-disable-next-line solid/reactivity -- a mount-time read by design
   const modal = props.mount === undefined;
+  // eslint-disable-next-line solid/reactivity -- a look is fixed per mount
+  const look = DIALOG_LOOKS[props.variant ?? 'default'];
   /** Set by a dismissal: later seams of the same press (one press seen twice) are no-ops. */
   let dismissed = false;
   /** Controlled mode's re-arm timer (pending while a gesture's task runs). */
@@ -307,7 +365,10 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
             event.preventDefault();
           }}
         >
-          <KobalteDialog.Title data-fdt="dialog-title" class="sr-only">
+          <KobalteDialog.Title
+            data-fdt="dialog-title"
+            class={props.showTitle === true ? look.title : 'sr-only'}
+          >
             {props.title}
           </KobalteDialog.Title>
           <Show when={props.description !== undefined}>
@@ -319,10 +380,7 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
             <KobalteDialog.CloseButton
               data-fdt="dialog-close"
               aria-label="Close dialog"
-              class={cn(
-                'absolute end-1.5 top-1.5 inline-grid size-6 place-items-center rounded text-fg-muted hover:bg-surface-3 hover:text-fg-primary',
-                FOCUS_RING
-              )}
+              class={cn(look.close, FOCUS_RING)}
             >
               <X size={12} aria-hidden="true" />
             </KobalteDialog.CloseButton>

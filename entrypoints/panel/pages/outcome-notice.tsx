@@ -16,6 +16,19 @@ import {
 } from '../../../components/ui/status-badge';
 import { cn } from '../../../utils/cn';
 
+/**
+ * A notice's frame: the card corner, a little more inline room than its
+ * block padding. Shared with the TEST MODE notice, so every in-page notice
+ * (a soft status tint, an icon, words, actions) has one shape.
+ */
+export const NOTICE_FRAME = 'rounded-lg px-3 py-2.5';
+
+/**
+ * A notice's leading icon: 16 px, on the title's 16 px line (no nudge), in
+ * the tone's text color (callers add {@link STATUS_TEXT_CLASSES}).
+ */
+export const NOTICE_ICON_SIZE = 16;
+
 /** Props of {@link OutcomeNotice}. */
 export type OutcomeNoticeProps = {
   /** The outcome's tone (status vocabulary: icon + tint). */
@@ -36,17 +49,13 @@ export function OutcomeNotice(props: OutcomeNoticeProps): JSX.Element {
   return (
     <div
       {...rest}
-      class={cn(
-        'flex flex-col gap-2 rounded-md p-2.5',
-        STATUS_SOFT_CLASSES[own.kind],
-        MOTION_REVEAL
-      )}
+      class={cn('flex flex-col gap-2', NOTICE_FRAME, STATUS_SOFT_CLASSES[own.kind], MOTION_REVEAL)}
     >
-      <div class="flex items-start gap-1.5">
+      <div class="flex items-start gap-2">
         <Dynamic
           component={STATUS_ICONS[own.kind]}
-          size={14}
-          class={cn('mt-px shrink-0', STATUS_TEXT_CLASSES[own.kind])}
+          size={NOTICE_ICON_SIZE}
+          class={cn('shrink-0', STATUS_TEXT_CLASSES[own.kind])}
           aria-hidden="true"
         />
         <div class="flex min-w-0 flex-col gap-0.5">

@@ -10,7 +10,7 @@ import { Button } from '../../../components/ui/button';
 import { EmptyState } from '../../../components/ui/empty-state';
 import { PageHeader } from '../../../components/ui/page-header';
 import { cn } from '../../../utils/cn';
-import { navRoute, type RouteId } from '../routes';
+import { navRoute, type HeaderActionRoute, type RouteId } from '../routes';
 
 /**
  * Classes for the one scroller of a `fill` frame (usually the `VirtualList`):
@@ -29,16 +29,12 @@ export const PAGE_FILL_SCROLLER = 'min-h-48 flex-1 contain-size';
  */
 export const PAGE_CANVAS = 'bg-surface-0';
 
-/** Props of {@link PageFrame}. */
-export interface PageFrameProps {
-  /** The route the body renders — tags the root for focus management and tests. */
-  id: RouteId;
+/** The props every page frame takes, whatever its route. */
+export interface PageFrameBaseProps {
   /** The page title, rendered as the page's only `h1`. */
   title: string;
-  /** The one-line "what am I looking at" under the title. */
-  subtitle?: string;
-  /** The title row's actions cluster (right-aligned, wraps under the title when narrow). */
-  actions?: JSX.Element;
+  /** The one-line "what am I looking at" under the title (or a loading placeholder for it). */
+  subtitle?: JSX.Element;
   /**
    * Fill mode for list pages: the frame spans at least the content region's
    * height as a flex column, so header/summary/filters stay put while the child
@@ -56,6 +52,25 @@ export interface PageFrameProps {
 }
 
 /**
+ * The title row's actions cluster (right-aligned, wraps under the title when
+ * narrow), tied to the route registry's {@link HeaderActionRoute} list: a
+ * listed literal id must pass it, any other literal id cannot. A frame whose
+ * id is only known as some `RouteId` (the shell's loading and failed frames)
+ * may pass it or not.
+ */
+export type PageFrameActionsProps<R extends RouteId> = [R] extends [HeaderActionRoute]
+  ? { actions: JSX.Element }
+  : [R] extends [Exclude<RouteId, HeaderActionRoute>]
+    ? { actions?: never }
+    : { actions?: JSX.Element };
+
+/** Props of {@link PageFrame} for route `R` (inferred from its `id`). */
+export type PageFrameProps<R extends RouteId = RouteId> = PageFrameBaseProps & {
+  /** The route the body renders — tags the root for focus management and tests. */
+  id: R;
+} & PageFrameActionsProps<R>;
+
+/**
  * Render a panel page's frame.
  *
  * The root carries the shell's mount-only `.fdt-page` entrance (pages never
@@ -71,12 +86,12 @@ export interface PageFrameProps {
  * @param props.id The route id, written to `data-fdt-page`.
  * @param props.title The page `h1`.
  * @param props.subtitle Optional intro line.
- * @param props.actions Optional actions cluster.
+ * @param props.actions The actions cluster (see {@link PageFrameActionsProps}).
  * @param props.fill Full-height flex column for list pages (default `false`).
  * @param props.ref Optional ref to the root (the `@container`).
  * @param props.children The page sections.
  */
-export function PageFrame(props: PageFrameProps): JSX.Element {
+export function PageFrame<R extends RouteId>(props: PageFrameProps<R>): JSX.Element {
   return (
     <section
       ref={(element) => props.ref?.(element)}

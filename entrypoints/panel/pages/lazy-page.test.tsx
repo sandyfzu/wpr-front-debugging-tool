@@ -46,6 +46,18 @@ describe('lazyPage', () => {
     render(() => <Body />);
     expect(document.querySelector('[data-fdt-page-chunk-loading]')).not.toBeNull();
     expect(screen.getByRole('heading', { level: 1, name: 'Beacon Tester' })).toBeTruthy();
+    // The wait is shaped like the page that lands (a tool: run card + empty result).
+    expect(
+      document
+        .querySelector('[data-fdt-page-chunk-loading] [data-fdt="route-loading"]')
+        ?.getAttribute('data-fdt-loading-shape')
+    ).toBe('Tools');
+    // Its header reserves the landed header's subtitle (this route has no actions).
+    const header = document.querySelector(
+      '[data-fdt-page="beacon-tester"] [data-fdt="page-header"]'
+    );
+    expect(header?.querySelector('[data-fdt="loading-subtitle"]')).not.toBeNull();
+    expect(header?.querySelectorAll('[data-fdt="skeleton"]')).toHaveLength(2);
     loader.resolve(() => <p>Loaded page</p>);
     await settle();
     expect(screen.getByText('Loaded page')).toBeTruthy();
@@ -73,6 +85,10 @@ describe('lazyPage', () => {
     loader.reject(new Error('Failed to fetch dynamically imported module'));
     await settle();
     expect(screen.getByText(PAGE_LOAD_FAILED_COPY)).toBeTruthy();
+    // The failure replaces the page body: framed as a page-level state.
+    expect(
+      document.querySelector('[data-fdt="page-state-card"] [data-fdt="error-state"]')
+    ).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Reload panel' }));
     expect(reloadPanel).toHaveBeenCalledTimes(1);
     cleanup();

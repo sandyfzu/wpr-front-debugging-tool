@@ -12,7 +12,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Show, createSignal } from 'solid-js';
-import { isContextMenuPress, ModalDialog } from './dialog';
+import { DIALOG_LOOKS, isContextMenuPress, ModalDialog } from './dialog';
+import { FOCUS_RING } from './classes';
+import { cn } from '../../utils/cn';
 import { Button } from './button';
 import { isolateUiEvents } from '../injected-ui/event-isolation';
 
@@ -129,6 +131,82 @@ describe('ModalDialog structure', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog.className).toContain('max-h-[calc(100dvh-5rem)]');
     expect(dialog.className).toContain('flex-col');
+  });
+});
+
+describe('ModalDialog looks', () => {
+  /**
+   * Each look's classes, verbatim (literals, never read from the module under
+   * test): `default.close` is the released close control (injected UIs render
+   * it), so any added, dropped or reordered class fails here.
+   */
+  const LOOKS = {
+    default: {
+      close:
+        'absolute end-1.5 top-1.5 inline-grid size-6 place-items-center rounded text-fg-muted hover:bg-surface-3 hover:text-fg-primary',
+      title: 'text-sm font-semibold text-fg-primary'
+    },
+    panel: {
+      close:
+        'absolute end-2.5 top-2.5 inline-grid size-7 place-items-center rounded-control text-fg-muted hover:bg-surface-3 hover:text-fg-primary',
+      title: 'pe-8 text-sm font-semibold text-fg-primary'
+    }
+  };
+
+  /** The released dialog plate's classes (the default look never touches them). */
+  const SHIPPED_PLATE =
+    'fixed left-1/2 top-16 z-50 flex max-h-[calc(100dvh-5rem)] w-[min(30rem,calc(100%-1.5rem))] -translate-x-1/2 flex-col rounded-lg border border-line-2 bg-surface-2 shadow-elev-3';
+
+  it('pins every look to its literal classes', () => {
+    expect({
+      default: { ...DIALOG_LOOKS.default },
+      panel: { ...DIALOG_LOOKS.panel }
+    }).toStrictEqual(LOOKS);
+  });
+
+  it('keeps the shipped look by default: hidden title, the 24 px close square', () => {
+    renderDialog({ closeButton: true });
+    expect(screen.getByText('Settings').className).toBe('sr-only');
+    const close = screen.getByRole('button', { name: 'Close dialog' });
+    expect(close.className).toBe(cn(LOOKS.default.close, FOCUS_RING));
+    expect(screen.getByRole('dialog').className).toBe(SHIPPED_PLATE);
+  });
+
+  it('panel look: the close control on the control corner, a step larger', () => {
+    render(() => (
+      <ModalDialog title="Shortcuts" variant="panel" closeButton onClose={vi.fn()}>
+        <p>Body</p>
+      </ModalDialog>
+    ));
+    const close = screen.getByRole('button', { name: 'Close dialog' });
+    expect(close.className).toBe(cn(LOOKS.panel.close, FOCUS_RING));
+    expect(close.classList).toContain('rounded-control');
+    expect(close.classList).toContain('size-7');
+    // The title stays hidden unless asked for.
+    expect(screen.getByText('Shortcuts').className).toBe('sr-only');
+  });
+
+  it('shows the title as the plate heading on request, in the look’s heading type', () => {
+    for (const variant of ['default', 'panel'] as const) {
+      render(() => (
+        <ModalDialog title="Shortcuts" variant={variant} showTitle onClose={vi.fn()}>
+          <p>Body</p>
+        </ModalDialog>
+      ));
+      const title = screen.getByText('Shortcuts');
+      expect(title.tagName).toBe('H2');
+      expect(title.className).toBe(LOOKS[variant].title);
+      expect(title.classList).not.toContain('sr-only');
+      // Still the dialog's name.
+      expect(screen.getByRole('dialog').getAttribute('aria-labelledby')).toBe(title.id);
+      cleanup();
+    }
+  });
+
+  it('pins every look to token classes (no literal colors, no transitions)', () => {
+    for (const look of Object.values(DIALOG_LOOKS)) {
+      expect(`${look.close} ${look.title}`).not.toMatch(/#|rgb|transition/);
+    }
   });
 });
 

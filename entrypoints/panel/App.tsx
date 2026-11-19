@@ -17,7 +17,6 @@
 import {
   ErrorBoundary,
   Match,
-  Show,
   Switch,
   createEffect,
   createMemo,
@@ -30,7 +29,6 @@ import {
 import { Dynamic } from 'solid-js/web';
 import { ErrorState } from '../../components/ui/error-state';
 import { PageHeader } from '../../components/ui/page-header';
-import { Skeleton } from '../../components/ui/skeleton';
 import { Toasts } from '../../components/ui/toast';
 import { AppearanceMenu } from '../../components/appearance-menu';
 import { setAppearanceOption } from '../../lib/storage/options';
@@ -53,7 +51,8 @@ import { guardAppearanceWrite } from './appearance-write';
 import { realBuilderEntryDeps, type BuilderEntryDeps } from './top-bar/builder-entry';
 import { readInspectedPageUrl, realInspectedEvalApi } from './report/inspected-page-url';
 import { PAGES } from './pages';
-import { OverviewSkeleton } from './pages/detections/overview-tiles';
+import { LoadingActions, LoadingSubtitle, RouteLoading } from './pages/loading-shapes';
+import { PageStateCard } from './pages/page-state-card';
 import { focusRouteHeading } from './palette/focus';
 import { PanelOverlays } from './palette/panel-overlays';
 import { createOverlayStore, type OverlayStore } from './palette/overlays';
@@ -77,6 +76,7 @@ import { devtoolsInspectedTabId, fdtRequestEdges, realMessagingEdges } from './s
 import { withRelayedPushes } from './state/relayed-pushes';
 import { createHardReloadBudget } from './state/hard-reload-budget';
 import { createShellWidth, type InlineSizeObserver } from './state/shell-width';
+import { pageViewOf } from './state/page-view';
 
 const log = createLogger('panel');
 
@@ -290,6 +290,25 @@ export function PanelApp(props: AppProps): JSX.Element {
     )
   );
 
+  /** The content region (the one scroll container of the route bodies and states). */
+  let contentRegion: HTMLElement | undefined;
+
+  // A page-level view swap (Retry's error → loading, loading → page, …)
+  // replaces the whole body: start the new view at its top, so its heading is
+  // in view instead of the offset the previous view was scrolled to. A soft
+  // refresh stays on the same view, so its scroll survives.
+  // (A memo: `on` fires per source change, and every data push is one.)
+  const pageView = createMemo(() => pageViewOf(data.state().status));
+  createEffect(
+    on(
+      pageView,
+      () => {
+        if (contentRegion !== undefined) contentRegion.scrollTop = 0;
+      },
+      { defer: true }
+    )
+  );
+
   /** The error branch's datum, for the retry affordance (typed narrowing). */
   const errorState = createMemo((): DataError | null => {
     const current = data.state();
@@ -371,7 +390,11 @@ export function PanelApp(props: AppProps): JSX.Element {
                   width={shellWidth.width}
                   pin={navPin}
                 />
-                <main data-fdt="panel-content" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+                <main
+                  ref={contentRegion}
+                  data-fdt="panel-content"
+                  class="min-h-0 min-w-0 flex-1 overflow-y-auto"
+                >
                   <ErrorBoundary
                     fallback={(error: unknown) => {
                       // The render-crash retry reloads the whole panel document
@@ -383,12 +406,14 @@ export function PanelApp(props: AppProps): JSX.Element {
                       });
                       return (
                         <PageCanvas id={router.route()}>
-                          <ErrorState
-                            pageHeading
-                            title="The panel came apart"
-                            message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
-                            onRetry={props.reload ?? reloadPanelDocument}
-                          />
+                          <PageStateCard>
+                            <ErrorState
+                              pageHeading
+                              title="The panel came apart"
+                              message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
+                              onRetry={props.reload ?? reloadPanelDocument}
+                            />
+                          </PageStateCard>
                         </PageCanvas>
                       );
                     }}
@@ -404,14 +429,16 @@ export function PanelApp(props: AppProps): JSX.Element {
                       <Match when={errorState()} keyed>
                         {(error) => (
                           <PageCanvas id={router.route()}>
-                            <ErrorState
-                              pageHeading
-                              title="Couldn't load page data"
-                              message={error.cause}
-                              onRetry={() => {
-                                data.retry();
-                              }}
-                            />
+                            <PageStateCard>
+                              <ErrorState
+                                pageHeading
+                                title="Couldn't load page data"
+                                message={error.cause}
+                                onRetry={() => {
+                                  data.retry();
+                                }}
+                              />
+                            </PageStateCard>
                           </PageCanvas>
                         )}
                       </Match>
@@ -420,7 +447,9 @@ export function PanelApp(props: AppProps): JSX.Element {
                       <Match when={unavailableReason()} keyed>
                         {(reason) => (
                           <PageCanvas id={router.route()}>
-                            <DataUnavailable reason={reason} />
+                            <PageStateCard>
+                              <DataUnavailable reason={reason} />
+                            </PageStateCard>
                           </PageCanvas>
                         )}
                       </Match>
@@ -462,26 +491,25 @@ export function PanelApp(props: AppProps): JSX.Element {
 }
 
 /**
- * Name the real wait above placeholders on the destination's canvas.
- * @param props The current route; changes during boot update the canvas width.
- * @returns A visible loading title and placeholders bounded by available inline size.
+ * The boot's loading page: the real wait named in the page's h1 (its header
+ * reserving the landed header's subtitle and actions lines) above the
+ * destination route's loading shape, on that route's canvas — so the
+ * shell's real top bar and sidebar frame a body already shaped like the
+ * page that lands (the top bar shows its own placeholders until data).
+ *
+ * @param props The current route; changes during boot update the canvas and the shape.
+ * @returns The loading page.
  */
 function SkeletonPage(props: { route: RouteId }): JSX.Element {
   return (
     <section class="fdt-page @container" data-fdt-page="fetching">
       <PageCanvas id={props.route}>
-        <PageHeader title="Loading page data" />
-        {/* A zero-minimum track lets the fixed short bar's max-width resolve
-            against available space instead of widening the grid intrinsically. */}
-        <div class="mt-1 grid grid-cols-1 gap-2">
-          {/* The overview's own shape where it will land. */}
-          <Show when={props.route === 'detections'}>
-            <OverviewSkeleton />
-          </Show>
-          <Skeleton class="h-14 w-full" />
-          <Skeleton class="h-14 w-full" />
-          <Skeleton class="h-14 w-64 max-w-full" />
-        </div>
+        <PageHeader
+          title="Loading page data"
+          subtitle={<LoadingSubtitle />}
+          actions={<LoadingActions route={props.route} />}
+        />
+        <RouteLoading route={props.route} />
       </PageCanvas>
     </section>
   );

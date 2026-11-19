@@ -246,10 +246,12 @@ test('loading placeholder uses the same centered bounded canvas as ready data', 
     await expect(loading).toBeVisible();
     await info.attach('loading-1920', { body: await panel.screenshot(), contentType: 'image/png' });
     const geometry = await loading.evaluate((el) => {
-      const bar = el.querySelector('[data-fdt="skeleton"]') ?? el.firstElementChild;
-      if (!bar) throw new Error('Missing loading bar');
+      // The loading body's own box: its first bar may sit inset inside a card
+      // (the page's shape), so the canvas edge is read on the body itself.
+      const body = el.querySelector('[data-fdt="route-loading"]');
+      if (!body) throw new Error('Missing loading body');
       const region = el.getBoundingClientRect();
-      return { regionWidth: region.width, left: bar.getBoundingClientRect().left - region.left };
+      return { regionWidth: region.width, left: body.getBoundingClientRect().left - region.left };
     });
     await panel.setViewportSize({ width: 320, height: 800 });
     await expect(loading).toBeVisible();

@@ -53,6 +53,32 @@ export type RouteId = (typeof ROUTE_IDS)[number];
 /** The route the panel shows for an empty or unknown hash. */
 export const DEFAULT_ROUTE: RouteId = 'detections';
 
+/**
+ * The routes whose page header carries an actions cluster (Detections' Copy
+ * report, Headers & Cookies' copy-all). Declared here, once: `PageFrame`'s
+ * props require `actions` for these ids and forbid it for every other
+ * literal id, so a page gaining or losing its cluster fails to compile until
+ * this list follows — and the loading header, which reserves the cluster's
+ * room, reads the same list.
+ */
+export const HEADER_ACTION_ROUTES = [
+  'detections',
+  'headers-cookies'
+] as const satisfies readonly RouteId[];
+
+/** A route whose page header carries an actions cluster. */
+export type HeaderActionRoute = (typeof HEADER_ACTION_ROUTES)[number];
+
+/**
+ * Whether a route's page header carries an actions cluster.
+ *
+ * @param id The route.
+ * @returns True for the {@link HEADER_ACTION_ROUTES}.
+ */
+export function hasHeaderActions(id: RouteId): id is HeaderActionRoute {
+  return (HEADER_ACTION_ROUTES as readonly RouteId[]).includes(id);
+}
+
 /** What a nav row's live-state selector resolves to (rendered by the adaptive nav). */
 export interface NavLiveState {
   /** Short state text rendered next to the label (e.g. "12 found", "delayed 3/9"). */

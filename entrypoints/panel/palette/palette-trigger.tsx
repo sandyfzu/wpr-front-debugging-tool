@@ -10,7 +10,9 @@
  */
 import { Show, type JSX } from 'solid-js';
 import Search from 'lucide-solid/icons/search';
+import { KEY_CHIP } from '../../../components/ui/classes';
 import { Tooltip } from '../../../components/ui/tooltip';
+import { cn } from '../../../utils/cn';
 
 export interface PaletteTriggerProps {
   /** Whether the palette is open right now (`aria-expanded`). */
@@ -38,12 +40,12 @@ const ICON_CLASSES =
   'inline-grid size-7 shrink-0 place-items-center rounded-control text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
 
 /**
- * The inline key chip. Decorative (the tooltip carries the keys): its text
- * is generated content from `data-key-hint`, so it is not part of the
- * button's visible label, which must stay inside the accessible name.
+ * The inline key chip ({@link KEY_CHIP}). Decorative (the tooltip carries the
+ * keys): its text is generated content from `data-key-hint`, so it is not
+ * part of the button's visible label, which must stay inside the accessible
+ * name.
  */
-const KEY_HINT =
-  'rounded-sm border border-line-2 bg-surface-1 px-1 font-sans text-2xs text-fg-muted after:content-[attr(data-key-hint)]';
+const KEY_HINT = cn(KEY_CHIP, 'after:content-[attr(data-key-hint)]');
 
 /** The trigger's accessible name in each form (the wide one starts with its visible words). */
 export const PALETTE_TRIGGER_LABELS = {

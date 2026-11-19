@@ -1,7 +1,9 @@
 /**
  * The error view — the no-dead-ends pattern's owner (UX-D9): every async
  * surface renders this when data/contract handling fails, always with a
- * working retry affordance (the type system enforces one).
+ * working retry affordance (the type system enforces one). Same anatomy as
+ * the empty view (a toned icon tile, title, sentence, actions), in the error
+ * tone.
  *
  * Context-specific failures (extension context invalidated after a reload,
  * content script not injected yet, unreadable data) are named in the
@@ -13,7 +15,7 @@ import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import { cn } from '../../utils/cn';
 import { Button } from './button';
 import { PageHeader } from './page-header';
-import { STATUS_TEXT_CLASSES } from './status-badge';
+import { StateIcon } from './state-icon';
 
 export interface ErrorStateProps {
   /** The state name (default a neutral "couldn't render this" headline). */
@@ -61,15 +63,14 @@ export function ErrorState(props: ErrorStateProps): JSX.Element {
       role="alert"
       class={cn('flex flex-col items-center gap-1.5 py-6 text-center', props.class)}
     >
-      <TriangleAlert
-        size={16}
-        class={cn('shrink-0', STATUS_TEXT_CLASSES.error)}
-        aria-hidden="true"
-      />
+      {/* The page-level view leads with the larger tile, as a tool's empty result does. */}
+      <StateIcon tone="error" size={props.pageHeading ? 'lg' : 'md'} class="mb-1">
+        <TriangleAlert size={props.pageHeading ? 22 : 16} aria-hidden="true" />
+      </StateIcon>
       <Show
         when={props.pageHeading}
         fallback={
-          <div class="text-xs font-medium text-fg-primary">{props.title ?? DEFAULT_TITLE}</div>
+          <div class="text-xs font-semibold text-fg-primary">{props.title ?? DEFAULT_TITLE}</div>
         }
       >
         <PageHeader title={props.title ?? DEFAULT_TITLE} />

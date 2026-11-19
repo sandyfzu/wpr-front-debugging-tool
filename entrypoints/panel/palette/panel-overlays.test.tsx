@@ -21,6 +21,9 @@ import { NAV_ROUTES } from '../routes';
 import { createPanelActions } from './actions';
 import { createOverlayStore } from './overlays';
 import { productionActionDeps } from './panel-overlays';
+import { PANEL_SHORTCUTS } from './shortcuts';
+import { PALETTE_LOOKS } from '../../../components/ui/command-palette';
+import { KEY_CHIP } from '../../../components/ui/classes';
 import type { PanelChordDeps } from './chord-binding';
 import type { PaletteChord } from '../../../lib/storage/palette-chord';
 
@@ -337,6 +340,72 @@ describe('the keyboard overlays in the shell', () => {
       expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).toBeNull();
     });
     expect(document.activeElement).toBe(trigger);
+  });
+});
+
+describe('the overlays’ panel look', () => {
+  it('opens the palette in the panel look, with the key footer under the list', async () => {
+    bootShellWithData();
+    fireEvent.click(screen.getByRole('button', { name: 'Command palette' }));
+    const field = await paletteField();
+    expect(field.className).toContain(PALETTE_LOOKS.panel.field);
+    expect(field.parentElement?.className).toBe(PALETTE_LOOKS.panel.fieldFrame);
+    const footer = document.querySelector('[data-fdt="palette-footer"]');
+    expect(footer).not.toBeNull();
+    expect(screen.getByRole('dialog').contains(footer)).toBe(true);
+    expect(footer?.textContent).toBe('moverunEscclose');
+  });
+
+  it('shows the shortcuts title, the keys as chips in one aligned column', async () => {
+    bootShellWithData();
+    fireEvent.keyDown(document.body, { key: '/', bubbles: true, cancelable: true });
+    const dialog = await waitFor(() => screen.getByRole('dialog', { name: 'Keyboard shortcuts' }));
+    const title = screen.getByRole('heading', { level: 2, name: 'Keyboard shortcuts' });
+    expect(title.classList).not.toContain('sr-only');
+    expect(dialog.querySelector('[data-fdt="dialog-close"]')?.classList).toContain(
+      'rounded-control'
+    );
+    const rows = [...dialog.querySelectorAll<HTMLElement>('[data-fdt="shortcut-row"]')];
+    expect(rows).toHaveLength(PANEL_SHORTCUTS.length);
+    // One grid holds only the rows (subgrid rows share its keys column).
+    const grid = rows[0]?.parentElement;
+    expect(grid?.children).toHaveLength(PANEL_SHORTCUTS.length);
+    expect(grid?.classList).toContain('grid-cols-[max-content_minmax(0,1fr)]');
+    for (const row of rows) {
+      expect(row.classList).toContain('grid-cols-subgrid');
+      const keys = row.firstElementChild;
+      expect(keys?.tagName).toBe('KBD');
+      for (const token of KEY_CHIP.split(' ').filter((token) => token !== 'text-fg-muted')) {
+        expect(keys?.classList).toContain(token);
+      }
+      expect(keys?.classList).toContain('text-fg-primary');
+    }
+  });
+
+  it('caps the plate under its own top offset and scrolls only the rows', async () => {
+    bootShellWithData();
+    fireEvent.keyDown(document.body, { key: '/', bubbles: true, cancelable: true });
+    const dialog = await waitFor(() => screen.getByRole('dialog', { name: 'Keyboard shortcuts' }));
+    // The overlay's offset wins over the dialog's default, and the cap follows it
+    // (6 rem down + 1 rem kept free) — the default `top-16` pair never survives.
+    expect(dialog.classList).toContain('top-24');
+    expect(dialog.classList).toContain('max-h-[calc(100dvh-7rem)]');
+    expect(dialog.classList).not.toContain('top-16');
+    expect(dialog.classList).not.toContain('max-h-[calc(100dvh-5rem)]');
+    const rows = dialog.querySelector<HTMLElement>('[data-fdt="shortcut-rows"]');
+    // The one scroller: shrinkable, scrolling, a tab stop (its rows hold no control).
+    expect(rows?.classList).toContain('min-h-0');
+    expect(rows?.classList).toContain('overflow-y-auto');
+    expect(rows?.getAttribute('tabindex')).toBe('0');
+    // The title and the close control sit outside it (they never scroll away).
+    expect(
+      rows?.contains(screen.getByRole('heading', { level: 2, name: 'Keyboard shortcuts' }))
+    ).toBe(false);
+    expect(rows?.contains(dialog.querySelector('[data-fdt="dialog-close"]'))).toBe(false);
+    // Mount autofocus still lands on the close control (it precedes the scroller).
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute('data-fdt')).toBe('dialog-close');
+    });
   });
 });
 

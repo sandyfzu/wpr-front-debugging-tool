@@ -462,8 +462,15 @@ describe('OverviewSkeleton', () => {
     render(() => <OverviewSkeleton />);
     const root = document.querySelector<HTMLElement>('[data-fdt="detections-overview-skeleton"]');
     expect(root?.className).toBe(OVERVIEW_GRID);
-    const placeholders = [...(root?.querySelectorAll<HTMLElement>('[data-fdt="skeleton"]') ?? [])];
+    const placeholders = [
+      ...(root?.querySelectorAll<HTMLElement>(':scope > [data-fdt="overview-tile-skeleton"]') ?? [])
+    ];
     expect(placeholders).toHaveLength(4);
+    // Each tile placeholder is a raised card holding pulsing lines (the tiles' own surface).
+    for (const el of placeholders) {
+      expect(el.querySelector('[data-fdt="card"]')).not.toBeNull();
+      expect(el.querySelectorAll('[data-fdt="skeleton"]').length).toBeGreaterThan(1);
+    }
     expect(placeholders[0]?.className).toContain(SCORE_CELL);
     expect(placeholders.slice(1).map((el) => el.className.includes(SCORE_CELL))).toEqual([
       false,
