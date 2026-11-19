@@ -296,7 +296,7 @@ test('entry into a deep-scrolled scripts list targets the first visible row at z
   }
 });
 
-test('backward entry from the status bar targets the last visible row', async ({ extension }) => {
+test('backward entry from below the list targets the last visible row', async ({ extension }) => {
   await serveEntryFixture(extension);
   const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/list-entry.html', {
     bootHash: '#/javascript'
@@ -330,11 +330,22 @@ test('backward entry from the status bar targets the last visible row', async ({
       if (last === null) throw new Error('no band row rendered');
       return last;
     }, ROUTES.javascript);
-    // The focus lives below the list (the status strip's leading segment
-    // link is the first focusable after the page canvas); a backward entry
-    // press must enter at the last visible row, never at the
-    // bottom-overscan cluster the natural navigation prefers.
-    const below = panel.locator('[data-fdt="panel-status-bar"] a').first();
+    // The focus lives below the list; a backward entry press must enter at
+    // the last visible row, never at the bottom-overscan cluster the natural
+    // navigation prefers. The shell has no focusable after the page canvas
+    // (its answers live in the top bar, above it), so a focusable sentinel
+    // right after the rail-and-content row stands in for "Shift+Tab from
+    // below the list".
+    await panel.evaluate(() => {
+      const row = document.querySelector('[data-fdt="panel-content"]')?.parentElement;
+      if (row === null || row === undefined) throw new Error('content row not mounted');
+      const sentinel = document.createElement('button');
+      sentinel.type = 'button';
+      sentinel.dataset.e2eBelowList = '';
+      sentinel.textContent = 'below the list';
+      row.after(sentinel);
+    });
+    const below = panel.locator('[data-e2e-below-list]');
     await below.focus();
     await panel.keyboard.press('Shift+Tab');
     const entry = await readEntry(panel, ROUTES.javascript);

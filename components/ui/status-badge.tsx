@@ -105,3 +105,32 @@ export function StatusBadge(props: StatusBadgeProps): JSX.Element {
     </span>
   );
 }
+
+/** Props of {@link StatusDot}. */
+export interface StatusDotProps {
+  /** The vocabulary kind (its token color). */
+  kind: StatusKind;
+  /** Placement classes (position, offsets), merged last. */
+  class?: string;
+  /** A test/inspection hook. */
+  'data-fdt'?: string;
+}
+
+/**
+ * Render a 6 px dot in a kind's color: the glance marker an icon-only
+ * control wears for a state it folded away (e.g. a menu holding a stale
+ * marker). Decorative by contract — the control's accessible name must
+ * carry the state's words, so the color never speaks alone.
+ *
+ * @param props.kind The kind; the color comes from {@link STATUS_TEXT_CLASSES}.
+ * @param props.class Placement classes.
+ */
+export function StatusDot(props: StatusDotProps): JSX.Element {
+  return (
+    <span
+      data-fdt={props['data-fdt']}
+      aria-hidden="true"
+      class={cn('size-1.5 rounded-full bg-current', STATUS_TEXT_CLASSES[props.kind], props.class)}
+    />
+  );
+}

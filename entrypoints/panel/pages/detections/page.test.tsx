@@ -305,7 +305,7 @@ describe('DetectionsView', () => {
     expect(document.querySelector('[data-fdt-summary-fact="cache"]')?.textContent).toBe(
       'Cache generated 2023-11-14 22:13:20 UTC'
     );
-    // Nothing cloned from the status bar: no plugin badge, no server, no age.
+    // Nothing cloned from the top bar: no plugin badge, no server, no age.
     const strip = document.querySelector('[data-fdt="detections-summary"]');
     expect(strip?.querySelector('[data-fdt="status-badge"]')).toBeNull();
     expect(strip?.textContent).not.toContain('nginx');

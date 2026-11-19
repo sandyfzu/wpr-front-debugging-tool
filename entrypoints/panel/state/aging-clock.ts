@@ -19,8 +19,8 @@ const log = createLogger('panel');
  *
  * Ages are bucketed to whole seconds/minutes, so a 30 s cadence keeps every
  * displayed value within half a minute of truth (minute flips land within
- * one tick) at two no-op signal writes per minute; the strip re-renders its
- * four segments per tick — measured, nothing. Visibility pauses keep the
+ * one tick) at two no-op signal writes per minute; the top bar re-renders its
+ * answers per tick — measured, nothing. Visibility pauses keep the
  * hidden panel entirely idle.
  */
 export const AGE_TICK_INTERVAL_MS = 30_000;
@@ -39,7 +39,7 @@ export interface AgingClockDeps {
   readonly now: () => number;
 }
 
-/** What the strip consumes. */
+/** What a consumer reads. */
 export interface AgingClock {
   /** The clock's reading (wall-clock ms); ticks advance it while armed. */
   readonly now: Accessor<number>;
@@ -118,10 +118,10 @@ export function createAgingClock(deps: AgingClockDeps): AgingClock {
 
 /**
  * The production seams: the document's real visibility state and a real
- * repeating timer. Kept beside the factory so the strip component stays
+ * repeating timer. Kept beside the factory so the top bar component stays
  * wiring only.
  *
- * @returns The deps the strip uses in production.
+ * @returns The deps the top bar uses in production.
  */
 export function realAgingClockDeps(): AgingClockDeps {
   return {

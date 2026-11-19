@@ -314,7 +314,7 @@ function lastRowByName(headers: readonly PageHeader[]): Map<string, PageHeader> 
 }
 
 /**
- * The capture's header truth rule (shared with the status bar's segments): a
+ * The capture's header truth rule (shared with the top bar's answers): a
  * row's value is present when present and non-empty once trimmed — a
  * name-only row and a whitespace-only value both say "no value".
  */

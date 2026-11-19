@@ -34,11 +34,10 @@ function h1(page: Page): Promise<string | null> {
   );
 }
 
-/** The strip's rendered answers (the full text of the segments). */
-function stripText(page: Page): Promise<string | null> {
+/** The top bar's rendered answers (the full text of the segments). */
+function barText(page: Page): Promise<string | null> {
   return page.evaluate(
-    (): string | null =>
-      document.querySelector('[data-fdt="panel-status-bar"]')?.textContent ?? null
+    (): string | null => document.querySelector('[data-fdt="panel-top-bar"]')?.textContent ?? null
   );
 }
 
@@ -72,18 +71,21 @@ test.describe('panel soft refresh (the real push)', () => {
         .toBe('Detections');
 
       // Route: a real deep link (the router reads the hashchange) — the same
-      // surface a bookmarked panel link rides; the strip belongs to the shell.
+      // surface a bookmarked panel link rides; the top bar belongs to the shell.
       await panel.evaluate(() => {
         location.hash = '#/lazyload';
       });
       await expect.poll(async () => await h1(panel)).toBe('Lazyload');
-      expect(await stripText(panel)).toContain('WP Rocket 3.20.1');
+      expect(await barText(panel)).toContain('WP Rocket 3.20.1');
 
       // The realm marker + focused rail anchor: state the swap must not touch
       // (a focused anchor deliberately NOT the active route — the render lore).
       const realm = await stampRealm(panel);
       const focusTake = await panel.evaluate((): boolean => {
-        const row = document.querySelector<HTMLElement>('a[href="#/detections"]');
+        // Scoped to the nav: the top bar's answers also link #/detections.
+        const row = document.querySelector<HTMLElement>(
+          '[data-fdt="panel-nav"] a[href="#/detections"]'
+        );
         if (row === null) throw new Error('the detections rail row vanished before the refresh');
         row.focus();
         (window as { __focusedRow?: HTMLElement }).__focusedRow = row;
@@ -101,7 +103,7 @@ test.describe('panel soft refresh (the real push)', () => {
       // page's absence state — nothing injected, the content script's actual
       // detection output recomputed over the new page.
       await expect
-        .poll(async () => await stripText(panel), { timeout: 15_000, intervals: [50, 100, 250] })
+        .poll(async () => await barText(panel), { timeout: 15_000, intervals: [50, 100, 250] })
         .toContain('Not detected');
 
       // In place: same realm (no frame-level reload), same route + body, and
@@ -119,7 +121,7 @@ test.describe('panel soft refresh (the real push)', () => {
             document.activeElement === (window as { __focusedRow?: HTMLElement }).__focusedRow
         )
       ).toBe(true);
-      expect(await stripText(panel)).not.toContain('WP Rocket 3.20.1');
+      expect(await barText(panel)).not.toContain('WP Rocket 3.20.1');
     } finally {
       await panel.close();
       await fixture.page.close();
@@ -152,7 +154,7 @@ test.describe('panel soft refresh (the real push)', () => {
         waitUntil: 'load'
       });
       await expect
-        .poll(async () => await stripText(panel), { timeout: 15_000, intervals: [50, 100, 250] })
+        .poll(async () => await barText(panel), { timeout: 15_000, intervals: [50, 100, 250] })
         .toContain('Not detected');
 
       expect(await realmSustained(panel, realm)).toBe(true);
@@ -181,9 +183,9 @@ test.describe('panel soft refresh (the real push)', () => {
         .toBe('Detections');
 
       const ownRealm = await stampRealm(own.panel);
-      const ownStrip = await stripText(own.panel);
-      expect(ownStrip).toContain('WP Rocket 3.20.1');
-      expect(await stripText(sibling.panel)).toContain('WP Rocket 3.20.1');
+      const ownBar = await barText(own.panel);
+      expect(ownBar).toContain('WP Rocket 3.20.1');
+      expect(await barText(sibling.panel)).toContain('WP Rocket 3.20.1');
 
       // The SIBLING's tab navigates: both panels receive the push (runtime
       // broadcasts reach every extension listener), and only the sibling's
@@ -192,17 +194,17 @@ test.describe('panel soft refresh (the real push)', () => {
         waitUntil: 'load'
       });
       await expect
-        .poll(async () => await stripText(sibling.panel), {
+        .poll(async () => await barText(sibling.panel), {
           timeout: 15_000,
           intervals: [50, 100, 250]
         })
         .toContain('Not detected');
 
-      // The OWN panel's page: the same JS realm (no reload), the same strip
+      // The OWN panel's page: the same JS realm (no reload), the same top bar
       // answers verbatim — its freshness stamp never reset to a fresh settle,
       // which a drive-by refresh flight would have rewritten.
       expect(await realmSustained(own.panel, ownRealm)).toBe(true);
-      await expect.poll(async () => await stripText(own.panel)).toBe(ownStrip);
+      await expect.poll(async () => await barText(own.panel)).toBe(ownBar);
     } finally {
       await own.panel.close();
       await own.fixture.page.close();

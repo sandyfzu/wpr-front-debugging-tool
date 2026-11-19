@@ -205,7 +205,7 @@ describe('PanelApp boot states', () => {
     });
   });
 
-  it('ends the status strip with the exclusion builder entry, even before page data', async () => {
+  it('holds the exclusion builder entry in the top bar controls, even before page data', async () => {
     const shell = makeShell();
     const askStatus = vi.fn(() =>
       Promise.resolve({ kind: 'reply', reply: { state: 'inactive' } } as const)
@@ -220,18 +220,28 @@ describe('PanelApp boot states', () => {
           open: () => Promise.resolve({ kind: 'reply', reply: 'injected' } as const),
           listen: () => () => undefined
         }}
+        // A full-width shell: the labeled entry sits inline (a folded bar
+        // keeps a quiet entry in its "⋯" menu).
+        observeShellWidth={(_element, onWidth) => {
+          onWidth(1100);
+          return () => undefined;
+        }}
       />
     ));
-    const strip = screen.getByRole('contentinfo', { name: 'Page status' });
+    const bar = screen.getByRole('banner', { name: 'Page status' });
     const control = await waitFor(() => {
-      const found = strip.querySelector('[data-fdt="builder-entry"]');
+      const found = bar.querySelector('[data-fdt="builder-entry"]');
       if (found === null) throw new Error('no builder entry');
       return found;
     });
-    expect(strip.lastElementChild).toBe(control);
+    // Among the bar's trailing controls (the end slot), never an answer.
+    expect(control.closest('[data-fdt-app-bar-slot]')?.getAttribute('data-fdt-app-bar-slot')).toBe(
+      'end'
+    );
     expect(askStatus).toHaveBeenCalledWith(77);
+    // The answer reached it: the quiet "Off" rides the title (no badge).
     await waitFor(() => {
-      expect(control.textContent).toContain('Off');
+      expect(control.getAttribute('title')).toBe('No exclusions applied in this tab.');
     });
   });
 
@@ -367,22 +377,85 @@ describe('PanelApp shell structure', () => {
   });
 });
 
-describe('the status bar in the shell', () => {
-  it('mounts the strip as the shell edge outside the content region, honest at boot', async () => {
+describe('the top bar in the shell', () => {
+  it('mounts the bar above the rail-and-content row, outside the content region, honest at boot', async () => {
     const shell = makeShell();
     render(() => <PanelApp search={shell.search} data={shell.data} />);
-    // The strip exists inside the shell, outside the scrolling content
-    // region, and claims nothing before data settles.
-    const bar = document.querySelector('[data-fdt="panel-status-bar"]') as HTMLElement;
+    // The bar exists inside the shell, outside the scrolling content
+    // region, above the nav + content row, and claims nothing before data.
+    const bar = document.querySelector('[data-fdt="panel-top-bar"]') as HTMLElement;
     const shellRoot = document.querySelector('[data-fdt="panel-shell"]') as HTMLElement;
     const content = document.querySelector('[data-fdt="panel-content"]') as HTMLElement;
+    const nav = document.querySelector('[data-fdt="panel-header"]') as HTMLElement;
     expect(shellRoot.contains(bar)).toBe(true);
     expect(content.contains(bar)).toBe(false);
+    expect(bar.parentElement?.getAttribute('data-fdt')).toBe('panel-stack');
+    expect(bar.parentElement?.firstElementChild).toBe(bar);
+    expect(bar.nextElementSibling?.contains(nav)).toBe(true);
+    expect(bar.nextElementSibling?.contains(content)).toBe(true);
+    // Both chrome bands keep their paint priority over the content (UX-D15).
+    for (const band of [bar, nav]) {
+      expect(band.classList).toContain('relative');
+      expect(band.classList).toContain('z-10');
+    }
+    // Nothing renders below the content row (no footer landmark).
+    expect(screen.queryByRole('contentinfo')).toBeNull();
+    // One banner: the bar (the nav column is not a landmark of its own).
+    expect(screen.getAllByRole('banner')).toEqual([bar]);
     expect(screen.queryByText('Not detected')).toBeNull();
     shell.settle(pageData());
     await waitFor(() => {
       expect(screen.getByRole('link', { name: 'Not detected' })).toBeTruthy();
     });
+  });
+
+  it('folds the bar from the measured shell width (never the viewport)', async () => {
+    const shell = makeShell();
+    let report: ((width: number) => void) | undefined;
+    const observed: HTMLElement[] = [];
+    render(() => (
+      <PanelApp
+        search={shell.search}
+        data={shell.data}
+        observeShellWidth={(element, onWidth) => {
+          observed.push(element);
+          report = onWidth;
+          return () => undefined;
+        }}
+      />
+    ));
+    expect(observed.map((element) => element.dataset.fdt)).toEqual(['panel-shell']);
+    report?.(1100);
+    expect(screen.queryByRole('button', { name: /^More:/ })).toBeNull();
+    expect(screen.getByText('WPR FDT').className).not.toContain('sr-only');
+    report?.(420);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^More:/ })).toBeTruthy();
+    });
+    expect(screen.getByText('WPR FDT').className).toContain('sr-only');
+  });
+
+  it('shows the inspected address the shell reads on each settle', async () => {
+    const shell = makeShell();
+    const readPageUrl = vi.fn(() => Promise.resolve('https://example.com/blog/'));
+    render(() => (
+      <PanelApp
+        search={shell.search}
+        data={shell.data}
+        readPageUrl={readPageUrl}
+        observeShellWidth={(_element, onWidth) => {
+          onWidth(1100);
+          return () => undefined;
+        }}
+      />
+    ));
+    shell.settle(pageData());
+    await waitFor(() => {
+      expect(document.querySelector('[data-fdt="top-bar-address"]')?.textContent).toBe(
+        'example.com/blog/'
+      );
+    });
+    expect(readPageUrl).toHaveBeenCalledTimes(1);
   });
 });
 

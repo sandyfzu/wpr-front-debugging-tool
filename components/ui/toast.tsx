@@ -48,7 +48,7 @@ export interface ToastsProps {
  *
  * Mount once per surface (the panel shell mounts it). The region is a no-op
  * layer while the queue is empty (pointer events pass through); with toasts
- * present it floats bottom-end so it never covers the status bar's answers.
+ * present it floats bottom-end, away from the page's top bar and its answers.
  *
  * @param props.class Extra classes, merged last so callers win.
  */

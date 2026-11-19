@@ -41,7 +41,10 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 ├── entrypoints/               # one folder/file per extension surface
 │   ├── background/            # service worker — listener wiring only; logic lives in lib/
 │   ├── devtools/              # registers the devtools panel (points at panel.html)
-│   ├── panel/                 # main debugging UI, shown as the devtools panel (panel.html)
+│   ├── panel/                 # main debugging UI, shown as the devtools panel (panel.html);
+│   │                          #   `top-bar/` = the shell's top bar (answers, palette trigger, Exclusions,
+│   │                          #   Refresh, "⋯" — width rule `lib/panel/top-bar-layout.ts`, measured
+│   │                          #   whole-or-gone fold `lib/panel/top-bar-fold.ts` + `top-bar/fold.tsx`), `nav/` the rail
 │   ├── options/               # options page
 │   ├── isolated.content.ts    # content script — isolated world
 │   │   │                      #   (WXT folder form: `isolated.content/index.ts` entry +

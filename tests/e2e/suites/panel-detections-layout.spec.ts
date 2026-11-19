@@ -54,13 +54,13 @@ function scrollsSideways(page: Page): Promise<boolean> {
   );
 }
 
-/** Wait until the soft refresh landed the page whose strip contains `text`. */
+/** Wait until the soft refresh landed the page whose top bar contains `text`. */
 async function awaitStrip(page: Page, text: string): Promise<void> {
   await expect
     .poll(
       async () =>
         await page.evaluate(
-          () => document.querySelector('[data-fdt="panel-status-bar"]')?.textContent ?? null
+          () => document.querySelector('[data-fdt="panel-top-bar"]')?.textContent ?? null
         ),
       { timeout: 15_000, intervals: [50, 100, 250] }
     )

@@ -6,6 +6,7 @@ import {
 import {
   BUILDER_SESSION_CHECKING,
   builderEntryView,
+  builderNeedsGlance,
   openFeedback,
   withAnswer,
   withPush,
@@ -154,6 +155,18 @@ describe('builderEntryView', () => {
     expect(view.description).toMatch(/until Stop or the tab closes/);
     // Honest: whether this page was rewritten is the overlay's to tell.
     expect(view.description).toMatch(/Open the builder to see this page’s result/);
+  });
+});
+
+describe('builderNeedsGlance', () => {
+  it.each([
+    ['checking', BUILDER_SESSION_CHECKING, false],
+    ['unknown', { kind: 'unknown' }, false],
+    ['off', { kind: 'known', summary: INACTIVE }, false],
+    ['on', { kind: 'known', summary: ACTIVE }, true],
+    ['unavailable', { kind: 'known', summary: UNAVAILABLE }, true]
+  ] as Array<[string, BuilderSessionState, boolean]>)('%s → %s', (_name, state, glance) => {
+    expect(builderNeedsGlance(builderEntryView(state))).toBe(glance);
   });
 });
 

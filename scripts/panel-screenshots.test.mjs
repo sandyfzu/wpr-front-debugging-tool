@@ -299,20 +299,41 @@ describe('desktopUserAgent', () => {
 });
 
 describe('devtoolsShim', () => {
-  it('stamps the tab id on both namespace objects, skipping a missing one', () => {
+  const URL = 'http://127.0.0.1:8493/fdt/?fdt-delay=1';
+
+  it('stamps the tab id and the eval seam on both namespace objects, skipping a missing one', () => {
     const window = { chrome: {}, browser: undefined };
-    new Function('window', devtoolsShim(7))(window);
-    expect(window.chrome).toEqual({ devtools: { inspectedWindow: { tabId: 7 } } });
+    new Function('window', devtoolsShim(7, URL))(window);
+    expect(window.chrome.devtools.inspectedWindow.tabId).toBe(7);
+    expect(typeof window.chrome.devtools.inspectedWindow.eval).toBe('function');
     expect(window.browser).toBeUndefined();
     const both = { chrome: {}, browser: {} };
-    new Function('window', devtoolsShim(0))(both);
-    expect(both.browser).toEqual({ devtools: { inspectedWindow: { tabId: 0 } } });
-    expect(both.chrome).toEqual(both.browser);
+    new Function('window', devtoolsShim(0, URL))(both);
+    expect(both.browser.devtools.inspectedWindow.tabId).toBe(0);
+    expect(both.chrome.devtools.inspectedWindow).toBe(both.browser.devtools.inspectedWindow);
+  });
+
+  it('answers location.href with the page URL, any other expression as an exception', () => {
+    const window = { chrome: {} };
+    new Function('window', devtoolsShim(7, URL))(window);
+    const { eval: evaluate } = window.chrome.devtools.inspectedWindow;
+    const answers = [];
+    evaluate('location.href', (result, exception) => answers.push([result, exception]));
+    evaluate('location.origin', (result, exception) => answers.push([result, exception]));
+    expect(answers[0]).toEqual([URL, undefined]);
+    expect(answers[1][0]).toBeUndefined();
+    expect(answers[1][1]).toMatchObject({ isException: true });
+    expect(() => evaluate('location.href')).not.toThrow(); // no callback: no answer
   });
 
   it('refuses ids that are not non-negative integers (they are interpolated into code)', () => {
-    expect(() => devtoolsShim(-1)).toThrow('invalid tab id: -1');
-    expect(() => devtoolsShim(1.5)).toThrow('invalid tab id');
-    expect(() => devtoolsShim(Number.NaN)).toThrow('invalid tab id');
+    expect(() => devtoolsShim(-1, URL)).toThrow('invalid tab id: -1');
+    expect(() => devtoolsShim(1.5, URL)).toThrow('invalid tab id');
+    expect(() => devtoolsShim(Number.NaN, URL)).toThrow('invalid tab id');
+  });
+
+  it('refuses a page URL that is not absolute http(s)', () => {
+    expect(() => devtoolsShim(1, 'chrome://settings')).toThrow('invalid page URL');
+    expect(() => devtoolsShim(1, undefined)).toThrow('invalid page URL');
   });
 });

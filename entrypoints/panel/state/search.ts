@@ -39,7 +39,7 @@ export function moveCursor(cursor: number, count: number, delta: SearchDirection
   return (cursor + delta + count) % count;
 }
 
-/** The search state every panel consumer reads (pages, status bar, nav). */
+/** The search state every panel consumer reads (pages, top bar, nav). */
 export interface SearchStore {
   /** The committed query — last input that survived the quiet period. */
   readonly query: Accessor<string>;

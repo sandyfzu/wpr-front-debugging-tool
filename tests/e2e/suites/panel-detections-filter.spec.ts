@@ -1,7 +1,7 @@
 /**
  * The Detections status filter over a real capture: All optimizations /
  * Active / Inactive chips with counts, only optimization cards narrow (page
- * facts stay), click and keyboard selection, the strip untouched, a real
+ * facts stay), click and keyboard selection, the top bar untouched, a real
  * soft refresh keeping the chip — including a refresh that empties the
  * selected bucket (the filtered-empty line and its way back to All, focus
  * on the All chip) — at 320 and 1280 px, both palettes, reduced motion.
@@ -45,18 +45,17 @@ async function pageFacts(page: Page): Promise<string[]> {
   return (await cardIds(page)).filter((id) => PAGE_FACT_IDS.includes(id));
 }
 
-/** The panel status strip's text (the refresh's observable). */
-function stripText(page: Page): Promise<string | null> {
+/** The panel top bar's text (the refresh's observable). */
+function barText(page: Page): Promise<string | null> {
   return page.evaluate(
-    (): string | null =>
-      document.querySelector('[data-fdt="panel-status-bar"]')?.textContent ?? null
+    (): string | null => document.querySelector('[data-fdt="panel-top-bar"]')?.textContent ?? null
   );
 }
 
-/** Wait until the soft refresh landed the page whose strip contains `text`. */
+/** Wait until the soft refresh landed the page whose top bar contains `text`. */
 async function awaitStrip(page: Page, text: string): Promise<void> {
   await expect
-    .poll(async () => await stripText(page), { timeout: 15_000, intervals: [50, 100, 250] })
+    .poll(async () => await barText(page), { timeout: 15_000, intervals: [50, 100, 250] })
     .toContain(text);
 }
 

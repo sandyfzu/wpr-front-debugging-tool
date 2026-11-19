@@ -1,6 +1,6 @@
 /**
  * Relative-age formatting for the extension's freshness surfaces — the
- * panel's status bar and the options page's Known Conflicts row today; one
+ * panel's top bar and the options page's Known Conflicts row today; one
  * shared formatter, never per-surface copies.
  *
  * One pure bucket function — no `Intl`, no live clock inside — so the same

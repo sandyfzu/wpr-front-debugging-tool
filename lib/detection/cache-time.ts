@@ -71,7 +71,7 @@ export function isRepresentableStampMs(ms: number): boolean {
 
 /**
  * Format a wall-clock millisecond stamp in the panel's absolute UTC form —
- * the one spelling the status bar's freshness detail and the header
+ * the one spelling the top bar's freshness detail and the header
  * inventory's Fetched/Captured stamps share, so two surfaces never disagree
  * about one instant. Same guard family as {@link formatCacheTimestamp}: a
  * stamp that names no representable instant renders as its absence (null) —
