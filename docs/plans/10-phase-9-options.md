@@ -2,7 +2,7 @@
 
 ## TLDR
 
-**Look and layout superseded by [P23I](./23-phase-23-panel-redesign.md#p23i--options-page) (owner 2026-11-18).**
+**Look and layout superseded by [P23I](./completed-panel-redesign.md#options-p23i-d2-p231) (owner 2026-11-18).**
 
 Build registry-driven full-tab options with real save/dirty/error states, three-way live appearance, KC freshness/refresh and badge toggle. Depends:P1/P5; parallel:P6 (P10 parked; P8 deferred pre-release). Installed stack/shared UI; storage already owns keys/defaults. No dependencies planned.
 

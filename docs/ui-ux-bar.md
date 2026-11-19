@@ -95,7 +95,7 @@
 - 2026-10-14 — `P-3` names where code highlighting runs: off the main thread in a time-boxed worker (no grammar-cost model on the main thread) — P6C verification round; no value moved.
 - 2026-10-21 — `L-2` drops the retired exclusion-builder tab (the builder is the in-page overlay, an injected UI) — P10G; no value moved.
 - 2026-10-27 — owner: zero screen-reader support, a11y effort-free only — §K scope line; `K-1`–`K-5`, `C-1`, `D-3`, `D-4` narrowed/dropped (ids kept); shipped a11y code and existing axe assertions stay.
-- 2026-11-18 — **owner exception (P23, docs-first redesign):** P23's values land in this bar ahead of their code; each later P23 phase moves the code to them (until then the code may lag the rows below).
+- 2026-11-18 — **owner exception (P23, docs-first redesign):** P23's values landed in this bar ahead of their code; the later P23 phases moved the code to them (done 2026-11-19).
 - 2026-11-18 — `L-1` adds `@split` 830 px, the shell rules (sidebar labeled ≥ 1080 px, top bar full from 760 px) and the 208/52 px sidebar widths; drops the status-strip threshold and the ≈ 49 px rail figures — owner, P23.
 - 2026-11-18 — `L-2` floor ≈ 268 px content beside the 52 px rail — owner, P23.
 - 2026-11-18 — `L-3` list behavior by width (stacked compact rows, Filters sheet, drill-in below `@split`, 350 px pane from it); card-grid clause limited to Detections "Cards" mode — owner, P23.
