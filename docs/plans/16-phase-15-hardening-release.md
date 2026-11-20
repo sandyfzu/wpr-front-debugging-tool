@@ -2,7 +2,7 @@
 
 ## TLDR
 
-Real-site verification (former P14.6) is post-release [P22](./22-phase-22-post-release-real-site.md); order P5J (closed)→popup + Diagnoser-entry removal (done 2026-11-17)→P23 panel redesign→P15; P7/P8 post-release (owner 2026-11-17). Never imply a real-site pass before P22 runs. P15 closes every required promise across browsers, not just compile/build. No implementation/commit/tag/push/publication authorized merely by this checklist.
+Real-site verification (former P14.6) is post-release [P22](./22-phase-22-post-release-real-site.md); order P5J (closed)→popup + Diagnoser-entry removal (done 2026-11-17)→P23 panel redesign→P15; P7/P8 post-release (owner 2026-11-17). Never imply a real-site pass before P22 runs. P15 closes every required promise across browsers, not just compile/build. **Release-critical (owner 2026-11-20): [P15E](#p15e--brand-name-icon-store-assets)** — rename to "WPR Front Debugging Toolkit", real logo/icons (today's are the framework's placeholder puzzle piece) and every store listing asset; **[P15F](#p15f--whats-new-page-on-update)** "What's new" page opened once on update. Ships as **3.0.0** (replaces the 2.2.x store item; P15D) after an in-place upgrade test (P15B). No implementation/commit/tag/push/publication authorized merely by this checklist.
 
 ## P14.6 external-site track — moved
 
@@ -39,6 +39,7 @@ Depends:A baseline and all boundaries. Parallel:—.
 - [ ] Installed Firefox every surface inclMAIN/message/mount/DNR/badge/clipboard/FSA fallback/host grants; [Firefox workstream](./17-firefox-runtime-parity.md) may close named rows only with actual results. `web-ext lint` clean or explicit exceptions; current floor150 vs MAIN API128 distinct. Gecko ID/data-collection declarations remain AMO gates.
 - [ ] P10 open verification ([list](./completed-exclusion-builder.md#manual-and-open-verification)), manual/owner: `DeveloperToolsAvailability = 2` policy block (deferred, owner 2026-10-21; how-to in that list); a real DevTools window on an intercepted tab on stable Chrome + the debugger infobar text/persistence across an attached reload (P10A); 2.5–4.3 MiB retained after the overlay closes (profile retainers first); Chromium DevTools panel `sender.url` shape before any Chromium relay.
 - [ ] Both built HTML trees reference real emitted CSS; no silent dropped source links. Chrome145 floor, touch/RTL/native popup/docking/undocked/find-bar limits (Windows high contrast + AT dropped — owner 2026-10-27: no screen-reader support) from UI acceptance either verified or explicitly dispositioned.
+- [ ] **In-place upgrade from the published store build** (owner 2026-11-20; this release replaces the existing Chrome Web Store item). Same profile: install the store's current 2.2.x build, change options + let the Known Conflicts DB load, then update to the release build (unpacked-over or a CRX of the same id). Both versions share `sync:options` and `local:known-conflicts-db`: old values must read cleanly (tolerant reads keep or default each field — no crash, no wiped unrelated keys, no stale DB shape used unvalidated); keys only the old build wrote are listed and either migrated, ignored on purpose or removed (decide with evidence). Record Chrome's behavior on the new `debugger` warning (docs: an update adding a warning disables the extension until the user accepts) and that every surface works after re-enable. Receipt with steps + results.
 
 DoD: all required security/reliability/runtime rows pass or owner-approved scoped disposition, no false build=runtime/store acceptance.
 
@@ -55,15 +56,67 @@ Depends:B. Parallel:—.
 
 DoD: quality checks/ledger/copy/visual receipts complete, master promises each evidence-linked.
 
+### P15E — Brand: name, icon, store assets
+
+**Release-critical** (owner 2026-11-20): no release without E.1–E.3 done. Runs before P15D (listed here so D's row ids stay stable).
+
+**Risks → mitigation.** Name drift (the name is re-typed today: `wxt.config.ts` `NAME` and `entrypoints/isolated.content/ui/copies.ts` `TOOL_EYEBROW`) → E.1 makes one declaring site and a `git grep` DoD. Stored data / ids break on rename → internal ids stay (below). Icon unreadable at 16 px or hidden by the badge dot → 16/32 px checks on light+dark toolbars with the dot drawn. Store rejection over asset specs or truthfulness → sizes/formats from the **current** official specs fetched at execution, screenshots only of shipped surfaces. Trademark/brand misuse (WP Rocket marks) → owner approves concepts and name use (also in P15D store-policy row). Placeholder icons ship by accident → E.2 DoD checks the built zips' icon bytes ≠ today's placeholder.
+
+#### P15E.1 — Rename to "WPR Front Debugging Toolkit"
+
+Depends:—. Parallel:E.2, A–C. Effort:S. Difficulty:low.
+
+- [ ] `wxt.config.ts` `NAME` → `WPR Front Debugging Toolkit` (the one declaring site: manifest `name` + `action.default_title`). Every other user-visible use reads it — `TOOL_EYEBROW` (on-page widget eyebrow) gets the manifest name (`browser.runtime.getManifest().name`) or a build-time define, never a re-typed literal; the toolbar tooltip, options heading and consent page already take the manifest name (verify each).
+- [ ] `package.json` `description` → `A toolkit for debugging the WP Rocket WordPress plugin.` (also fixes the missing "the"). README title + wording; AGENTS.md overview if it names the tool.
+- [ ] Unchanged on purpose (not the user-visible name; changing them costs migrations or is permanent): DevTools tab `WPR FDT` (still the toolkit's initials), `[WPR FDT]` log prefix, `wpr-fdt-*` hosts/markers, storage keys, Firefox add-on GUID, repo name.
+- [ ] Verify name/description length limits per store (Chrome manifest + Web Store, AMO, Edge if listed) from current docs.
+- [ ] Tests that pin the name (`wxt.config.test.ts`, `tests/e2e/suites/boot-and-registry.spec.ts`) updated to the new value — a renamed expectation, not a weakened one (say so in the commit). Fixture `name=` props in component tests may stay (they test the prop).
+- DoD: `git grep -n "Debugging Tool\b"` hits only `docs/plans/` history; built manifests (both) carry the new name; gates + full e2e green.
+
+#### P15E.2 — Logo + extension icons
+
+Depends:E.1 (wordmark only). Parallel:A–C. Effort:M. Difficulty:medium (design).
+
+- [ ] Inputs from the owner first: brand colors/guidelines (WP Rocket / WP Media) and whether the mark may derive from WP Rocket's logo. Present 2–3 concepts (SVG, shown at 128/32/16 px on light+dark toolbars with the badge dot) → **owner picks** (visual identity is not covered by the wording delegation).
+- [ ] Deliverables: master SVG mark + logo (mark + wordmark) in a non-shipped folder (e.g. `branding/`, excluded from zips — verify zip contents); PNG icons in `public/icon/` at every size the manifests reference (today 16/32/48/96/128; Chrome needs 16/32/48/128, Firefox 48/96 — re-verify) — 16/32 hand-tuned for legibility, not just downscaled; transparent background; bottom-right corner non-critical (the badge dot covers it).
+- [ ] Evaluate (keep only with evidence): Firefox `browser_action.theme_icons` light/dark variants; Chrome has no per-theme action icon — the icon must read on both toolbars. DevTools panel icon (`entrypoints/devtools/main.ts` `PANEL_ICON` → `icon/32.png`) follows automatically; check it there in both palettes. Favicon for panel/options pages if they lack one (they declare none today).
+- [ ] Rasterizing: deterministic, documented (a pinned latest-stable devDependency script, e.g. `pnpm icons`, or committed exports with the command in the README); a script's dependency never ships.
+- DoD: owner-approved mark; icons legible at 16 px on light+dark toolbars (screenshots in the receipt); both builds reference only new files; `pnpm check:budgets` green (icons are public assets — rows if any).
+
+#### P15E.3 — Store listing assets
+
+Depends:E.1, E.2, P15C (shipped UI final). Parallel:P15D rows except release/store-policy. Effort:M. Difficulty:medium.
+
+- [ ] Per store (Chrome Web Store, AMO, Edge if listed), list the required + optional assets from the **current** official specs fetched at execution (e.g. store icon, screenshots, promo tiles, marquee — sizes/formats/counts as those pages state, not from memory) and produce each.
+- [ ] Screenshots: real shipped surfaces (Detections panel, Exclusion Builder overlay, command palette, RUCSS/Beacon testers, options) on the local docker site — no customer data, real-site URLs, tokens or personal data; consistent theme per set; scripted where possible (extend `pnpm screenshots` or a sibling script) so they can be regenerated after UI changes.
+- [ ] Listing copy: summary, full description, single-purpose statement, per-permission justifications, privacy fields — truthful to shipped features, shared with the P15D store-policy row (one source file, e.g. `store/listing.md`).
+- [ ] Assets live in a non-shipped folder (e.g. `store/`), excluded from both zips (verify), format/lint-ignored only where binary.
+- DoD: per-store checklist, every asset ticked with its verified spec + file path; owner approves visuals and copy.
+
+### P15F — "What's new" page on update
+
+Depends:E.1, E.2 (name + logo), P15C (shipped UI final). Parallel:E.3. Effort:M. Difficulty:medium. **Release-critical** (owner 2026-11-20): existing users updating to 3.0.0 see a page presenting the new version.
+
+**Risks → mitigation.** Page opens on every browser start / service-worker wake (spam) → once per announced version, stored marker. Opens for a fresh install as "new version" → install path never announces (seed the marker). Missed event (Chrome disables the update until the `debugger` warning is accepted; `onInstalled` may not reach a disabled extension — **verify at execution**) → startup check against the marker catches it once re-enabled. Store rejection (unexpected tabs, remote content) → bundled page, no remote code/analytics, behavior disclosed in the listing, verified in the P15D store-policy row for both stores. Copy drifting from what ships → notes data from one registry, reviewed in the P15C ledger.
+
+- [ ] **Release-notes registry** (`lib/release-notes/`, pure, one declaring site): one row per announced version — version, date, headline, highlights (title, one line, optional image from P15E assets), changes users must know (new `debugger` permission + why; removed popup/Diagnoser), links (support/docs). Only rows flagged `announce` open the page (majors/notable minors, never routine patches).
+- [ ] **Decision function** (pure, unit-tested matrix): inputs = `onInstalled` reason (`install`/`update`/`browser_update`/`chrome_update`/`shared_module_update`), `previousVersion`, current manifest version, stored marker (`local:` last announced version), user opt-out → open the page for the newest announced version with `previous < v ≤ current` and `v > marker`, else nothing. `install` seeds the marker silently. Upgrades from the old build (no marker; `previousVersion` 2.x) announce 3.0.0. Run on `onInstalled` and once at background start (missed-event catch-up); idempotent — the marker is written before/with the open so a crash can't loop. Malformed versions/marker → no page + warn, never throw.
+- [ ] **Opening:** `tabs.create({ url: whats-new.html, active: true })` (no `tabs` permission needed) in the last-focused normal window; never in incognito; failure logged, marker still respects "once". Verify `onInstalled` registration is synchronous at top level (wake-safe).
+- [ ] **Page** (`entrypoints/whats-new/`, unlisted extension page, both builds): logo + "WPR Front Debugging Toolkit 3.0" headline, highlight cards from the registry, "what changed" (permission explained plainly), buttons: open options, how to open the DevTools panel (Chrome cannot open DevTools for the user — show the shortcut per platform), support link; footer opt-out switch "Show what's new after updates" (also in options, one synced setting, default on) + a "What's new" link in options to reopen it any time. Theme System/Light/Dark per AGENTS, `docs/ui-ux-bar.md` (§D receipts, 320 px), no remote fonts/images/scripts, budgets row (both builds, `required`).
+- [ ] **Tests:** decision matrix units (every reason, equal/lower/higher versions, multi-version jumps, missing/corrupt marker, opt-out, catch-up path, double event), registry shape test (versions valid + strictly ordered, announced row exists for `package.json` version at release), page component tests (themes, opt-out writes the setting), e2e: drive the decision via the worker (fake `previousVersion`) → exactly one tab with the page; second wake → none. Owner manual: real store-style update 2.2.x → 3.0.0 on Chrome (incl. the disabled-until-accepted path) and Firefox.
+- DoD: page opens exactly once on 2.2.x → 3.0.0 (verified in the P15B upgrade receipt), never on install or browser restart; opt-out honored live; gates + budgets + e2e green; owner approves copy and visuals.
+
 ### P15D — Docs/release
 
-Depends:A–C. Parallel:—.
+Depends:A–C, E, F. Parallel:—.
 
 - [ ] README actual features/screenshots/setup/build/zip/browser/privacy notes; concise architecture/detection/protocol references from owning code, no duplicate implementation diary. AGENTS final scripts/deps/permissions/structure/conventions sync; paths/commands checked.
 - [ ] Recheck both behavioral sources past audited v2.2.5/v4.1.1; fold drift into owning scope first. Refresh live KC seed verbatim, format, repin exact row count/comment/asset budget as AGENTS requires.
-- [ ] Authorized1.0.0 version/changelog, both store ZIPs free of development output/secrets;128px icon/listing assets (actual implemented surfaces), manifests/Firefox consent identity/policy review. Build success not store approval.
+- [ ] **Version 3.0.0** (owner 2026-11-20; replaces the planned 1.0.0): the store refuses an upload not larger than the published version (Chrome docs: "Each new version must have a larger version number than the previous version"), and the published item is 2.2.x (local source repo 2.2.5). Confirm the live store version first; bump `package.json` once, at release.
+- [ ] **Support heads-up before rollout:** the update adds the `debugger` permission → new install warning "Access the page debugger backend" → Chrome disables the extension for existing users until they accept it. Owner sends the support team a short note (what they'll see, why the permission exists, how to re-enable) before publishing.
+- [ ] Authorized version/changelog, both store ZIPs free of development output/secrets; icon/listing assets from [P15E](#p15e--brand-name-icon-store-assets) present in the submission, manifests/Firefox consent identity/policy review. Build success not store approval.
 - [ ] Store-policy audit: nothing may block review/publication. Verify the release build against the **current** official texts, fetched at execution, not from memory: Chrome Web Store Program Policies + Developer Agreement, Firefox AMO Add-on Policies + review requirements (and Edge Add-ons if listed). Cover at least: single purpose; every permission/host permission used + its dashboard justification (`debugger`, `<all_urls>`, DNR, scripting); MV3 no remotely hosted code/eval (KC DB = data only; packaged beacon/LazyLoad bytes); no obfuscation, readable or AMO-submittable source + reproducible build instructions; user-data disclosure (privacy fields, policy URL if any data is handled, Gecko `data_collection_permissions`); listing copy/screenshots/icons truthful to shipped surfaces; WP Rocket naming/trademark use OK'd by the owner; third-party licences shipped. Findings verified as real, then fixed in owning scope or owner-dispositioned; receipt per policy item.
 - [x] Owner decision (2026-10-28): **no** chip keyboard shortcut (source had Alt+H) — context menus + Alt/⌥+K palette cover it.
-- [ ] CI on release revision, artifacts validated, Conventional history; tag v1.0.0/commit/push/publish **only when separately requested**.
+- [ ] CI on release revision, artifacts validated, Conventional history; tag v3.0.0/commit/push/publish **only when separately requested**.
 
 DoD: budgets/speed/security/reliability/UI/ledger/docs/store-policy/browser artifacts all complete, remaining limitations explicit, no claimed release until owner authorizes.
