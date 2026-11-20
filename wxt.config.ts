@@ -119,9 +119,12 @@ export default defineConfig({
     minimum_chrome_version: '145',
     // The toolbar button, declared without a popup: it carries the per-tab
     // detection badge and the action-menu rows (`contextMenus` context
-    // `action`); a left click opens nothing. Declared here because WXT only
-    // emits the key for a popup entrypoint; the MV2 build gets it renamed to
-    // `browser_action`. The tooltip names the extension.
+    // `action`); a left click opens the on-page command palette, else the
+    // options page (`onClicked` fires only while no popup is declared — a
+    // popup would silence it). Declared here because WXT only emits the key
+    // for a popup entrypoint; the MV2 build gets it renamed to
+    // `browser_action`. This tooltip names the extension: each badged tab gets
+    // its own, naming the dot's state, and clears write this one back.
     action: { default_title: NAME },
     // Firefox only: the add-on id (see FIREFOX_ADDON_ID), the supported
     // floor — without it any old Firefox could install a build it was never
