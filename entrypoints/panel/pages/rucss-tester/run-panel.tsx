@@ -73,7 +73,8 @@ export const RECOVERY_LABELS: Readonly<Record<RucssRecovery, string>> = {
   retry: 'Run again',
   'reload-page': 'Reload page',
   'review-patterns': 'Review patterns',
-  'inspect-styles': INSPECT_STYLES_LABEL
+  'inspect-styles': INSPECT_STYLES_LABEL,
+  'ask-consent': 'Ask again'
 };
 
 /** An applied run's counts. */
@@ -113,6 +114,8 @@ function RecoveryButton(props: {
   const onClick = (): void => {
     switch (props.recovery) {
       case 'retry':
+      case 'ask-consent':
+        // Asking again is a new run: it checks the consent first and asks only when missing.
         void props.session.start();
         return;
       case 'reload-page':

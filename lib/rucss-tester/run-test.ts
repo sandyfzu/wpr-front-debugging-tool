@@ -3,7 +3,9 @@
  * keeps the page intact on every failure:
  *
  * 1. read the configuration once and compile every pattern — any invalid
- *    pattern stops the run before a request is sent;
+ *    pattern stops the run before a request is sent; where the browser
+ *    asks the user before a page address leaves it (Firefox's data
+ *    consent), the run stops here too until the user allowed it;
  * 2. start on the tab: the service request (sent by the background for the
  *    page's own address), then the page's style snapshot — no page change;
  * 3. build the CSS and judge the stylesheet URLs with the user's patterns
@@ -37,12 +39,27 @@ import { prepareRucssRun, type ReplacementCount, type RucssPlanProblem } from '.
 /** An ask that got no usable answer. */
 export type RucssAskMiss = Exclude<AskOutcome<unknown>['kind'], 'reply'>;
 
+/**
+ * The data-sharing consent before the request (where the browser has one):
+ * `granted` runs on; `asking` — the consent page opened, the run waits for
+ * the answer; `ask-failed` — it could not be asked.
+ */
+export type RucssConsentGate = 'granted' | 'asking' | 'ask-failed';
+
 /** How a run ended. */
 export type RucssTestOutcome =
   /** The configuration could not be read (storage failed). */
   | { readonly kind: 'config-unreadable' }
   /** Patterns that do not compile; nothing was sent. */
   | { readonly kind: 'invalid-config'; readonly problems: readonly RucssPlanProblem[] }
+  /**
+   * The page address may not be sent yet (data consent): being asked, the
+   * user declined, or asking failed. Nothing was sent.
+   */
+  | {
+      readonly kind: 'consent-needed';
+      readonly reason: Exclude<RucssConsentGate, 'granted'> | 'declined';
+    }
   /**
    * The page did not answer usably (no content script, navigated, no answer
    * in time). After a `start` miss the page is untouched; after an `apply`
@@ -91,6 +108,11 @@ export interface RucssTestDeps {
   readonly start: (request: RucssStartRequest) => Promise<AskOutcome<RucssStartReply>>;
   readonly build: (input: RucssBuildInput) => Promise<RucssBuildOutcome>;
   readonly apply: (request: RucssApplyRequest) => Promise<AskOutcome<RucssApplyReply>>;
+  /**
+   * The data consent before the request — only where the browser has one
+   * (absent: nothing to ask). Never rejects.
+   */
+  readonly consent?: () => Promise<RucssConsentGate>;
   readonly log: Logger;
 }
 
@@ -163,6 +185,11 @@ export async function runRucssTest(deps: RucssTestDeps): Promise<RucssTestOutcom
   if (!prepared.ok) return { kind: 'invalid-config', problems: prepared.problems };
   const { plan } = prepared;
 
+  if (deps.consent !== undefined) {
+    const gate = await deps.consent();
+    if (gate !== 'granted') return { kind: 'consent-needed', reason: gate };
+  }
+
   const started = await deps.start({
     safelist: plan.safelist,
     inlinePreserves: plan.inlinePreserves,
@@ -174,7 +201,12 @@ export async function runRucssTest(deps: RucssTestDeps): Promise<RucssTestOutcom
     return { kind: 'page-unreachable', step: 'start', miss: started.kind };
   }
   const start = started.reply;
-  if (!start.ok) return { kind: 'start-failed', failure: start.failure };
+  if (!start.ok) {
+    // The background's own consent check said no (revoked since the gate): asked again like a decline.
+    return start.failure.kind === 'consent-missing'
+      ? { kind: 'consent-needed', reason: 'declined' }
+      : { kind: 'start-failed', failure: start.failure };
+  }
 
   const built = await deps.build({ config, shakenCss: start.shakenCss, links: start.links });
   if (!built.ok) return { kind: 'build-failed', requestUrl: start.requestUrl, failure: built };

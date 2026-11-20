@@ -22,12 +22,19 @@
  * reloads or navigates, a run that changed it (or may have) reads `stale`
  * — its change is gone.
  *
+ * Data consent (where the browser has one): a run that stopped waiting on
+ * its own ask (`consent-needed{asking}`) starts again by itself once the
+ * user allowed it (forced as it was) — only while its page load is still
+ * the inspected one ({@link consentAnswerEffect}) — and reads `declined`
+ * when the user said no. An answer heard while the run is in flight or the
+ * page identity refetches is held until then ({@link consentAnswerWaits}).
+ *
  * Earlier tests: the page's payload counts the applied ones; the session
  * also records its own runs that applied or may have (a payload refresh can
  * be dropped, and an unconfirmed apply leaves no fact), each stamped like
  * the run, so a reload (a new page identity) clears them.
  */
-import { createComputed, createMemo, createSignal, type Accessor } from 'solid-js';
+import { createComputed, createMemo, createSignal, untrack, type Accessor } from 'solid-js';
 import type { Logger } from '../../../../lib/logger';
 import type { AskOutcome, ScheduleTimer } from '../../../../lib/messaging/bounded-ask';
 import type { PageStylesReply } from '../../../../lib/messaging/page-styles';
@@ -136,6 +143,12 @@ export interface RucssTesterSessionDeps {
   readonly pageSettled: Accessor<boolean>;
   /** A test applied, or may have: refresh the page's payload (its TEST MODE fact). */
   readonly onApplied: () => void;
+  /**
+   * Follow the user's data-consent answers (where the browser asks before a
+   * page address leaves it); returns the unsubscribe. A run waiting on the
+   * consent starts again once allowed, and shows the decline otherwise.
+   */
+  readonly watchConsentAnswers?: (onAnswer: (granted: boolean) => void) => () => void;
   readonly schedule: ScheduleTimer;
   /** Quiet time (ms) after an edit before it is written. */
   readonly saveDelayMs: number;
@@ -270,6 +283,57 @@ export function dropAnsweredQuestion(
   return state.previous ?? { status: 'idle' };
 }
 
+/** What a data-consent answer does to the run. */
+export type ConsentAnswerEffect = 'restart' | 'declined' | 'keep';
+
+/**
+ * What the user's data-consent answer does to the run. Only a run waiting
+ * on its own ask (`consent-needed{asking}`) hears it — a declined or failed
+ * ask waits for the user's Ask again. A grant restarts it only on the page
+ * load it was started on, while that load is the current settled one: a
+ * page the user moved to never gets a test (TEST MODE + its address sent)
+ * without its own click.
+ *
+ * @param state The run.
+ * @param granted The answer.
+ * @param pageId The inspected page's load identity now.
+ * @param settled Whether that identity is current.
+ */
+export function consentAnswerEffect(
+  state: RucssRunState,
+  granted: boolean,
+  pageId: string | null,
+  settled: boolean
+): ConsentAnswerEffect {
+  if (state.status !== 'finished') return 'keep';
+  const { outcome } = state;
+  if (outcome.kind !== 'consent-needed' || outcome.reason !== 'asking') return 'keep';
+  if (!granted) return 'declined';
+  const sameLoad = settled && !state.provisional && state.page !== null && state.page === pageId;
+  return sameLoad ? 'restart' : 'keep';
+}
+
+/**
+ * Whether a data-consent answer must wait before {@link consentAnswerEffect}
+ * can judge it: while a run is in flight (its own ask may still be on the
+ * way back — it then finishes `asking` with the answer already given), and,
+ * for a grant, while the load it would restart on is not known yet (the
+ * page identity refetches, or the run's stamp is still provisional). Its
+ * consent tab is gone by then: nothing would send the answer again.
+ *
+ * @param state The run.
+ * @param granted The answer.
+ * @param settled Whether the page identity is current.
+ */
+export function consentAnswerWaits(
+  state: RucssRunState,
+  granted: boolean,
+  settled: boolean
+): boolean {
+  if (state.status === 'running') return true;
+  return granted && (!settled || (state.status === 'finished' && state.provisional));
+}
+
 /**
  * Create the session (call inside a reactive root that outlives the page body).
  *
@@ -295,6 +359,10 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
   const [localTests, setLocalTests] = createSignal<readonly LocalTest[]>([]);
   let sequence = 0;
   let disposed = false;
+  // Whether the run last executed was forced (the shown finished run is its outcome).
+  let lastRunForced = false;
+  // A data-consent answer heard while it had to wait ({@link consentAnswerWaits}).
+  let heldConsentAnswer: boolean | null = null;
   // A test may have applied while a read was in the air: read once more when it lands.
   let rereadQueued = false;
 
@@ -464,6 +532,9 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
       return;
     }
     const started: LoadStamp = stampAsk(deps.pageId(), deps.pageSettled());
+    lastRunForced = options.force === true;
+    // An answer heard before this run is about an earlier one.
+    heldConsentAnswer = null;
     setRun({ status: 'running' });
     const outcome = await execute();
     if (outcome === 'blocked') {
@@ -479,6 +550,50 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
     deps.onApplied();
     followPage();
   };
+
+  /**
+   * Act on a data-consent answer: a run waiting on it starts again — forced
+   * as it was (the user already said yes to running on top) — or shows the
+   * decline ({@link consentAnswerEffect}); anything else keeps.
+   *
+   * @param granted The answer.
+   */
+  const applyConsentAnswer = (granted: boolean): void => {
+    const current = run();
+    const effect = consentAnswerEffect(current, granted, deps.pageId(), deps.pageSettled());
+    if (effect === 'restart') void start({ force: lastRunForced });
+    else if (effect === 'declined' && current.status === 'finished') {
+      setRun({ ...current, outcome: { kind: 'consent-needed', reason: 'declined' } });
+    }
+  };
+
+  /**
+   * The user answered the data consent: acted on now, or held until it can
+   * be judged ({@link consentAnswerWaits}).
+   *
+   * @param granted The answer.
+   */
+  const onConsentAnswer = (granted: boolean): void => {
+    if (disposed) return;
+    if (consentAnswerWaits(run(), granted, deps.pageSettled())) heldConsentAnswer = granted;
+    else applyConsentAnswer(granted);
+  };
+
+  // A held answer is judged once the run lands or the page identity settles.
+  createComputed(() => {
+    // Both read on every pass: they are what wakes this once an answer is held.
+    const current = run();
+    const settled = deps.pageSettled();
+    const granted = heldConsentAnswer;
+    if (granted === null || disposed || consentAnswerWaits(current, granted, settled)) return;
+    heldConsentAnswer = null;
+    untrack(() => {
+      applyConsentAnswer(granted);
+    });
+  });
+  // An event callback, not a tracked scope: it reads the run once per answer.
+  // eslint-disable-next-line solid/reactivity
+  const stopConsentWatch = deps.watchConsentAnswers?.(onConsentAnswer);
 
   return {
     form,
@@ -521,6 +636,7 @@ export function createRucssTesterSession(deps: RucssTesterSessionDeps): RucssTes
     flush: settings.flush,
     dispose: () => {
       disposed = true;
+      stopConsentWatch?.();
       settings.dispose();
     }
   };

@@ -28,7 +28,10 @@
  * - the RUCSS service requests (`./rucss-fetch`) — the RUCSS test's one
  *   request, sent for the asking page only,
  * - the beacon runner load (`./beacon-runner-load`) — the beacon test's
- *   runner, injected into the asking page's top frame on its first run.
+ *   runner, injected into the asking page's top frame on its first run,
+ * - the data-sharing consent (`./data-consent`, Firefox build only) — the
+ *   grant check before a tool sends a page address, its consent tabs, and
+ *   the RUCSS request's own check.
  *
  * Every subsystem registration happens inside `main()` (nothing at import
  * time beyond constants), the global error handlers are attached first, and
@@ -56,6 +59,7 @@ import { registerCommandPalette } from './command-palette';
 import { registerLatestExclusionList } from './latest-exclusion-list';
 import { registerRucssFetch } from './rucss-fetch';
 import { registerBeaconRunnerLoad } from './beacon-runner-load';
+import { backgroundConsentCheck, registerDataConsent } from './data-consent';
 
 const log = createLogger('background');
 
@@ -193,7 +197,11 @@ async function main(): Promise<void> {
   }
 
   try {
-    registerRucssFetch();
+    // Firefox checks its data consent again before every request (build-time
+    // branch: the Chromium bundle has no consent code).
+    registerRucssFetch(
+      import.meta.env.BROWSER === 'firefox' ? backgroundConsentCheck() : undefined
+    );
   } catch (cause) {
     // The page's ask then sees no receiver and the test reports it.
     log.error('RUCSS request init failed — RUCSS tests cannot run', cause);
@@ -204,6 +212,16 @@ async function main(): Promise<void> {
   } catch (cause) {
     // The page's ask then sees no receiver and the test reports the runner unavailable.
     log.error('Beacon runner load init failed — beacon tests cannot run', cause);
+  }
+
+  // Firefox only (build-time branch: the Chromium bundle has no consent code).
+  if (import.meta.env.BROWSER === 'firefox') {
+    try {
+      registerDataConsent();
+    } catch (cause) {
+      // The tools' asks then see no receiver and send nothing.
+      log.error('Data-sharing consent init failed — address-sending tools cannot run', cause);
+    }
   }
 
   try {

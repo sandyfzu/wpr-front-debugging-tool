@@ -82,6 +82,7 @@ import type { BeaconTestReply, BeaconTestRequest } from './beacon-test';
 import type { LcpAnalysisReply, LcpAnalysisRequest } from './lcp-analysis';
 import type { ScriptRuntimeReply } from './script-runtime';
 import type { CurrentVisitVitalsReply } from './current-visit-vitals';
+import type { DataConsentAnswer, DataConsentAsk, DataConsentReply } from './data-consent';
 
 export interface ProtocolMap {
   /**
@@ -297,4 +298,16 @@ export interface ProtocolMap {
    * from the latest stylesheet snapshot (`gone` once replaced or detached).
    */
   getStyleSourceChunk(data: StyleSourceRequest): StyleSourceReply;
+  /**
+   * Firefox only — DevTools panel (RUCSS Tester, names the inspected tab) or
+   * a top frame (PageSpeed Insights, its own tab) → background: may the page
+   * address be sent? `granted` (a PageSpeed `open-tab` ask: its tab opened),
+   * the consent page shown (`asking`), `missing` (a `check`), or `failed`.
+   */
+  askDataConsent(data: DataConsentAsk): DataConsentReply;
+  /**
+   * Firefox only — consent page or background → extension pages (push): the
+   * user's answer, or a consent tab that left unanswered (not granted).
+   */
+  dataConsentAnswered(data: DataConsentAnswer): true;
 }

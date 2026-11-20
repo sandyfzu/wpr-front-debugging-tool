@@ -34,8 +34,8 @@
  * the re-clamp targets the resting layout box — the post-choreography
  * geometry, never an animated pose. A moved re-clamp rides
  * the chrome's re-settle state class (a smooth position leg over the motion
- * tokens; still under reduced motion, where the collapse is the honest
- * instant); a starting drag clears it — direct manipulation never moves
+ * tokens; an instant snap under reduced motion, which drops the leg, so
+ * the class leaves at once); a starting drag clears it — direct manipulation never moves
  * through a transition.
  *
  * Position persistence: a settled moved drop stores the chrome's
@@ -56,6 +56,7 @@ import { createMemo } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { WINDOW_FRAMES, contextFrames } from '../../../utils/context-timers';
+import { transitionRunsFor } from '../../../utils/css-duration';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { createLogger } from '../../../lib/logger';
 import type { PageDataSnapshot } from '../data-hub';
@@ -388,8 +389,10 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * state class ON before the position write, so the position leg animates
    * over the motion tokens; the class leaves when that one transition ends
    * (or when the next pointer press takes over — direct manipulation never
-   * moves through a transition). Reduced motion collapses the token to an
-   * instant snap, which is the shipped correct answer.
+   * moves through a transition). Reduced motion drops the leg: the move is
+   * an instant snap (the correct answer), and since no transition (hence no
+   * `transitionend`) will come, the class leaves at once instead of
+   * lingering as a stale "re-settling" state.
    *
    * @param moved Whether the re-clamp actually repositioned the chrome.
    */
@@ -400,6 +403,11 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     // class arriving again must be a fresh decision, never a stale rider.
     chrome.classList.remove('ins-resettle');
     chrome.classList.add('ins-resettle');
+    // The stylesheet decides whether the leg runs (reduced motion drops it):
+    // read it back rather than re-deciding the media query in script.
+    if (!transitionRunsFor(getComputedStyle(chrome), 'transform')) {
+      chrome.classList.remove('ins-resettle');
+    }
   };
 
   /**

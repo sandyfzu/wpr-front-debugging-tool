@@ -22,7 +22,7 @@
  * - state changes are immediate ("is it there"), motion is decoration
  *   (opacity/transform/visibility) and declaratively delayed — never a
  *   `transitionend` listener — so a click can never strand a container, and
- *   reduced motion collapses everything to a frame.
+ *   reduced motion drops all of it (the token stylesheet).
  */
 
 .kc-chrome {
@@ -596,17 +596,14 @@
   }
 }
 
-/* Reduced motion: the token layer collapses every duration/iteration; the
- * legs it does not reach must collapse with it. The card goes
- * machinery-free (states byte-instant): the global override otherwise leaves
- * its visibility leg a real 0.01ms transition, and a running transition
- * reports its from-value on the first frame — the focus choreography's
- * attempts inside that window are rejected on a computed-visible card
- * (measured: focus landed on the pill, was ejected when the row departed and
- * Escape then died; both attempts logged "did not reach"). Rows ride the
- * token rule as always; the departing marker row keeps its held-visible leg
- * to hand focus over (it is already pointer-events: none, so it intercepts
- * nothing). */
+/* Reduced motion: the token layer drops every animation and transition; the
+ * card additionally zeroes its whole transition shorthand (no duration or
+ * delay left either), so its states are byte-instant whatever the global
+ * rule becomes — a visibility leg still running would report its from-value
+ * on the first frame, and the focus choreography's attempts inside that
+ * window are rejected on a computed-visible card (measured: focus landed on
+ * the pill, was ejected when the row departed and Escape then died). The
+ * rows' stagger delay is zeroed with it. */
 @media (prefers-reduced-motion: reduce) {
   .kc-list {
     transition: none !important;

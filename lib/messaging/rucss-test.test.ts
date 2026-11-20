@@ -106,8 +106,9 @@ describe('parseRucssFetchRequest', () => {
 });
 
 describe('parseRucssFetchReply', () => {
-  it('accepts a refusal and both answered outcomes', () => {
+  it('accepts a refusal, a missing consent and both answered outcomes', () => {
     expect(parseRucssFetchReply({ kind: 'refused' })).toEqual({ kind: 'refused' });
+    expect(parseRucssFetchReply({ kind: 'consent-missing' })).toEqual({ kind: 'consent-missing' });
     const ok = { kind: 'answered', requestUrl: 'u', outcome: { ok: true, shakenCss: '' } };
     expect(parseRucssFetchReply(ok)).toEqual(ok);
     const failed = {
@@ -123,6 +124,7 @@ describe('parseRucssFetchReply', () => {
     for (const input of [
       null,
       { kind: 'refused', why: 'x' },
+      { kind: 'consent-missing', why: 'x' },
       { kind: 'answered', requestUrl: 'u' },
       { kind: 'answered', requestUrl: 1, outcome },
       { kind: 'answered', requestUrl: 'u', outcome, extra: 1 },
@@ -172,6 +174,7 @@ describe('parseRucssStartReply', () => {
     expect(parseRucssStartReply(STARTED)).toEqual(STARTED);
     for (const kind of [
       'refused',
+      'consent-missing',
       'background-unreachable',
       'superseded',
       'too-many-styles',

@@ -21,8 +21,8 @@ describe('Skeleton', () => {
   });
 
   it('carries the motion-token pulse class, neutralized by reduced motion globally', () => {
-    // The token stylesheet collapses every animation under
-    // `prefers-reduced-motion`; the component only contributes the class.
+    // The token stylesheet drops every animation (`animation-name: none`)
+    // under `prefers-reduced-motion`; the component only contributes the class.
     render(() => <Skeleton />);
     expect(document.querySelector('[data-fdt="skeleton"]')?.className).toContain('animate-pulse');
   });

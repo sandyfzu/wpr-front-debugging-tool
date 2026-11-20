@@ -340,7 +340,9 @@ export function createRucssTestExecutor(deps: RucssTestExecutorDeps): RucssTestE
       return { ok: false, failure: { kind: 'superseded' } };
     }
     if (reply === null) return { ok: false, failure: { kind: 'background-unreachable' } };
-    if (reply.kind === 'refused') return { ok: false, failure: { kind: 'refused' } };
+    if (reply.kind === 'refused' || reply.kind === 'consent-missing') {
+      return { ok: false, failure: { kind: reply.kind } };
+    }
     const { requestUrl, outcome } = reply;
     if (!outcome.ok) {
       return { ok: false, failure: { kind: 'fetch', requestUrl, failure: outcome.failure } };

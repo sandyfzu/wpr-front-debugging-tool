@@ -132,7 +132,8 @@
   --status-attention-soft: light-dark(#f7ebd8, #2c2210);
 
   /* Motion: durations and easing for transitions/keyframes. Keep animations
-   * meaningful and short; `prefers-reduced-motion` is neutralized globally below. */
+   * meaningful and short; `prefers-reduced-motion` drops all motion globally
+   * below. */
   --motion-fast: 120ms;
   --motion-base: 180ms;
   --motion-slow: 280ms;
@@ -256,16 +257,29 @@
 }
 
 /* ---- Reduced motion --------------------------------------------------------- */
-/* Users who opt out of motion get near-instant state changes everywhere. State
- * itself is never expressed through a transition: open/close chrome toggles
- * `hidden`/class state immediately, so reduced motion cannot strand a container. */
+/* Users who opt out of motion get no motion at all, on every surface (pages
+ * through `theme.css`, injected UIs through their shadow-root stylesheet —
+ * where `*` stays inside the shadow tree and never reaches the host page).
+ * Animations and transitions are dropped outright, not shortened: a
+ * collapsed (0.01 ms) run still paints its first keyframe (or its
+ * `@starting-style` value) for a frame, so an entrance would flash its
+ * `from` state once. With none created, the first painted frame is the
+ * final state and `getAnimations()` stays empty. A dropped transition also
+ * drops its delay (a held-visible exit leg hides at once — nothing is left
+ * to paint). Durations keep the collapse so timers derived from computed
+ * durations read ≈ 0. State itself is never expressed through a transition:
+ * open/close chrome toggles `hidden`/class state immediately and never waits
+ * for `animationend`/`transitionend`, so reduced motion cannot strand a
+ * container. */
 
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,
   ::after {
+    animation-name: none !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    transition-property: none !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }

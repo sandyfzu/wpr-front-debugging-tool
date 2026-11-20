@@ -15,6 +15,10 @@ const UNCHANGED = 'Nothing on the page was changed.';
 /** Every outcome that leaves the page untouched, one per kind and sub-kind. */
 const UNTOUCHED: readonly RucssTestOutcome[] = [
   { kind: 'config-unreadable' },
+  ...(['asking', 'declined', 'ask-failed'] as const).map((reason): RucssTestOutcome => ({
+    kind: 'consent-needed',
+    reason
+  })),
   {
     kind: 'invalid-config',
     problems: [{ kind: 'exclude-pattern', line: '(', message: 'bad' }]
@@ -74,6 +78,29 @@ describe('describeRucssOutcome', () => {
     }
     // Distinct kinds read distinctly (the two oversize builds share one title on purpose).
     expect(titles.size).toBe(UNTOUCHED.length - 1);
+  });
+
+  it('a run waiting on the data consent says what is sent and offers to ask again', () => {
+    for (const reason of ['asking', 'declined', 'ask-failed'] as const) {
+      const view = describeRucssOutcome({ kind: 'consent-needed', reason });
+      expect(view.recoveries).toEqual(['ask-consent']);
+      expect(view.message).toContain('Nothing was sent.');
+      expect(view.requestUrl).toBeNull();
+    }
+    const asking = describeRucssOutcome({ kind: 'consent-needed', reason: 'asking' });
+    expect(asking.tone).toBe('warn');
+    expect(asking.message).toContain('mega.wp-rocket.me');
+    expect(asking.message).toContain('the test starts once you allow it');
+    expect(describeRucssOutcome({ kind: 'consent-needed', reason: 'declined' }).title).toBe(
+      'Sending the page address was declined'
+    );
+    const failed = describeRucssOutcome({ kind: 'consent-needed', reason: 'ask-failed' });
+    expect(failed.tone).toBe('error');
+    expect(failed.title).toBe("Couldn't ask Firefox for permission");
+    // A start the background refused for consent reads as the decline it is.
+    expect(
+      describeRucssOutcome({ kind: 'start-failed', failure: { kind: 'consent-missing' } })
+    ).toEqual(describeRucssOutcome({ kind: 'consent-needed', reason: 'declined' }));
   });
 
   it('keeps the request address copyable whenever one was sent', () => {
