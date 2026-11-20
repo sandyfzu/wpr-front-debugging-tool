@@ -169,7 +169,7 @@
     "surface": "devtools panel start JS (panel.html + static imports)",
     "start": "panel.html",
     "maxKb": {
-      "raw": 685
+      "raw": 706
     }
   },
   {
@@ -177,7 +177,7 @@
     "build": "firefox-mv2",
     "start": "panel.html",
     "maxKb": {
-      "raw": 685
+      "raw": 706
     }
   },
   {
@@ -340,7 +340,7 @@
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "backstop": true,
     "maxKb": {
-      "raw": 2345
+      "raw": 2418
     }
   }
 ]

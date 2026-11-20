@@ -36,6 +36,7 @@ import {
   installFakeResizeObserver,
   type FakeResizeObservers
 } from '../resource-list/fake-resize-observer';
+import { DETAIL_CODE_MAX_HEIGHT } from '../resource-list/detail-section';
 import { DOUBLE_WINDOW_ROWS, renderPage, type PageHarness } from '../resource-list/page-harness';
 import { createTopFrameReader } from '../resource-list/top-frame-reader';
 import { StylesheetsPage, STYLESHEETS_SUBTITLE, type StylesheetsPageProps } from './page';
@@ -637,6 +638,37 @@ describe('StylesheetsPage — detail', () => {
     );
     expect(pane().querySelector('[data-fdt="style-css-plain"]')).toBeNull();
     expect(pane().querySelector('[data-fdt="style-css-cut"]')).toBeNull();
+  });
+
+  it('opens minified CSS wrapped and formatted CSS unwrapped, both capped to the view', async () => {
+    const minified = `.a{${'color:red;'.repeat(30)}}`;
+    const formatted = '.a {\n  color: red;\n}';
+    renderStylesheets(
+      [
+        reply([
+          inline({ id: 'min', chars: minified.length }),
+          inline({ id: 'fmt', chars: formatted.length })
+        ])
+      ],
+      { seams: { readStyleChunk: cssReads({ 0: minified, 1: formatted }).read } }
+    );
+    await settle();
+    const wrapOf = (): string | null | undefined =>
+      pane()
+        .querySelector('[data-fdt="style-css"] [data-fdt-code-block-wrap]')
+        ?.getAttribute('aria-pressed');
+    open('#min');
+    await vi.waitFor(() => {
+      expect(shownCss()).toBe(minified);
+    });
+    expect(wrapOf()).toBe('true');
+    const area = pane().querySelector<HTMLElement>('[data-fdt="style-css"] [data-fdt-code-area]');
+    expect(area?.style.maxHeight).toBe(DETAIL_CODE_MAX_HEIGHT);
+    open('#fmt');
+    await vi.waitFor(() => {
+      expect(shownCss()).toBe(formatted);
+    });
+    expect(wrapOf()).toBe('false');
   });
 
   it('formats the shown CSS on demand and back, the copy still taking the served text', async () => {

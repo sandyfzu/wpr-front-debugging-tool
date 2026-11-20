@@ -7,8 +7,8 @@
  * JavaScript or JSON up to the code block's limit and plain past it (the
  * block says so), with a note when the read's budget or cap cut it.
  *
- * The body is its own `@container`: from the regular width (a wide drill-in)
- * facts and code sit side by side; the 350 px pane stacks them.
+ * One column at every width (`DETAIL_STACK`); the code opens wrapped when
+ * minified and caps its height to the detail view's (`DETAIL_CODE_MAX_HEIGHT`).
  */
 import type { Accessor, JSX } from 'solid-js';
 import { Show, createMemo } from 'solid-js';
@@ -23,7 +23,13 @@ import {
 } from '../../../../lib/script-runtime/outcome-view';
 import type { LiveScriptRecord } from '../../../../lib/script-runtime/read-live';
 import type { OpenResource } from '../open-resource';
-import { DetailSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
+import {
+  DETAIL_CODE_MAX_HEIGHT,
+  DetailSection,
+  DETAIL_STACK,
+  FactList
+} from '../resource-list/detail-section';
+import { opensWrapped } from '../../../../lib/panel/detail-code';
 import { SourceLink } from '../resource-list/source-link';
 import { cn } from '../../../../utils/cn';
 import type { CodeBlockSeams } from './code-seams';
@@ -85,8 +91,8 @@ export function RuntimeDetail(props: RuntimeDetailProps): JSX.Element {
   const script = () => props.row().script;
   const facts = createMemo(() => runtimeFacts(script()));
   return (
-    <div data-fdt="runtime-detail" data-fdt-runtime-detail class="@container/detail min-w-0">
-      <div class={DETAIL_COLUMNS}>
+    <div data-fdt="runtime-detail" data-fdt-runtime-detail class="min-w-0">
+      <div class={DETAIL_STACK}>
         <div class="flex min-w-0 flex-col gap-3.5">
           <div class="flex min-w-0 flex-col gap-1.5">
             <RuntimeStateLine script={script()} />
@@ -149,6 +155,8 @@ function RuntimeCode(props: { row: RuntimeRow; codeBlock?: CodeBlockSeams }): JS
                 text={script().fullText}
                 lang={lang}
                 label={`${props.row.name} code`}
+                defaultWrap={opensWrapped(script().fullText)}
+                maxHeight={DETAIL_CODE_MAX_HEIGHT}
                 class="min-w-0"
                 loadHighlighter={props.codeBlock?.loadHighlighter}
                 createObserver={props.codeBlock?.createObserver}

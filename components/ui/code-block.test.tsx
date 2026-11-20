@@ -422,6 +422,65 @@ describe('CodeBlock', () => {
   });
 });
 
+describe('CodeBlock — height cap (maxHeight)', () => {
+  it('leaves the area uncapped by default (other users render as before)', () => {
+    render(() => <CodeBlock text={'a\nb'} lang="javascript" createObserver={() => manualGate()} />);
+    const area = controls().area as HTMLElement;
+    expect(area.hasAttribute('data-fdt-capped')).toBe(false);
+    expect(area.style.maxHeight).toBe('');
+    expect(area.className).not.toContain('overflow-y-auto');
+  });
+
+  it('caps the area itself, reactively, and scrolls the rest inside it', () => {
+    const [cap, setCap] = createSignal<string | undefined>('12rem');
+    const overflow = manualOverflow();
+    render(() => (
+      <CodeBlock
+        text={'a\nb\nc'}
+        lang="javascript"
+        maxHeight={cap()}
+        createObserver={() => manualGate()}
+        watchOverflow={overflow.watcher}
+      />
+    ));
+    const area = controls().area as HTMLElement;
+    expect(area.hasAttribute('data-fdt-capped')).toBe(true);
+    expect(area.style.maxHeight).toBe('12rem');
+    expect(area.className).toContain('overflow-y-auto');
+    expect(area.className).toContain('overflow-x-auto');
+    // Not a clamp: no clip box, no fade, no clamped flag.
+    expect(area.hasAttribute('data-fdt-clamped')).toBe(false);
+    const content = area.querySelector<HTMLElement>('[data-fdt-code-content]') as HTMLElement;
+    expect(content.className).not.toContain('overflow-y-clip');
+    // Past the cap the area is the named scroll region, like any overflow.
+    overflow.set(true);
+    expect(screen.getByRole('group', { name: 'javascript code' })).toBe(area);
+    setCap(undefined);
+    expect(controls().area).toBe(area);
+    expect(area.style.maxHeight).toBe('');
+    expect(area.className).not.toContain('overflow-y-auto');
+  });
+
+  it('rejects an empty cap and a cap combined with a clamp (fail fast)', () => {
+    expect(() =>
+      render(() => (
+        <CodeBlock text="x" lang="json" maxHeight="  " createObserver={() => manualGate()} />
+      ))
+    ).toThrow(/maxHeight must be a non-empty CSS length/);
+    expect(() =>
+      render(() => (
+        <CodeBlock
+          text="x"
+          lang="json"
+          maxHeight="10rem"
+          maxLines={2}
+          createObserver={() => manualGate()}
+        />
+      ))
+    ).toThrow(/maxHeight and maxLines are exclusive/);
+  });
+});
+
 describe('CodeBlock — toolbar actions', () => {
   it('places consumer actions before the Wrap toggle, and drops them with the toolbar', () => {
     render(() => (

@@ -72,6 +72,8 @@ import {
 import { createSearchStore, type SearchStore } from './state/search';
 import { createDetectionsLayout, DetectionsLayoutContext } from './state/detections-layout';
 import { createDetailPresence, DetailPresenceContext } from './state/detail-presence';
+import { createDetailShare, DetailShareContext } from './state/detail-share';
+import { writeDetailShare } from '../../lib/storage/panel-detail-share';
 import { devtoolsInspectedTabId, fdtRequestEdges, realMessagingEdges } from './state/edges';
 import { withRelayedPushes } from './state/relayed-pushes';
 import { createHardReloadBudget } from './state/hard-reload-budget';
@@ -132,6 +134,10 @@ export type AppProps = {
   readonly navPin?: NavPin;
   /** The pin writer (tests inject doubles); absent, the storage item. */
   readonly writeNavPin?: (pin: NavPin) => Promise<void>;
+  /** The detail pane share the boot read; absent or `null`, the default share. */
+  readonly detailShare?: number | null;
+  /** The share writer (tests inject doubles); absent, the storage item. */
+  readonly writeDetailShare?: (share: number | null) => Promise<void>;
 };
 
 /** The error branch's payload (the error state's fields the view reads). */
@@ -220,6 +226,13 @@ export function PanelApp(props: AppProps): JSX.Element {
   const detectionsLayout = createDetectionsLayout();
   // Shell-scoped so a page's open detail reaches the chrome; per route.
   const detailPresence = createDetailPresence(router.route);
+  // Shell-scoped so every list's pane shares one width across routes.
+  const detailShare = createDetailShare(
+    // eslint-disable-next-line solid/reactivity -- boot values, read once
+    props.detailShare ?? null,
+    // eslint-disable-next-line solid/reactivity -- boot values, read once
+    props.writeDetailShare ?? writeDetailShare
+  );
   // eslint-disable-next-line solid/reactivity
   const paletteChord = createPanelChordBinding(props.paletteChord ?? realPanelChordDeps(log));
   // eslint-disable-next-line solid/reactivity
@@ -467,7 +480,9 @@ export function PanelApp(props: AppProps): JSX.Element {
                         }
                       >
                         <DetectionsLayoutContext.Provider value={detectionsLayout}>
-                          <Dynamic component={PAGES[router.route()]} />
+                          <DetailShareContext.Provider value={detailShare}>
+                            <Dynamic component={PAGES[router.route()]} />
+                          </DetailShareContext.Provider>
                         </DetectionsLayoutContext.Provider>
                       </Match>
                     </Switch>

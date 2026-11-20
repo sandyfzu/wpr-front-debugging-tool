@@ -36,6 +36,7 @@ import {
   installFakeResizeObserver,
   type FakeResizeObservers
 } from '../resource-list/fake-resize-observer';
+import { DETAIL_CODE_MAX_HEIGHT, DETAIL_STACK, DETAIL_VIEW } from '../resource-list/detail-section';
 import { renderPage, renderWindowedRows, type PageHarness } from '../resource-list/page-harness';
 import type { CodeBlockSeams } from './code-seams';
 import { JAVASCRIPT_TAB_LABELS, JavaScriptPage, listCutNote, type JavaScriptSeams } from './page';
@@ -468,6 +469,58 @@ describe('JavaScript page — detail pane', () => {
     const block = source.querySelector('[data-fdt="code-block"]') as HTMLElement;
     expect(block.textContent).toContain('line1();\n  line2();\nline3();');
     expect(block.textContent).toContain('javascript');
+  });
+
+  it('puts the code last: chips, facts, the served tag, then the source', async () => {
+    mount();
+    open('Inline script #1');
+    await settle();
+    const hooks = ['script-detail-chips', 'script-facts', 'script-served-tag', 'script-source'].map(
+      (hook) => pane().querySelector(`[data-fdt="${hook}"]`)
+    );
+    for (const [index, element] of hooks.entries()) {
+      expect(element, `section ${String(index)}`).not.toBeNull();
+      const next = hooks[index + 1];
+      if (element === null || next === undefined || next === null) continue;
+      expect(element.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+    }
+    // Nothing after the source inside the detail body.
+    const source = hooks[3] as HTMLElement;
+    expect(source.nextElementSibling).toBeNull();
+  });
+
+  it('caps every detail code block to the view, and opens only minified code wrapped', async () => {
+    const minified = `var a={${'k:1,'.repeat(60)}};`;
+    const list = [...scripts(), { ...scripts()[3], content: minified } as DelayedScriptRecord];
+    mount(dataWith(list));
+    /** The Wrap state of the shown code blocks, by section. */
+    const wraps = (): Record<string, string | null> => ({
+      source:
+        pane()
+          .querySelector('[data-fdt="script-source"] [data-fdt-code-block-wrap]')
+          ?.getAttribute('aria-pressed') ?? null,
+      served:
+        pane()
+          .querySelector('[data-fdt="script-served-tag"] [data-fdt-code-block-wrap]')
+          ?.getAttribute('aria-pressed') ?? null
+    });
+    open('Inline script #1');
+    await settle();
+    expect(wraps()).toEqual({ source: 'false', served: 'true' });
+    const areas = pane().querySelectorAll<HTMLElement>('[data-fdt-code-area]');
+    expect(areas).toHaveLength(2);
+    for (const area of areas) {
+      expect(area.hasAttribute('data-fdt-capped')).toBe(true);
+      expect(area.style.maxHeight).toBe(DETAIL_CODE_MAX_HEIGHT);
+    }
+    open('Inline script #4');
+    await settle();
+    expect(wraps()).toEqual({ source: 'true', served: 'true' });
+    // The pane is the size container the cap measures, the body one column.
+    expect(pane().className).toContain(DETAIL_VIEW);
+    expect(pane().querySelector('[data-fdt="script-detail"] > div')?.className).toBe(DETAIL_STACK);
   });
 
   it('reads an undelayed inline script as JSON when its served type says so', async () => {

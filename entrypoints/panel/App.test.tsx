@@ -123,6 +123,7 @@ describe('PanelApp boot states', () => {
       hashTo(id);
       const shell = makeShell();
       render(() => <PanelApp search={shell.search} data={shell.data} />);
+      // Reading route shorter, the rest centered (list routes widen only with a detail open).
       const expected = id === 'undefined-references' ? 'max-w-4xl' : 'max-w-7xl';
       /** Assert the width policy without relying on layout unavailable in happy-dom. */
       const assertCanvas = (): void => {
@@ -216,6 +217,9 @@ describe('PanelApp boot states', () => {
       expect(screen.getByText("Couldn't load page data")).toBeTruthy();
     });
     hashTo('javascript');
+    expect(document.querySelector('[data-fdt="page-body"]')?.classList).toContain('max-w-7xl');
+    expect(document.querySelector('[data-fdt="page-body"]')?.classList).not.toContain('max-w-4xl');
+    hashTo('detections');
     expect(document.querySelector('[data-fdt="page-body"]')?.classList).toContain('max-w-7xl');
   });
 

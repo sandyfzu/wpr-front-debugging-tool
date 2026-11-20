@@ -26,6 +26,7 @@ import type {
 } from '../../../../lib/script-runtime/read-live';
 import { FULL_TEXT_MAX } from '../../../../lib/script-runtime/classify';
 import { createDetailPresence, DetailPresenceContext } from '../../state/detail-presence';
+import { createDetailShare, DetailShareContext } from '../../state/detail-share';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
 import { pageIdOf, pageSettledOf } from '../../state/page-identity';
@@ -139,13 +140,15 @@ function renderSection(
     <FdtDataContext.Provider value={store}>
       <SearchContext.Provider value={createSearchStore()}>
         <DetailPresenceContext.Provider value={createDetailPresence(() => 'javascript')}>
-          <RuntimeStatesSection
-            session={session}
-            reloadInspectedPage={reload}
-            openResource={options.openResource === undefined ? null : options.openResource}
-            createVirtualizer={everyRow}
-            codeBlock={CODE_SEAMS}
-          />
+          <DetailShareContext.Provider value={createDetailShare(null, () => Promise.resolve())}>
+            <RuntimeStatesSection
+              session={session}
+              reloadInspectedPage={reload}
+              openResource={options.openResource === undefined ? null : options.openResource}
+              createVirtualizer={everyRow}
+              codeBlock={CODE_SEAMS}
+            />
+          </DetailShareContext.Provider>
         </DetailPresenceContext.Provider>
       </SearchContext.Provider>
     </FdtDataContext.Provider>

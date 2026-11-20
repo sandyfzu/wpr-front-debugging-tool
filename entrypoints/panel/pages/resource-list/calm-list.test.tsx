@@ -22,7 +22,7 @@ import { makeFdtData, makeLazyImage } from '../../state/fixtures';
 import { SEARCH_DEBOUNCE_MS } from '../../state/search';
 import { useFdtData } from '../../state/use-fdt-data';
 import { PageFrame } from '../page-frame';
-import { CalmFilteredList, type CalmFilteredListProps } from './calm-list';
+import { CalmFilteredList, PANE_REGION_FLOOR, type CalmFilteredListProps } from './calm-list';
 import { installFakeResizeObserver, type FakeResizeObservers } from './fake-resize-observer';
 import { ListRow, ListRowHead, type ListRowColumns } from './list-row';
 import type { ListDetail } from './master-detail';
@@ -534,7 +534,8 @@ describe('side pane (content ≥ the split width)', () => {
       'https://cdn.example/up/logo.png'
     );
     expect(within(pane).getByRole('button', { name: 'Copy as exclusion' })).toBeTruthy();
-    expect(pane.className).toContain('w-87.5');
+    // Half the list width by default (the share rule), inside a sized frame.
+    expect(paneFrame(root).style.width).toBe('500px');
     expect(pane.className).toContain('starting:translate-x-2');
     const row = rowNamed(root, 'logo.png');
     expect(row.className).toContain('bg-accent-soft');
@@ -836,6 +837,117 @@ describe('layout flips keep the selection', () => {
     await settle();
     expect(document.activeElement).toBe(outside);
     outside.remove();
+  });
+});
+
+/** The open pane's sized frame. */
+function paneFrame(root: HTMLElement): HTMLElement {
+  const frame = root.querySelector<HTMLElement>('[data-fdt="detail-pane-frame"]');
+  if (frame === null) throw new Error('no pane frame');
+  return frame;
+}
+
+/** The open pane's splitter. */
+function splitter(root: HTMLElement): HTMLElement {
+  const found = root.querySelector<HTMLElement>('[data-fdt="detail-splitter"]');
+  if (found === null) throw new Error('no splitter');
+  return found;
+}
+
+describe('rows region floor while a pane is open', () => {
+  it('is 20 rem, else the whole view below the top bar, never under the 12 rem floor', () => {
+    // The class is the whole rule (a CSS min-height): pin its value; the
+    // e2e `panel-detail-width` measures it on short docks.
+    expect(PANE_REGION_FLOOR).toBe('min-h-[max(12rem,min(20rem,100dvh_-_4.25rem))]');
+  });
+
+  it('applies only while the pane shows (open, closed, drill-in)', () => {
+    const { root } = mount(1000);
+    const region = (): HTMLElement =>
+      root.querySelector<HTMLElement>('[data-fdt="calm-list-region"]') as HTMLElement;
+    expect(region().className).not.toContain(PANE_REGION_FLOOR);
+    fireEvent.click(openOf(root, 'logo.png'));
+    expect(region().className).toContain(PANE_REGION_FLOOR);
+    observers.resize(600);
+    expect(region().className).not.toContain(PANE_REGION_FLOOR);
+    observers.resize(1000);
+    expect(region().className).toContain(PANE_REGION_FLOOR);
+    fireEvent.click(within(root).getByRole('button', { name: 'Close details' }));
+    expect(region().className).not.toContain(PANE_REGION_FLOOR);
+  });
+});
+
+describe('pane width (share of the list width) + splitter', () => {
+  it('grows with the list width and re-clamps on a resize, the list keeping its floor', () => {
+    const { root } = mount(1000);
+    fireEvent.click(openOf(root, 'logo.png'));
+    expect(paneFrame(root).style.width).toBe('500px');
+    observers.resize(1600);
+    expect(paneFrame(root).style.width).toBe('800px');
+    // At the split width both floors meet: 830 = 480 list + 350 pane.
+    observers.resize(830);
+    expect(paneFrame(root).style.width).toBe('350px');
+  });
+
+  it('names the splitter and values it in px within the bounds', () => {
+    const { root } = mount(1000);
+    fireEvent.click(openOf(root, 'logo.png'));
+    const handle = within(root).getByRole('separator', { name: 'Resize details' });
+    expect(handle.getAttribute('aria-orientation')).toBe('vertical');
+    expect(handle.getAttribute('aria-valuenow')).toBe('500');
+    expect(handle.getAttribute('aria-valuemin')).toBe('350');
+    expect(handle.getAttribute('aria-valuemax')).toBe('520');
+    expect(handle.tabIndex).toBe(0);
+  });
+
+  it('steps with ←/→, jumps with Home/End, and persists each move as a share', async () => {
+    const harness = mount(1000);
+    fireEvent.click(openOf(harness.root, 'logo.png'));
+    fireEvent.keyDown(splitter(harness.root), { key: 'ArrowLeft' });
+    expect(paneFrame(harness.root).style.width).toBe('516px');
+    fireEvent.keyDown(splitter(harness.root), { key: 'Home' });
+    expect(paneFrame(harness.root).style.width).toBe('350px');
+    // Held against the bound: nothing moves, nothing is written.
+    fireEvent.keyDown(splitter(harness.root), { key: 'ArrowRight' });
+    fireEvent.keyDown(splitter(harness.root), { key: 'End' });
+    expect(paneFrame(harness.root).style.width).toBe('520px');
+    await settle();
+    await settle();
+    expect(harness.shareWrites.mock.calls.at(-1)).toEqual([0.52]);
+    expect(harness.share.share()).toBe(0.52);
+    // A resize keeps the share: the pane grows with the list.
+    observers.resize(2000);
+    expect(paneFrame(harness.root).style.width).toBe('1040px');
+  });
+
+  it('leaves the row keys alone: arrows on the splitter never step the selection', () => {
+    const { root } = mount(1000);
+    fireEvent.click(openOf(root, 'logo.png'));
+    fireEvent.keyDown(splitter(root), { key: 'ArrowDown' });
+    expect(root.querySelector('[data-fdt="detail-pane"] h2')?.textContent).toBe('logo.png');
+  });
+
+  it('resets to the default share on a double-click', async () => {
+    const harness = mount(1000);
+    fireEvent.click(openOf(harness.root, 'logo.png'));
+    fireEvent.keyDown(splitter(harness.root), { key: 'Home' });
+    fireEvent.dblClick(splitter(harness.root));
+    expect(paneFrame(harness.root).style.width).toBe('500px');
+    await settle();
+    await settle();
+    expect(harness.shareWrites.mock.calls.at(-1)).toEqual([null]);
+  });
+
+  it('every list on the page follows one share', () => {
+    const { Page } = twoListPage();
+    const harness = renderPage(Page, withImages(IMAGES));
+    observers.resize(1000);
+    const first = harness.root.querySelector('[data-fdt-test="first"]') as HTMLElement;
+    const second = harness.root.querySelector('[data-fdt-test="second"]') as HTMLElement;
+    fireEvent.click(openOf(first, 'logo.png'));
+    fireEvent.click(openOf(second, 'hero.webp'));
+    fireEvent.keyDown(splitter(first), { key: 'Home' });
+    expect(paneFrame(second).style.width).toBe('350px');
   });
 });
 

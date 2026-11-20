@@ -409,6 +409,17 @@ test('JavaScript virtual lists and nested code keep fixed native bars at narrow 
       // drill-in below it), opened for this width; it owns horizontal overflow.
       await openScriptDetail(panel, scriptRowNamed(panel, 'Inline script #2'));
       const code = scriptDetail(panel).getByRole('group', { name: 'Inline script 2', exact: true });
+      // One-line JSON opens wrapped (a minified line): nothing scrolls
+      // sideways; unwrapped, the area owns the horizontal overflow.
+      const source = scriptDetail(panel).locator('[data-fdt="script-source"]');
+      const wrapToggle = source.locator('[data-fdt-code-block-wrap]');
+      await expect(wrapToggle).toHaveAttribute('aria-pressed', 'true');
+      expect(
+        await source
+          .locator('[data-fdt-code-area]')
+          .evaluate((el) => el.scrollWidth > el.clientWidth)
+      ).toBe(false);
+      await wrapToggle.click();
       await expect(code).toBeVisible();
       expect(
         await code.evaluate((el) => ({

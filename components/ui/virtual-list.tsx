@@ -13,17 +13,19 @@ import {
   createMemo,
   createSignal,
   For,
+  mergeProps,
   on,
   onCleanup,
   splitProps
 } from 'solid-js';
 import type { EntryMaskHandle } from './virtual-list-entry';
-import { createVirtualizer } from '@tanstack/solid-virtual';
+import { createVirtualizer, observeElementRect } from '@tanstack/solid-virtual';
 import type { Range, VirtualItem } from '@tanstack/solid-virtual';
 import { createLogger } from '../../lib/logger';
 import { attachEntryMask } from './virtual-list-entry';
 import { focusedElementOf, preserveMovedFocus } from './virtual-list-focus';
 import { snapshotKeys, type KeySnapshot } from './virtual-list-keys';
+import { frameDeferredRect } from './virtual-list-rect';
 import { stickyRangeExtractor } from './virtual-list-sticky';
 
 /** The virtual row type the wrapper renders (re-exported for consumers/tests). */
@@ -115,8 +117,18 @@ export interface VirtualScrollRequest {
  */
 export type VirtualizerFactory = (options: VirtualListOptions) => VirtualizerInstance;
 
-/** The default factory: the library's own `createVirtualizer`. */
-const defaultVirtualizerFactory: VirtualizerFactory = (options) => createVirtualizer(options);
+/**
+ * The scroller-size watch the default factory gives the core: its own, with
+ * shrinks applied one frame late (`frameDeferredRect`: a shrinking list
+ * otherwise unmounts watched rows inside a resize callback, which Chromium
+ * reports as a `ResizeObserver` loop error); growth lands at once.
+ */
+const deferredElementRect = frameDeferredRect(observeElementRect);
+
+/** The default factory: the library's own `createVirtualizer`, with the deferred size watch. */
+const defaultVirtualizerFactory: VirtualizerFactory = (options) =>
+  // `mergeProps` keeps the options' getters lazy (a spread would read them once).
+  createVirtualizer(mergeProps(options, { observeElementRect: deferredElementRect }));
 
 /**
  * Name the duplicate keys of a window (dev only): the map keeps one item

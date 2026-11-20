@@ -2,10 +2,14 @@
  * The calm list's master–detail: which row is selected, where its detail
  * shows, and how keys, focus and scroll follow.
  *
- * - **Layout** from the list's own measured width (`detailLayout`): a 350 px
- *   side pane from the split width on, else a drill-in view that replaces
- *   the list (Back, ↑/↓ between rows, "n of m", the primary actions — in the
- *   bar, or a bottom bar on a compact list).
+ * - **Layout** from the list's own measured width (`detailLayout`): a side
+ *   pane from the split width on — its width the shell's share of the list
+ *   width (half by default; the splitter drags it, every list follows),
+ *   clamped so the list and the pane keep their floors — else a drill-in
+ *   view that replaces the list (Back, ↑/↓ between rows, "n of m", the
+ *   primary actions — in the bar, or a bottom bar on a compact list). Both
+ *   views are one column and size containers, so a detail's code block caps
+ *   its height to the view's (`DETAIL_CODE_MAX_HEIGHT`).
  * - **Selection** is the list-selection machine keyed by row key: refreshes
  *   keep it, a filter/search hiding it clears the pane or marks the drill
  *   "no longer listed", a refresh dropping it shows "no longer on the page".
@@ -52,7 +56,13 @@ import { CopyButton } from '../../../../components/ui/copy-button';
 import { EmptyState } from '../../../../components/ui/empty-state';
 import { IconButton } from '../../../../components/ui/icon-button';
 import type { VirtualScrollRequest } from '../../../../components/ui/virtual-list';
-import { detailLayout, type DetailLayout } from '../../../../lib/panel/detail-layout';
+import {
+  DETAIL_PANE_DEFAULT_SHARE,
+  detailLayout,
+  paneShareOf,
+  paneWidth,
+  type DetailLayout
+} from '../../../../lib/panel/detail-layout';
 import {
   initialListSelection,
   isDetailOpen,
@@ -67,8 +77,12 @@ import {
 import { cn } from '../../../../utils/cn';
 import { formatCount, type CountNoun } from '../../../../utils/format-count';
 import { useDetailPresence } from '../../state/detail-presence';
+import { useDetailShare } from '../../state/detail-share';
 import { PAGE_CANVAS } from '../page-frame';
+import { DETAIL_VIEW } from './detail-section';
 import { listKeyIntent } from './list-keys';
+import { PaneSplitter } from './pane-splitter';
+import { bindRevealWheel } from './reveal-wheel';
 import { createRowFocus, type RowFocus } from './row-focus';
 import { mergeScrollRequests, type ScrollRequests } from './scroll-requests';
 
@@ -138,6 +152,18 @@ export interface MasterDetailController {
   readonly paneOpen: Accessor<boolean>;
   /** The drill-in detail replaces the list (which has rows). */
   readonly drillOpen: Accessor<boolean>;
+  /** The side pane's width (px): the shell's share of the list width, clamped. */
+  readonly paneWidth: Accessor<number>;
+  /** The list root's measured content width (the pane's bounds derive from it). */
+  readonly contentWidth: Accessor<number>;
+  /** Show a pane width while the splitter drags (every list follows; not persisted). */
+  previewPaneWidth(width: number): void;
+  /** Settle the pane width (persisted as the shell's share). */
+  commitPaneWidth(width: number): void;
+  /** Persist the share on screen (a drag the pane's unmount cut short). */
+  settlePaneWidth(): void;
+  /** Back to the default pane width. */
+  resetPaneWidth(): void;
   /** The selection's place in the rendered list (`null`: not listed). */
   readonly position: Accessor<{ readonly index: number; readonly count: number } | null>;
   /** The list came back from a drill detail (its re-entry plays the view keyframe). */
@@ -235,6 +261,21 @@ export function createMasterDetail(options: MasterDetailOptions): MasterDetailCo
     dispatch({ type: 'rowsChanged', visibleIds: options.visibleIds(), allIds: options.allIds() });
   });
 
+  // Static lists open no pane: they never read (nor need) the shell's share.
+  const share = options.detailEnabled ? useDetailShare() : undefined;
+  const currentPaneWidth = createMemo(() =>
+    paneWidth(options.width(), share?.share() ?? DETAIL_PANE_DEFAULT_SHARE)
+  );
+  /**
+   * A splitter width as the share it stores; `null` (nothing to store) while
+   * the list is unmeasured or narrower than the width — a share must lie in
+   * (0, 1), and such a width belongs to a layout already gone.
+   */
+  const shareOfWidth = (width: number): number | null => {
+    const content = untrack(options.width);
+    return content > width ? paneShareOf(width, content) : null;
+  };
+
   if (options.detailEnabled) {
     const presence = useDetailPresence().claim();
     // What is on screen, not only what the machine holds (see `rowsShown`);
@@ -315,6 +356,22 @@ export function createMasterDetail(options: MasterDetailOptions): MasterDetailCo
     drillOpen,
     position: () => selectionPosition(state(), options.visibleIds()),
     returned,
+    paneWidth: currentPaneWidth,
+    contentWidth: options.width,
+    previewPaneWidth(width) {
+      const next = shareOfWidth(width);
+      if (next !== null) share?.preview(next);
+    },
+    commitPaneWidth(width) {
+      const next = shareOfWidth(width);
+      if (next !== null) share?.commit(next);
+    },
+    settlePaneWidth() {
+      if (share !== undefined) share.commit(untrack(share.share));
+    },
+    resetPaneWidth() {
+      share?.reset();
+    },
     scroll,
     focus,
     paneCloseRef(element) {
@@ -488,9 +545,11 @@ function DetailBodyFor<Row>(props: {
 }
 
 /**
- * The 350 px side pane (from the split width on): header with close, the
- * body, then the primary actions. Its own scroller; it returns to the top
- * when the selection changes.
+ * The side pane (from the split width on): the splitter on its start edge,
+ * then its own scroller — header with close, the body, the primary actions;
+ * it returns to the top when the selection changes, and a wheel over a code
+ * block scrolls the pane until that block is in view (`bindRevealWheel`).
+ * Its width is the controller's (never animated, M-4).
  *
  * @param props See {@link DetailViewProps}.
  */
@@ -508,45 +567,72 @@ export function DetailPane<Row>(props: DetailViewProps<Row>): JSX.Element {
   return (
     <Show when={props.row()}>
       {(row) => (
-        <aside
-          ref={scroller}
-          data-fdt="detail-pane"
-          aria-label={`${props.detail.title(row())} details`}
+        <div
+          data-fdt="detail-pane-frame"
+          class="relative flex shrink-0"
+          style={{ width: `${String(props.controller.paneWidth())}px` }}
+          // On the frame, so Esc on the splitter closes the pane too.
           onKeyDown={(event) => {
             props.controller.onDetailKeyDown(event);
           }}
-          class={cn(
-            'flex w-87.5 shrink-0 flex-col gap-3.5 overflow-y-auto border-s border-line-1 bg-surface-1 p-4',
-            PANE_ENTER
-          )}
         >
-          <DetailHeading
-            row={row()}
-            detail={props.detail}
-            end={
-              <IconButton
-                ref={(element: HTMLButtonElement) => {
-                  props.controller.paneCloseRef(element);
-                }}
-                label="Close details"
-                data-fdt="detail-close"
-                onClick={() => {
-                  props.controller.close();
-                }}
-              >
-                <X size={14} aria-hidden="true" />
-              </IconButton>
-            }
+          <PaneSplitter
+            width={props.controller.paneWidth}
+            contentWidth={props.controller.contentWidth}
+            onPreview={(width) => {
+              props.controller.previewPaneWidth(width);
+            }}
+            onCommit={(width) => {
+              props.controller.commitPaneWidth(width);
+            }}
+            onSettle={() => {
+              props.controller.settlePaneWidth();
+            }}
+            onReset={() => {
+              props.controller.resetPaneWidth();
+            }}
           />
-          <DetailBody {...props} row={row} />
-          <Show when={props.controller.state().presence === 'listed' && props.detail.actions}>
-            {(actions) => (
-              <div data-fdt="detail-actions" class="flex flex-wrap gap-1.5">
-                {actions()(row)}
-              </div>
+          <aside
+            ref={(element) => {
+              scroller = element;
+              onCleanup(bindRevealWheel(element));
+            }}
+            data-fdt="detail-pane"
+            aria-label={`${props.detail.title(row())} details`}
+            class={cn(
+              'flex min-w-0 flex-1 flex-col gap-3.5 overflow-y-auto border-s border-line-1 bg-surface-1 p-4',
+              DETAIL_VIEW,
+              PANE_ENTER
             )}
-          </Show>
-        </aside>
+          >
+            <DetailHeading
+              row={row()}
+              detail={props.detail}
+              end={
+                <IconButton
+                  ref={(element: HTMLButtonElement) => {
+                    props.controller.paneCloseRef(element);
+                  }}
+                  label="Close details"
+                  data-fdt="detail-close"
+                  onClick={() => {
+                    props.controller.close();
+                  }}
+                >
+                  <X size={14} aria-hidden="true" />
+                </IconButton>
+              }
+            />
+            <DetailBody {...props} row={row} />
+            <Show when={props.controller.state().presence === 'listed' && props.detail.actions}>
+              {(actions) => (
+                <div data-fdt="detail-actions" class="flex flex-wrap gap-1.5">
+                  {actions()(row)}
+                </div>
+              )}
+            </Show>
+          </aside>
+        </div>
       )}
     </Show>
   );
@@ -569,7 +655,8 @@ export function positionLabel(position: {
  * The drill-in detail (below the split width): replaces the list. The bar
  * holds Back, ↑/↓ and "n of m"; the actions sit at the bar's end, or in a
  * bottom bar on a compact list (grid areas switch on the list's tier). Back
- * takes focus on open; the body scroller returns to the top on each step.
+ * takes focus on open; the body scroller returns to the top on each step and
+ * follows the pane's wheel rule (`bindRevealWheel`).
  *
  * @param props See {@link DetailViewProps}.
  */
@@ -672,9 +759,15 @@ export function DrillDetail<Row>(props: DetailViewProps<Row>): JSX.Element {
             )}
           </Show>
           <div
-            ref={scroller}
+            ref={(element) => {
+              scroller = element;
+              onCleanup(bindRevealWheel(element));
+            }}
             data-fdt="drill-body"
-            class="flex min-h-0 flex-col gap-3.5 overflow-y-auto py-3 [grid-area:body]"
+            class={cn(
+              'flex min-h-0 flex-col gap-3.5 overflow-y-auto py-3 [grid-area:body]',
+              DETAIL_VIEW
+            )}
           >
             <DetailHeading row={row()} detail={props.detail} />
             <DetailBody {...props} row={row} />

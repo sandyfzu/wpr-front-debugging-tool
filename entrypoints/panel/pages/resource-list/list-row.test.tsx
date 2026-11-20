@@ -12,6 +12,7 @@ import {
   calmRowEstimate,
   ListRow,
   ListRowContext,
+  LIST_ROW_MAX_WIDTH,
   ListRowHead,
   rowGrid,
   type ListRowColumns
@@ -120,6 +121,11 @@ describe('ListRow', () => {
       />
     ));
     expect(container.querySelector('[data-fdt-row-open]')).toBeNull();
+    // Content (icon, columns, actions) capped on a very wide list.
+    expect(container.querySelector('[data-fdt="list-row"]')?.className).toContain(
+      LIST_ROW_MAX_WIDTH
+    );
+    expect(LIST_ROW_MAX_WIDTH).toBe('max-w-7xl');
     const name = container.querySelector('[data-fdt="list-row-name"]') as HTMLElement;
     expect(name.textContent).toBe('logo.png');
     expect(name.className).toContain('font-semibold');
@@ -281,7 +287,9 @@ describe('ListRowHead', () => {
     expect(head.querySelector('.w-8')).not.toBeNull();
     expect(head.querySelector('.w-6')).not.toBeNull();
     expect(head.querySelector('.w-3\\.5')).not.toBeNull();
-    expect(head.querySelector('div')?.className).toContain(rowGrid('two', BOTH));
+    expect(head.querySelector('.grid')?.className).toContain(rowGrid('two', BOTH));
+    // Its content keeps the rows' cap, so the captions stay over their columns.
+    expect(head.querySelector(':scope > div')?.className).toContain(LIST_ROW_MAX_WIDTH);
     // The captions share the name's line (a two-line grid would center them lower).
     for (const caption of ['Size', 'WP Rocket']) {
       const span = [...head.querySelectorAll('span')].find((s) => s.textContent === caption);

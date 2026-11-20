@@ -20,6 +20,7 @@ import type { FdtData } from '../../../../lib/wp-rocket/types';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeDelayScript, makeFdtData } from '../../state/fixtures';
 import { createDetailPresence, DetailPresenceContext } from '../../state/detail-presence';
+import { createDetailShare, DetailShareContext } from '../../state/detail-share';
 import { SEARCH_DEBOUNCE_MS, createSearchStore, type SearchStore } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
 import {
@@ -131,14 +132,16 @@ function mount(options: MountOptions) {
     <FdtDataContext.Provider value={store}>
       <SearchContext.Provider value={search}>
         <DetailPresenceContext.Provider value={createDetailPresence(() => 'undefined-references')}>
-          <UndefinedReferencesPage
-            deps={{
-              inspected: options.unsupported ? null : inspected,
-              yieldToMain: () => Promise.resolve()
-            }}
-            createVirtualizer={renderWindowedRows}
-            openResource={null}
-          />
+          <DetailShareContext.Provider value={createDetailShare(null, () => Promise.resolve())}>
+            <UndefinedReferencesPage
+              deps={{
+                inspected: options.unsupported ? null : inspected,
+                yieldToMain: () => Promise.resolve()
+              }}
+              createVirtualizer={renderWindowedRows}
+              openResource={null}
+            />
+          </DetailShareContext.Provider>
         </DetailPresenceContext.Provider>
       </SearchContext.Provider>
     </FdtDataContext.Provider>
