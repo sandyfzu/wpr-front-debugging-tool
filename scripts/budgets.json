@@ -77,6 +77,14 @@
     }
   },
   {
+    "surface": "data-sharing consent page start JS (Firefox only)",
+    "build": "firefox-mv2",
+    "start": "data-consent.html",
+    "maxKb": {
+      "raw": 93
+    }
+  },
+  {
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
@@ -314,7 +322,7 @@
     "globs": ["chunks/runtime-states-*.js"],
     "maxKb": {
       "raw": 16.2,
-      "gzip": 6.1
+      "gzip": 6.3
     },
     "required": true
   },
@@ -340,7 +348,7 @@
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "backstop": true,
     "maxKb": {
-      "raw": 2345
+      "raw": 2416
     }
   }
 ]

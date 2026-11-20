@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCssTimeMs, transitionEndMs } from './css-duration';
+import { parseCssTimeMs, transitionEndMs, transitionRunsFor } from './css-duration';
 
 /** Computed timing as a style declaration reports it (empty = unset). */
 function timing(duration: string, delay = '', property = '') {
@@ -74,5 +74,49 @@ describe('transitionEndMs', () => {
     expect(transitionEndMs(timing('1e400s'))).toBe(0);
     expect(transitionEndMs(timing('nope, 0.1s'))).toBe(100);
     expect(transitionEndMs(timing('0.1s', 'nope'))).toBe(100);
+  });
+});
+
+describe('transitionRunsFor', () => {
+  it('is true for the named property with a positive leg', () => {
+    expect(transitionRunsFor(timing('0.18s', '0s', 'transform'), 'transform')).toBe(true);
+  });
+
+  it('pairs the property with its own time entry, the lists repeating', () => {
+    const legs = timing('0.18s, 0s', '0s', 'opacity, transform');
+    expect(transitionRunsFor(legs, 'opacity')).toBe(true);
+    expect(transitionRunsFor(legs, 'transform')).toBe(false);
+    expect(transitionRunsFor(timing('0.18s', '0s', 'opacity, transform'), 'transform')).toBe(true);
+  });
+
+  it('counts `all` and a delay-only leg (zero duration, positive delay)', () => {
+    expect(transitionRunsFor(timing('0.12s', '0s', 'all'), 'transform')).toBe(true);
+    expect(transitionRunsFor(timing('0s', '180ms', 'visibility'), 'visibility')).toBe(true);
+  });
+
+  it('is false for `none` (reduced motion), even with a collapsed duration', () => {
+    expect(transitionRunsFor(timing('1e-05s', '0s', 'none'), 'transform')).toBe(false);
+  });
+
+  it('is false for an unlisted property, a zero leg or a delay that cancels the duration', () => {
+    expect(transitionRunsFor(timing('0.18s', '0s', 'opacity'), 'transform')).toBe(false);
+    expect(transitionRunsFor(timing('0s', '0s', 'transform'), 'transform')).toBe(false);
+    expect(transitionRunsFor(timing('0.1s', '-0.2s', 'transform'), 'transform')).toBe(false);
+  });
+
+  it('lets the last entry naming the property decide (directly or via `all`)', () => {
+    expect(transitionRunsFor(timing('0.2s, 0s', '0s', 'all, transform'), 'transform')).toBe(false);
+    expect(transitionRunsFor(timing('0s, 0.2s', '0s', 'all, transform'), 'transform')).toBe(true);
+    expect(transitionRunsFor(timing('0.2s, 0s', '0s', 'transform, all'), 'transform')).toBe(false);
+    expect(transitionRunsFor(timing('0s, 0.2s', '0s', 'transform, all'), 'transform')).toBe(true);
+    // An entry for another property after the deciding one changes nothing.
+    expect(transitionRunsFor(timing('0.2s, 0s', '0s', 'transform, opacity'), 'transform')).toBe(
+      true
+    );
+  });
+
+  it('is false with no timing at all (unset lists)', () => {
+    expect(transitionRunsFor(timing('', '', ''), 'transform')).toBe(false);
+    expect(transitionRunsFor(timing('', '', 'transform'), 'transform')).toBe(false);
   });
 });

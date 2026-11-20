@@ -508,7 +508,8 @@ test.describe('exclusion builder stored-form notes', () => {
     await page.keyboard.press('Enter');
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect.poll(look).toEqual(closed);
-    // Reduced motion collapses the turn (the token sheet's reset reaches the shadow root).
+    // Reduced motion leaves no turn leg: the token sheet's reset (no transition
+    // property, durations at a frame) reaches the shadow root.
     await page.emulateMedia({ reducedMotion: 'reduce' });
     expect((await look()).turnSeconds).toBeLessThan(0.001);
     await page.close();

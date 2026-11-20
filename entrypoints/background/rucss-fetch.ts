@@ -14,6 +14,11 @@
  *   the timeout signal and the cancel signal — the request rejects with the
  *   reason of whichever fired). A newer request from the same tab, or the
  *   tab closing, cancels the older one.
+ * - Consent (where the browser asks before a page address leaves it —
+ *   Firefox's data consent): the request is sent only while the grant is
+ *   held, checked here on every request whatever asked (`consent-missing`
+ *   otherwise, nothing sent). The check is injected by the Firefox build
+ *   only: in Chromium this branch and its log lines ship inert (never taken).
  * - Logs never carry the page or request address, nor the answer.
  */
 import { createLogger, type Logger } from '../../lib/logger';
@@ -59,6 +64,12 @@ export interface RucssFetchDeps {
    * @returns The stop, called once the request settled.
    */
   readonly keepAlive: () => () => void;
+  /**
+   * Whether the page address may leave the browser now — only where the
+   * browser has a data consent (absent: nothing to check). Rejects when
+   * the grant cannot be read (read as not granted).
+   */
+  readonly consent?: () => Promise<boolean>;
   readonly log: Logger;
 }
 
@@ -186,8 +197,29 @@ export function createRucssInflight(): RucssInflight {
 }
 
 /**
+ * Whether the request may be sent: no consent to check, or the grant held.
+ * A failed read counts as not granted (logged).
+ *
+ * @param deps See {@link RucssFetchDeps}.
+ */
+export async function rucssConsentHeld(
+  deps: Pick<RucssFetchDeps, 'consent' | 'log'>
+): Promise<boolean> {
+  if (deps.consent === undefined) return true;
+  try {
+    return await deps.consent();
+  } catch (cause) {
+    deps.log.error(
+      'Reading the data-sharing consent failed; the RUCSS request is not sent',
+      cause instanceof Error ? cause.message : cause
+    );
+    return false;
+  }
+}
+
+/**
  * Answer one request. Never rejects: a refused sender or request answers
- * `refused` with nothing sent.
+ * `refused`, a missing data consent `consent-missing` — nothing sent.
  *
  * @param sender The runtime sender, untrusted.
  * @param data The request, untrusted.
@@ -209,6 +241,10 @@ export async function answerRucssFetch(
     deps.log.warn('RUCSS request refused — not a top-frame page asking for its own address');
     return { kind: 'refused' };
   }
+  if (!(await rucssConsentHeld(deps))) {
+    deps.log.info('RUCSS request not sent: the data-sharing consent is not granted');
+    return { kind: 'consent-missing' };
+  }
   const { signal, release } = inflight.begin(page.tabId);
   try {
     const outcome = await sendRucssRequest(requestUrl, request.safelist, signal, deps);
@@ -219,14 +255,19 @@ export async function answerRucssFetch(
   }
 }
 
-/** Register the channel and the tab-close cancel (once per background start). */
-export function registerRucssFetch(): void {
+/**
+ * Register the channel and the tab-close cancel (once per background start).
+ *
+ * @param consent The data-consent check (see {@link RucssFetchDeps}), where the browser has one.
+ */
+export function registerRucssFetch(consent?: () => Promise<boolean>): void {
   const inflight = createRucssInflight();
   const deps: RucssFetchDeps = {
     fetch: (input, init) => fetch(input, init),
     now: () => Date.now(),
     timeoutSignal: (ms) => AbortSignal.timeout(ms),
     keepAlive: () => keepBackgroundAlive(() => browser.runtime.getPlatformInfo(), log),
+    ...(consent !== undefined && { consent }),
     log
   };
   onMessage('fetchRucssShakenCss', ({ sender, data }) =>

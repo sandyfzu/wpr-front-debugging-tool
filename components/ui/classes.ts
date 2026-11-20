@@ -36,9 +36,8 @@ export const DISABLED = 'disabled:opacity-50 disabled:cursor-not-allowed';
 /*
  * Motion — the three sanctioned Tailwind-surface moments beyond the page
  * entrance (the panel's `.fdt-page` keyframe). Token-driven only, so the
- * global `prefers-reduced-motion` rules reach them with no per-surface code
- * (`tokens.css` collapses them everywhere; `theme.css`, the extension pages'
- * layer, drops them outright). Everything else (hover/press colors, data swaps,
+ * global `prefers-reduced-motion` rule reaches them with no per-surface code
+ * (`tokens.css` drops them outright, on every surface). Everything else (hover/press colors, data swaps,
  * counts, height changes) is instant by design.
  */
 

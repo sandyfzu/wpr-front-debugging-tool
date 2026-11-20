@@ -5,9 +5,9 @@
  *
  * A single attempt is frame-fragile: the callback runs before the frame's
  * style recalc, so the target's visibility may still resolve as the OLD
- * state at that instant (under reduced motion, where every transition
- * collapses, the attempt and the visibility flip land in the same frame —
- * measured: the focus was rejected and evicted shortly after). An attempt
+ * state at that instant (under reduced motion, where no transition runs,
+ * the attempt and the visibility flip land in the same frame — measured:
+ * the focus was rejected and evicted shortly after). An attempt
  * verifies its landing and re-arms on the following frame when it didn't
  * (two tries total, both riding the context so invalidation cancels them);
  * never landing is logged, not silent.

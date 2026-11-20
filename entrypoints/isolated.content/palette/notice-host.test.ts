@@ -15,7 +15,13 @@ import {
   resetRenders,
   settle
 } from '../../../components/injected-ui/deferred-mount.testing';
-import { NOTICE_DISMISS_MS, NOTICE_HOST_NAME, createNoticeHost } from './notice';
+import {
+  NOTICE_ACTION_DISMISS_MS,
+  NOTICE_DISMISS_MS,
+  NOTICE_HOST_NAME,
+  createNoticeHost,
+  pageNoticeHost
+} from './notice';
 
 vi.mock(
   '../../../components/injected-ui/mount',
@@ -112,5 +118,27 @@ describe('page notice host lifecycle', () => {
     expect(renders).toHaveLength(2);
     expect(createShadowRootUi).toHaveBeenCalledTimes(1);
     error.mockRestore();
+  });
+
+  it('a notice with an action stays longer before it leaves', async () => {
+    const host = createNoticeHost(ctx, createLogger('test'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    host.show({ ...NOTICE, action: { label: 'Try again', run: vi.fn() } });
+    await vi.waitFor(() => {
+      expect(hosts()).toBe(1);
+    });
+    vi.advanceTimersByTime(NOTICE_DISMISS_MS);
+    expect(hosts()).toBe(1);
+    vi.advanceTimersByTime(NOTICE_ACTION_DISMISS_MS - NOTICE_DISMISS_MS);
+    expect(hosts()).toBe(0);
+  });
+
+  it('one shared host per world: a new context gets its own', () => {
+    const log = createLogger('test');
+    const first = pageNoticeHost(ctx, log);
+    expect(pageNoticeHost(ctx, log)).toBe(first);
+    const other = new ContentScriptContext('notice-shared-other');
+    expect(pageNoticeHost(other, log)).not.toBe(first);
+    other.notifyInvalidated();
   });
 });

@@ -28,7 +28,7 @@ import {
 import { WINDOW_TIMERS, contextScheduler } from '../../../utils/context-timers';
 import { startChordTrigger } from './chord';
 import { startPaletteModule } from './module';
-import { createNoticeHost } from './notice';
+import { pageNoticeHost } from './notice';
 import { sideBySideTriggers } from './side-by-side-triggers';
 
 const log = createLogger('command-palette');
@@ -94,7 +94,7 @@ export function setupCommandPalette(ctx: ContentScriptContext): void {
     loadView: () => sendMessage('loadCommandPaletteView'),
     executors,
     page: () => ({ origin: window.location.origin }),
-    notices: createNoticeHost(ctx, log),
+    notices: pageNoticeHost(ctx, log),
     // The extension's isolated world: the injected view finds the bridge here.
     world: globalThis,
     chordHint: () => chord.hint(),

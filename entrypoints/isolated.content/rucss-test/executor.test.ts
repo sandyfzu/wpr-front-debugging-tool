@@ -116,6 +116,7 @@ describe('start', () => {
     const cases: [RucssFetchReply | null, unknown][] = [
       [null, { kind: 'background-unreachable' }],
       [{ kind: 'refused' }, { kind: 'refused' }],
+      [{ kind: 'consent-missing' }, { kind: 'consent-missing' }],
       [fetchFailed, { kind: 'fetch', requestUrl: 'u', failure: { kind: 'timeout' } }]
     ];
     for (const [reply, failure] of cases) {

@@ -511,3 +511,54 @@ describe('restoring on mount', () => {
     });
   });
 });
+
+/**
+ * Report a transition timing for the chrome (happy-dom computes none): the
+ * stylesheet's motion-allowed leg, or its reduced-motion `none`.
+ */
+function stubChromeTransition(transitionProperty: string, transitionDuration: string): void {
+  const real = window.getComputedStyle.bind(window);
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+    const style = real(element, pseudo);
+    if (!element.classList.contains('ins-chrome')) return style;
+    const timing: Record<string, string> = {
+      transitionProperty,
+      transitionDuration,
+      transitionDelay: '0s'
+    };
+    return new Proxy(style, {
+      get: (target, key): unknown =>
+        typeof key === 'string' && key in timing ? timing[key] : Reflect.get(target, key, target)
+    });
+  });
+}
+
+describe('re-settling after a resize', () => {
+  /** Park the chrome far from the anchor, shrink the viewport, and wait for the moved re-clamp. */
+  async function resizeIntoReclamp(): Promise<HTMLElement> {
+    await fakeBrowser.storage.local.set({ [POSITIONS]: { [ORIGIN()]: { x: -900, y: -500 } } });
+    const root = await boot();
+    const chrome = part(root, '.ins-chrome');
+    await vi.waitFor(() => {
+      expect(translateOf(chrome)).toEqual({ x: -900, y: -500 });
+    });
+    layout.viewport = { width: 640, height: 480 };
+    window.dispatchEvent(new Event('resize'));
+    await vi.waitFor(() => {
+      expect(translateOf(chrome).x).toBe(MARGIN - (640 - ANCHOR - 200));
+    });
+    return chrome;
+  }
+
+  it('keeps the re-settle class while a `transform` leg runs (its `transitionend` clears it)', async () => {
+    stubChromeTransition('transform', '0.18s');
+    const chrome = await resizeIntoReclamp();
+    expect(chrome.classList.contains('ins-resettle')).toBe(true);
+  });
+
+  it('drops the class at once when no leg runs (reduced motion: no `transitionend` will come)', async () => {
+    stubChromeTransition('none', '1e-05s');
+    const chrome = await resizeIntoReclamp();
+    expect(chrome.classList.contains('ins-resettle')).toBe(false);
+  });
+});

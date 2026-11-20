@@ -21,8 +21,8 @@
  *   the chrome (`.ins-green` / `.ins-amber` / `.ins-gray` / `.ins-pulse` /
  *   `.ins-red`);
  * - state changes are immediate, motion is decoration and declaratively
- *   delayed (no `transitionend` bookkeeping), and reduced motion collapses
- *   the work to a frame.
+ *   delayed (no `transitionend` bookkeeping), and reduced motion drops all
+ *   of it (the token stylesheet).
  */
 
 .ins-chrome {
@@ -670,7 +670,8 @@
  * the motion tokens while the machine moves it back inside. Direct
  * manipulation is exempt by construction (the class leaves on the next
  * press; a live drag carries no position transition). Reduced
- * motion collapses the leg to an instant snap, which is correct. */
+ * motion drops the leg: the re-clamp is an instant snap, which is correct
+ * (the wiring reads that no transition runs and drops the class at once). */
 
 .ins-resettle {
   transition: transform var(--motion-base) var(--ease-standard);
@@ -709,14 +710,12 @@
   }
 }
 
-/* Reduced motion: the token layer collapses every duration/iteration; the
- * legs it does not reach must collapse with it. The card goes machinery-free
- * (states byte-instant): the global override otherwise leaves its visibility
- * leg a real 0.01ms transition, and a running transition reports its
- * from-value on the first frame — the focus choreography's attempts inside
- * that window are rejected on a computed-visible card (the audited KC
- * finding). The departing pill keeps its held-visible leg to hand the anchor
- * over (it is already pointer-events: none, so it intercepts nothing). */
+/* Reduced motion: the token layer drops every animation and transition; the
+ * card additionally zeroes its whole transition shorthand (no duration or
+ * delay left either), so its states are byte-instant whatever the global
+ * rule becomes — a visibility leg still running would report its from-value
+ * on the first frame, and the focus choreography's attempts inside that
+ * window are rejected on a computed-visible card (the audited KC finding). */
 @media (prefers-reduced-motion: reduce) {
   .ins-card {
     transition: none !important;

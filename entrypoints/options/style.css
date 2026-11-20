@@ -8,7 +8,7 @@
 /* ---- Mount-only page entrance ----------------------------------------------
  * The M-2 page/view-mount moment: one fade/rise per mount, values from the
  * motion tokens. This is the page's only frame animation — states swap
- * instantly; under `prefers-reduced-motion` the page stylesheet (`theme.css`)
+ * instantly; under `prefers-reduced-motion` the token stylesheet (`tokens.css`)
  * drops it. */
 
 @keyframes options-page-enter {

@@ -16,11 +16,22 @@
 
 @import './tokens.css';
 
-@import 'tailwindcss';
-
-/* Project docs quote utility-like class names from prose (plans, specs); keep the
- * scanner out of that directory so documentation can never generate CSS. */
-@source not '../../docs';
+/* Class scanning: only the shipped source layers, never the whole project.
+ * Automatic detection read every non-ignored file (~1 800 files / 22 MB:
+ * docs, the browser-test tier, HTML and JSON fixtures, docker + scripts),
+ * which cost build time and turned words in tests and fixtures (`row-200`,
+ * `shadow-inner`, …) into CSS no surface uses. Tests, test helpers and data
+ * fixtures inside the layers are excluded for the same reason: their class
+ * strings pin or mimic the source, they never style a page. A new source
+ * layer must be listed here. */
+@import 'tailwindcss' source(none);
+@source '../../entrypoints';
+@source '../../components';
+@source '../../lib';
+@source '../../utils';
+@source not '../../**/*.{test,testing,fixtures}.{ts,tsx}';
+@source not '../../lib/**/fixtures';
+@source not '../../lib/**/*.json';
 
 /* ---- Tailwind namespace mappings ------------------------------------------ */
 /* `inline` so utilities resolve straight against the tokens in tokens.css
@@ -109,25 +120,4 @@
    * width. Twin of `DETAIL_PANE_MIN_CONTENT_WIDTH` (lib/panel/detail-layout),
    * which decides the same rule in script; a test keeps the two equal. */
   --container-split: 830px;
-}
-
-/* ---- Reduced motion: extension pages ------------------------------------- */
-/* `tokens.css` collapses every animation and transition to 0.01ms for every
- * surface. A collapsed run still paints its first keyframe (or its
- * `@starting-style` value) for a frame or two, so a page entrance under
- * reduced motion would flash its `from` state (opacity 0, 4 px down) once.
- * Only the extension pages (panel, options) load this file, so here the
- * motion is dropped outright: no animation or transition is ever created,
- * the first painted frame is the final state and `getAnimations()` stays
- * empty. Durations keep the tokens' collapse (timers derived from computed
- * durations still read ≈ 0). Injected UIs import `tokens.css` directly and
- * keep its collapse unchanged. */
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  ::before,
-  ::after {
-    animation-name: none !important;
-    transition-property: none !important;
-  }
 }

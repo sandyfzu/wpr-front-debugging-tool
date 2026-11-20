@@ -11,8 +11,8 @@
  * and the dialog take input; the tool never mirrors on RTL hosts.
  * Motion: the dialog enters on the floating-chrome moment (`--motion-slow`,
  * entrance easing, opacity + a 4 px drop via `@starting-style`) and leaves
- * instantly (the view unmounts); reduced motion is collapsed by the token
- * stylesheet.
+ * instantly (the view unmounts); reduced motion drops it (the token
+ * stylesheet).
  */
 
 /* ---- Layer ------------------------------------------------------------------ */

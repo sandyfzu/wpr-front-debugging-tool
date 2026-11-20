@@ -5,20 +5,21 @@ import { describe, expect, it } from 'vitest';
 import { parseRules, type CssRule } from './css-rules.fixtures';
 
 /**
- * Pins the two reduced-motion layers: `tokens.css` collapses durations for
- * every surface (injected UIs included), and `theme.css` — loaded only by the
- * extension pages — drops animations and transitions outright, so a page
- * entrance never paints its `from` frame. The browser tier proves the
- * rendered result; this pins the declarations and who loads them.
+ * Pins the one reduced-motion rule: `tokens.css` — imported by the page
+ * layer (`theme.css`) and by every injected UI's shadow-root stylesheet —
+ * drops animations and transitions outright (no entrance paints its `from`
+ * frame on any surface) and keeps the duration collapse for timers that read
+ * computed durations. The browser tier proves the rendered result; this pins
+ * the declarations and who loads them.
  */
 
 /** This test's directory: every relative path below resolves against it. */
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** The reduced-motion media prelude both files use. */
+/** The reduced-motion media prelude. */
 const REDUCE = '@media (prefers-reduced-motion: reduce)';
 
-/** The universal selectors each layer's rule covers. */
+/** The universal selectors the rule covers. */
 const UNIVERSAL = ['*', '::before', '::after'];
 
 /**
@@ -47,27 +48,24 @@ function reduceDeclarations(css: string): Map<string, CssRule['declarations']> {
 }
 
 describe('reduced motion', () => {
-  it('extension pages drop every animation and transition (no first-frame paint)', () => {
-    const declared = reduceDeclarations(read('theme.css'));
-    for (const selector of UNIVERSAL) {
-      expect(declared.get(selector), selector).toEqual([
-        ['animation-name', 'none !important'],
-        ['transition-property', 'none !important']
-      ]);
-    }
-  });
-
-  it('the shared token layer keeps its duration collapse and nothing more', () => {
-    // Injected UIs read only this layer: adding a property here would change them.
+  it('the token layer drops every animation and transition on every surface', () => {
     const declared = reduceDeclarations(read('tokens.css'));
     for (const selector of UNIVERSAL) {
       expect(declared.get(selector), selector).toEqual([
+        ['animation-name', 'none !important'],
         ['animation-duration', '0.01ms !important'],
         ['animation-iteration-count', '1 !important'],
+        ['transition-property', 'none !important'],
         ['transition-duration', '0.01ms !important'],
         ['scroll-behavior', 'auto !important']
       ]);
     }
+  });
+
+  it('the page layer re-declares nothing (one declaring site) and imports the tokens', () => {
+    const css = read('theme.css');
+    expect(reduceDeclarations(css).size).toBe(0);
+    expect(css).toContain("@import './tokens.css';");
   });
 
   it('only the extension pages load the page layer; injected UIs import the tokens alone', () => {
