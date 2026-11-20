@@ -213,8 +213,8 @@ describe('CodeBlock', () => {
   });
 
   it('rejects a language outside the registered set (fail fast)', () => {
-    // The hook contract list is pinned itself: javascript + json is the whole set.
-    expect(CODE_BLOCK_LANGS).toEqual(['javascript', 'json']);
+    // The hook contract list is pinned itself: these four are the whole set.
+    expect(CODE_BLOCK_LANGS).toEqual(['javascript', 'json', 'css', 'html']);
     expect(() => render(() => <CodeBlock text="x" lang={'perl' as never} />)).toThrow(
       /unsupported language/
     );
@@ -223,6 +223,13 @@ describe('CodeBlock', () => {
   it('renders on the surface-1 token (the background its theme contrast is gated on)', () => {
     render(() => <CodeBlock text="x" lang="json" createObserver={() => manualGate()} />);
     expect(controls().root?.className).toContain('bg-surface-1');
+  });
+
+  it('backs its sideways scroller with the block’s own background (scrolled text stays on it)', () => {
+    render(() => <CodeBlock text="x" lang="json" createObserver={() => manualGate()} />);
+    const { area, root } = controls();
+    expect(area?.parentElement).toBe(root);
+    expect(area?.className).toContain('bg-inherit');
   });
 
   it('mounts the highlighted markup in a div — never a pre inside a pre', async () => {
@@ -412,6 +419,92 @@ describe('CodeBlock', () => {
         <CodeBlock text="x" lang="json" maxLines={lines} createObserver={() => manualGate()} />
       ))
     ).toThrow(/maxLines must be a positive integer/);
+  });
+});
+
+describe('CodeBlock — height cap (maxHeight)', () => {
+  it('leaves the area uncapped by default (other users render as before)', () => {
+    render(() => <CodeBlock text={'a\nb'} lang="javascript" createObserver={() => manualGate()} />);
+    const area = controls().area as HTMLElement;
+    expect(area.hasAttribute('data-fdt-capped')).toBe(false);
+    expect(area.style.maxHeight).toBe('');
+    expect(area.className).not.toContain('overflow-y-auto');
+  });
+
+  it('caps the area itself, reactively, and scrolls the rest inside it', () => {
+    const [cap, setCap] = createSignal<string | undefined>('12rem');
+    const overflow = manualOverflow();
+    render(() => (
+      <CodeBlock
+        text={'a\nb\nc'}
+        lang="javascript"
+        maxHeight={cap()}
+        createObserver={() => manualGate()}
+        watchOverflow={overflow.watcher}
+      />
+    ));
+    const area = controls().area as HTMLElement;
+    expect(area.hasAttribute('data-fdt-capped')).toBe(true);
+    expect(area.style.maxHeight).toBe('12rem');
+    expect(area.className).toContain('overflow-y-auto');
+    expect(area.className).toContain('overflow-x-auto');
+    // Not a clamp: no clip box, no fade, no clamped flag.
+    expect(area.hasAttribute('data-fdt-clamped')).toBe(false);
+    const content = area.querySelector<HTMLElement>('[data-fdt-code-content]') as HTMLElement;
+    expect(content.className).not.toContain('overflow-y-clip');
+    // Past the cap the area is the named scroll region, like any overflow.
+    overflow.set(true);
+    expect(screen.getByRole('group', { name: 'javascript code' })).toBe(area);
+    setCap(undefined);
+    expect(controls().area).toBe(area);
+    expect(area.style.maxHeight).toBe('');
+    expect(area.className).not.toContain('overflow-y-auto');
+  });
+
+  it('rejects an empty cap and a cap combined with a clamp (fail fast)', () => {
+    expect(() =>
+      render(() => (
+        <CodeBlock text="x" lang="json" maxHeight="  " createObserver={() => manualGate()} />
+      ))
+    ).toThrow(/maxHeight must be a non-empty CSS length/);
+    expect(() =>
+      render(() => (
+        <CodeBlock
+          text="x"
+          lang="json"
+          maxHeight="10rem"
+          maxLines={2}
+          createObserver={() => manualGate()}
+        />
+      ))
+    ).toThrow(/maxHeight and maxLines are exclusive/);
+  });
+});
+
+describe('CodeBlock — toolbar actions', () => {
+  it('places consumer actions before the Wrap toggle, and drops them with the toolbar', () => {
+    render(() => (
+      <CodeBlock
+        text="a{}"
+        lang="json"
+        createObserver={() => manualGate()}
+        actions={<button type="button">Format</button>}
+      />
+    ));
+    const buttons = [...document.querySelectorAll('button')].map((button) => button.textContent);
+    expect(buttons).toEqual(['Format', 'Wrap']);
+    cleanup();
+    render(() => (
+      <CodeBlock
+        text="a{}"
+        lang="json"
+        toolbar={false}
+        wrap={false}
+        createObserver={() => manualGate()}
+        actions={<button type="button">Format</button>}
+      />
+    ));
+    expect(document.querySelectorAll('button')).toHaveLength(0);
   });
 });
 
@@ -764,6 +857,73 @@ describe('CodeBlock — worker highlighting', () => {
     render(() => <CodeBlock text="a" lang="javascript" loadHighlighter={stubLoader()} />);
     expect(document.querySelector('[data-fdt-code-block-plain]')).toBeNull();
   });
+
+  it.each(['css', 'html'] as const)(
+    'requests a %s block in its own language and labels it so',
+    async (lang) => {
+      const gate = manualGate();
+      render(() => (
+        <CodeBlock
+          text="a { color: red; }"
+          lang={lang}
+          createObserver={() => gate}
+          loadHighlighter={stubLoader()}
+        />
+      ));
+      expect(screen.getByText(lang)).toBeTruthy();
+      gate.fires();
+      await vi.waitFor(() => {
+        expect(document.querySelector(`[data-local-lang="${lang}"]`)).toBeTruthy();
+      });
+    }
+  );
+
+  it('keeps a stylesheet block plain and quiet when its grammar fails (no dead end)', async () => {
+    const gate = manualGate();
+    const loader = asyncLoader();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    render(() => (
+      <CodeBlock
+        text="a { color: red; }"
+        lang="css"
+        createObserver={() => gate}
+        loadHighlighter={loader.load}
+      />
+    ));
+    gate.fires();
+    await vi.waitFor(() => {
+      expect(loader.requests).toHaveLength(1);
+    });
+    loader.requests[0]?.fail('failed');
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalled();
+    });
+    expect(controls().fallback?.textContent).toBe('a { color: red; }');
+    expect(document.querySelector('[data-fdt-code-block-plain]')).toBeNull();
+    warn.mockRestore();
+  });
+
+  it.each([
+    [HIGHLIGHT_MAX_CHARS, 1],
+    [HIGHLIGHT_MAX_CHARS + 1, 0]
+  ])(
+    'requests markup of %i chars %i time(s) (the cap applies to every language)',
+    async (size, asked) => {
+      const gate = manualGate();
+      const loader = asyncLoader();
+      render(() => (
+        <CodeBlock
+          text={'<a>'.padEnd(size, 'x')}
+          lang="html"
+          createObserver={() => gate}
+          loadHighlighter={loader.load}
+        />
+      ));
+      gate.fires();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(loader.requests).toHaveLength(asked);
+    }
+  );
 });
 
 describe('CodeBlock — clip reporting', () => {

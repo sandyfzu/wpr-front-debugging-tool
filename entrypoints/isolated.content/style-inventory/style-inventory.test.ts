@@ -24,6 +24,8 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
+/** A well-formed snapshot id (the page stamps a random one on every list). */
+const SNAPSHOT_ID = '0123456789abcdef0123456789abcdef';
 describe('collectPageStyles', () => {
   it('lists the stripped selector’s elements in document order, untouched', () => {
     document.head.innerHTML = [
@@ -127,22 +129,30 @@ describe('collectPageStylesheets', () => {
     ].join('');
     document.body.innerHTML = '<style id="wpr-usedcss">.u{}</style>';
     const before = document.documentElement.outerHTML;
-    const reply = collectPageStylesheets(document);
+    const { reply, elements } = collectPageStylesheets(document);
     expect(document.documentElement.outerHTML).toBe(before);
     expect(reply.total).toBe(4);
+    // The snapshot keeps exactly the described elements, in the same order.
+    expect(elements.map((element) => element.getAttribute('href') ?? `#${element.id}`)).toEqual([
+      '/theme.css',
+      '/async.css',
+      '#rocket-critical-css',
+      '#wpr-usedcss'
+    ]);
     expect(reply.styles.map((style) => style.href || `#${style.id}`)).toEqual([
       new URL('/theme.css', location.href).href,
       new URL('/async.css', location.href).href,
       '#rocket-critical-css',
       '#wpr-usedcss'
     ]);
-    expect(parsePageStylesheetsReply(reply)).toEqual(reply);
+    const stamped = { ...reply, snapshotId: SNAPSHOT_ID };
+    expect(parsePageStylesheetsReply(stamped)).toEqual(stamped);
   });
 
   it('keeps an async link once its onload flipped it to a stylesheet', () => {
     document.head.innerHTML =
       '<link rel="stylesheet" as="style" data-rocket-async="style" href="/async.css">';
-    expect(collectPageStylesheets(document).styles[0]?.rocketAsync).toBe(true);
+    expect(collectPageStylesheets(document).reply.styles[0]?.rocketAsync).toBe(true);
   });
 
   it('reads each link’s WP Rocket stamps, exact values only', () => {
@@ -154,7 +164,7 @@ describe('collectPageStylesheets', () => {
       '<link rel="stylesheet" data-wpr-hosted-gf-parameters="" href="/fonts.css">'
     ].join('');
     expect(
-      collectPageStylesheets(document).styles.map((style) => [
+      collectPageStylesheets(document).reply.styles.map((style) => [
         style.minifyAttribute,
         style.rocketAsync,
         style.hostedFont
@@ -172,7 +182,7 @@ describe('collectPageStylesheets', () => {
   it('never gives an inline style a link fact', () => {
     document.head.innerHTML =
       '<style data-minify="1" data-rocket-async="style" data-wpr-hosted-gf-parameters="x">.a{}</style>';
-    expect(collectPageStylesheets(document).styles).toEqual([
+    expect(collectPageStylesheets(document).reply.styles).toEqual([
       {
         kind: 'inline',
         id: '',
@@ -192,10 +202,11 @@ describe('collectPageStylesheets', () => {
     document.head.innerHTML =
       '<link rel="icon" href="/i.ico">'.repeat(5) +
       '<style></style>'.repeat(PAGE_STYLE_LIMITS.count + 2);
-    const reply = collectPageStylesheets(document);
+    const { reply, elements } = collectPageStylesheets(document);
     expect(reply.styles).toHaveLength(PAGE_STYLE_LIMITS.count);
+    expect(elements).toHaveLength(PAGE_STYLE_LIMITS.count);
     expect(reply.total).toBe(PAGE_STYLE_LIMITS.count + 2);
-    expect(parsePageStylesheetsReply(reply)).not.toBeNull();
+    expect(parsePageStylesheetsReply({ ...reply, snapshotId: SNAPSHOT_ID })).not.toBeNull();
   });
 });
 
@@ -213,7 +224,10 @@ describe('the Stylesheets page over committed corpus pages, end to end', () => {
       }
     ).wprDetections;
     const page = new DOMParser().parseFromString(html, 'text/html');
-    const reply = parsePageStylesheetsReply(collectPageStylesheets(page));
+    const reply = parsePageStylesheetsReply({
+      ...collectPageStylesheets(page).reply,
+      snapshotId: SNAPSHOT_ID
+    });
     if (reply === null) throw new Error(`${fixture}: the collector's reply failed its guard`);
     return buildStylesheetRows(reply, stylesheetPageFacts(detections)).map((row) => ({
       id: row.elementId,

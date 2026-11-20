@@ -28,10 +28,16 @@ describe('relayTabAsks — requests', () => {
     await asks.processPageData(3);
     await asks.getFdtData(3);
     await asks.getScriptSourceChunk(3, CHUNK);
+    await asks.getServedScriptTag(3, { snapshotId: CHUNK.snapshotId, scriptIndex: 1 });
     expect(send.requests).toEqual([
       { tabId: 3, ask: 'processPageData' },
       { tabId: 3, ask: 'getFdtData' },
-      { tabId: 3, ask: 'getScriptSourceChunk', payload: CHUNK }
+      { tabId: 3, ask: 'getScriptSourceChunk', payload: CHUNK },
+      {
+        tabId: 3,
+        ask: 'getServedScriptTag',
+        payload: { snapshotId: CHUNK.snapshotId, scriptIndex: 1 }
+      }
     ]);
   });
 
@@ -80,6 +86,15 @@ describe('relayTabAsks — requests', () => {
       { tabId: 4, ask: 'listPageStyles' },
       { tabId: 4, ask: 'listPageStylesheets' }
     ]);
+  });
+
+  it('relays a style-source chunk with its request as the payload', async () => {
+    const send = sendAnswering({ ok: true, answer: { status: 'gone' } });
+    const read = { snapshotId: '0123456789abcdef0123456789abcdef', styleIndex: 1, offset: 0 };
+    await expect(relayTabAsks(send).getStyleSourceChunk(4, read)).resolves.toEqual({
+      status: 'gone'
+    });
+    expect(send.requests).toEqual([{ tabId: 4, ask: 'getStyleSourceChunk', payload: read }]);
   });
 
   it('fails a missing inspected tab locally as a no-receiver miss (nothing sent)', async () => {

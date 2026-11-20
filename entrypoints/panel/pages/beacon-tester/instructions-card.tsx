@@ -1,20 +1,23 @@
 /**
- * The beacon instructions card at the top of the Beacon Tester: what WP
- * Rocket told its beacon on the inspected page — collapsed to one summary
- * line (features on, device), expanded into Features / Elements checked /
- * Exclusions with counts, and the raw JSON on demand (with copy). It follows
+ * The beacon instructions row at the top of the Beacon Tester: what WP
+ * Rocket told its beacon on the inspected page — one compact info row
+ * (title, summary: features on, device; Details), expanded under it into
+ * Features / Elements checked / Exclusions with counts, and the raw JSON on
+ * demand (with copy). It follows
  * the page: the shell's payload drives it, so a reload or navigation swaps
  * it in place; instructions the new load no longer carries read as such
  * until dismissed.
  *
- * State matrix (see `./instructions-view`): none (one line) · unreadable
- * (one line) · instructions · stale (notice + the earlier load's details).
+ * State matrix (see `./instructions-view`): none (the row's words) ·
+ * unreadable (the row's words) · instructions · stale (the earlier load's
+ * row + a notice under it).
  * The expansion, raw view and dismissal live in the panel-lifetime
  * tracker, so a data refresh or a route change keeps them.
  */
 import type { JSX } from 'solid-js';
 import { createMemo, createSignal, For, Match, Show, Switch, type Accessor } from 'solid-js';
 import ChevronRight from 'lucide-solid/icons/chevron-right';
+import RadioTower from 'lucide-solid/icons/radio-tower';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
 import { MOTION_REVEAL, MOTION_TURN } from '../../../../components/ui/classes';
@@ -45,6 +48,9 @@ import {
   type InstructionsSource,
   type InstructionsView
 } from './instructions-view';
+
+/** The row's words beside the title (they wrap under it when narrow). */
+const ROW_TEXT = 'min-w-0 flex-1 basis-40 text-2xs text-fg-secondary';
 
 /** The disclosure's label (the chevron shows its state). */
 export const DETAILS_LABEL = 'Details';
@@ -153,7 +159,7 @@ function ListBlock(props: { list: InstructionList }): JSX.Element {
         <ul class="flex min-w-0 flex-wrap gap-1">
           <For each={props.list.shown}>
             {(entry) => (
-              <li class="min-w-0 rounded bg-surface-2 px-1 py-0.5 font-mono text-2xs break-all text-fg-primary">
+              <li class="min-w-0 rounded bg-surface-3 px-1 py-0.5 font-mono text-2xs break-all text-fg-primary">
                 {entry}
               </li>
             )}
@@ -195,65 +201,58 @@ function RawView(props: { raw: string }): JSX.Element {
   );
 }
 
-/** The summary row, the disclosure and (open) the groups and raw view. */
-function InstructionsBody(props: {
+/** The Details toggle (the chevron shows its state). */
+function DetailsToggle(props: { tracker: InstructionsTracker }): JSX.Element {
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      class="ms-auto shrink-0"
+      aria-expanded={props.tracker.expanded()}
+      data-fdt-beacon-instructions-toggle
+      onClick={() => {
+        props.tracker.setExpanded(!props.tracker.expanded());
+      }}
+    >
+      <ChevronRight
+        size={12}
+        aria-hidden="true"
+        class={cn(MOTION_TURN, props.tracker.expanded() && 'rotate-90')}
+      />
+      {DETAILS_LABEL}
+    </Button>
+  );
+}
+
+/** The expanded view: the groups, then the raw view on demand. */
+function InstructionsDetails(props: {
   view: InstructionsView;
   tracker: InstructionsTracker;
 }): JSX.Element {
   return (
-    <>
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <p
-          data-fdt-beacon-instructions-summary
-          class="min-w-0 flex-1 basis-40 text-2xs tabular-nums text-fg-secondary"
-          title={props.view.summaryTitle}
-        >
-          {props.view.summary}
-        </p>
+    <div data-fdt-beacon-instructions-details class={cn('flex flex-col gap-3', MOTION_REVEAL)}>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(min(15rem,100%),1fr))] gap-3">
+        <FeaturesGroup view={props.view} />
+        <For each={props.view.groups}>{(group) => <ListGroup group={group} />}</For>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
           variant="ghost"
-          class="shrink-0"
-          aria-expanded={props.tracker.expanded()}
-          data-fdt-beacon-instructions-toggle
+          aria-expanded={props.tracker.rawOpen()}
+          data-fdt-beacon-instructions-raw-toggle
           onClick={() => {
-            props.tracker.setExpanded(!props.tracker.expanded());
+            props.tracker.setRawOpen(!props.tracker.rawOpen());
           }}
         >
-          <ChevronRight
-            size={12}
-            aria-hidden="true"
-            class={cn(MOTION_TURN, props.tracker.expanded() && 'rotate-90')}
-          />
-          {DETAILS_LABEL}
+          {props.tracker.rawOpen() ? RAW_LABELS.hide : RAW_LABELS.show}
         </Button>
+        <CopyButton text={props.view.raw} label={COPY_SUBJECT} />
       </div>
-      <Show when={props.tracker.expanded()}>
-        <div data-fdt-beacon-instructions-details class={cn('flex flex-col gap-3', MOTION_REVEAL)}>
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(min(15rem,100%),1fr))] gap-3">
-            <FeaturesGroup view={props.view} />
-            <For each={props.view.groups}>{(group) => <ListGroup group={group} />}</For>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-expanded={props.tracker.rawOpen()}
-              data-fdt-beacon-instructions-raw-toggle
-              onClick={() => {
-                props.tracker.setRawOpen(!props.tracker.rawOpen());
-              }}
-            >
-              {props.tracker.rawOpen() ? RAW_LABELS.hide : RAW_LABELS.show}
-            </Button>
-            <CopyButton text={props.view.raw} label={COPY_SUBJECT} />
-          </div>
-          <Show when={props.tracker.rawOpen()}>
-            <RawView raw={props.view.raw} />
-          </Show>
-        </div>
+      <Show when={props.tracker.rawOpen()}>
+        <RawView raw={props.view.raw} />
       </Show>
-    </>
+    </div>
   );
 }
 
@@ -275,22 +274,39 @@ export function InstructionsCard(props: InstructionsCardProps): JSX.Element {
     return current.kind === 'instructions' || current.kind === 'stale' ? current.view : undefined;
   };
   return (
-    <Card level={1} class="p-2.5">
+    <Card level={1}>
       <div
         data-fdt="beacon-instructions"
         data-fdt-beacon-instructions={state().kind}
         data-fdt-beacon-instructions-load={props.tracker.page() ?? undefined}
         class="flex flex-col gap-2"
       >
-        <h2 class="text-sm font-semibold text-fg-primary">{INSTRUCTIONS_TITLE}</h2>
-        <Switch>
-          <Match when={state().kind === 'none'}>
-            <p class="text-2xs text-fg-secondary">{NO_INSTRUCTIONS_COPY}</p>
-          </Match>
-          <Match when={state().kind === 'unreadable'}>
-            <p class="text-2xs text-fg-secondary">{UNREADABLE_INSTRUCTIONS_COPY}</p>
-          </Match>
-        </Switch>
+        <div class="-my-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <RadioTower size={14} class="shrink-0 text-fg-muted" aria-hidden="true" />
+          <h2 class="shrink-0 text-xs font-semibold text-fg-primary">{INSTRUCTIONS_TITLE}</h2>
+          <Switch>
+            <Match when={state().kind === 'none'}>
+              <p class={ROW_TEXT}>{NO_INSTRUCTIONS_COPY}</p>
+            </Match>
+            <Match when={state().kind === 'unreadable'}>
+              <p class={ROW_TEXT}>{UNREADABLE_INSTRUCTIONS_COPY}</p>
+            </Match>
+            <Match when={view()}>
+              {(shown) => (
+                <>
+                  <p
+                    data-fdt-beacon-instructions-summary
+                    class={cn(ROW_TEXT, 'tabular-nums')}
+                    title={shown().summaryTitle}
+                  >
+                    {shown().summary}
+                  </p>
+                  <DetailsToggle tracker={props.tracker} />
+                </>
+              )}
+            </Match>
+          </Switch>
+        </div>
         <Show when={state().kind === 'stale'}>
           <OutcomeNotice
             data-fdt-beacon-instructions-stale
@@ -312,8 +328,8 @@ export function InstructionsCard(props: InstructionsCardProps): JSX.Element {
             </div>
           </OutcomeNotice>
         </Show>
-        <Show when={view()}>
-          {(shown) => <InstructionsBody view={shown()} tracker={props.tracker} />}
+        <Show when={props.tracker.expanded() ? view() : undefined}>
+          {(shown) => <InstructionsDetails view={shown()} tracker={props.tracker} />}
         </Show>
       </div>
     </Card>

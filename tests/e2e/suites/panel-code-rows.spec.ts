@@ -1,17 +1,19 @@
 /**
- * Compact inline-code rows (P6G.6, 07-phase-6-panel-pages.md): the block
- * owns no chrome — the row carries the language caption and the single
- * accessible Wrap toggle through the page-owned reactive state. Real panel,
- * real virtualizer: one Wrap per code row, actual variable-height remeasure
- * when wrapping folds extended lines (the following row moves with it), focus
- * stays on the pressed control, wide content really scrolls sideways unwrapped
- * and folds with no sideways scroll wrapped — both at 320, both palettes; the
- * flag survives an expand/collapse swap and a real virtual unmount/remount on
- * scroll (the fallen row is pinned detached while deep). One more test keeps
- * the list's `ROW_ESTIMATES` seeds honest against the real measured shapes.
+ * Inline code in the JavaScript page's detail (the calm list's rows carry a
+ * one-line preview only; the code, its language caption and its single Wrap
+ * live in the selected row's detail). Real panel, real virtualizer: one
+ * language caption and one Wrap per source block, every line shown (no
+ * clamp), focus stays on the pressed Wrap, wide content really scrolls
+ * sideways unwrapped and folds with no sideways scroll wrapped — the block
+ * grows and the section below it moves with it — at 320 (drill-in) in both
+ * palettes; the detail's wrap state survives a real virtual unmount/remount
+ * of its selected row on scroll (the row is pinned detached while deep) and
+ * another row's detail starts fresh. One more test keeps the calm rows'
+ * `CALM_ROW_ESTIMATES` seeds honest against the real measured shapes.
  */
 import type { Locator } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import { closeScriptDetail, openScriptDetail } from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
 import { resetStoredOptions } from '../helpers/options';
 
@@ -23,11 +25,11 @@ test.afterEach(async ({ extension }) => {
 });
 
 /**
- * A script inventory with every code-row shape: two external markers, a
- * one-wide-line row, then alternating five-line rows (clamped preview +
- * toggle) and wide rows (four 220-char lines: truncated preview, real
- * sideways scroll when expanded, folded lines when wrapped). 33 scripts so
- * the list scrolls deep enough for a real mount/unmount window.
+ * A script inventory with every code shape: two external markers, a
+ * one-wide-line row, then alternating five-line rows and wide rows (four
+ * 150-char lines: real sideways scroll unwrapped, folded lines wrapped —
+ * under the detail's minified-code mark, so they open unwrapped).
+ * 33 scripts so the list scrolls deep enough for a real mount/unmount window.
  * @returns The fixture HTML.
  */
 function codeRowsPage(): string {
@@ -37,7 +39,7 @@ function codeRowsPage(): string {
       (_, line) => `const five${String(index)}_${String(line)} = ${String(line)};`
     ).join('\n');
   const wideLine = (index: number, line: number): string =>
-    `wide${String(index)}_${String(line)}(${'x'.repeat(220)})`;
+    `wide${String(index)}_${String(line)}(${'x'.repeat(140)})`;
   const wide = (index: number): string =>
     Array.from({ length: 4 }, (_, line) => wideLine(index, line)).join('\n');
   const rows: string[] = [
@@ -65,14 +67,15 @@ const WIDE_ROW = '[data-index]:has-text("wide1_")';
 /** The last five-line row — deep in the list, past a real unmount window. */
 const DEEP_ROW = '[data-index]:has-text("five28_")';
 
-/** One wall-clock frame's geometry: the row, its follower, and its code. */
-interface RowGeometry {
-  /** The row's viewport top (the chain anchor). */
-  rowTop: number;
-  /** The row's own height (px). */
+/** One frame's geometry of the detail's source block and the section holding it. */
+interface BlockGeometry {
+  /** The block's own height (px). */
   height: number;
-  /** The following row's client-space top (the row's layout consequence). */
-  followerTop: number;
+  /**
+   * The source section's viewport bottom: the block's layout consequence
+   * (the source is the detail's last section, so its own box carries it).
+   */
+  sectionBottom: number;
   /** The code area's sideways extent vs its box (horizontal-overflow check). */
   areaScrollWidth: number;
   areaClientWidth: number;
@@ -81,25 +84,30 @@ interface RowGeometry {
 }
 
 /**
- * Read one rendered row's real geometry in a single frame.
+ * The detail's inline source section.
  *
- * @param row The row wrapper's locator (resolved live; never query by hand).
+ * @param detail The open detail.
  */
-async function rowGeometry(row: Locator): Promise<RowGeometry> {
-  return row.evaluate((target) => {
-    if (!(target instanceof HTMLElement)) throw new Error('row is not an element');
-    const follower = target.nextElementSibling;
-    if (!(follower instanceof HTMLElement)) {
-      throw new Error('no following rendered row');
-    }
-    const area = target.querySelector<HTMLElement>('[data-fdt-code-area]');
-    if (area === null) throw new Error('no code area in the row');
+function sourceSection(detail: Locator): Locator {
+  return detail.locator('[data-fdt="script-source"]');
+}
+
+/**
+ * Read the source block's real geometry in a single frame.
+ *
+ * @param detail The open detail.
+ */
+async function blockGeometry(detail: Locator): Promise<BlockGeometry> {
+  return await sourceSection(detail).evaluate((section) => {
+    const block = section.querySelector<HTMLElement>('[data-fdt="code-block"]');
+    if (block === null) throw new Error('no code block in the source section');
+    const area = block.querySelector<HTMLElement>('[data-fdt-code-area]');
+    if (area === null) throw new Error('no code area in the block');
     const pre = area.querySelector('pre');
     if (pre === null) throw new Error('no pre in the code area');
     return {
-      rowTop: target.getBoundingClientRect().top,
-      height: target.getBoundingClientRect().height,
-      followerTop: follower.getBoundingClientRect().top,
+      height: block.getBoundingClientRect().height,
+      sectionBottom: section.getBoundingClientRect().bottom,
       areaScrollWidth: area.scrollWidth,
       areaClientWidth: area.clientWidth,
       preWhiteSpace: getComputedStyle(pre).whiteSpace
@@ -108,25 +116,34 @@ async function rowGeometry(row: Locator): Promise<RowGeometry> {
 }
 
 /**
- * Wait for the list's re-measure reflow — the row's own rect changes
- * instantly while the ResizeObserver moves the followers a frame later —
- * then read a **settled** frame: `followerTop == rowTop + height` (the
- * absolute stack has no gap). Only a settled frame is coherent; a racing
- * read pairs a fresh row height with a stale follower offset.
+ * Read a **settled** frame: two consecutive identical reads (fonts, the
+ * highlighted swap and the wrap's reflow are done) — no sleep, no tolerance.
  *
- * @param row The row wrapper's locator.
+ * @param detail The open detail.
  */
-async function settledBounds(row: Locator): Promise<RowGeometry> {
+async function settledBlock(detail: Locator): Promise<BlockGeometry> {
+  let previous: string | undefined;
   await expect
     .poll(async () => {
-      const snap = await rowGeometry(row);
-      return Math.abs(snap.followerTop - (snap.rowTop + snap.height));
+      const next = JSON.stringify(await blockGeometry(detail));
+      const settled = previous === next;
+      previous = next;
+      return settled;
     })
-    .toBeLessThanOrEqual(1);
-  return rowGeometry(row);
+    .toBe(true);
+  return await blockGeometry(detail);
 }
 
-test('rows own the caption and the single Wrap; wrapping remeasures for real at 320 in both palettes', async ({
+/**
+ * The source block's single Wrap control.
+ *
+ * @param detail The open detail.
+ */
+function wrapToggle(detail: Locator): Locator {
+  return sourceSection(detail).locator('[data-fdt-code-block-wrap]');
+}
+
+test('the detail owns the caption and the single Wrap; wrapping folds for real at 320 in both palettes', async ({
   extension
 }) => {
   await extension.browserContext.route('**/code-rows.html*', async (route) => {
@@ -148,77 +165,66 @@ test('rows own the caption and the single Wrap; wrapping remeasures for real at 
       await expect(panel.locator('html')).toHaveAttribute('data-theme', theme);
       await panel.setViewportSize({ width: 320, height: 800 });
 
-      // The row owns the language fact; the block renders no chrome of its
-      // own, and the compact row keeps exactly one Wrap control.
-      const fiveRow = page.locator(FIVE_ROW).first();
-      const fiveWrap = fiveRow.locator('[data-fdt="script-code-wrap"]');
-      await expect(fiveRow.locator('[data-fdt-code-block-lang]')).toHaveCount(0);
-      await expect(fiveRow).toContainText('javascript · 5 lines');
-      await expect(fiveWrap).toHaveCount(1);
-      await expect(fiveWrap).toHaveAttribute('aria-pressed', 'false');
+      // Rows carry no code: the code is the detail's.
+      await expect(page.locator(FIVE_ROW).first().locator('[data-fdt="code-block"]')).toHaveCount(
+        0
+      );
 
-      /* Actual variable-height remeasure, on real sideways content: the
-           expanded wide row scrolls horizontally (pre stays `pre`); wrapping
-           folds its lines — the row's geometry grows, the following row
-           slides down by the same shift (layout follows the measurement),
-           the pre computes to `pre-wrap`, and no sideways scroll remains.
-           Focus never leaves the pressed control. */
-      const wideRow = page.locator(WIDE_ROW).first();
-      const wideWrap = wideRow.locator('[data-fdt="script-code-wrap"]');
-      await expect(wideRow).toContainText('javascript · 4 lines');
-      await wideRow.scrollIntoViewIfNeeded();
-      const expand = wideRow.getByRole('button', { name: 'Show all 4 lines' });
-      await expand.click();
-      const unwrapped = await settledBounds(wideRow);
+      /* The five-line source: its section names the line count, its block
+         carries exactly one language caption and one Wrap, and every line
+         shows (no clamp). Short lines do not fold, so wrapping keeps its
+         height; focus stays on the pressed control. */
+      let detail = await openScriptDetail(panel, page.locator(FIVE_ROW).first());
+      await expect(sourceSection(detail).locator('h3')).toHaveText(/^Source\s*5 lines$/);
+      await expect(sourceSection(detail).locator('[data-fdt-code-block-lang]')).toHaveText(
+        'javascript'
+      );
+      await expect(wrapToggle(detail)).toHaveCount(1);
+      await expect(wrapToggle(detail)).toHaveAttribute('aria-pressed', 'false');
+      await expect(sourceSection(detail).locator('[data-fdt-code-area]')).not.toHaveAttribute(
+        'data-fdt-clamped',
+        ''
+      );
+      await expect(sourceSection(detail)).toContainText('const five2_4 = 4;');
+      const fivePlain = await settledBlock(detail);
+      await wrapToggle(detail).click();
+      await expect(wrapToggle(detail)).toBeFocused();
+      await expect(wrapToggle(detail)).toHaveAttribute('aria-pressed', 'true');
+      const fiveWrapped = await settledBlock(detail);
+      expect(fiveWrapped.preWhiteSpace).toBe('pre-wrap');
+      expect(Math.abs(fiveWrapped.height - fivePlain.height)).toBeLessThanOrEqual(2);
+      await closeScriptDetail(panel);
+
+      /* The wide source: unwrapped it scrolls horizontally (pre stays
+         `pre`); wrapping folds its lines — the block grows, the section
+         below slides down by the same shift (layout follows), the pre
+         computes to `pre-wrap`, and no sideways scroll remains. Unwrapping
+         restores the scrolling shape. */
+      detail = await openScriptDetail(panel, page.locator(WIDE_ROW).first());
+      await expect(sourceSection(detail).locator('h3')).toHaveText(/^Source\s*4 lines$/);
+      await expect(wrapToggle(detail)).toHaveCount(1);
+      // A fresh detail: the five-line block's pressed Wrap never leaks here.
+      await expect(wrapToggle(detail)).toHaveAttribute('aria-pressed', 'false');
+      const unwrapped = await settledBlock(detail);
       expect(unwrapped.preWhiteSpace).toBe('pre');
       expect(unwrapped.areaScrollWidth).toBeGreaterThan(unwrapped.areaClientWidth);
-      await wideWrap.click();
-      await expect(wideWrap).toBeFocused();
-      await expect(wideWrap).toHaveAttribute('aria-pressed', 'true');
-      const wrapped = await settledBounds(wideRow);
+      await wrapToggle(detail).click();
+      await expect(wrapToggle(detail)).toBeFocused();
+      await expect(wrapToggle(detail)).toHaveAttribute('aria-pressed', 'true');
+      const wrapped = await settledBlock(detail);
       expect(wrapped.preWhiteSpace).toBe('pre-wrap');
       expect(wrapped.areaScrollWidth).toBeLessThanOrEqual(wrapped.areaClientWidth);
-      /* Actual variable-height remeasure: the fold grows the measured row,
-         and the following row slides down by exactly that growth — layout
-         follows the measurement, no stale remains. */
       const growth = wrapped.height - unwrapped.height;
       expect(growth).toBeGreaterThanOrEqual(20);
-      expect(wrapped.followerTop - unwrapped.followerTop).toBeGreaterThanOrEqual(growth - 1);
-      expect(wrapped.followerTop - unwrapped.followerTop).toBeLessThanOrEqual(growth + 1);
-      // Expanded + wrapped stays at least as tall (no fold lost to layout).
-      expect(wrapped.height).toBeGreaterThanOrEqual(unwrapped.height);
-      await wideRow.getByRole('button', { name: 'Collapse' }).click();
-      const collapsedWrapped = await rowGeometry(wideRow);
-      expect(collapsedWrapped.height).toBeLessThan(wrapped.height);
-      // Wrap state rides the collapse: still the single pressed toggle.
-      await expect(wideWrap).toHaveAttribute('aria-pressed', 'true');
-
-      /* Expand/collapse/wrap interplay on the five-line row: the flag
-           rides the page-owned state across the text + clamp swap (expanded
-           full text re-highlights); short lines do not fold, so its wrapped
-           height matches its unwrapped expanded height; unwrap restores the
-           plain clamped shape. */
-      const showAll = fiveRow.getByRole('button', { name: 'Show all 5 lines' });
-      await showAll.click();
-      const expandedPlain = await settledBounds(fiveRow);
-      expect(expandedPlain.height).toBeGreaterThan(80); // 5 whole lines, unclamped
-      await fiveWrap.click();
-      await expect(fiveWrap).toBeFocused();
-      await expect(fiveWrap).toHaveAttribute('aria-pressed', 'true');
-      const expandedWrapped = await settledBounds(fiveRow);
-      expect(expandedWrapped.height).toBeGreaterThanOrEqual(expandedPlain.height - 2);
-      await fiveRow.getByRole('button', { name: 'Collapse' }).click();
-      await expect(showAll).toBeVisible();
-      await expect(fiveWrap).toHaveAttribute('aria-pressed', 'true');
-      await fiveWrap.click();
-      await expect(fiveWrap).toHaveAttribute('aria-pressed', 'false');
-      const rest = await settledBounds(fiveRow);
-      expect(rest.height).toBeLessThan(expandedWrapped.height);
-      // The block stayed chrome-less through the whole round.
-      await expect(fiveRow.locator('[data-fdt-code-block-lang]')).toHaveCount(0);
-      /* End each loop clean, so the next theme starts from false states. */
-      await wideWrap.click();
-      await expect(wideWrap).toHaveAttribute('aria-pressed', 'false');
+      expect(wrapped.sectionBottom - unwrapped.sectionBottom).toBeGreaterThanOrEqual(growth - 1);
+      expect(wrapped.sectionBottom - unwrapped.sectionBottom).toBeLessThanOrEqual(growth + 1);
+      await wrapToggle(detail).click();
+      await expect(wrapToggle(detail)).toHaveAttribute('aria-pressed', 'false');
+      const rest = await settledBlock(detail);
+      expect(rest.preWhiteSpace).toBe('pre');
+      expect(Math.abs(rest.height - unwrapped.height)).toBeLessThanOrEqual(1);
+      // End each loop clean, so the next theme starts from the list.
+      await closeScriptDetail(panel);
     }
   } finally {
     await panel.close();
@@ -226,7 +232,7 @@ test('rows own the caption and the single Wrap; wrapping remeasures for real at 
   }
 });
 
-test('the wrapped flag survives a real virtual unmount/remount on scroll', async ({
+test('the detail’s wrap state survives a real virtual unmount/remount of its row on scroll', async ({
   extension
 }) => {
   await extension.browserContext.route('**/code-rows.html*', async (route) => {
@@ -240,13 +246,15 @@ test('the wrapped flag survives a real virtual unmount/remount on scroll', async
     const page = panel.locator('[data-fdt-page="javascript"]');
     const scroller = page.locator('[data-fdt="virtual-list"]');
     const fiveRow = page.locator(FIVE_ROW).first();
-    const fiveWrap = fiveRow.locator('[data-fdt="script-code-wrap"]');
 
-    await fiveWrap.click();
-    await expect(fiveWrap).toHaveAttribute('aria-pressed', 'true');
+    // The side pane: the list stays beside it, so its rows really scroll.
+    const detail = await openScriptDetail(panel, fiveRow);
+    await expect(page.locator('[data-fdt="detail-pane"]')).toBeVisible();
+    await wrapToggle(detail).click();
+    await expect(wrapToggle(detail)).toHaveAttribute('aria-pressed', 'true');
 
-    // Scroll the wrapped row far out of the render window, then back. Deep
-    // means really deep: the window moved onto far rows AND the wrapped row
+    // Scroll the selected row far out of the render window, then back. Deep
+    // means really deep: the window moved onto far rows AND the selected row
     // itself fell out of it — otherwise every later "survives" assertion
     // would pass on a row that never unmounted.
     await scroller.evaluate((element) => {
@@ -254,23 +262,23 @@ test('the wrapped flag survives a real virtual unmount/remount on scroll', async
       element.dispatchEvent(new Event('scroll'));
     });
     await expect(page.locator(DEEP_ROW)).toBeAttached(); // the window really moved
-    await expect(page.locator(FIVE_ROW)).toHaveCount(0); // and the wrapped row really fell out
+    await expect(page.locator(FIVE_ROW)).toHaveCount(0); // and the selected row really fell out
+    // The detail stayed: same row, still wrapped.
+    await expect(page.locator('[data-fdt="detail-title"]')).toHaveText('Inline script #3');
+    await expect(wrapToggle(detail)).toHaveAttribute('aria-pressed', 'true');
     await scroller.evaluate((element) => {
       element.scrollTop = 0;
       element.dispatchEvent(new Event('scroll'));
     });
-    await expect(fiveWrap).toHaveAttribute('aria-pressed', 'true');
-    // Actually wrapped after the remount: the pre computes `pre-wrap`.
-    const wrapped = await rowGeometry(fiveRow);
+    // The remounted row is still the selected one; the block is still wrapped.
+    await expect(fiveRow.locator('[data-fdt="script-row"]')).toHaveAttribute('data-selected', '');
+    await expect(wrapToggle(detail)).toHaveAttribute('aria-pressed', 'true');
+    const wrapped = await settledBlock(detail);
     expect(wrapped.preWhiteSpace).toBe('pre-wrap');
     expect(wrapped.areaScrollWidth).toBeLessThanOrEqual(wrapped.areaClientWidth);
-    // A row that was never touched comes back with nothing to inherit.
-    const wideRow = page.locator(WIDE_ROW).first();
-    await wideRow.scrollIntoViewIfNeeded();
-    await expect(wideRow.locator('[data-fdt="script-code-wrap"]')).toHaveAttribute(
-      'aria-pressed',
-      'false'
-    );
+    // A row that was never touched opens with nothing to inherit.
+    const wide = await openScriptDetail(panel, page.locator(WIDE_ROW).first());
+    await expect(wrapToggle(wide)).toHaveAttribute('aria-pressed', 'false');
   } finally {
     await panel.close();
     await fixture.page.close();
@@ -278,54 +286,42 @@ test('the wrapped flag survives a real virtual unmount/remount on scroll', async
 });
 
 /**
- * Exactly one row per `ROW_ESTIMATES` shape — the shapes whose heights the
- * list's seeds name — plus one external padding row at the end so every
- * measured row keeps a following rendered row. Shapes are sized to the
- * member their seed denominates: the short seed's tallest member (three
- * lines, no toggle) is the honest one to check, not a shorter cousin.
+ * One row per calm-row seed shape, delayed (a Delayed chip) and plain (no
+ * chip) for both script kinds, plus one padding row at the end.
  * @returns The fixture HTML.
  */
 function seedShapesPage(): string {
-  const five = [
-    'const five0 = 0;',
-    'const five1 = 1;',
-    'const five2 = 2;',
-    'const five3 = 3;',
-    'const five4 = 4;'
-  ].join('\n');
-  const short = ['const short0 = 0;', 'const short1 = 1;', 'const short2 = 2;'].join('\n');
   return `<!doctype html><html lang="en"><head><title>Seed shapes</title></head>
     <body><h1>Seed shapes</h1>
     <script type="rocketlazyloadscript" data-rocket-src="https://example.test/a.js"></script>
-    <script type="rocketlazyloadscript"></script>
-    <script type="rocketlazyloadscript">${short}</script>
-    <script type="rocketlazyloadscript">${five}</script>
+    <script type="rocketlazyloadscript">const delayedShape = 1;</script>
+    <script src="https://example.test/plain.js"></script>
+    <script>const plainShape = 2;</script>
     <script type="rocketlazyloadscript" data-rocket-src="https://example.test/b.js"></script>
     </body></html>`;
 }
 
 /**
- * One measured shape: its row locator in {@link seedShapesPage} (the text
- * only that row renders), the `ROW_ESTIMATES` seed it must stay honest to
- * (the int-rounded real sizes measured at the regular tier — mirrored here
- * as literals by convention for behavior pins), and whether the shape
- * carries code rows' 320 growth (a wrapped chips line).
+ * One measured shape: its row probe in {@link seedShapesPage} (the text only
+ * that row renders), whether it shows a state chip, and the
+ * `CALM_ROW_ESTIMATES` seeds it must stay honest to — regular and compact
+ * (mirrored here as literals by convention for behavior pins).
  */
 interface SeedShape {
   /** Probe for the row's `[data-index]` wrapper. */
   readonly marker: string;
-  /** Mirrored from `ROW_ESTIMATES` (`script-view.ts`), px. */
-  readonly seed: number;
-  /** Whether the 320 growth assertion applies (code-carrying shapes). */
-  readonly code: boolean;
+  /** Mirrored from `CALM_ROW_ESTIMATES` (`list-row.tsx`), px: the regular tier. */
+  readonly regular: number;
+  /** The compact tier (chips stack onto a third line). */
+  readonly compact: number;
 }
 
 /** The four seed shapes and their mirrored estimates. */
 const SEED_SHAPES: readonly SeedShape[] = [
-  { marker: '[data-index]:has(a[href$="a.js"])', seed: 55, code: true },
-  { marker: '[data-index]:has-text("Empty inline script")', seed: 57, code: false },
-  { marker: '[data-index]:has-text("short2 = 2")', seed: 115, code: true },
-  { marker: '[data-index]:has-text("five1 = 1")', seed: 145, code: true }
+  { marker: '[data-index]:has-text("example.test/a.js")', regular: 58, compact: 78 },
+  { marker: '[data-index]:has-text("delayedShape")', regular: 58, compact: 78 },
+  { marker: '[data-index]:has-text("example.test/plain.js")', regular: 58, compact: 58 },
+  { marker: '[data-index]:has-text("plainShape")', regular: 58, compact: 58 }
 ];
 
 /** A row wrapper's content height — what `measureElement` caches. */
@@ -359,6 +355,10 @@ test('row-size seeds stay honest to the real shapes they estimate', async ({ ext
   await extension.browserContext.route('**/seed-shapes.html*', async (route) => {
     await route.fulfill({ contentType: 'text/html', body: seedShapesPage() });
   });
+  // The plain external script really loads: it answers empty at once.
+  await extension.browserContext.route('https://example.test/**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'text/javascript', body: '' });
+  });
   const { panel, fixture } = await openPanelForFixture(extension, '/seed-shapes.html', {
     bootHash: '#/javascript'
   });
@@ -368,28 +368,31 @@ test('row-size seeds stay honest to the real shapes they estimate', async ({ ext
       await expect(page.locator(shape.marker)).toBeAttached();
     }
 
-    // The regular tier — the one the seeds were measured at: every shape sits
-    // on its seed (integer-rounded sizes stay within rounding).
+    // The regular tier: every two-line row sits on its seed, chips or not
+    // (the chips take their own column).
     await panel.setViewportSize({ width: 1280, height: 800 });
     for (const shape of SEED_SHAPES) {
       const height = await stableRowHeight(page.locator(shape.marker));
-      expect(Math.abs(height - shape.seed)).toBeLessThanOrEqual(1);
+      expect
+        .soft(height, `${shape.marker} at 1280 sits on its seed`)
+        .toBeGreaterThanOrEqual(shape.regular - 1);
+      expect
+        .soft(height, `${shape.marker} at 1280 sits on its seed`)
+        .toBeLessThanOrEqual(shape.regular + 1);
     }
 
-    // 320 — a code row's chips line wraps and the row grows by ~26 px, so the
-    // width-blind seed now underestimates: real growth stays within one chips
-    // line of the seed (never negative, never wild). The blank shape has no
-    // code line to add — it stays on its seed at both tiers.
+    // 320 — the compact list stacks a row's chips onto a third line: the
+    // chip rows sit on the stacked seed, the chip-less ones stay two-line.
     await panel.setViewportSize({ width: 320, height: 800 });
+    await expect(page.locator('[data-fdt="facet-bar"]')).toHaveAttribute('data-fdt-compact', '');
     for (const shape of SEED_SHAPES) {
       const height = await stableRowHeight(page.locator(shape.marker));
-      if (shape.code) {
-        const growth = height - shape.seed;
-        expect(growth).toBeGreaterThanOrEqual(20);
-        expect(growth).toBeLessThanOrEqual(40);
-      } else {
-        expect(Math.abs(height - shape.seed)).toBeLessThanOrEqual(1);
-      }
+      expect
+        .soft(height, `${shape.marker} at 320 sits on its seed`)
+        .toBeGreaterThanOrEqual(shape.compact - 1);
+      expect
+        .soft(height, `${shape.marker} at 320 sits on its seed`)
+        .toBeLessThanOrEqual(shape.compact + 1);
     }
   } finally {
     await panel.close();

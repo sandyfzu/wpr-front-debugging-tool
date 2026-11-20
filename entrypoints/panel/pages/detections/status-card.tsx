@@ -1,47 +1,39 @@
 /**
- * One Detections card: leading vocabulary icon · feature name · verdict
- * badge, with the subtitle in full underneath. Two forms, decided by the
- * page's link table, never by the card's content:
+ * One Detections entry — the same anatomy in every layout, only its grid
+ * and surface change ({@link entryClass}): status icon · name with its note
+ * lines · state (an Active / Collecting / Unknown pill, or a quiet "Off") ·
+ * the owning page's link when the link table names one. Grouped and List
+ * paint it as a calm row; Cards as a card from the regular tier up.
  *
- * - **static** — not focusable, never lifts (nothing to click);
- * - **link** — the whole card is an anchor to the page that explains the
- *   feature, with the hover lift and the focus ring.
+ * The entry itself is never a control: the link is its one tab stop, so
+ * tooltip subtitles (the Cached row's absolute time, the Known Platform
+ * row's matching header, host layers, a declaration-only row's proof limit)
+ * work on every row.
  *
- * The page's layout picks the surface: `adaptive` is a row at compact and a
- * card from the regular tier up; `list` is a row at every width (hover wash,
- * inset ring, never a lift).
- *
- * A feature card adds its evidence line under the name: the source chip
- * (`Meta` / `Footprint`, its meaning spelled out for assistive tech and in
- * the native title) and, for an unsure verdict (collecting / unknown), the
- * amber why sentence — visible text, never hover-only — or, for a feature
- * declared with nothing on the page to act on, the declared-only sentence —
- * and, when the Exclusion Builder changed the feature in this tab, its modifier: an
- * at-a-glance badge (icon + short text) plus the full sentence as a visible
- * line, spoken once; likewise when the extension simulated the feature in
- * this tab (or the page's simulation marker went unverified), and the
- * amber "applied despite ?nowprocket" warning. The verdict badge stays WP
- * Rocket's served verdict.
- *
- * Tooltips appear only where data would otherwise be hidden — the Cached
- * card's absolute UTC time, the Known Platform card's matching header and
- * a declaration-only card's proof limit (mobile cache, DNS prefetch) — with
- * the subtitle text as their (focusable) trigger. A link card never
- * hosts one: a control nested inside a link is invalid and unreachable.
+ * Note lines: the subtitle (versions and server values mono, as data), then
+ * the evidence line — the source chip (`Meta` / `Footprint`, its meaning
+ * spelled out for assistive tech and in the native title; under a group
+ * header that already states the group's norm, only a row that differs
+ * shows one), the declared-only sentence, the amber "applied despite
+ * ?nowprocket" warning, the simulation and Exclusion Builder modifiers
+ * (an at-a-glance badge plus the full sentence as a visible line, spoken
+ * once) and an unsure verdict's amber why. The state stays WP Rocket's
+ * served verdict: a feature the builder turned off reads Active with its
+ * "Disabled in this tab" line.
  */
 import type { JSX } from 'solid-js';
 import { Match, Show, Switch } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import ChevronRight from 'lucide-solid/icons/chevron-right';
 import CircleOff from 'lucide-solid/icons/circle-off';
+import Clock from 'lucide-solid/icons/clock';
 import FlaskConical from 'lucide-solid/icons/flask-conical';
 import ListX from 'lucide-solid/icons/list-x';
 import ShieldQuestionMark from 'lucide-solid/icons/shield-question-mark';
 import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import type { LucideIcon } from 'lucide-solid';
 import { Badge } from '../../../../components/ui/badge';
-import { CARD_LEVEL_CLASSES } from '../../../../components/ui/card';
-import { FOCUS_RING, MOTION_LIFT } from '../../../../components/ui/classes';
+import { FOCUS_RING } from '../../../../components/ui/classes';
 import {
   STATUS_ICONS,
   STATUS_TEXT_CLASSES,
@@ -51,9 +43,9 @@ import { Tooltip } from '../../../../components/ui/tooltip';
 import {
   builderBadgeKind,
   SOURCE_COPY,
-  type BuilderBadgeKind
+  type BuilderBadgeKind,
+  type SourceCopy
 } from '../../../../lib/detection/hud';
-import { STATUS_LABELS } from '../../../../lib/panel/detections-summary';
 import {
   hostLayersTooltip,
   type StatusItem,
@@ -63,134 +55,105 @@ import type { SimulationFact } from '../../../../lib/wp-rocket/types';
 import type { DetectionLayout } from '../../state/detections-layout';
 import { cn } from '../../../../utils/cn';
 import { navRoute, type RouteId } from '../../routes';
-import { cacheAgeText, STATUS_TONES } from './card-presentation';
+import { cacheAgeText, ENTRY_STATE_LABELS, STATUS_TONES } from './card-presentation';
+import { entryClass } from './entry-layout';
 
 /**
- * The surface both forms share. Compact tier: a divided row inside the
- * grid's one grouped surface (17 bordered cards stacked in a 270 px column
- * read as noise); regular tier up: a standalone card — the `Card`
- * primitive's level-1 surface/line pair (written as literal variant classes
- * so the stylesheet scanner sees them; {@link CARD_LEVEL_CLASSES} is the
- * pair's declaring site, re-exported as {@link CARD_SURFACE_PAIR} and pinned
- * equal by the page test).
+ * The status icon per verdict: the vocabulary's shapes, except collecting
+ * reads as a clock (waiting on beacon data), never the alert triangle an
+ * unknown verdict keeps.
  */
-export const STATUS_CARD_SURFACE =
-  'flex h-full w-full flex-col gap-1 px-2.5 py-2 text-xs text-fg-primary @regular:rounded-md @regular:border @regular:border-line-1 @regular:bg-surface-1 @regular:p-2.5';
-
-/**
- * The List layout's row: the compact row at every width (no border, radius
- * or shadow of its own — the grid's grouped surface divides the rows), with
- * roomier padding from the regular tier up so a wide column still reads as
- * a list rather than a strip of cramped lines.
- */
-export const STATUS_LIST_ROW_SURFACE =
-  'flex h-full w-full flex-col gap-1 px-2.5 py-2 text-xs text-fg-primary @regular:px-3 @regular:py-2.5';
-
-/** The level-1 pair the regular-tier card mirrors (exported for the pin). */
-export const CARD_SURFACE_PAIR = CARD_LEVEL_CLASSES[1];
-
-/**
- * A link card's interaction treatment: the lift where it is a card (regular
- * tier), a row highlight where it is a row (compact tier), and an inset ring
- * at compact so the grouped surface's clip never cuts it.
- */
-const LINK_ACTIVE = cn(
-  MOTION_LIFT,
-  '@max-regular:hover:bg-surface-2 @max-regular:hover:shadow-none @max-regular:focus-visible:-outline-offset-2'
-);
-
-/**
- * A link card for a feature that is off: still navigable (the page explains
- * why nothing is applied), but presented quietly — no lift.
- */
-const LINK_QUIET = '@max-regular:focus-visible:-outline-offset-2 hover:bg-surface-2';
-
-/**
- * A List-layout link row, active or quiet alike: the row hover wash and an
- * inset ring (the grouped surface's clip would cut an outset one) at every
- * width — a row never lifts.
- */
-const LINK_ROW = 'hover:bg-surface-2 focus-visible:-outline-offset-2';
-
-/**
- * The card root's surface for a layout.
- *
- * @param layout The page's layout.
- * @returns {@link STATUS_CARD_SURFACE} (adaptive) or {@link STATUS_LIST_ROW_SURFACE} (list).
- */
-export function statusCardSurface(layout: DetectionLayout): string {
-  return layout === 'list' ? STATUS_LIST_ROW_SURFACE : STATUS_CARD_SURFACE;
-}
-
-/**
- * A link card's interaction classes for a layout and verdict: adaptive keeps
- * the active lift / quiet wash pair, list is always the row treatment.
- *
- * @param layout The page's layout.
- * @param status The card's verdict (only `active` lifts, and only adaptive).
- * @returns The classes appended after the surface and focus ring.
- */
-export function statusLinkInteraction(layout: DetectionLayout, status: StatusKind): string {
-  if (layout === 'list') return LINK_ROW;
-  return status === 'active' ? LINK_ACTIVE : LINK_QUIET;
-}
-
-/** Indents the lines under the head row to the name's start (14 px icon + `gap-1.5`). */
-const UNDER_NAME = 'ps-5';
+export const ENTRY_ICONS: Readonly<Record<StatusKind, LucideIcon>> = {
+  active: STATUS_ICONS.ok,
+  collecting: Clock,
+  unknown: STATUS_ICONS.warn,
+  'not-active': STATUS_ICONS.neutral
+};
 
 /**
  * A subtitle-as-tooltip-trigger: reads as text, a dotted underline hints the
  * detail. The trigger keeps its 24 px hit area; `-my-1` only stops that
- * area from loosening the card's line rhythm.
+ * area from loosening the row's line rhythm.
  */
 const TOOLTIP_SUBTITLE =
   '-my-1 justify-items-start text-start text-2xs text-fg-secondary underline decoration-line-3 decoration-dotted underline-offset-2 hover:text-fg-primary';
 
+/**
+ * The page link: accent text with a 24 px hit floor (T-3), never wrapping;
+ * the negative inline margin keeps its text aligned with the name above.
+ */
+const ENTRY_LINK = cn(
+  '-mx-1 inline-flex min-h-6 items-center gap-0.5 rounded-sm px-1 text-2xs font-medium whitespace-nowrap text-accent no-underline hover:underline',
+  FOCUS_RING
+);
+
 /** Props of {@link StatusCard}. */
 export interface StatusCardProps {
-  /** The card from the view model. */
+  /** The entry from the view model. */
   item: StatusItem;
-  /** The page this card links to, or undefined for a static card. */
+  /** The page this entry links to, or undefined for none. */
   linkTo?: RouteId;
-  /** The page clock reading (epoch ms) the Cached card ages against. */
+  /** The page clock reading (epoch ms) the Cached row ages against. */
   now: number;
-  /** The page's layout (absent: `adaptive`). */
+  /** The page's layout (absent: `grouped`). */
   layout?: DetectionLayout;
+  /**
+   * Whether the entry shows its own source chip (absent: true). False under
+   * a group whose header states the same source (see `showsOwnSource`).
+   */
+  showSource?: boolean;
 }
 
 /**
- * The head row: vocabulary icon, name (wraps), verdict badge.
+ * The verdict's state cell: a pill for the states worth noticing, the quiet
+ * word for "off" (no pill: twelve off features would be twelve chips of noise).
  *
- * @param props.item The card.
- * @returns The head row.
+ * @param props.status The entry's verdict.
+ * @returns The state cell.
  */
-function CardHead(props: { item: StatusItem }): JSX.Element {
-  const tone = () => STATUS_TONES[props.item.status];
+function EntryState(props: { status: StatusKind }): JSX.Element {
   return (
-    <div class="flex items-start gap-1.5">
-      <Dynamic
-        component={STATUS_ICONS[tone()]}
-        size={14}
-        class={cn('mt-px shrink-0', STATUS_TEXT_CLASSES[tone()])}
-        aria-hidden="true"
-      />
-      <span
-        data-fdt-card-name
-        class={cn(
-          'min-w-0 flex-1 font-medium leading-snug wrap-break-word',
-          // Off features recede so the active ones scan first; the badge
-          // and icon still state the verdict (never color alone).
-          props.item.status === 'active' ? 'text-fg-primary' : 'text-fg-secondary'
-        )}
-      >
-        {props.item.name}
-      </span>
-      {/* Spoken separators: a link card's name is its own content. */}
+    <span data-fdt-card-state={props.status} class="flex min-w-18 justify-end [grid-area:state]">
       <span class="sr-only">, </span>
-      <StatusBadge kind={tone()} class="shrink-0">
-        {STATUS_LABELS[props.item.status]}
-      </StatusBadge>
-    </div>
+      <Show
+        when={props.status !== 'not-active'}
+        fallback={
+          <span class="text-2xs leading-4.5 text-fg-muted">{ENTRY_STATE_LABELS[props.status]}</span>
+        }
+      >
+        <StatusBadge kind={STATUS_TONES[props.status]} class="shrink-0 rounded-full">
+          {ENTRY_STATE_LABELS[props.status]}
+        </StatusBadge>
+      </Show>
+    </span>
+  );
+}
+
+/**
+ * A source chip: the short word, its meaning in the native title and for
+ * assistive tech. `group` scope is the header's norm chip (the source every
+ * row of the group carries).
+ *
+ * @param props.copy The source's copy.
+ * @param props.scope `entry` (a row's own chip) or `group` (the header's norm).
+ * @returns The chip.
+ */
+export function SourceChip(props: { copy: SourceCopy; scope?: 'entry' | 'group' }): JSX.Element {
+  const group = (): boolean => props.scope === 'group';
+  const title = (): string =>
+    group() ? `${props.copy.tooltip} Applies to every row here.` : props.copy.tooltip;
+  return (
+    <Badge variant="outline" class="shrink-0">
+      <span
+        data-fdt-card-source={group() ? undefined : ''}
+        data-fdt-group-source={group() ? '' : undefined}
+        title={title()}
+      >
+        <span class="sr-only">, </span>
+        {props.copy.chip}
+        <span class="sr-only">: {title()}</span>
+      </span>
+    </Badge>
   );
 }
 
@@ -337,43 +300,43 @@ function BypassWarning(props: { item: StatusItem }): JSX.Element {
 }
 
 /**
- * The evidence line: source chip, the bypass warning, the simulation and builder modifiers
- * (badge + sentence each) and/or the unsure verdict's why. Renders nothing for a card with none (non-feature
- * cards, undecided rows whose absence is an honest "not active").
+ * Whether an entry has evidence to show: a visible source chip, a
+ * declared-only, bypass, simulation or builder line, or an unsure why.
  *
- * @param props.item The card.
+ * @param item The entry.
+ * @param showSource Whether its own source chip renders (see {@link StatusCardProps.showSource}).
+ * @returns True when {@link CardEvidence} renders.
+ */
+export function hasEvidence(item: StatusItem, showSource: boolean): boolean {
+  return (
+    (showSource && item.source !== undefined) ||
+    item.declaredOnly !== undefined ||
+    item.bypassWarning !== undefined ||
+    item.simulation !== undefined ||
+    item.builder !== undefined ||
+    item.why !== undefined
+  );
+}
+
+/**
+ * The evidence line: source chip (when shown), the declared-only line, the
+ * bypass warning, the simulation and builder modifiers (badge + sentence
+ * each) and/or the unsure verdict's why. Renders nothing for an entry with
+ * none (non-feature rows, undecided rows whose absence is an honest "off").
+ *
+ * @param props.item The entry.
+ * @param props.showSource Whether the entry's own source chip renders.
  * @returns The evidence line, or nothing.
  */
-function CardEvidence(props: { item: StatusItem }): JSX.Element {
+function CardEvidence(props: { item: StatusItem; showSource: boolean }): JSX.Element {
   const source = () =>
-    props.item.source === undefined ? undefined : SOURCE_COPY[props.item.source];
+    props.showSource && props.item.source !== undefined
+      ? SOURCE_COPY[props.item.source]
+      : undefined;
   return (
-    // No bypass-warning or declared-only arm: a warned card is always
-    // footprint-decided and a declared-only one meta-decided, so its source
-    // chip already opens the line.
-    <Show
-      when={
-        source() !== undefined ||
-        props.item.why !== undefined ||
-        props.item.builder !== undefined ||
-        props.item.simulation !== undefined
-      }
-    >
-      <div
-        data-fdt-card-evidence
-        class={cn(UNDER_NAME, 'flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-2xs')}
-      >
-        <Show when={source()}>
-          {(copy) => (
-            <Badge variant="outline" class="shrink-0">
-              <span data-fdt-card-source title={copy().tooltip}>
-                <span class="sr-only">, </span>
-                {copy().chip}
-                <span class="sr-only">: {copy().tooltip}</span>
-              </span>
-            </Badge>
-          )}
-        </Show>
+    <Show when={hasEvidence(props.item, props.showSource)}>
+      <div data-fdt-card-evidence class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-2xs">
+        <Show when={source()}>{(copy) => <SourceChip copy={copy()} />}</Show>
         <Show when={props.item.declaredOnly}>
           {(sentence) => (
             <p data-fdt-card-declared-line class="min-w-0 text-fg-secondary">
@@ -466,7 +429,7 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
       fallback={
         <Show when={props.item.subtitle}>
           {(subtitle) => (
-            <p data-fdt-card-subtitle class={cn(UNDER_NAME, 'text-2xs text-fg-secondary')}>
+            <p data-fdt-card-subtitle class="text-2xs text-fg-secondary">
               <SubtitleText item={props.item} text={subtitle()} />
             </p>
           )}
@@ -475,7 +438,7 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
     >
       <Match when={cachedAt()}>
         {(stamp) => (
-          <div data-fdt-card-subtitle class={UNDER_NAME}>
+          <div data-fdt-card-subtitle>
             <Tooltip content={`Generated at ${stamp().formatted}`} class={TOOLTIP_SUBTITLE}>
               {cacheAgeText(stamp().seconds, props.now)}
             </Tooltip>
@@ -484,7 +447,7 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
       </Match>
       <Match when={platform()}>
         {(match) => (
-          <div data-fdt-card-subtitle class={UNDER_NAME}>
+          <div data-fdt-card-subtitle>
             <Tooltip
               content={`Identified by the ${match().header} response header`}
               class={TOOLTIP_SUBTITLE}
@@ -496,7 +459,7 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
       </Match>
       <Match when={hostLayers()}>
         {(found) => (
-          <div data-fdt-card-subtitle class={UNDER_NAME}>
+          <div data-fdt-card-subtitle>
             <Tooltip content={hostLayersTooltip(found().layers)} class={TOOLTIP_SUBTITLE}>
               {props.item.subtitle}
             </Tooltip>
@@ -505,7 +468,7 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
       </Match>
       <Match when={proofLimit()}>
         {(fact) => (
-          <div data-fdt-card-subtitle class={UNDER_NAME}>
+          <div data-fdt-card-subtitle>
             <Tooltip content={fact().limit} class={TOOLTIP_SUBTITLE}>
               {fact().text}
             </Tooltip>
@@ -517,65 +480,77 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
 }
 
 /**
- * Render one card in its static or link form.
+ * Whether an entry shows a note line under its name.
+ *
+ * @param item The entry.
+ * @param showSource Whether its own source chip renders.
+ * @returns True when a subtitle or the evidence line renders.
+ */
+export function hasNoteLine(item: StatusItem, showSource: boolean): boolean {
+  return item.subtitle !== undefined || hasEvidence(item, showSource);
+}
+
+/**
+ * Render one entry.
  *
  * @param props See {@link StatusCardProps}.
- * @returns The card (an anchor for the link form, a div otherwise).
+ * @returns The entry (a `div`; its link, when any, is the only control).
  */
 export function StatusCard(props: StatusCardProps): JSX.Element {
-  /** The destination's nav row (the link form needs its label). */
+  /** The destination's nav row (the link needs its label). */
   const destination = () => (props.linkTo === undefined ? undefined : navRoute(props.linkTo));
-  const layout = (): DetectionLayout => props.layout ?? 'adaptive';
+  const showSource = (): boolean => props.showSource ?? true;
+  const tone = () => STATUS_TONES[props.item.status];
   return (
-    <Show
-      when={destination()}
-      fallback={
-        <div
-          data-fdt="status-card"
-          data-fdt-card-id={props.item.id}
-          class={statusCardSurface(layout())}
-        >
-          <CardHead item={props.item} />
-          <StaticSubtitle item={props.item} now={props.now} />
-          <CardEvidence item={props.item} />
-        </div>
-      }
+    <div
+      data-fdt="status-card"
+      data-fdt-card-id={props.item.id}
+      data-fdt-card-source-kind={props.item.source}
+      class={entryClass({
+        layout: props.layout ?? 'grouped',
+        hasLink: destination() !== undefined,
+        twoLine: hasNoteLine(props.item, showSource())
+      })}
     >
-      {(route) => (
-        <a
-          data-fdt="status-card"
-          data-fdt-card-id={props.item.id}
-          href={`#/${route().id}`}
+      <Dynamic
+        component={ENTRY_ICONS[props.item.status]}
+        size={14}
+        class={cn('mt-px shrink-0 [grid-area:icon]', STATUS_TEXT_CLASSES[tone()])}
+        aria-hidden="true"
+      />
+      <div class="flex min-w-0 flex-col gap-1 [grid-area:main]">
+        <span
+          data-fdt-card-name
           class={cn(
-            statusCardSurface(layout()),
-            'group no-underline',
-            FOCUS_RING,
-            statusLinkInteraction(layout(), props.item.status)
+            'leading-snug wrap-break-word',
+            // Off features recede so the ones in play scan first; the state
+            // and icon still say it (never color alone).
+            props.item.status === 'not-active'
+              ? 'font-medium text-fg-secondary'
+              : 'font-semibold text-fg-primary'
           )}
         >
-          <CardHead item={props.item} />
-          <Show when={props.item.subtitle}>
-            {(subtitle) => (
-              <p data-fdt-card-subtitle class={cn(UNDER_NAME, 'text-2xs text-fg-secondary')}>
-                <span class="sr-only">, </span>
-                <SubtitleText item={props.item} text={subtitle()} />
-              </p>
-            )}
-          </Show>
-          <CardEvidence item={props.item} />
-          <span
-            class={cn(
-              UNDER_NAME,
-              'mt-auto inline-flex items-center gap-0.5 pt-0.5 text-2xs group-hover:underline',
-              props.item.status === 'active' ? 'text-accent' : 'text-fg-secondary'
-            )}
+          {props.item.name}
+        </span>
+        <StaticSubtitle item={props.item} now={props.now} />
+        <CardEvidence item={props.item} showSource={showSource()} />
+      </div>
+      <EntryState status={props.item.status} />
+      <Show when={destination()}>
+        {(route) => (
+          <a
+            data-fdt-card-link
+            href={`#/${route().id}`}
+            class={cn(ENTRY_LINK, 'self-start [grid-area:link]')}
           >
-            <span class="sr-only">, </span>
-            Open {route().label}
+            <span class="sr-only">Open </span>
+            {route().label}
+            {/* Named per row: several rows link the same page. */}
+            <span class="sr-only">, {props.item.name}</span>
             <ChevronRight size={12} class="shrink-0" aria-hidden="true" />
-          </span>
-        </a>
-      )}
-    </Show>
+          </a>
+        )}
+      </Show>
+    </div>
   );
 }

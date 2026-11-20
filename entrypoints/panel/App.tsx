@@ -1,7 +1,8 @@
 /**
- * The panel's app shell: the brand mark above the icon rail (the nav) and
- * the content region beside it that renders the route bodies and the
- * data-state surfaces around them.
+ * The panel's app shell: the top bar (identity, the page's answers and the
+ * shell controls) above the nav column (labeled sidebar or icon rail) and
+ * the content region beside it that renders the route bodies and the data-state surfaces
+ * around them.
  *
  * Boot states are real states, not theater: `fetching` renders the skeleton,
  * `error` the retry affordance, `ready`/`refreshing` the route body — so a
@@ -22,36 +23,41 @@ import {
   on,
   onCleanup,
   onMount,
+  type Accessor,
   type JSX
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import Rocket from 'lucide-solid/icons/rocket';
 import { ErrorState } from '../../components/ui/error-state';
 import { PageHeader } from '../../components/ui/page-header';
-import { Skeleton } from '../../components/ui/skeleton';
 import { Toasts } from '../../components/ui/toast';
+import { AppearanceMenu } from '../../components/appearance-menu';
+import { setAppearanceOption } from '../../lib/storage/options';
+import type { Appearance } from '../../utils/theme';
 import { selectTabAsks } from '../../lib/messaging/tab-asks';
 import { selectTabPushConnect } from '../../lib/messaging/tab-push-client';
 import { createLogger } from '../../lib/logger';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { panelColdStart } from './cold-start';
-import { AdaptiveNav } from './nav/adaptive-nav';
+import { Sidebar } from './nav/sidebar';
+import { createNavPinState } from './nav/nav-pin';
+import { NAV_PIN_DEFAULT, type NavPin } from '../../lib/panel/nav-mode';
+import { setNavPin } from '../../lib/storage/panel-nav-pin';
 import { createHashRoute } from './router';
 import { navRoute, type RouteId } from './routes';
 import { PageCanvas } from './pages/page-frame';
 import { DATA_UNAVAILABLE_TITLE, DataUnavailable } from './data-unavailable';
-import { StatusBar } from './status-bar/status-bar';
-import {
-  BuilderEntry,
-  realBuilderEntryDeps,
-  type BuilderEntryDeps
-} from './status-bar/builder-entry';
+import { TopBar } from './top-bar/top-bar';
+import { guardAppearanceWrite } from './appearance-write';
+import { realBuilderEntryDeps, type BuilderEntryDeps } from './top-bar/builder-entry';
+import { readInspectedPageUrl, realInspectedEvalApi } from './report/inspected-page-url';
 import { PAGES } from './pages';
+import { LoadingActions, LoadingSubtitle, RouteLoading } from './pages/loading-shapes';
+import { PageStateCard } from './pages/page-state-card';
 import { focusRouteHeading } from './palette/focus';
-import { PaletteTrigger } from './palette/palette-trigger';
 import { PanelOverlays } from './palette/panel-overlays';
 import { createOverlayStore, type OverlayStore } from './palette/overlays';
-import { registerPanelShortcuts } from './palette/shortcuts';
+import { paletteKeyHint, registerPanelShortcuts } from './palette/shortcuts';
+import { navigatorChordPlatform } from '../../lib/palette-chord/follow';
 import {
   createPanelChordBinding,
   realPanelChordDeps,
@@ -65,9 +71,14 @@ import {
 } from './state/use-fdt-data';
 import { createSearchStore, type SearchStore } from './state/search';
 import { createDetectionsLayout, DetectionsLayoutContext } from './state/detections-layout';
+import { createDetailPresence, DetailPresenceContext } from './state/detail-presence';
+import { createDetailShare, DetailShareContext } from './state/detail-share';
+import { writeDetailShare } from '../../lib/storage/panel-detail-share';
 import { devtoolsInspectedTabId, fdtRequestEdges, realMessagingEdges } from './state/edges';
 import { withRelayedPushes } from './state/relayed-pushes';
 import { createHardReloadBudget } from './state/hard-reload-budget';
+import { createShellWidth, type InlineSizeObserver } from './state/shell-width';
+import { pageViewOf } from './state/page-view';
 
 const log = createLogger('panel');
 
@@ -99,6 +110,34 @@ export type AppProps = {
    * real chord store and platform report.
    */
   readonly paletteChord?: PanelChordDeps;
+  /**
+   * Reads the inspected page URL for the top bar (tests inject doubles);
+   * absent, the DevTools eval of the inspected page.
+   */
+  readonly readPageUrl?: () => Promise<string | null>;
+  /**
+   * The stored appearance the document follows (the boot's appearance
+   * follow feeds it); absent, the top bar renders no appearance menu.
+   */
+  readonly appearance?: Accessor<Appearance>;
+  /**
+   * The appearance writer (tests inject doubles); absent, the options
+   * store's `setAppearanceOption`.
+   */
+  readonly writeAppearance?: (next: Appearance) => Promise<void>;
+  /**
+   * The shell's size observer (tests drive widths by hand); absent, a
+   * `ResizeObserver` on the shell element.
+   */
+  readonly observeShellWidth?: InlineSizeObserver;
+  /** The sidebar pin the boot read; absent, `auto` (the width rule). */
+  readonly navPin?: NavPin;
+  /** The pin writer (tests inject doubles); absent, the storage item. */
+  readonly writeNavPin?: (pin: NavPin) => Promise<void>;
+  /** The detail pane share the boot read; absent or `null`, the default share. */
+  readonly detailShare?: number | null;
+  /** The share writer (tests inject doubles); absent, the storage item. */
+  readonly writeDetailShare?: (share: number | null) => Promise<void>;
 };
 
 /** The error branch's payload (the error state's fields the view reads). */
@@ -106,23 +145,6 @@ interface DataError {
   /** The user-facing cause the view renders. */
   readonly cause: string;
 }
-
-/**
- * The shell header: the brand mark above the nav's icon rail column.
- *
- * `z-10` is the rail column's paint priority over the status bar's band:
- * below the panel's usable minimum nothing can absorb the loss of height,
- * so the rail column's overflow (its brand row and overflow trigger) would
- * otherwise paint under the footer and become pointer-blocked. At any
- * normal height nothing overflows the row and the rule is inert; the
- * fixed overlays (dialog z-40+, tooltips/menu portals z-50) rank above it
- * unchanged.
- */
-const HEADER = 'relative z-10 flex shrink-0 flex-col gap-2 border-r border-line-2 bg-surface-1 p-2';
-
-/** The brand mark: centered over the rail; its name rides the sr-only span. */
-const BRAND =
-  'flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap text-xs font-semibold text-fg-primary';
 
 /**
  * Render the panel shell.
@@ -143,14 +165,19 @@ function reloadPanelDocument(): void {
 }
 
 /**
- * The persistent status strip: the shell's bottom edge, outside the
- * content region's scrolling — an answer never scrolls out and data never
- * pushes the panel's chrome, at every docking geometry.
+ * The shell's column: the top bar, then the rail-and-content row. The bar
+ * sits outside the content region's scrolling — an answer never scrolls
+ * out and data never pushes the panel's chrome, at every docking geometry.
  */
-const BOTTOM_EDGE = 'flex min-h-0 min-w-0 flex-1 flex-col';
+const STACK = 'flex min-h-0 min-w-0 flex-1 flex-col';
 
-/** The rail-and-content row above the strip (the shell's pre-strip geometry, unchanged). */
+/** The rail-and-content row below the top bar. */
 const STACK_ROW = 'flex min-h-0 flex-1';
+
+/** The real page-URL read (best-effort; null outside DevTools). */
+function readRealPageUrl(): Promise<string | null> {
+  return readInspectedPageUrl(realInspectedEvalApi(), browser.runtime);
+}
 
 export function PanelApp(props: AppProps): JSX.Element {
   // All the store injections below are deliberate once-per-mount builds
@@ -197,8 +224,38 @@ export function PanelApp(props: AppProps): JSX.Element {
   const router = createHashRoute();
   // Shell-scoped so the Detections layout survives route switches and refreshes.
   const detectionsLayout = createDetectionsLayout();
+  // Shell-scoped so a page's open detail reaches the chrome; per route.
+  const detailPresence = createDetailPresence(router.route);
+  // Shell-scoped so every list's pane shares one width across routes.
+  const detailShare = createDetailShare(
+    // eslint-disable-next-line solid/reactivity -- boot values, read once
+    props.detailShare ?? null,
+    // eslint-disable-next-line solid/reactivity -- boot values, read once
+    props.writeDetailShare ?? writeDetailShare
+  );
   // eslint-disable-next-line solid/reactivity
   const paletteChord = createPanelChordBinding(props.paletteChord ?? realPanelChordDeps(log));
+  // eslint-disable-next-line solid/reactivity
+  const shellWidth = createShellWidth(props.observeShellWidth);
+  // eslint-disable-next-line solid/reactivity
+  const navPin = createNavPinState(props.navPin ?? NAV_PIN_DEFAULT, props.writeNavPin ?? setNavPin);
+  // The top bar's appearance menu, writing through the shared failure guard.
+  // eslint-disable-next-line solid/reactivity
+  const appearance = props.appearance;
+  // eslint-disable-next-line solid/reactivity
+  const writeAppearance = props.writeAppearance ?? setAppearanceOption;
+  const appearanceControl =
+    appearance === undefined ? undefined : (
+      <AppearanceMenu
+        value={appearance()}
+        onChange={(next) => {
+          void guardAppearanceWrite(() => writeAppearance(next));
+        }}
+      />
+    );
+  /** The trigger's key hint: the resolved convention, else the navigator's. */
+  const keyHint = (): string =>
+    paletteKeyHint(paletteChord.binding()?.platform ?? navigatorChordPlatform(navigator));
 
   // The shell — and only the shell — owns the mount lifecycle: every
   // message receiver registers inside `start()`, the global keyboard
@@ -241,6 +298,25 @@ export function PanelApp(props: AppProps): JSX.Element {
       router.route,
       () => {
         focusRouteHeading();
+      },
+      { defer: true }
+    )
+  );
+
+  /** The content region (the one scroll container of the route bodies and states). */
+  let contentRegion: HTMLElement | undefined;
+
+  // A page-level view swap (Retry's error → loading, loading → page, …)
+  // replaces the whole body: start the new view at its top, so its heading is
+  // in view instead of the offset the previous view was scrolled to. A soft
+  // refresh stays on the same view, so its scroll survives.
+  // (A memo: `on` fires per source change, and every data push is one.)
+  const pageView = createMemo(() => pageViewOf(data.state().status));
+  createEffect(
+    on(
+      pageView,
+      () => {
+        if (contentRegion !== undefined) contentRegion.scrollTop = 0;
       },
       { defer: true }
     )
@@ -298,134 +374,163 @@ export function PanelApp(props: AppProps): JSX.Element {
   return (
     <FdtDataContext.Provider value={data}>
       <SearchContext.Provider value={search}>
-        <div data-fdt="panel-shell" class="flex h-dvh bg-surface-0 text-fg-primary">
-          <div data-fdt="panel-stack" class={BOTTOM_EDGE}>
-            <div class={STACK_ROW}>
-              <header data-fdt="panel-header" class={HEADER}>
-                {/* The brand block: the mark and the palette trigger — the
-                keyboard layer's mouse entry point — beside the rail's first
-                row (the interim geometry; the band redesign owns the final
-                shape). The brand is not a heading: each page owns the single
-                h1. Its name rides the sr-only span. */}
-                <div data-fdt="panel-brand-row" class="flex shrink-0 items-center gap-1.5">
-                  <p class={BRAND}>
-                    <Rocket size={14} class="shrink-0 text-accent" aria-hidden="true" />
-                    <span class="sr-only">WPR FDT</span>
-                  </p>
-                  <PaletteTrigger
-                    open={() => overlays.paletteOpen()}
-                    toggle={() => {
-                      overlays.togglePalette();
-                    }}
-                  />
-                </div>
-                <AdaptiveNav route={router.route} data={navData} />
-              </header>
-              <main data-fdt="panel-content" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
-                <ErrorBoundary
-                  fallback={(error: unknown) => {
-                    // The render-crash retry reloads the whole panel document
-                    // (a Solid reset cannot re-create arbitrary lost state); the
-                    // original error is logged here, never rendered — only the
-                    // actionable reload affordance reaches the user.
-                    log.error('Panel render crashed — the fallback view is up', {
-                      cause: error instanceof Error ? { message: error.message } : error
-                    });
-                    return (
-                      <PageCanvas id={router.route()}>
-                        <ErrorState
-                          pageHeading
-                          title="The panel came apart"
-                          message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
-                          onRetry={props.reload ?? reloadPanelDocument}
-                        />
-                      </PageCanvas>
-                    );
-                  }}
+        <DetailPresenceContext.Provider value={detailPresence}>
+          <div
+            data-fdt="panel-shell"
+            ref={shellWidth.attach}
+            class="flex h-dvh bg-surface-0 text-fg-primary"
+          >
+            <div data-fdt="panel-stack" class={STACK}>
+              <TopBar
+                width={shellWidth.width}
+                palette={{
+                  open: () => overlays.paletteOpen(),
+                  toggle: () => {
+                    overlays.togglePalette();
+                  },
+                  keyHint
+                }}
+                builderEntry={builderEntryDeps}
+                readPageUrl={props.readPageUrl ?? readRealPageUrl}
+                appearance={appearanceControl}
+              />
+              <div class={STACK_ROW}>
+                {/* The nav column (not a landmark itself: the top bar is the
+                    page's banner; the nav inside is the navigation landmark). */}
+                <Sidebar
+                  route={router.route}
+                  data={navData}
+                  width={shellWidth.width}
+                  pin={navPin}
+                />
+                {/* `relative`: the scroller is the containing block of the
+                    out-of-flow content it holds (sr-only text, joiners), so
+                    it scrolls and clips with the page. Without a positioned
+                    ancestor it resolves against the viewport, and its static
+                    offsets grow the document's own overflow — a second,
+                    document-level scrollbar that narrows the whole shell. */}
+                <main
+                  ref={contentRegion}
+                  data-fdt="panel-content"
+                  class="relative min-h-0 min-w-0 flex-1 overflow-y-auto"
                 >
-                  <Switch>
-                    {/* The real waits only: skeleton while nothing has arrived. */}
-                    <Match
-                      when={data.state().status === 'fetching' || data.state().status === 'idle'}
-                    >
-                      <SkeletonPage route={router.route()} />
-                    </Match>
-                    {/* The error view with its retry (the phase's dead-end rule). */}
-                    <Match when={errorState()} keyed>
-                      {(error) => (
+                  <ErrorBoundary
+                    fallback={(error: unknown) => {
+                      // The render-crash retry reloads the whole panel document
+                      // (a Solid reset cannot re-create arbitrary lost state); the
+                      // original error is logged here, never rendered — only the
+                      // actionable reload affordance reaches the user.
+                      log.error('Panel render crashed — the fallback view is up', {
+                        cause: error instanceof Error ? { message: error.message } : error
+                      });
+                      return (
                         <PageCanvas id={router.route()}>
-                          <ErrorState
-                            pageHeading
-                            title="Couldn't load page data"
-                            message={error.cause}
-                            onRetry={() => {
-                              data.retry();
-                            }}
-                          />
+                          <PageStateCard>
+                            <ErrorState
+                              pageHeading
+                              title="The panel came apart"
+                              message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
+                              onRetry={props.reload ?? reloadPanelDocument}
+                            />
+                          </PageStateCard>
                         </PageCanvas>
-                      )}
-                    </Match>
-                    {/* No way to message the page here (feature-detected): an
+                      );
+                    }}
+                  >
+                    <Switch>
+                      {/* The real waits only: skeleton while nothing has arrived. */}
+                      <Match
+                        when={data.state().status === 'fetching' || data.state().status === 'idle'}
+                      >
+                        <SkeletonPage route={router.route()} />
+                      </Match>
+                      {/* The error view with its retry (the phase's dead-end rule). */}
+                      <Match when={errorState()} keyed>
+                        {(error) => (
+                          <PageCanvas id={router.route()}>
+                            <PageStateCard>
+                              <ErrorState
+                                pageHeading
+                                title="Couldn't load page data"
+                                message={error.cause}
+                                onRetry={() => {
+                                  data.retry();
+                                }}
+                              />
+                            </PageStateCard>
+                          </PageCanvas>
+                        )}
+                      </Match>
+                      {/* No way to message the page here (feature-detected): an
                         explicit state naming what still works — no retry. */}
-                    <Match when={unavailableReason()} keyed>
-                      {(reason) => (
-                        <PageCanvas id={router.route()}>
-                          <DataUnavailable reason={reason} />
-                        </PageCanvas>
-                      )}
-                    </Match>
-                    {/* `ready` and `refreshing` render the same body — the data
+                      <Match when={unavailableReason()} keyed>
+                        {(reason) => (
+                          <PageCanvas id={router.route()}>
+                            <PageStateCard>
+                              <DataUnavailable reason={reason} />
+                            </PageStateCard>
+                          </PageCanvas>
+                        )}
+                      </Match>
+                      {/* `ready` and `refreshing` render the same body — the data
                         swap is the only change a soft refresh makes. */}
-                    <Match
-                      when={data.state().status === 'ready' || data.state().status === 'refreshing'}
-                    >
-                      <DetectionsLayoutContext.Provider value={detectionsLayout}>
-                        <Dynamic component={PAGES[router.route()]} />
-                      </DetectionsLayoutContext.Provider>
-                    </Match>
-                  </Switch>
-                </ErrorBoundary>
-              </main>
+                      <Match
+                        when={
+                          data.state().status === 'ready' || data.state().status === 'refreshing'
+                        }
+                      >
+                        <DetectionsLayoutContext.Provider value={detectionsLayout}>
+                          <DetailShareContext.Provider value={detailShare}>
+                            <Dynamic component={PAGES[router.route()]} />
+                          </DetailShareContext.Provider>
+                        </DetectionsLayoutContext.Provider>
+                      </Match>
+                    </Switch>
+                  </ErrorBoundary>
+                </main>
+              </div>
             </div>
-            <StatusBar trailing={<BuilderEntry deps={builderEntryDeps} />} />
+            <div role="status" class="sr-only" aria-live="polite" data-fdt="panel-status">
+              {statusLine()}
+            </div>
+            <PanelOverlays
+              overlays={overlays}
+              data={data}
+              currentRoute={() => router.route()}
+              navigate={(route) => {
+                router.navigate(route);
+              }}
+              focusRouteHeading={focusRouteHeading}
+              paletteChord={paletteChord.binding}
+            />
+            <Toasts />
           </div>
-          <div role="status" class="sr-only" aria-live="polite" data-fdt="panel-status">
-            {statusLine()}
-          </div>
-          <PanelOverlays
-            overlays={overlays}
-            data={data}
-            currentRoute={() => router.route()}
-            navigate={(route) => {
-              router.navigate(route);
-            }}
-            focusRouteHeading={focusRouteHeading}
-            paletteChord={paletteChord.binding}
-          />
-          <Toasts />
-        </div>
+        </DetailPresenceContext.Provider>
       </SearchContext.Provider>
     </FdtDataContext.Provider>
   );
 }
 
 /**
- * Name the real wait above placeholders on the destination's canvas.
- * @param props The current route; changes during boot update the canvas width.
- * @returns A visible loading title and placeholders bounded by available inline size.
+ * The boot's loading page: the real wait named in the page's h1 (its header
+ * reserving the landed header's subtitle and actions lines) above the
+ * destination route's loading shape, on that route's canvas — so the
+ * shell's real top bar and sidebar frame a body already shaped like the
+ * page that lands (the top bar shows its own placeholders until data).
+ *
+ * @param props The current route; changes during boot update the canvas and the shape.
+ * @returns The loading page.
  */
 function SkeletonPage(props: { route: RouteId }): JSX.Element {
   return (
     <section class="fdt-page @container" data-fdt-page="fetching">
       <PageCanvas id={props.route}>
-        <PageHeader title="Loading page data" />
-        {/* A zero-minimum track lets the fixed short bar's max-width resolve
-            against available space instead of widening the grid intrinsically. */}
-        <div class="mt-1 grid grid-cols-1 gap-2">
-          <Skeleton class="h-14 w-full" />
-          <Skeleton class="h-14 w-full" />
-          <Skeleton class="h-14 w-64 max-w-full" />
-        </div>
+        <PageHeader
+          title="Loading page data"
+          subtitle={<LoadingSubtitle />}
+          actions={<LoadingActions route={props.route} />}
+        />
+        <RouteLoading route={props.route} />
       </PageCanvas>
     </section>
   );

@@ -25,7 +25,6 @@ import {
   resolvePageView,
   scanFailureMessage,
   searchableAssets,
-  scriptLocation,
   splitScriptUrl,
   summarizeResults,
   summaryFacts,
@@ -299,72 +298,42 @@ describe('scan failures', () => {
   });
 });
 
-describe('splitScriptUrl + scriptLocation', () => {
+describe('splitScriptUrl', () => {
   const PAGE = 'https://example.com';
 
-  it('splits file, query and directory, dropping the page’s own host', () => {
-    const parts = splitScriptUrl(
-      'https://example.com/wp-includes/js/jquery/jquery.min.js?ver=3.7.1',
-      PAGE
-    );
-    expect(parts).toEqual({
-      file: 'jquery.min.js',
-      query: '?ver=3.7.1',
-      directory: 'wp-includes/js/jquery/',
+  it('names the file (query dropped) and drops the page’s own host', () => {
+    expect(
+      splitScriptUrl('https://example.com/wp-includes/js/jquery/jquery.min.js?ver=3.7.1', PAGE)
+    ).toEqual({ file: 'jquery.min.js', host: null });
+    expect(splitScriptUrl('https://example.com/main.js', PAGE)).toEqual({
+      file: 'main.js',
       host: null
     });
-    expect(scriptLocation(parts)).toBe('wp-includes/js/jquery/');
   });
 
-  it('shows every directory in one short form: no leading slash, no wp-content/', () => {
-    const plugin = splitScriptUrl(
-      'https://example.com/wp-content/plugins/some-plugin/assets/js/a.js',
-      PAGE
-    );
-    expect(plugin.directory).toBe('plugins/some-plugin/assets/js/');
-    expect(splitScriptUrl('https://example.com/wp-content/themes/t/js/b.js', PAGE).directory).toBe(
-      'themes/t/js/'
-    );
-    // Only the leading WordPress prefix shortens.
+  it('decodes the file for display only', () => {
     expect(
-      splitScriptUrl('https://example.com/blog/wp-content/plugins/p/c.js', PAGE).directory
-    ).toBe('blog/wp-content/plugins/p/');
-    expect(splitScriptUrl('https://example.com/wp-content/uploads/x/d.js', PAGE).directory).toBe(
-      'uploads/x/'
-    );
-    // A root file of the page's own origin has no location line.
-    const root = splitScriptUrl('https://example.com/main.js', PAGE);
-    expect(root.directory).toBe('');
-    expect(scriptLocation(root)).toBe('');
-  });
-
-  it('decodes the directory and file for display only', () => {
-    const parts = splitScriptUrl(
-      'https://example.com/wp-content/plugins/mi%20plugin/js/pr%C3%A9f.js?ver=1',
-      PAGE
-    );
-    expect(parts.directory).toBe('plugins/mi plugin/js/');
-    expect(parts.file).toBe('préf.js');
+      splitScriptUrl(
+        'https://example.com/wp-content/plugins/mi%20plugin/js/pr%C3%A9f.js?ver=1',
+        PAGE
+      ).file
+    ).toBe('préf.js');
     // Undecodable text stays as it is.
     expect(splitScriptUrl('https://example.com/js/a%FF.js', PAGE).file).toBe('a%FF.js');
     // An encoded `/` stays encoded — no fake path separator in a name.
     expect(splitScriptUrl('https://example.com/js/a%2Fb%20c.js', PAGE).file).toBe('a%2Fb c.js');
-    expect(splitScriptUrl('https://example.com/js/x%2fy/z.js', PAGE).directory).toBe('js/x%2fy/');
+    expect(splitScriptUrl('https://example.com/js/x%2fy/z%2f.js', PAGE).file).toBe('z%2f.js');
   });
 
-  it('puts another origin’s host after the directory (the slug survives truncation)', () => {
-    const parts = splitScriptUrl('https://cdn.example.com/wp-content/plugins/p/a.js', PAGE);
-    expect(parts.host).toBe('cdn.example.com');
-    expect(scriptLocation(parts)).toBe('plugins/p/ · cdn.example.com');
+  it('keeps another origin’s host', () => {
+    expect(splitScriptUrl('https://cdn.example.com/wp-content/plugins/p/a.js', PAGE)).toEqual({
+      file: 'a.js',
+      host: 'cdn.example.com'
+    });
     expect(splitScriptUrl('http://localhost:8891/a.js', null)).toEqual({
       file: 'a.js',
-      query: '',
-      directory: '',
       host: 'localhost:8891'
     });
-    expect(scriptLocation(splitScriptUrl('http://localhost:8891/a.js', null))).toBe(
-      'localhost:8891'
-    );
     // Same host, other scheme: another origin.
     expect(splitScriptUrl('http://example.com/a.js', PAGE).host).toBe('example.com');
   });
@@ -377,12 +346,7 @@ describe('splitScriptUrl + scriptLocation', () => {
       'javascript:alert(1)',
       'file:///srv/a.js'
     ]) {
-      expect(splitScriptUrl(url, PAGE)).toEqual({
-        file: url,
-        query: '',
-        directory: '',
-        host: null
-      });
+      expect(splitScriptUrl(url, PAGE)).toEqual({ file: url, host: null });
     }
   });
 });

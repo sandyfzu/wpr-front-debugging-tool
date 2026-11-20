@@ -15,10 +15,12 @@ function asksAnswering(answer: () => Promise<unknown>): TabAsks {
 
 describe('askPageStylesheets', () => {
   it('asks the given tab and returns the guarded inventory', async () => {
-    const asks = asksAnswering(() => Promise.resolve({ styles: [], total: 3 }));
+    const asks = asksAnswering(() =>
+      Promise.resolve({ styles: [], total: 3, snapshotId: 'a'.repeat(32) })
+    );
     await expect(askPageStylesheets(asks, 7)).resolves.toEqual({
       kind: 'reply',
-      reply: { styles: [], total: 3 }
+      reply: { styles: [], total: 3, snapshotId: 'a'.repeat(32) }
     });
     expect(asks.listPageStylesheets).toHaveBeenCalledWith(7);
   });

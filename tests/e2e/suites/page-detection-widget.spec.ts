@@ -17,10 +17,11 @@
  *   never touches the other origin.
  * - **Appearance:** Options tile writes (System/Dark/Light) and emulated OS
  *   `prefers-color-scheme` flips restyle the open pill and card live.
- * - **Reduced motion (D-2):** every shadow duration is collapsed to a frame
- *   (closed and open) and each motion open/close starts is a collapsed
- *   one-shot, read at its start event; a no-preference control proves the
- *   recorder sees the real transition.
+ * - **Reduced motion (D-2):** the token reset drops every shadow node's
+ *   animations and transitions (kept durations collapsed to a frame, closed
+ *   and open), so open/close start no motion — any recorded start would have
+ *   to be a frame-long one-shot; a no-preference control proves the recorder
+ *   sees the real transition.
  * - **Zero markers:** a page with no WP Rocket footprint renders the honest
  *   absence (identity, cache chip, mood, tooltips, footer) and claims no
  *   verdict it does not have.
@@ -317,7 +318,7 @@ async function recordedMotion(
   }, MOTION_LOG);
 }
 
-/** Expect every recorded motion collapsed to a frame and none looping. */
+/** Expect every recorded motion (none, once the reset drops them) a frame long and none looping. */
 function expectCollapsedMotion(
   motion: readonly { event: string; duration: number; iterations: number }[],
   label: string
@@ -332,7 +333,8 @@ function expectCollapsedMotion(
 
 /**
  * Sweep every shadow node's computed animation/transition timing: no
- * infinite iteration, every duration collapsed to the token override's frame.
+ * infinite iteration, every duration at most the token reset's frame (the
+ * reset also drops the properties, so nothing runs at all).
  */
 async function expectCollapsedTimings(page: Page, label: string): Promise<void> {
   const timings = await page.evaluate((host: string) => {
@@ -610,7 +612,7 @@ test.describe('on-page detection widget (fixture origins)', () => {
     }
   });
 
-  test('reduced motion: every shadow duration collapses to a frame (closed and open) and every motion started by open/close is a collapsed one-shot; a no-preference control proves the recorder sees real motion', async ({
+  test('reduced motion: every shadow duration is at most a frame (closed and open) and open/close start no longer motion (the reset drops it); a no-preference control proves the recorder sees real motion', async ({
     extension
   }) => {
     const page = await extension.browserContext.newPage();
@@ -625,10 +627,10 @@ test.describe('on-page detection widget (fixture origins)', () => {
       await settleAnimations(page);
 
       // No infinite loop survives (the pending pulse included) and every
-      // duration is collapsed to the token override's frame — closed, then open.
+      // duration is at most the token reset's frame — closed, then open.
       await expectCollapsedTimings(page, 'closed');
 
-      // Each motion open/close starts is read at its own start event.
+      // Any motion open/close still started would be read at its own start event.
       await watchMotion(page);
       await pill.click();
       await expect(card).toBeVisible();

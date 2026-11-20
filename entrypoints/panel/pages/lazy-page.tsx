@@ -5,25 +5,21 @@
  * the start pays nothing and a visit rarely waits. A plain signal holds the
  * loaded body (no Suspense runtime in the panel's eager bundle).
  *
- * States: loading (the route's titled frame with skeleton sections — a real
+ * States: loading (the route's titled frame over its loading shape — a real
  * wait; focus on its heading moves to the page's own once it lands), failed
- * (named, with the remedy: reloading the panel document, which re-resolves
+ * (named in the page-state card, with the remedy: reloading the panel document, which re-resolves
  * the extension's files), loaded (the page body).
  */
 import type { Component, JSX } from 'solid-js';
 import { Match, Switch } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { ErrorState } from '../../../components/ui/error-state';
-import { Skeleton } from '../../../components/ui/skeleton';
 import { navRoute, type RouteId } from '../routes';
-import {
-  createChunkLoader,
-  mountChunk,
-  prefetchWhenIdle,
-  reloadPanelDocument,
-  type LazyChunkOptions
-} from './chunk-loader';
+import { createChunkLoader, prefetchWhenIdle } from '../../../utils/chunk-loader';
+import { mountChunk, reloadPanelDocument, type LazyChunkOptions } from './chunk-loader';
+import { LoadingActions, LoadingSubtitle, RouteLoading } from './loading-shapes';
 import { PageFrame } from './page-frame';
+import { PageStateCard } from './page-state-card';
 
 /** The failed load's words. */
 export const PAGE_LOAD_FAILED_COPY =
@@ -64,10 +60,14 @@ export function lazyPage(
       <Switch
         fallback={
           <div ref={loadingFrame} class="contents">
-            <PageFrame id={id} title={title}>
-              <div class="grid grid-cols-1 gap-2" data-fdt-page-chunk-loading>
-                <Skeleton class="h-14 w-full" />
-                <Skeleton class="h-14 w-full" />
+            <PageFrame
+              id={id}
+              title={title}
+              subtitle={<LoadingSubtitle />}
+              actions={<LoadingActions route={id} />}
+            >
+              <div class="contents" data-fdt-page-chunk-loading>
+                <RouteLoading route={id} />
               </div>
             </PageFrame>
           </div>
@@ -76,12 +76,14 @@ export function lazyPage(
         <Match when={body()}>{(component) => <Dynamic component={component()} />}</Match>
         <Match when={failed()}>
           <PageFrame id={id} title={title}>
-            <ErrorState
-              title="Couldn't load this page"
-              message={PAGE_LOAD_FAILED_COPY}
-              retryLabel="Reload panel"
-              onRetry={options.reloadPanel ?? reloadPanelDocument}
-            />
+            <PageStateCard>
+              <ErrorState
+                title="Couldn't load this page"
+                message={PAGE_LOAD_FAILED_COPY}
+                retryLabel="Reload panel"
+                onRetry={options.reloadPanel ?? reloadPanelDocument}
+              />
+            </PageStateCard>
           </PageFrame>
         </Match>
       </Switch>

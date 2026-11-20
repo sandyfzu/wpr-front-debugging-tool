@@ -29,6 +29,12 @@
  * 1280px-floor content box. Its lifecycle bindings are here; the judgment
  * is the machine's.
  *
+ * Firefox asks its data consent before an analysis address leaves the
+ * browser (`./performance-consent`): the PageSpeed Insights open goes
+ * through the background, and the analysis page loads its comparison frames
+ * only once allowed (a notice asks otherwise). The Chromium bundle has none
+ * of it (build-time branches).
+ *
  * The on-page UI gate outranks every trigger: while it is off nothing opens
  * the overlay (menu, palette, the auto-open, the reload restore — a gate-off
  * boot consumes the restore record without opening); a gate-off write
@@ -79,6 +85,14 @@ import {
 } from './presentation';
 import { SideBySideOverlay } from './ui';
 import { provideSideBySideTriggers } from '../palette/side-by-side-triggers';
+import {
+  checkAnalysisConsent,
+  openPerformanceWithConsent,
+  reloadAfterConsent,
+  restoredPageNeedsCheck,
+  type PerformanceConsentDeps
+} from './performance-consent';
+import { pageNoticeHost } from '../palette/notice';
 import './side-by-side.css';
 
 const log = createLogger('side-by-side');
@@ -234,7 +248,7 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       return answer;
     },
     refreshHalves: (): void => {
-      for (const side of COMPARE_SIDES) refreshFrame(side);
+      refreshFrames(COMPARE_SIDES);
     },
     // Both never reject: the persist helpers degrade internally, on the
     // shared chain (two switches' writes never interleave).
@@ -324,7 +338,7 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   };
 
   /**
-   * Refresh one side: same-origin frames reload in place (a real reload,
+   * Reload one side: same-origin frames reload in place (a real reload,
    * with its network and cache semantics, keeping the frame's history);
    * cross-origin frames (the analyses) reject the reload probe, and a frame
    * whose browsing context has not been created yet has nothing to probe —
@@ -334,7 +348,7 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
    * a stale identity, and assigning onto the empty attribute would resolve
    * it against the host document (the frame would navigate into the page).
    */
-  const refreshFrame = (side: CompareSide): void => {
+  const reloadFrame = (side: CompareSide): void => {
     const frame = frames[side];
     if (frame === undefined) return;
     if (frame.getAttribute('src') === null) return;
@@ -389,6 +403,43 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
     log.info('The Side-by-Side open was dropped: on-page UI turned off');
   };
 
+  /** The PageSpeed Insights consent steps' wiring (Firefox only; built per use). */
+  const performanceConsentDeps = (): PerformanceConsentDeps => ({
+    ask: (next, mode) => sendMessage('askDataConsent', { feature: 'pagespeed', next, mode }),
+    notify: (notice) => {
+      if (!ctx.isInvalid) pageNoticeHost(ctx, log).show(notice);
+    },
+    log
+  });
+
+  /**
+   * Refresh sides ({@link reloadFrame}). Firefox's analysis page checks its
+   * consent again first: a grant revoked since the open reloads nothing (a
+   * notice asks). Sides with nothing loaded are skipped up front.
+   *
+   * @param sides The sides to refresh.
+   */
+  const refreshFrames = (sides: readonly CompareSide[]): void => {
+    const loaded = sides.filter((side) => frames[side]?.getAttribute('src') != null);
+    if (loaded.length === 0) return;
+    const reload = (): void => {
+      if (!ctx.isInvalid) for (const side of loaded) reloadFrame(side);
+    };
+    // Build-time branch: the Chromium bundle reloads directly.
+    if (import.meta.env.BROWSER === 'firefox' && isAutoFlowPage()) {
+      void reloadAfterConsent(window.location.href, reload, performanceConsentDeps());
+      return;
+    }
+    reload();
+  };
+
+  /** The overlay's open again (a consent notice's Try again or a grant). */
+  const retryOpenOverlay = (): void => {
+    openOverlay().catch((cause: unknown) => {
+      log.error('Opening the overlay again failed', cause);
+    });
+  };
+
   /** The single open path for both the context menu and the auto-open. */
   const openOverlay = async (): Promise<void> => {
     // The two boot triggers (the carried flow and the reload restore) and
@@ -401,6 +452,16 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       return;
     }
     try {
+      // Firefox: the analysis frames carry the site's address off-device —
+      // they load only once allowed (otherwise a notice asks; nothing loads).
+      if (import.meta.env.BROWSER === 'firefox' && isAutoFlowPage()) {
+        const allowed = await checkAnalysisConsent(
+          window.location.href,
+          retryOpenOverlay,
+          performanceConsentDeps()
+        );
+        if (!allowed || ticket.cut()) return;
+      }
       // First open: capture the scroll baseline and resolve the URL pair once.
       if (urls === null) {
         overflow.html = document.documentElement.style.overflow;
@@ -544,7 +605,9 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
           registerColumn={(side, column) => {
             columns[side] = column ?? undefined;
           }}
-          refresh={refreshFrame}
+          refresh={(side) => {
+            refreshFrames([side]);
+          }}
           close={close}
           syncEnabled={syncOn}
           syncBlocked={(side) => syncBlocked()[side] === true}
@@ -588,13 +651,20 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   /**
    * The PageSpeed Insights flow's entry: the analysis tab for this page.
    * On the analysis host itself it is a no-op (analysis flows start from a
-   * site, never from PSI).
+   * site, never from PSI). Firefox goes through the background, which asks
+   * its data consent first and opens the tab itself (`./performance-consent`).
    */
   const openPerformanceFlow = (): void => {
     if (ctx.isInvalid) return;
     if (isPsiHost(new URL(window.location.href))) return;
     const entryUrl = psiEntryUrl(new URL(window.location.href));
-    if (entryUrl !== null) window.open(entryUrl, '_blank', 'noopener');
+    if (entryUrl === null) return;
+    // Build-time branch: the Chromium bundle opens directly, with no consent code.
+    if (import.meta.env.BROWSER === 'firefox') {
+      void openPerformanceWithConsent(entryUrl, openPerformanceFlow, performanceConsentDeps());
+      return;
+    }
+    window.open(entryUrl, '_blank', 'noopener');
   };
 
   // The menu's receivers and the on-page palette call the same two
@@ -669,6 +739,23 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
     ctx.addEventListener(window, 'DOMContentLoaded', bootReady);
   } else {
     bootReady();
+  }
+
+  // Firefox: Back to the analysis page from the back/forward cache (e.g.
+  // from an unanswered consent page) runs no boot — ask its consent again,
+  // so frames or a notice show (build-time branch: not in Chromium).
+  if (import.meta.env.BROWSER === 'firefox') {
+    // An event listener, not a tracked scope: it reads the open state once per show.
+    // eslint-disable-next-line solid/reactivity
+    ctx.addEventListener(window, 'pageshow', (event) => {
+      const again = restoredPageNeedsCheck({
+        persisted: event.persisted,
+        autoFlow: isAutoFlowPage(),
+        open: isOpen(),
+        opening: openGuard.inFlight()
+      });
+      if (again && !ctx.isInvalid) retryOpenOverlay();
+    });
   }
 
   // An extension reload while the overlay is up must not leave the page

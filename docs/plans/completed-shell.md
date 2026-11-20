@@ -26,6 +26,7 @@ Evidence: eval executes against real test elements; fake-browser search/error te
 
 ## Navigation (P5D and owner revisions)
 
+- **Superseded by [P23](./completed-panel-redesign.md) (owner 2026-11-18):** the rail-only rule becomes labeled sidebar + rail (UX-D2/D15/D16).
 - One real anchor/registry row, AT-named groups, aria-current, disabled explained reserved row. Live selectors: delayed X/Y; undefined N/Monitoring/silent once settled; lazy/preload counts only when inventory known. No duplicated Detections identity/freshness badge. Throwing selector logs row/cause and degrades **that row** stateless, then can recover.
 - Retired wide top bar/container morphology removed2026-10-13 after owner found ugly/scrolling wide form; tooltips moved **right**, never over next row. Browser pins320/300/280px tooltip gutter/hit-test and rail-only resize behavior. P5J redesigns, never restores deleted threshold blindly.
 - Height overflow uses `visibleRowsInRail` pure prefix/suffix over **measured** row boxes; invisible pointer/AT-inert zero-box geometry stub follows real registry/layout. Degenerate measurements retain current slice, never hide rows. ResizeObserver seam cleans up.32px rows, group lead6+1+6,4px row gap.
@@ -42,6 +43,7 @@ Evidence: eval executes against real test elements; fake-browser search/error te
 
 ## Status (P5F)
 
+- **Superseded by [P23](./completed-panel-redesign.md) (owner 2026-11-18):** the footer is replaced by the top bar (UX-D1/D8).
 - Full-width persistent footer outside content/rail; four segments through pure selectors, each contained against failure. Identity/cache/platform link to Detections; freshness text only. Unknown header values vs no capture are distinct; server then x-powered-by, case-insensitive first wins.
 - Cached with valid stamp shows age; without representable stamp Cached only; absent plugin cache dash, not “Not cached.” Shared representability guard prevents hostile finite epoch crashing all answers.64-char versions elide inside chip.
 - Clock30s while loaded+visible only, pause/resume immediate read, cleanup/idempotence; non-keyed Solid children read accessors, not frozen narrowed const. Stale threshold **10min**, owner changed2min2026-10-14. Freshness time is last **full settle**, patches do not freshen snapshot; remedy accessible, not hover-only.

@@ -1,19 +1,17 @@
 /**
- * The palette's visible trigger: the shell's icon button for mouse users,
- * placed in the header's top block beside the brand mark. The rail is the
- * interim header geometry (the band redesign is a later phase's committed
- * pass), and this top block is where keyboard users' entry point — the
- * shortcut — and mouse users' entry point belong in the same spot: the
- * palette button is the rail's first control above the nav rows.
+ * The palette's visible trigger: the top bar's mouse entry point to the
+ * command palette (the keyboard's is the chord). Two forms, one control:
+ * a search-styled button ("Jump to…" with the key hint) on a full-width
+ * bar, and a square search icon on a folded one.
  *
- * The shortcut hint lives in the tooltip (mouse users get it before they
- * learn the key), and the button names itself for assistive tech while
- * carrying `aria-haspopup`/`aria-expanded` for the dialog it opens.
+ * The shortcut hint also lives in the tooltip (mouse users get it before
+ * they learn the key), and the button names itself for assistive tech
+ * while carrying `aria-haspopup`/`aria-expanded` for the dialog it opens.
  */
-import type { JSX } from 'solid-js';
-import Command from 'lucide-solid/icons/command';
+import { Show, type JSX } from 'solid-js';
+import Search from 'lucide-solid/icons/search';
+import { KEY_CHIP } from '../../../components/ui/classes';
 import { Tooltip } from '../../../components/ui/tooltip';
-import { FOCUS_RING } from '../../../components/ui/classes';
 import { cn } from '../../../utils/cn';
 
 export interface PaletteTriggerProps {
@@ -21,21 +19,47 @@ export interface PaletteTriggerProps {
   open: () => boolean;
   /** Toggle the palette (click). */
   toggle: () => void;
+  /** The search-styled form (true) or the square icon (false). */
+  wide: () => boolean;
+  /** The fixed chord in the platform's notation (the wide form's inline hint). */
+  keyHint: () => string;
 }
 
-/** The trigger: a 24px-floor icon button in the brand row. */
-const TRIGGER_CLASSES =
-  'inline-grid size-6 shrink-0 place-items-center rounded text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
+/**
+ * The wide form: a search field look (surface, hairline, muted words),
+ * sized to its content — the words and the key chip always whole, whatever
+ * the chip reads ("⌘K", "Ctrl+K") or the font renders — from a 7.5 rem
+ * floor, nothing more: the full bar's every answer competes for the same
+ * row, and the bar's fold measures this slot as laid out.
+ */
+const WIDE_CLASSES =
+  'flex h-7 min-w-30 shrink-0 items-center gap-1 rounded-control border border-line-2 bg-surface-2 px-1.5 text-xs text-fg-muted hover:border-line-3 hover:text-fg-secondary';
+
+/** The folded form: a 28 px ghost square. */
+const ICON_CLASSES =
+  'inline-grid size-7 shrink-0 place-items-center rounded-control text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
+
+/**
+ * The inline key chip ({@link KEY_CHIP}). Decorative (the tooltip carries the
+ * keys): its text is generated content from `data-key-hint`, so it is not
+ * part of the button's visible label, which must stay inside the accessible
+ * name.
+ */
+const KEY_HINT = cn(KEY_CHIP, 'after:content-[attr(data-key-hint)]');
+
+/** The trigger's accessible name in each form (the wide one starts with its visible words). */
+export const PALETTE_TRIGGER_LABELS = {
+  wide: 'Jump to… — Command palette',
+  icon: 'Command palette'
+} as const;
 
 /**
  * Render the palette trigger.
  *
- * The tooltip names + keys (the unobtrusive reiteration; the button's own
- * `aria-label` is what assistive tech reads), and the tooltip floats to the
- * row's right like every other rail control.
- *
  * @param props.open The palette's open state accessor.
  * @param props.toggle The toggle callback.
+ * @param props.wide Picks the form.
+ * @param props.keyHint The inline key hint.
  */
 export function PaletteTrigger(props: PaletteTriggerProps): JSX.Element {
   return (
@@ -46,16 +70,22 @@ export function PaletteTrigger(props: PaletteTriggerProps): JSX.Element {
           <span class="block text-2xs text-fg-secondary">Ctrl / ⌘ K</span>
         </>
       }
-      placement="right"
-      class={cn(TRIGGER_CLASSES, FOCUS_RING)}
-      ariaLabel="Command palette"
+      placement="bottom"
+      class={props.wide() ? WIDE_CLASSES : ICON_CLASSES}
+      ariaLabel={props.wide() ? PALETTE_TRIGGER_LABELS.wide : PALETTE_TRIGGER_LABELS.icon}
       ariaHasPopup="dialog"
       ariaExpanded={props.open()}
       onClick={() => {
         props.toggle();
       }}
     >
-      <Command size={14} aria-hidden="true" />
+      <Search size={14} aria-hidden="true" class="shrink-0" />
+      <Show when={props.wide()}>
+        {/* Never elided: the button grows to hold the words (`flex-1`
+            only spends the floor's spare room, keeping the chip at the end). */}
+        <span class="flex-1 whitespace-nowrap text-start">Jump to…</span>
+        <kbd class={KEY_HINT} data-key-hint={props.keyHint()} aria-hidden="true" />
+      </Show>
     </Tooltip>
   );
 }

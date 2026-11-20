@@ -1,19 +1,12 @@
 /**
  * Row identity for the JavaScript page: rows are keyed by the script itself,
  * never by document position, so a script added or removed above leaves
- * every other row's key — its DOM, its expanded flag — untouched.
+ * every other row's key — its DOM, its selection — untouched.
  */
 import type { JsScriptResource } from '../../../../lib/panel/resources-view-model';
 import { reconcileList } from '../../../../lib/panel/list-behavior';
 import { NO_SCRIPT_SIMULATION, type ScriptSimulation } from '../../../../lib/panel/script-states';
-import {
-  inlineCode,
-  originalTypeDetail,
-  sameScript,
-  scriptChipSplit,
-  type ContentCapture,
-  type ScriptRowView
-} from './script-view';
+import { sameScript, scriptRowView, type ContentCapture, type ScriptRowView } from './script-view';
 
 /** How much of an inline script's head and tail its signature hashes. */
 const SIGNATURE_EDGE_CHARS = 512;
@@ -67,41 +60,6 @@ export function scriptKeys(rows: readonly JsScriptResource[]): string[] {
 }
 
 /**
- * A DOM-id-safe token for a key (`aria-controls` targets): two independent
- * 32-bit hashes, so ids collide only by chance across ~2^64.
- *
- * @param key The row key.
- */
-export function domIdOf(key: string): string {
-  return `fdt-js-code-${fnv1a(key).toString(36)}${fnv1a(key, 0x01000193).toString(36)}`;
-}
-
-/**
- * Build one row view.
- *
- * @param row The classified script.
- * @param key The row's key.
- * @param capture How much inline text was captured.
- * @param simulation The features a verified simulation ran on the page.
- */
-export function buildRowView(
-  row: JsScriptResource,
-  key: string,
-  capture: ContentCapture = 'complete',
-  simulation: ScriptSimulation = NO_SCRIPT_SIMULATION
-): ScriptRowView {
-  return {
-    key,
-    domId: domIdOf(key),
-    row,
-    capture,
-    chips: scriptChipSplit(row, simulation),
-    typeDetail: originalTypeDetail(row),
-    code: row.type === 'inline' ? inlineCode(row.content) : null
-  };
-}
-
-/**
  * Build the row views for a fresh row list, reusing every previous view whose
  * key, script data and capture state are unchanged (whatever its position).
  * A soft refresh of an unchanged page hands the list the very same objects —
@@ -139,6 +97,6 @@ export function reconcileRowViews(
     (_row, index) => keyAt(index),
     (prior, row, index) =>
       prior.capture === (captures[index] ?? 'complete') && sameScript(prior.row, row),
-    (row, index) => buildRowView(row, keyAt(index), captures[index] ?? 'complete', simulation)
+    (row, index) => scriptRowView(row, keyAt(index), captures[index] ?? 'complete', simulation)
   );
 }

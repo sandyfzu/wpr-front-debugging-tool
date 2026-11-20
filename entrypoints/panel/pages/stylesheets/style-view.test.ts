@@ -1,23 +1,35 @@
 /**
  * The Stylesheets page's pure rules: chips per state (label, source, hover
- * text naming the feature), the "+N" split, row views and their reuse test,
- * seed heights, the cut line, and every page state the read machine maps to.
+ * text naming the feature), the row views (names, previews, sizes and bars,
+ * the "+N" split), content keys and the reuse tests, the detail's kind and
+ * facts, the cut line, and every page state the read machine maps to.
  */
 import { describe, expect, it } from 'vitest';
 import type { PageStylesheetsReply } from '../../../../lib/messaging/page-stylesheets';
 import type { CssStyleResource } from '../../../../lib/panel/style-states';
 import type { AskRunState, ShownAnswer } from '../ask-run';
 import {
-  STYLE_ROW_ESTIMATE,
-  estimateStyleRow,
+  CRITICAL_SNAPSHOT_NOTE,
+  SNAPSHOT_ROW_KEY,
+  isListCut,
   listCutNote,
-  mediaDetail,
   sameStyleRow,
+  sameStyleView,
+  styleFacts,
+  styleKind,
+  styleRowKeys,
   styleRowViews,
+  styleSearchField,
   styleStateChips,
   stylesheetsView,
+  unchangedStylesNotice,
+  UNCHANGED_STYLES_TITLE,
   type StylesheetsOutcome
 } from './style-view';
+import { buildStatusItems, type StatusItem } from '../../../../lib/panel/detections-view-model';
+import { emptyDetections, makeReportData } from '../../../../lib/panel/support-report.fixtures';
+import type { BuilderFact, FeatureEvidenceSource } from '../../../../lib/wp-rocket/types';
+import { EMPTY_STYLE_PREVIEW, NO_HREF_NAME } from '../resource-list/style-words';
 
 /** A classified row with overrides. */
 function row(overrides: Partial<CssStyleResource> = {}): CssStyleResource {
@@ -33,6 +45,7 @@ function row(overrides: Partial<CssStyleResource> = {}): CssStyleResource {
     chars: 0,
     content: 'https://s.test/a.css',
     minified: false,
+    minifyAttribute: false,
     critical: false,
     rocketAsync: false,
     hostedFont: false,
@@ -40,7 +53,7 @@ function row(overrides: Partial<CssStyleResource> = {}): CssStyleResource {
   };
 }
 
-const REPLY: PageStylesheetsReply = { styles: [], total: 0 };
+const REPLY: PageStylesheetsReply = { styles: [], total: 0, snapshotId: 'a'.repeat(32) };
 
 /** One answer on screen. */
 function answer(outcome: StylesheetsOutcome, sequence = 1): ShownAnswer<StylesheetsOutcome> {
@@ -107,44 +120,101 @@ describe('styleStateChips', () => {
 });
 
 describe('styleRowViews', () => {
-  it('splits a row past three chips into three and "+N", naming the hidden ones', () => {
+  it('splits a row past two chips into two and "+N", keeping every chip for the detail', () => {
     const [view] = styleRowViews([
       row({ rocketAsync: true, minified: true, hostedFont: true, critical: true })
     ]);
-    expect(view?.chips.visible.map((chip) => chip.label)).toEqual([
-      'Critical',
-      'Async',
-      'Minified'
-    ]);
-    // The hidden Font is WP Rocket's: the "+N" chip carries the rocket.
-    expect(view?.chips.overflow).toEqual({
-      label: '+1',
-      title: 'Also: Font (WP Rocket)',
+    expect(view?.rowChips.visible.map((chip) => chip.label)).toEqual(['Critical', 'Async']);
+    // The hidden ones are WP Rocket's: the "+N" chip carries the rocket.
+    expect(view?.rowChips.overflow).toEqual({
+      label: '+2',
+      title: 'Also: Minified (WP Rocket), Font (WP Rocket)',
       hidesWpRocket: true
     });
+    expect(view?.chips.map((chip) => chip.id)).toEqual(['critical', 'async', 'minified', 'font']);
   });
 
-  it('builds the identity once per view', () => {
-    const [view] = styleRowViews([row({ type: 'inline', elementId: 'a', className: 'b c' })]);
-    expect(view?.identity).toBe('#a.b.c');
-    expect(view?.chips.visible).toEqual([]);
+  it('names links by file name, inline styles by #id.class or ordinal among inline styles', () => {
+    const views = styleRowViews([
+      row({ href: 'https://s.test/a/theme.css?ver=2' }),
+      row({ href: '' }),
+      row({ type: 'inline', elementId: 'a', className: 'b c', href: '' }),
+      row({ type: 'inline', href: '' }),
+      row({ type: 'inline', href: '' })
+    ]);
+    expect(views.map((view) => [view.name, view.monoName])).toEqual([
+      ['theme.css', false],
+      [NO_HREF_NAME, false],
+      ['#a.b.c', true],
+      ['Inline style #2', false],
+      ['Inline style #3', false]
+    ]);
+  });
+
+  it('previews URLs without scheme, CSS or Empty, media first; the snapshot row its note', () => {
+    const views = styleRowViews([
+      row({ href: 'https://s.test/a.css', media: 'print' }),
+      row({ type: 'inline', href: '', preview: 'a{b:c}' }),
+      row({ type: 'inline', href: '', preview: '' }),
+      row({ type: 'inline', href: '', source: 'snapshot', elementId: 'rocket-critical-css' })
+    ]);
+    expect(views.map((view) => view.preview)).toEqual([
+      'media: print · s.test/a.css',
+      'a{b:c}',
+      EMPTY_STYLE_PREVIEW,
+      CRITICAL_SNAPSHOT_NOTE
+    ]);
+  });
+
+  it('sizes live inline styles only, the bar on a square-root scale of the largest', () => {
+    const views = styleRowViews([
+      row({ type: 'inline', chars: 10_000 }),
+      row({ type: 'inline', chars: 2_500 }),
+      row({ type: 'inline', chars: 1 }),
+      row({ chars: 0 }),
+      row({ type: 'inline', source: 'snapshot', chars: 0 })
+    ]);
+    expect(views.map((view) => view.size)).toEqual(['10K', '2.5K', '1', undefined, undefined]);
+    expect(views.map((view) => view.sizeShare)).toEqual([1, 0.5, 0.02, undefined, undefined]);
   });
 });
 
-describe('mediaDetail', () => {
-  it('hides no media and the default all, names anything else', () => {
-    expect(mediaDetail('')).toBeNull();
-    expect(mediaDetail(' ALL ')).toBeNull();
-    expect(mediaDetail('print')).toBe('media: print');
-    expect(mediaDetail(' (max-width: 600px) ')).toBe('media: (max-width: 600px)');
-    expect(styleRowViews([row({ media: 'all' })])[0]?.mediaDetail).toBeNull();
+describe('styleRowKeys', () => {
+  it('keys live rows by content and counts exact duplicates; the snapshot row has its own', () => {
+    const rows = [
+      row({ source: 'snapshot', type: 'inline', elementId: 'rocket-critical-css' }),
+      row({ href: 'https://s.test/a.css' }),
+      row({ href: 'https://s.test/a.css' }),
+      row({ type: 'inline', href: '', preview: 'x{}' })
+    ];
+    const keys = styleRowKeys(rows);
+    expect(keys[0]).toBe(SNAPSHOT_ROW_KEY);
+    expect(new Set(keys).size).toBe(4);
+    // A style added above keeps every key below it.
+    const shifted = styleRowKeys([row({ href: 'https://s.test/new.css' }), ...rows.slice(1)]);
+    expect(shifted.slice(1)).toEqual(keys.slice(1));
+  });
+
+  it('changes the key when an identifying field changes, not when the size does', () => {
+    const base = row({ type: 'inline', href: '', elementId: 'a', preview: 'x' });
+    const [key] = styleRowKeys([base]);
+    expect(styleRowKeys([{ ...base, chars: 99, minified: true }])[0]).toBe(key);
+    for (const change of [
+      { type: 'external' },
+      { elementId: 'b' },
+      { href: 'h' },
+      { className: 'c' },
+      { media: 'print' },
+      { preview: 'y' }
+    ] as const) {
+      expect(styleRowKeys([{ ...base, ...change }])[0], JSON.stringify(change)).not.toBe(key);
+    }
   });
 });
 
-describe('sameStyleRow', () => {
+describe('sameStyleRow / sameStyleView', () => {
   it('holds for equal fields and breaks on any shown or state field', () => {
-    const [base] = styleRowViews([row()]);
-    if (base === undefined) throw new Error('no view');
+    const base = row();
     expect(sameStyleRow(base, { ...base })).toBe(true);
     for (const change of [
       { type: 'inline' },
@@ -156,6 +226,7 @@ describe('sameStyleRow', () => {
       { preview: 'x' },
       { chars: 1 },
       { minified: true },
+      { minifyAttribute: true },
       { critical: true },
       { rocketAsync: true },
       { hostedFont: true }
@@ -163,14 +234,59 @@ describe('sameStyleRow', () => {
       expect(sameStyleRow(base, { ...base, ...change }), JSON.stringify(change)).toBe(false);
     }
   });
+
+  it('breaks a view on a moved row (the CSS read addresses its position)', () => {
+    const [view] = styleRowViews([row()]);
+    const [moved] = styleRowViews([row({ id: 3 })]);
+    if (view === undefined || moved === undefined) throw new Error('no views');
+    expect(sameStyleView(view, styleRowViews([row()])[0] as typeof view)).toBe(true);
+    expect(sameStyleView(view, moved)).toBe(false);
+  });
 });
 
-describe('estimateStyleRow', () => {
-  it('seeds each type with its own height', () => {
-    const [external, inline] = styleRowViews([row(), row({ type: 'inline' })]);
-    if (external === undefined || inline === undefined) throw new Error('no views');
-    expect(estimateStyleRow(external)).toBe(STYLE_ROW_ESTIMATE.external);
-    expect(estimateStyleRow(inline)).toBe(STYLE_ROW_ESTIMATE.inline);
+describe('styleKind + styleFacts + styleSearchField', () => {
+  it('names the kind of each row', () => {
+    const [link, inline, snapshot] = styleRowViews([
+      row(),
+      row({ type: 'inline' }),
+      row({ type: 'inline', source: 'snapshot' })
+    ]);
+    expect([link, inline, snapshot].map((view) => (view ? styleKind(view) : ''))).toEqual([
+      'Stylesheet link',
+      'Inline style',
+      'Critical-path style'
+    ]);
+  });
+
+  it('lists only the facts that hold', () => {
+    const [plain, stamped, inline] = styleRowViews([
+      row(),
+      row({
+        elementId: 'i',
+        media: 'print',
+        rocketAsync: true,
+        minifyAttribute: true,
+        hostedFont: true
+      }),
+      row({ type: 'inline', elementId: 'i', chars: 1_234 })
+    ]);
+    expect(plain ? styleFacts(plain) : null).toEqual([]);
+    expect(stamped ? styleFacts(stamped).map((fact) => fact.label) : null).toEqual([
+      'Element',
+      'Media',
+      'Async stamp',
+      'Minify stamp',
+      'Hosted font'
+    ]);
+    // An inline style's identity is its name: no Element fact.
+    expect(inline ? styleFacts(inline) : null).toEqual([
+      { label: 'Size', value: '1,234 characters', mono: false }
+    ]);
+  });
+
+  it('searches the row’s searched field', () => {
+    const [view] = styleRowViews([row({ content: 'needle' })]);
+    expect(view ? styleSearchField(view) : '').toBe('needle');
   });
 });
 
@@ -228,5 +344,120 @@ describe('stylesheetsView', () => {
       status: 'failed',
       miss: 'timeout'
     });
+  });
+});
+
+describe('unchangedStylesNotice', () => {
+  /** A style row's detection fields: presence, the deciding evidence, the builder's fact. */
+  type Row = { present?: boolean; source?: FeatureEvidenceSource; builder?: BuilderFact };
+  type StyleRows = Partial<
+    Record<
+      | 'remove_unused_css'
+      | 'async_css'
+      | 'minify_css'
+      | 'lazyload_css_bg_img'
+      | 'self_hosted_fonts',
+      Row
+    >
+  >;
+  /** A meta that refuted the row (decided off): never an unknown verdict. */
+  const OFF: Row = { present: false, source: 'meta' };
+  /** A row WP Rocket applied on the page. */
+  const ON: Row = { present: true, source: 'footprint' };
+  const ALL_OFF: StyleRows = {
+    remove_unused_css: OFF,
+    async_css: OFF,
+    minify_css: OFF,
+    lazyload_css_bg_img: OFF,
+    self_hosted_fonts: OFF
+  };
+
+  /**
+   * The Detections cards of a page with WP Rocket proven (or not) and the
+   * given style rows — built by the cards' own builder, so the note is
+   * checked against the verdicts Detections shows.
+   */
+  function cards(rows: StyleRows = ALL_OFF, wpr = true): StatusItem[] {
+    const detections = emptyDetections();
+    detections.wpr.present = wpr;
+    for (const [id, fields] of Object.entries(rows) as [keyof StyleRows, Row][]) {
+      Object.assign(detections[id], fields);
+    }
+    return buildStatusItems(makeReportData({ wprDetections: detections }));
+  }
+  const plain = styleRowViews([row(), row({ id: 1, href: 'https://s.test/b.css' })]);
+  /** The whole list read (total = listed; only the counts matter). */
+  const whole: Pick<PageStylesheetsReply, 'styles' | 'total'> = {
+    styles: new Array(plain.length).fill(null) as never,
+    total: plain.length
+  };
+
+  it('names every style feature whose card says off when no row carries a state', () => {
+    expect(unchangedStylesNotice(whole, plain, cards())).toEqual({
+      title: UNCHANGED_STYLES_TITLE,
+      detail:
+        'Optimize CSS delivery, Minify CSS files, LazyLoad CSS backgrounds and Self-host Google Fonts are off.'
+    });
+  });
+
+  it('never names a feature its card shows unknown (a generator meta without features)', () => {
+    // No row decided by the meta: Self-host Google Fonts cannot prove absence.
+    const undecided = cards({});
+    expect(undecided.find((card) => card.id === 'self_hosted_fonts')?.status).toBe('unknown');
+    expect(unchangedStylesNotice(whole, plain, undecided)?.detail).toBe(
+      'Optimize CSS delivery, Minify CSS files and LazyLoad CSS backgrounds are off.'
+    );
+  });
+
+  it('names only the features that are off (one: "is off"; none: no detail)', () => {
+    expect(
+      unchangedStylesNotice(
+        whole,
+        plain,
+        cards({ ...ALL_OFF, async_css: ON, lazyload_css_bg_img: ON, self_hosted_fonts: ON })
+      )?.detail
+    ).toBe('Minify CSS files is off.');
+    expect(
+      unchangedStylesNotice(
+        whole,
+        plain,
+        cards({
+          remove_unused_css: ON,
+          minify_css: ON,
+          lazyload_css_bg_img: ON,
+          self_hosted_fonts: ON
+        })
+      )
+    ).toEqual({ title: UNCHANGED_STYLES_TITLE, detail: null });
+  });
+
+  it('names a served feature the Exclusion Builder turned off in this tab (the card counts it off)', () => {
+    const onAll: StyleRows = {
+      remove_unused_css: ON,
+      lazyload_css_bg_img: ON,
+      self_hosted_fonts: ON
+    };
+    const builderOff = cards({ ...onAll, minify_css: { ...ON, builder: { off: 'feature' } } });
+    expect(unchangedStylesNotice(whole, plain, builderOff)?.detail).toBe(
+      'Minify CSS files is off.'
+    );
+    const excluded = cards({ ...onAll, minify_css: { ...ON, builder: { excluded: 2 } } });
+    expect(unchangedStylesNotice(whole, plain, excluded)?.detail).toBeNull();
+  });
+
+  it('stays away while the list is cut (a style past the cut may show a change)', () => {
+    expect(isListCut(whole)).toBe(false);
+    expect(isListCut({ ...whole, total: whole.total + 1 })).toBe(true);
+    expect(unchangedStylesNotice({ ...whole, total: whole.total + 1 }, plain, cards())).toBeNull();
+    // The cut line and the note never speak together.
+    expect(listCutNote({ ...whole, total: whole.total + 1 })).not.toBeNull();
+  });
+
+  it('stays away when a row carries a state, the list is empty, WP Rocket is not proven or data is missing', () => {
+    const changed = styleRowViews([row(), row({ id: 1, minified: true })]);
+    expect(unchangedStylesNotice(whole, changed, cards())).toBeNull();
+    expect(unchangedStylesNotice({ styles: [], total: 0 }, [], cards())).toBeNull();
+    expect(unchangedStylesNotice(whole, plain, cards(ALL_OFF, false))).toBeNull();
+    expect(unchangedStylesNotice(whole, plain, null)).toBeNull();
   });
 });

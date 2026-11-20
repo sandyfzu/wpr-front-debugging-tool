@@ -1,5 +1,5 @@
 /**
- * P9.1 — the Known Conflicts freshness row's browser suite, over the real
+ * The Known Conflicts freshness row's browser suite, over the real
  * background service and the real endpoint.
  *
  * Assert surfaces, named per test: the row's rendered state (stamp text /

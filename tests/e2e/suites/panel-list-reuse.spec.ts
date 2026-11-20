@@ -1,5 +1,12 @@
 /** Refresh reuse through real capture, boundary validation and panel pushes. */
+import type { Locator } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import {
+  facetCount,
+  openScriptDetail,
+  scriptDetail,
+  scriptRowNamed
+} from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
 import { bundleModuleForPage } from '../helpers/page-bundle';
 
@@ -97,7 +104,7 @@ test('focus restoration in Chromium requires a real move and respects transfer, 
   }
 });
 
-test('script occurrence keys and expanded state survive insertion/reorder and prune on removal', async ({
+test('script occurrence keys and the open detail survive insertion/reorder and prune on removal', async ({
   extension
 }) => {
   const pattern = '**/pipeline/script-reuse.html*';
@@ -120,20 +127,23 @@ test('script occurrence keys and expanded state survive insertion/reorder and pr
   try {
     await panel.emulateMedia({ reducedMotion: 'reduce' });
     const root = panel.locator('[data-fdt-page="javascript"]');
-    const chip = root.locator('[data-fdt-filter-chip="all"]');
-    await expect(chip).toHaveAccessibleName('Show all 3 matching');
-    const toggle = root.locator('[data-fdt="script-code-toggle"]');
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await toggle.focus();
-    const focused = await toggle.elementHandle();
-    const duplicates = await root
-      .locator('[data-fdt="script-row"][data-fdt-script-type="external"]')
-      .elementHandles();
+    // Every row counted: the Delay facet's Any segment.
+    const total = facetCount(root, 'any', 'Delay');
+    await expect(total).toHaveText('3');
+    // The inline row's detail (the side pane) holds per-row state: its Wrap.
+    const inlineRow = scriptRowNamed(root, 'Inline script #1');
+    const detail = await openScriptDetail(panel, inlineRow);
+    const wrap: Locator = detail.locator('[data-fdt="script-source"] [data-fdt-code-block-wrap]');
+    await wrap.click();
+    await expect(wrap).toHaveAttribute('aria-pressed', 'true');
+    const open = inlineRow.locator('[data-fdt-row-open]');
+    await open.focus();
+    const focused = await open.elementHandle();
+    const duplicates = await scriptRowNamed(root, 'repeated.js').elementHandles();
     expect(duplicates).toHaveLength(2);
     scripts = [added, inline, duplicate, duplicate];
     await fixture.page.reload({ waitUntil: 'load' });
-    await expect(chip).toHaveAccessibleName('Show all 4 matching');
+    await expect(total).toHaveText('4');
     expect(
       await focused.evaluate((element) => ({
         connected: element.isConnected,
@@ -141,17 +151,25 @@ test('script occurrence keys and expanded state survive insertion/reorder and pr
         active: document.activeElement?.outerHTML
       }))
     ).toMatchObject({ connected: true, focused: true });
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    // Same key through the reorder: the row stays selected, its detail and state kept.
+    await expect(open).toHaveAttribute('aria-current', 'true');
+    await expect(wrap).toHaveAttribute('aria-pressed', 'true');
     for (const row of duplicates)
       expect(await row.evaluate((element) => element.isConnected)).toBe(true);
     scripts = [added, duplicate, duplicate];
     await fixture.page.reload({ waitUntil: 'load' });
-    await expect(chip).toHaveAccessibleName('Show all 3 matching');
+    await expect(total).toHaveText('3');
     expect(await focused.evaluate((element) => element.isConnected)).toBe(false);
+    // Removed: the detail says so, never a silent jump to another row.
+    await expect(scriptDetail(panel).locator('[data-fdt="detail-gone"]')).toBeVisible();
     scripts = [added, inline, duplicate, duplicate];
     await fixture.page.reload({ waitUntil: 'load' });
-    await expect(chip).toHaveAccessibleName('Show all 4 matching');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(total).toHaveText('4');
+    // Back on the page: the selection follows its key, its state was pruned.
+    await expect(scriptDetail(panel).locator('[data-fdt="detail-title"]')).toHaveText(
+      'Inline script #1'
+    );
+    await expect(wrap).toHaveAttribute('aria-pressed', 'false');
     await focused.dispose();
     for (const row of duplicates) await row.dispose();
   } finally {
@@ -178,7 +196,35 @@ function inventory(count: number, revision = 0): string {
     <h1>List reuse</h1>${rows.join('')}</body></html>`;
 }
 
-for (const id of ['javascript', 'lazyload', 'preloaded-resources']) {
+/**
+ * Each list's hooks (every list is calm): its total (its first facet's Any
+ * count), its rows' focusable control (the open button), and its first
+ * row's URL carrier (the row's URL preview).
+ *
+ * @param facet The list's first facet label.
+ */
+function reuseHooks(facet: string): {
+  total: (root: Locator, count: number) => Promise<void>;
+  control: string;
+  firstUrl: (root: Locator) => Promise<void>;
+} {
+  return {
+    total: (root, count) => expect(facetCount(root, 'any', facet)).toHaveText(String(count)),
+    control: '[data-fdt-row-open]',
+    firstUrl: (root) =>
+      expect(root.locator('[data-fdt="list-row-preview"]').first()).toHaveText(/-1\.js$/)
+  };
+}
+
+/** The first facet of each list under test. */
+const FIRST_FACET = {
+  javascript: 'Delay',
+  lazyload: 'Lazyload',
+  'preloaded-resources': 'Source'
+} as const;
+
+for (const id of ['javascript', 'lazyload', 'preloaded-resources'] as const) {
+  const hooks = reuseHooks(FIRST_FACET[id]);
   test(`${id} preserves a focused row and scroll through a captured append/delete refresh`, async ({
     extension
   }) => {
@@ -194,8 +240,7 @@ for (const id of ['javascript', 'lazyload', 'preloaded-resources']) {
     try {
       await panel.emulateMedia({ reducedMotion: 'reduce' });
       const root = panel.locator(`[data-fdt-page="${id}"]`);
-      const chip = root.locator('[data-fdt-filter-chip="all"]');
-      await expect(chip).toHaveAccessibleName('Show all 100 matching');
+      await hooks.total(root, 100);
       const scroller = root.locator('[data-fdt="virtual-list"]');
       await scroller.evaluate((element) => {
         element.scrollTop = 400;
@@ -203,18 +248,16 @@ for (const id of ['javascript', 'lazyload', 'preloaded-resources']) {
       // Focus a currently visible row, not an offscreen overscan entry.
       await expect
         .poll(() =>
-          scroller.evaluate((element) => {
+          scroller.evaluate((element, control) => {
             const bounds = element.getBoundingClientRect();
-            const link = [
-              ...element.querySelectorAll<HTMLAnchorElement>('[data-fdt="external-link"]')
-            ].find((candidate) => {
+            const link = [...element.querySelectorAll<HTMLElement>(control)].find((candidate) => {
               const box = candidate.getBoundingClientRect();
               return box.top >= bounds.top && box.bottom <= bounds.bottom;
             });
             if (link === undefined) return false;
             link.focus();
             return document.activeElement === link;
-          })
+          }, hooks.control)
         )
         .toBe(true);
       const focused = await panel.evaluateHandle(() => document.activeElement);
@@ -223,7 +266,7 @@ for (const id of ['javascript', 'lazyload', 'preloaded-resources']) {
       for (const nextCount of [101, 100]) {
         count = nextCount;
         await fixture.page.reload({ waitUntil: 'load' });
-        await expect(chip).toHaveAccessibleName(`Show all ${String(nextCount)} matching`);
+        await hooks.total(root, nextCount);
         expect(
           await focused.evaluate(
             (element) => element === document.activeElement && element?.isConnected
@@ -236,12 +279,9 @@ for (const id of ['javascript', 'lazyload', 'preloaded-resources']) {
       revision = 1;
       count = 102;
       await fixture.page.reload({ waitUntil: 'load' });
-      await expect(chip).toHaveAccessibleName('Show all 102 matching');
+      await hooks.total(root, 102);
       expect(await focused.evaluate((element) => element?.isConnected)).toBe(false);
-      await expect(root.locator('[data-fdt="external-link"]').first()).toHaveAttribute(
-        'href',
-        /-1\.js$/
-      );
+      await hooks.firstUrl(root);
       expect(await panel.evaluate(() => document.activeElement === document.body)).toBe(true);
       await focused.dispose();
     } finally {

@@ -80,7 +80,8 @@ export interface RucssFetchRequest {
  * The background's answer: the request it sent (its address, for the
  * panel to show) and how it ended — or `refused` when the sender may not
  * ask (not a top-frame http(s) page, a malformed request, a page address
- * off the sender's origin). Nothing is sent when refused.
+ * off the sender's origin), or `consent-missing` when the browser's data
+ * consent is not granted (Firefox). Nothing is sent in either case.
  */
 export type RucssFetchReply =
   | {
@@ -88,7 +89,8 @@ export type RucssFetchReply =
       readonly requestUrl: string;
       readonly outcome: RucssFetchOutcome;
     }
-  | { readonly kind: 'refused' };
+  | { readonly kind: 'refused' }
+  | { readonly kind: 'consent-missing' };
 
 /** Panel → tab: start a run (no page change). */
 export interface RucssStartRequest {
@@ -109,6 +111,8 @@ export type RucssStartFailure =
     }
   /** The background refused the request (see {@link RucssFetchReply}). */
   | { readonly kind: 'refused' }
+  /** The browser's data consent is not granted (see {@link RucssFetchReply}). */
+  | { readonly kind: 'consent-missing' }
   /** The background did not answer (not running, no answer in time, a malformed answer). */
   | { readonly kind: 'background-unreachable' }
   /** A newer start on the same page replaced this one (or the content script's context ended). */
@@ -323,7 +327,9 @@ function parseRucssFetchOutcome(input: unknown): RucssFetchOutcome | null {
 export function parseRucssFetchReply(input: unknown): RucssFetchReply | null {
   if (!isRecord(input)) return null;
   const kind = ownValue(input, 'kind');
-  if (kind === 'refused') return hasOnlyKeys(input, ['kind']) ? { kind } : null;
+  if (kind === 'refused' || kind === 'consent-missing') {
+    return hasOnlyKeys(input, ['kind']) ? { kind } : null;
+  }
   const requestUrl = ownValue(input, 'requestUrl');
   const outcome = parseRucssFetchOutcome(ownValue(input, 'outcome'));
   if (kind !== 'answered' || outcome === null) return null;
@@ -363,6 +369,7 @@ function parseRucssStartFailure(input: unknown): RucssStartFailure | null {
   const kind = ownValue(input, 'kind');
   if (
     kind === 'refused' ||
+    kind === 'consent-missing' ||
     kind === 'background-unreachable' ||
     kind === 'superseded' ||
     kind === 'too-many-styles' ||

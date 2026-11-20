@@ -48,7 +48,7 @@ function headline(): string {
 
 describe('the simulation modifier on the Delay JS card', () => {
   it.each([
-    [true, 'simulated', 'Simulated in this tab', 'Not active', 'lucide-flask-conical'],
+    [true, 'simulated', 'Simulated in this tab', 'Off', 'lucide-flask-conical'],
     [false, 'unverified', 'Simulation not verified', 'Active', 'lucide-shield-question-mark']
   ] as const)(
     'verified=%s: badge %s with its own glyph, the visible sentence, the verdict %s',
@@ -67,7 +67,7 @@ describe('the simulation modifier on the Delay JS card', () => {
           ? "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included."
           : "This page claims a simulation the extension can't confirm, so it's read as served."
       );
-      expect(card.textContent).toContain(verdict);
+      expect(card.querySelector('[data-fdt-card-state]')?.textContent).toContain(verdict);
     }
   );
 

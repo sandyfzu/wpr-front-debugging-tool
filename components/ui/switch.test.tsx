@@ -171,4 +171,21 @@ describe('Switch', () => {
     expect(pointer(trackOf())).toEqual([]);
     expect(pointer(lockedThumb)).toEqual([]);
   });
+  it('keeps the handle visible in both states: muted on the off pill, surface-0 on the accent', () => {
+    const [checked, setChecked] = createSignal(false);
+    render(() => <Switch label="Live" checked={checked()} onChange={setChecked} />);
+    const handle = rootOf().querySelector('[data-fdt-switch-handle]') as Element;
+    const thumb = rootOf().querySelector('[data-fdt-switch-thumb]') as Element;
+    const classes = (element: Element): string[] => element.className.split(/\s+/);
+    // Off: the theme gate pins fg-muted on surface-3 (the pill) at >= 3:1.
+    expect(classes(handle)).toContain('bg-fg-muted');
+    expect(classes(thumb)).toEqual(expect.arrayContaining(['bg-surface-3', 'border-line-strong']));
+    // On: the swap is keyed on the control's own checked hook (a named group).
+    expect(classes(handle)).toContain('group-data-checked/switch:bg-surface-0');
+    expect(classes(handle)).not.toContain('bg-surface-0');
+    expect(trackOf().hasAttribute('data-checked')).toBe(false);
+    setChecked(true);
+    expect(trackOf().hasAttribute('data-checked')).toBe(true);
+    expect(classes(trackOf())).toContain('group/switch');
+  });
 });

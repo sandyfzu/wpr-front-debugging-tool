@@ -61,7 +61,7 @@ describe('sampleCookieNames', () => {
   });
 
   it('two over-cap names sharing a clip emit that clipped name once (uniqueness)', () => {
-    // The audit's P2-1 repro: two distinct >512-char names whose first 512
+    // An audit repro: two distinct >512-char names whose first 512
     // chars coincide must collapse to ONE payload name (first occurrence) —
     // the emitted clip is the dedupe key, never the dropped full name.
     const clip = 'n'.repeat(COOKIE_NAME_LIMITS.name);

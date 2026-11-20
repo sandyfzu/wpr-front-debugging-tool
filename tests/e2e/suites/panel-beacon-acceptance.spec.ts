@@ -1,5 +1,5 @@
 /**
- * Beacon Tester browser acceptance (P14.1 box 1), over real runs in Chromium:
+ * Beacon Tester browser acceptance, over real runs in Chromium:
  *
  * - lazy runner: no beacon code is parsed in the page before Run (no
  *   `beacon-runner.js`, no runner in the isolated world); the first Run

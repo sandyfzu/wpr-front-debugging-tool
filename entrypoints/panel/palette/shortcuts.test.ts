@@ -13,9 +13,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ChordBinding } from '../../../lib/palette-chord/keydown';
 import {
+  FIXED_PALETTE_CHORD,
   PANEL_SHORTCUTS,
   SHORTCUTS_OVERLAY_BINDING,
   isEditableTarget,
+  paletteKeyHint,
   registerPanelShortcuts,
   shortcutKeys
 } from './shortcuts';
@@ -369,5 +371,14 @@ describe('shortcutKeys (the overlay row text)', () => {
     for (const row of PANEL_SHORTCUTS.filter((entry) => entry !== paletteRow)) {
       expect(shortcutKeys(row, MAC_ALT_K)).toBe(row.keys);
     }
+  });
+});
+
+describe('paletteKeyHint (the trigger hint)', () => {
+  it('writes the fixed chord in each platform notation', () => {
+    expect(FIXED_PALETTE_CHORD).toEqual({ code: 'KeyK', mod: true });
+    expect(Object.isFrozen(FIXED_PALETTE_CHORD)).toBe(true);
+    expect(paletteKeyHint('mac')).toBe('⌘K');
+    expect(paletteKeyHint('other')).toBe('Ctrl+K');
   });
 });

@@ -6,15 +6,21 @@
  * in the document at any time) and resets the search store; a soft refresh
  * preserves the mounted page (node identity, scroll, focus, route) while the
  * data swaps, the Detections layout choice outlives route and ready-branch
- * remounts, unmount cancels the search flow, and a page body that throws
- * meets the crash boundary's actionable reload. The stores are injected; no
+ * remounts, the detail presence reaches page bodies and resets per route,
+ * unmount cancels the search flow, and a page body that throws meets the
+ * crash boundary's actionable reload. The stores are injected; no
  * messaging API is touched here.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@solidjs/testing-library';
+import { createSignal, type JSX } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FdtData } from '../../lib/wp-rocket/types';
+import { toast, toastItems } from '../../components/ui/toast-store';
+import type { Appearance } from '../../utils/theme';
 import { PanelApp } from './App';
+import { APPEARANCE_FAILURE_TITLE, APPEARANCE_SAVE_NOTE } from './appearance-write';
 import { createSearchStore, type SearchStore } from './state/search';
+import { useDetailPresence, type DetailPresenceStore } from './state/detail-presence';
 import {
   NO_PAGE_TRANSPORT_REASON,
   createFdtDataStore,
@@ -24,7 +30,7 @@ import { DATA_UNAVAILABLE_TITLE } from './data-unavailable';
 import type { PanelReceivers } from './state/edges';
 import { makeFdtData, makeHardReloadBudget } from './state/fixtures';
 import { PAGES } from './pages';
-import { ROUTE_IDS } from './routes';
+import { navRoute, ROUTE_IDS } from './routes';
 
 /** One page load's worth of valid data. */
 const pageData = (): FdtData => makeFdtData({ allScriptsLoaded: false });
@@ -117,6 +123,7 @@ describe('PanelApp boot states', () => {
       hashTo(id);
       const shell = makeShell();
       render(() => <PanelApp search={shell.search} data={shell.data} />);
+      // Reading route shorter, the rest centered (list routes widen only with a detail open).
       const expected = id === 'undefined-references' ? 'max-w-4xl' : 'max-w-7xl';
       /** Assert the width policy without relying on layout unavailable in happy-dom. */
       const assertCanvas = (): void => {
@@ -131,7 +138,25 @@ describe('PanelApp boot states', () => {
       const placeholders = document.querySelectorAll(
         '[data-fdt-page="fetching"] [data-fdt="skeleton"]'
       );
-      expect(placeholders).toHaveLength(3);
+      // The destination's own shape (its nav group's); only Detections carries
+      // its overview's four tile placeholders.
+      const shape = document.querySelector('[data-fdt-page="fetching"] [data-fdt="route-loading"]');
+      expect(shape?.getAttribute('data-fdt-loading-shape')).toBe(navRoute(id)?.group);
+      const overview = document.querySelector(
+        '[data-fdt-page="fetching"] [data-fdt="detections-overview-skeleton"]'
+      );
+      expect(overview !== null).toBe(id === 'detections');
+      expect(overview?.querySelectorAll('[data-fdt="overview-tile-skeleton"]').length ?? 0).toBe(
+        id === 'detections' ? 4 : 0
+      );
+      // The header reserves the landed header's lines: the subtitle always (every
+      // page has one), the actions cluster only where the page renders one.
+      const header = document.querySelector('[data-fdt-page="fetching"] [data-fdt="page-header"]');
+      expect(header?.querySelector('[data-fdt="loading-subtitle"]')).not.toBeNull();
+      expect(
+        header?.querySelectorAll(':scope > .ms-auto > [data-fdt="skeleton"]').length ?? 0
+      ).toBe(id === 'detections' || id === 'headers-cookies' ? 1 : 0);
+      expect(placeholders.length).toBeGreaterThan(0);
       for (const placeholder of placeholders) {
         if (!placeholder.classList.contains('w-full'))
           expect(placeholder.classList).toContain('max-w-full');
@@ -145,6 +170,10 @@ describe('PanelApp boot states', () => {
       expect(
         screen.getByRole('heading', { level: 1, name: "Couldn't load page data" })
       ).toBeTruthy();
+      // The error replaces the page: framed as a page-level state.
+      expect(
+        document.querySelector('[data-fdt="page-state-card"] [data-fdt="error-state"]')
+      ).not.toBeNull();
       shell.data.retry();
       assertCanvas();
       expect(screen.getAllByRole('heading')).toHaveLength(1);
@@ -162,6 +191,7 @@ describe('PanelApp boot states', () => {
     render(() => <PanelApp search={shell.search} data={shell.data} />);
     const view = document.querySelector('[data-fdt="data-unavailable"]');
     expect(view).not.toBeNull();
+    expect(view?.closest('[data-fdt="page-state-card"]')).not.toBeNull();
     expect(screen.getByRole('heading', { level: 1, name: DATA_UNAVAILABLE_TITLE })).toBeTruthy();
     expect(view?.textContent).toContain(NO_PAGE_TRANSPORT_REASON);
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
@@ -188,6 +218,9 @@ describe('PanelApp boot states', () => {
     });
     hashTo('javascript');
     expect(document.querySelector('[data-fdt="page-body"]')?.classList).toContain('max-w-7xl');
+    expect(document.querySelector('[data-fdt="page-body"]')?.classList).not.toContain('max-w-4xl');
+    hashTo('detections');
+    expect(document.querySelector('[data-fdt="page-body"]')?.classList).toContain('max-w-7xl');
   });
 
   it('renders the fetching skeleton first, then the page body on settle', async () => {
@@ -202,7 +235,7 @@ describe('PanelApp boot states', () => {
     });
   });
 
-  it('ends the status strip with the exclusion builder entry, even before page data', async () => {
+  it('holds the exclusion builder entry in the top bar controls, even before page data', async () => {
     const shell = makeShell();
     const askStatus = vi.fn(() =>
       Promise.resolve({ kind: 'reply', reply: { state: 'inactive' } } as const)
@@ -217,18 +250,28 @@ describe('PanelApp boot states', () => {
           open: () => Promise.resolve({ kind: 'reply', reply: 'injected' } as const),
           listen: () => () => undefined
         }}
+        // A full-width shell: the labeled entry sits inline (a folded bar
+        // keeps a quiet entry in its "⋯" menu).
+        observeShellWidth={(_element, onWidth) => {
+          onWidth(1100);
+          return () => undefined;
+        }}
       />
     ));
-    const strip = screen.getByRole('contentinfo', { name: 'Page status' });
+    const bar = screen.getByRole('banner', { name: 'Page status' });
     const control = await waitFor(() => {
-      const found = strip.querySelector('[data-fdt="builder-entry"]');
+      const found = bar.querySelector('[data-fdt="builder-entry"]');
       if (found === null) throw new Error('no builder entry');
       return found;
     });
-    expect(strip.lastElementChild).toBe(control);
+    // Among the bar's trailing controls (the end slot), never an answer.
+    expect(control.closest('[data-fdt-app-bar-slot]')?.getAttribute('data-fdt-app-bar-slot')).toBe(
+      'end'
+    );
     expect(askStatus).toHaveBeenCalledWith(77);
+    // The answer reached it: the quiet "Off" rides the title (no badge).
     await waitFor(() => {
-      expect(control.textContent).toContain('Off');
+      expect(control.getAttribute('title')).toBe('No exclusions applied in this tab.');
     });
   });
 
@@ -257,6 +300,31 @@ describe('PanelApp boot states', () => {
       expect(screen.getByRole('heading', { name: 'Detections' })).toBeTruthy();
     });
     expect(shell.requests()).toBe(2);
+  });
+
+  it('starts every page-level view swap at the top of the content region', async () => {
+    const shell = makeShell();
+    render(() => <PanelApp search={shell.search} data={shell.data} />);
+    const content = document.querySelector('[data-fdt="panel-content"]') as HTMLElement;
+    shell.fail(new Error('Could not establish connection. Receiving end does not exist.'));
+    await waitFor(() => {
+      expect(screen.getByText("Couldn't load page data")).toBeTruthy();
+    });
+    // The error view scrolled to its Retry (a short panel): Retry swaps in the
+    // loading page, which must not inherit that offset.
+    content.scrollTop = 101;
+    shell.data.retry();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Loading page data' })).toBeTruthy();
+    });
+    expect(content.scrollTop).toBe(0);
+    // Loading → page lands the route at its top too.
+    content.scrollTop = 60;
+    shell.settle(pageData());
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Detections' })).toBeTruthy();
+    });
+    expect(content.scrollTop).toBe(0);
   });
 });
 
@@ -364,22 +432,253 @@ describe('PanelApp shell structure', () => {
   });
 });
 
-describe('the status bar in the shell', () => {
-  it('mounts the strip as the shell edge outside the content region, honest at boot', async () => {
+describe('the top bar in the shell', () => {
+  it('mounts the bar above the rail-and-content row, outside the content region, honest at boot', async () => {
     const shell = makeShell();
     render(() => <PanelApp search={shell.search} data={shell.data} />);
-    // The strip exists inside the shell, outside the scrolling content
-    // region, and claims nothing before data settles.
-    const bar = document.querySelector('[data-fdt="panel-status-bar"]') as HTMLElement;
+    // The bar exists inside the shell, outside the scrolling content
+    // region, above the nav + content row, and claims nothing before data.
+    const bar = document.querySelector('[data-fdt="panel-top-bar"]') as HTMLElement;
     const shellRoot = document.querySelector('[data-fdt="panel-shell"]') as HTMLElement;
     const content = document.querySelector('[data-fdt="panel-content"]') as HTMLElement;
+    const nav = document.querySelector('[data-fdt="panel-header"]') as HTMLElement;
     expect(shellRoot.contains(bar)).toBe(true);
     expect(content.contains(bar)).toBe(false);
+    expect(bar.parentElement?.getAttribute('data-fdt')).toBe('panel-stack');
+    expect(bar.parentElement?.firstElementChild).toBe(bar);
+    expect(bar.nextElementSibling?.contains(nav)).toBe(true);
+    expect(bar.nextElementSibling?.contains(content)).toBe(true);
+    // Both chrome bands keep their paint priority over the content (UX-D15).
+    for (const band of [bar, nav]) {
+      expect(band.classList).toContain('relative');
+      expect(band.classList).toContain('z-10');
+    }
+    // Nothing renders below the content row (no footer landmark).
+    expect(screen.queryByRole('contentinfo')).toBeNull();
+    // One banner: the bar (the nav column is not a landmark of its own).
+    expect(screen.getAllByRole('banner')).toEqual([bar]);
     expect(screen.queryByText('Not detected')).toBeNull();
     shell.settle(pageData());
     await waitFor(() => {
       expect(screen.getByRole('link', { name: 'Not detected' })).toBeTruthy();
     });
+  });
+
+  it('folds the bar from the measured shell width (never the viewport)', async () => {
+    const shell = makeShell();
+    let report: ((width: number) => void) | undefined;
+    const observed: HTMLElement[] = [];
+    render(() => (
+      <PanelApp
+        search={shell.search}
+        data={shell.data}
+        observeShellWidth={(element, onWidth) => {
+          observed.push(element);
+          report = onWidth;
+          return () => undefined;
+        }}
+      />
+    ));
+    expect(observed.map((element) => element.dataset.fdt)).toEqual(['panel-shell']);
+    report?.(1100);
+    expect(screen.queryByRole('button', { name: /^More:/ })).toBeNull();
+    expect(screen.getByText('WPR FDT').className).not.toContain('sr-only');
+    report?.(420);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^More:/ })).toBeTruthy();
+    });
+    expect(screen.getByText('WPR FDT').className).toContain('sr-only');
+  });
+
+  it('shows the inspected address the shell reads on each settle', async () => {
+    const shell = makeShell();
+    const readPageUrl = vi.fn(() => Promise.resolve('https://example.com/blog/'));
+    render(() => (
+      <PanelApp
+        search={shell.search}
+        data={shell.data}
+        readPageUrl={readPageUrl}
+        observeShellWidth={(_element, onWidth) => {
+          onWidth(1100);
+          return () => undefined;
+        }}
+      />
+    ));
+    shell.settle(pageData());
+    await waitFor(() => {
+      expect(document.querySelector('[data-fdt="top-bar-address"]')?.textContent).toBe(
+        'example.com/blog/'
+      );
+    });
+    expect(readPageUrl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the sidebar in the shell', () => {
+  /** Mount the shell at a fixed width with a boot pin and a traced writer. */
+  function mountAt(width: number, navPin?: 'auto' | 'labeled' | 'rail') {
+    const shell = makeShell();
+    const writeNavPin = vi.fn(() => Promise.resolve());
+    render(() => (
+      <PanelApp
+        search={shell.search}
+        data={shell.data}
+        navPin={navPin}
+        writeNavPin={writeNavPin}
+        observeShellWidth={(_element, onWidth) => {
+          onWidth(width);
+          return () => undefined;
+        }}
+      />
+    ));
+    shell.settle(pageData());
+    return { writeNavPin };
+  }
+
+  /** The nav column's rendered form. */
+  const form = (): string | null | undefined =>
+    document.querySelector('[data-fdt="panel-header"]')?.getAttribute('data-fdt-nav-form');
+
+  it('is labeled on a wide panel without a pin, the rail on a narrow one', () => {
+    mountAt(1280);
+    expect(form()).toBe('labeled');
+    cleanup();
+    mountAt(900);
+    expect(form()).toBe('rail');
+  });
+
+  it('renders the boot pin from the first frame (no fold flash)', () => {
+    mountAt(1280, 'rail');
+    expect(form()).toBe('rail');
+    cleanup();
+    mountAt(900, 'labeled');
+    expect(form()).toBe('labeled');
+  });
+
+  it('writes the toggled pin through the injected writer', () => {
+    const { writeNavPin } = mountAt(1280);
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    expect(form()).toBe('rail');
+    expect(writeNavPin).toHaveBeenCalledWith('rail');
+  });
+
+  it('folds while a page holds a detail open', async () => {
+    const shell = makeShell();
+    const originalBody = PAGES['detections'];
+    let presence: DetailPresenceStore | undefined;
+    PAGES['detections'] = (): JSX.Element => {
+      presence = useDetailPresence();
+      return <h1>Probe</h1>;
+    };
+    try {
+      render(() => (
+        <PanelApp
+          search={shell.search}
+          data={shell.data}
+          observeShellWidth={(_element, onWidth) => {
+            onWidth(1280);
+            return () => undefined;
+          }}
+        />
+      ));
+      shell.settle(pageData());
+      await waitFor(() => {
+        expect(presence).toBeDefined();
+      });
+      expect(form()).toBe('labeled');
+      const claim = (presence as DetailPresenceStore).claim();
+      claim.set(true);
+      expect(form()).toBe('rail');
+      claim.release();
+      expect(form()).toBe('labeled');
+    } finally {
+      PAGES['detections'] = originalBody;
+      cleanup();
+    }
+  });
+});
+
+describe('the appearance menu in the top bar', () => {
+  afterEach(() => {
+    toast.clear();
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Render the shell at a width with an appearance value and writer.
+   *
+   * @param width The measured shell width.
+   * @param write The writer double.
+   * @returns The value setter.
+   */
+  function renderWithAppearance(
+    width: number,
+    write: (next: Appearance) => Promise<void> = () => Promise.resolve()
+  ): (next: Appearance) => void {
+    const shell = makeShell();
+    const [appearance, setAppearance] = createSignal<Appearance>('dark');
+    render(() => (
+      <PanelApp
+        search={shell.search}
+        data={shell.data}
+        appearance={appearance}
+        writeAppearance={write}
+        observeShellWidth={(_element, onWidth) => {
+          onWidth(width);
+          return () => undefined;
+        }}
+      />
+    ));
+    return setAppearance;
+  }
+
+  /** Open the menu and pick a row by its name. */
+  async function pick(name: string): Promise<void> {
+    fireEvent.pointerDown(screen.getByRole('button', { name: /^Appearance: / }));
+    const menu = await screen.findByRole('menu');
+    fireEvent.pointerUp(within(menu).getByRole('menuitemradio', { name }), { button: 0 });
+  }
+
+  it.each([1100, 420])(
+    'sits in the end slot right before "⋯" at %ipx, showing the stored choice',
+    (width) => {
+      const setAppearance = renderWithAppearance(width);
+      const control = document.querySelector('[data-fdt="appearance-menu"]') as HTMLElement;
+      expect(control.closest('[data-fdt-app-bar-slot="end"]')).toBeTruthy();
+      expect(control.nextElementSibling?.getAttribute('data-fdt')).toBe('top-bar-menu-box');
+      expect(screen.getByRole('button', { name: 'Appearance: Dark' })).toBeTruthy();
+      setAppearance('light');
+      expect(screen.getByRole('button', { name: 'Appearance: Light' })).toBeTruthy();
+    }
+  );
+
+  it('renders no appearance menu without a stored value to show', () => {
+    const shell = makeShell();
+    render(() => <PanelApp search={shell.search} data={shell.data} />);
+    expect(document.querySelector('[data-fdt="appearance-menu"]')).toBeNull();
+  });
+
+  it('writes a pick through the surface writer, quietly', async () => {
+    const write = vi.fn(() => Promise.resolve());
+    renderWithAppearance(1100, write);
+    await pick('Light');
+    expect(write.mock.calls).toEqual([['light']]);
+    await Promise.resolve();
+    expect(toastItems()).toEqual([]);
+  });
+
+  it('answers a failed write with the remedy toast and keeps the shown choice', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const write = vi.fn(() => Promise.reject(new Error('Extension context invalidated')));
+    renderWithAppearance(1100, write);
+    await pick('System');
+    await waitFor(() => {
+      expect(toastItems().map((item) => [item.tone, item.title, item.description])).toEqual([
+        ['error', APPEARANCE_FAILURE_TITLE, APPEARANCE_SAVE_NOTE]
+      ]);
+    });
+    // Nothing stored, nothing moved: the control still names the stored choice.
+    expect(screen.getByRole('button', { name: 'Appearance: Dark' })).toBeTruthy();
   });
 });
 
@@ -432,7 +731,7 @@ describe('the Detections layout choice (shell-owned)', () => {
     render(() => <PanelApp search={shell.search} data={shell.data} />);
     shell.settle(pageData());
     await waitFor(() => {
-      expect(gridLayout()).toBe('adaptive');
+      expect(gridLayout()).toBe('grouped');
     });
     fireEvent.click(screen.getByText('List'));
     expect(gridLayout()).toBe('list');
@@ -461,6 +760,34 @@ describe('the Detections layout choice (shell-owned)', () => {
     await waitFor(() => {
       expect(gridLayout()).toBe('list');
     });
+  });
+});
+
+describe('the detail presence (shell-owned)', () => {
+  it('reaches page bodies and resets when the route changes', async () => {
+    const shell = makeShell();
+    const originalBody = PAGES['detections'];
+    let presence: DetailPresenceStore | undefined;
+    PAGES['detections'] = (): JSX.Element => {
+      presence = useDetailPresence();
+      return <h1>Probe</h1>;
+    };
+    try {
+      render(() => <PanelApp search={shell.search} data={shell.data} />);
+      shell.settle(pageData());
+      await waitFor(() => {
+        expect(presence).toBeDefined();
+      });
+      const store = presence as DetailPresenceStore;
+      expect(store.detailOpen()).toBe(false);
+      store.claim().set(true);
+      expect(store.detailOpen()).toBe(true);
+      hashTo('javascript');
+      expect(store.detailOpen()).toBe(false);
+    } finally {
+      PAGES['detections'] = originalBody;
+      cleanup();
+    }
   });
 });
 
@@ -500,6 +827,9 @@ describe('unmount + crash boundaries', () => {
       // The card explains the recovery, not the raw failure:
       expect(screen.getAllByRole('heading')).toHaveLength(1);
       expect(screen.getByRole('heading', { level: 1, name: 'The panel came apart' })).toBeTruthy();
+      expect(
+        document.querySelector('[data-fdt="page-state-card"] [data-fdt="error-state"]')
+      ).not.toBeNull();
       expect(screen.getByText(/Reloading the panel restores it/)).toBeTruthy();
       expect(screen.queryByText('boom — a body bug')).toBeNull();
       expect(document.querySelector('[data-fdt="page-body"]')?.classList).toContain('max-w-7xl');

@@ -8,13 +8,15 @@
  * cascade), keyboard reachability, and the axe runs per state.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Window } from 'happy-dom';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { App } from './App';
 import { toast, toastItems } from '../../components/ui/toast-store';
+import { MENU_ICON_TRIGGER_SIZE } from '../../components/ui/menu';
 import { describeAxeViolations, runAxeAudit } from '../../components/ui/a11y-audit';
 import { applyStoredAppearance } from '../../lib/appearance/appearance';
 import { getOptions, optionsStore, type StoredOptions } from '../../lib/storage/options';
@@ -301,6 +303,29 @@ describe('the appearance choice (a writer)', () => {
     stop();
   });
 
+  it('a written choice reads saved: Save stays off, and a later Save keeps a newer pick from another surface', async () => {
+    render(() => <App {...PROPS} />);
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: 'Light' })).toBeTruthy();
+    });
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save' });
+    fireEvent.click(screen.getByText('Dark'));
+    await expect.poll(getOptions).toMatchObject({ appearance: 'dark' });
+    // Appearance-only change, written instantly: nothing left to Save.
+    await waitFor(() => {
+      expect(save.disabled).toBe(true);
+    });
+    // The panel picks Light afterwards; the page then saves another row.
+    await optionsStore.setValue(optionsWith('light'));
+    fireEvent.click(screen.getByText(DBUGGER_ROW));
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await expect
+      .poll(getOptions)
+      .toMatchObject({ improvements: { 'wp-dashboard-dbugger-entry': false } });
+    expect((await getOptions()).appearance).toBe('light');
+  });
+
   it('keeps the draft dirty for the Save flow and preserves it when a write fails', async () => {
     const writeAppearance = vi.fn<(next: StoredOptions['appearance']) => Promise<void>>();
     writeAppearance.mockRejectedValueOnce(new Error('Extension context invalidated.'));
@@ -356,6 +381,243 @@ describe('the appearance choice (a writer)', () => {
     // drafted, unsaved (the page's next Save owns it).
     expect((await getOptions()).features.toolbarBadge).toBe(false);
     expect((await getOptions()).appearance).toBe('system');
+  });
+});
+
+/** The app bar's appearance trigger (its name starts with "Appearance:"), or null. */
+function queryMenuTrigger(): HTMLElement | null {
+  return screen.queryByRole('button', { name: /^Appearance: / });
+}
+
+/** Open the app bar's appearance menu and pick one row (Kobalte selects on pointer up). */
+async function pickFromMenu(name: 'System' | 'Dark' | 'Light'): Promise<void> {
+  const trigger = queryMenuTrigger();
+  if (trigger === null) throw new Error('the appearance menu is not rendered');
+  fireEvent.pointerDown(trigger);
+  const menu = await screen.findByRole('menu');
+  fireEvent.pointerUp(within(menu).getByRole('menuitemradio', { name }), { button: 0 });
+  await waitFor(() => {
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+}
+
+/** The appearance row's checked choice (its radio inputs' state). */
+function checkedChoice(): string | null {
+  const group = screen.getByRole('radiogroup', { name: 'Color theme' });
+  const checked = [...group.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find(
+    (radio) => radio.checked
+  );
+  return checked?.closest('[data-fdt-choice-value]')?.getAttribute('data-fdt-choice-value') ?? null;
+}
+
+/** The unsaved marker, or null while clean. */
+function unsavedMarker(): Element | null {
+  return document.querySelector('[data-fdt="options-unsaved"]');
+}
+
+describe('the app bar', () => {
+  it('renders at once while loading: brand, name, version, Save held, the menu box reserved', async () => {
+    let release!: () => void;
+    const gated = new Promise<void>((done) => {
+      release = done;
+    });
+    render(() => (
+      <App
+        {...propsWith({
+          read: () => gated.then(() => getOptions()),
+          write: (options) => optionsStore.setValue(options),
+          log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+        })}
+      />
+    ));
+    const bar = document.querySelector('[data-fdt="options-app-bar"]');
+    expect(bar?.tagName).toBe('HEADER');
+    // Outside the animated body and the @container page root.
+    expect(bar?.closest('[data-fdt="options-body"]')).toBeNull();
+    expect(bar?.closest('main')).toBeNull();
+    expect(bar?.querySelector('[data-fdt="brand-mark"]')).toBeTruthy();
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.textContent).toBe(PROPS.name);
+    expect(heading.getAttribute('title')).toBe(PROPS.name);
+    expect(bar?.contains(heading)).toBe(true);
+    // The label is accessible text everywhere, a visible word from the regular tier.
+    const label = within(bar as HTMLElement).getByText('Options');
+    expect(label.classList.contains('sr-only')).toBe(true);
+    expect(label.classList.contains('@regular:not-sr-only')).toBe(true);
+    expect(heading.contains(label)).toBe(false); // the h1 stays the manifest name
+    expect(within(bar as HTMLElement).getByText('v0.9.0')).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(true);
+    expect(queryMenuTrigger()).toBeNull();
+    // The reserved box is the trigger's own square (no shift on arrival).
+    const placeholder = bar?.querySelector('[data-fdt="options-menu-placeholder"]');
+    expect(placeholder?.classList.contains(MENU_ICON_TRIGGER_SIZE)).toBe(true);
+    expect(unsavedMarker()).toBeNull();
+    release();
+    await waitFor(() => {
+      expect(queryMenuTrigger()).toBeTruthy();
+    });
+    expect(queryMenuTrigger()?.classList.contains(MENU_ICON_TRIGGER_SIZE)).toBe(true);
+    expect(bar?.querySelector('[data-fdt="options-menu-placeholder"]')).toBeNull();
+    expect(bar?.contains(queryMenuTrigger())).toBe(true);
+  });
+
+  it('shows the unsaved marker exactly while the page is dirty', async () => {
+    render(() => <App {...PROPS} />);
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: BADGE_ROW })).toBeTruthy();
+    });
+    expect(unsavedMarker()).toBeNull();
+    fireEvent.click(screen.getByText(BADGE_ROW));
+    expect(unsavedMarker()?.textContent).toBe('Unsaved changes');
+    fireEvent.click(screen.getByText(BADGE_ROW)); // reverted
+    expect(unsavedMarker()).toBeNull();
+    fireEvent.click(screen.getByText(BADGE_ROW));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(unsavedMarker()).toBeNull();
+    });
+    expect((await getOptions()).features.toolbarBadge).toBe(false);
+  });
+
+  it('a menu pick drafts the row and fires one instant write; written, the page reads clean', async () => {
+    let release!: () => void;
+    const writeAppearance = vi.fn(
+      () =>
+        new Promise<void>((done) => {
+          release = done;
+        })
+    );
+    render(() => <App {...PROPS} writeAppearance={writeAppearance} />);
+    await waitFor(() => {
+      expect(queryMenuTrigger()).toBeTruthy();
+    });
+    await pickFromMenu('Dark');
+    expect(writeAppearance).toHaveBeenCalledTimes(1);
+    expect(writeAppearance).toHaveBeenCalledWith('dark');
+    // Pending: dirty, the row shows the pick, the menu names it.
+    expect(checkedChoice()).toBe('dark');
+    expect(queryMenuTrigger()?.getAttribute('aria-label')).toBe('Appearance: Dark');
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false);
+    expect(unsavedMarker()).toBeTruthy();
+    release();
+    await waitFor(() => {
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(true);
+    });
+    expect(unsavedMarker()).toBeNull();
+    expect(writeAppearance).toHaveBeenCalledTimes(1);
+  });
+
+  it('a menu pick mid-save is drafted without its instant write', async () => {
+    let release!: () => void;
+    const gated = new Promise<void>((done) => {
+      release = done;
+    });
+    const io: OptionsPageIO = {
+      read: () => getOptions(),
+      write: (options) => gated.then(() => optionsStore.setValue(options)),
+      log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+    };
+    const writeAppearance = vi.fn<(next: StoredOptions['appearance']) => Promise<void>>();
+    render(() => <App {...propsWith(io)} writeAppearance={writeAppearance} />);
+    await waitFor(() => {
+      expect(queryMenuTrigger()).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText(BADGE_ROW));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' })); // write in flight
+    await pickFromMenu('Light');
+    expect(writeAppearance).not.toHaveBeenCalled();
+    expect(checkedChoice()).toBe('light');
+    release();
+    await waitFor(() => {
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false);
+    });
+    expect(unsavedMarker()).toBeTruthy(); // the pick waits for the next Save
+    expect((await getOptions()).appearance).toBe('system');
+  });
+
+  it('a failed menu write shows the theme toast and keeps the pick for Save', async () => {
+    const writeAppearance = vi.fn<(next: StoredOptions['appearance']) => Promise<void>>();
+    writeAppearance.mockRejectedValueOnce(new Error('Extension context invalidated.'));
+    render(() => <App {...PROPS} writeAppearance={writeAppearance} />);
+    await waitFor(() => {
+      expect(queryMenuTrigger()).toBeTruthy();
+    });
+    await pickFromMenu('Dark');
+    await waitFor(() => {
+      expect(toastItems().at(-1)).toMatchObject({
+        tone: 'error',
+        title: 'The color theme could not be saved'
+      });
+    });
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await expect.poll(getOptions).toMatchObject({ appearance: 'dark' });
+  });
+
+  it('the row and the menu show the same value both ways', async () => {
+    const writeAppearance = vi.fn(() => Promise.resolve());
+    render(() => <App {...PROPS} writeAppearance={writeAppearance} />);
+    await waitFor(() => {
+      expect(queryMenuTrigger()).toBeTruthy();
+    });
+    expect(checkedChoice()).toBe('system');
+    expect(queryMenuTrigger()?.getAttribute('aria-label')).toMatch(/^Appearance: System \(/u);
+    // Row → menu.
+    fireEvent.click(screen.getByText('Light'));
+    expect(queryMenuTrigger()?.getAttribute('aria-label')).toBe('Appearance: Light');
+    // Menu → row (the menu's check moved too).
+    await pickFromMenu('Dark');
+    expect(checkedChoice()).toBe('dark');
+    fireEvent.pointerDown(queryMenuTrigger() as HTMLElement);
+    const menu = await screen.findByRole('menu');
+    expect(
+      within(menu).getByRole('menuitemradio', { name: 'Dark' }).getAttribute('aria-checked')
+    ).toBe('true');
+    expect(writeAppearance.mock.calls).toEqual([['light'], ['dark']]);
+  });
+});
+
+describe('another surface writes the appearance (the follow)', () => {
+  it('a clean row and the menu adopt it live; the value at mount is not followed', async () => {
+    await optionsStore.setValue(optionsWith('dark'));
+    // The boot read predates the model's: a stale mount value never wins.
+    const [stored, setStored] = createSignal<StoredOptions['appearance']>('light');
+    render(() => <App {...PROPS} storedAppearance={stored} />);
+    await waitFor(() => {
+      expect(queryMenuTrigger()).toBeTruthy();
+    });
+    expect(checkedChoice()).toBe('dark');
+    setStored('system');
+    await waitFor(() => {
+      expect(checkedChoice()).toBe('system');
+    });
+    expect(queryMenuTrigger()?.getAttribute('aria-label')).toMatch(/^Appearance: System \(/u);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(true);
+    expect(unsavedMarker()).toBeNull();
+  });
+
+  it('an unsaved edit of the row is kept (never clobbered)', async () => {
+    const writeAppearance = vi.fn<(next: StoredOptions['appearance']) => Promise<void>>();
+    writeAppearance.mockRejectedValue(new Error('Extension context invalidated.'));
+    const [stored, setStored] = createSignal<StoredOptions['appearance']>('system');
+    render(() => <App {...PROPS} writeAppearance={writeAppearance} storedAppearance={stored} />);
+    await waitFor(() => {
+      expect(queryMenuTrigger()).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText('Dark')); // the write fails: pending edit
+    await waitFor(() => {
+      expect(writeAppearance).toHaveBeenCalledTimes(1);
+    });
+    setStored('light');
+    expect(checkedChoice()).toBe('dark');
+    expect(queryMenuTrigger()?.getAttribute('aria-label')).toBe('Appearance: Dark');
+    expect(unsavedMarker()).toBeTruthy();
+    // The stored value catches up with the edit: nothing is pending any more.
+    setStored('dark');
+    await waitFor(() => {
+      expect(unsavedMarker()).toBeNull();
+    });
+    expect(checkedChoice()).toBe('dark');
   });
 });
 
@@ -448,11 +710,12 @@ describe('keyboard reachability (structure) and the state matrix', () => {
           !element.disabled && !(element instanceof HTMLInputElement && element.type === 'radio')
       )
       .map((element) => (element.tagName === 'BUTTON' ? 'button' : 'switch'));
-    // Save first (header), the dbugger switch, (the radio group), the gate
-    // switch, the shortcut field (a button), the detection widget default
-    // switch, the badge switch, then the refresh control — the default
-    // shortcut shows no Reset button.
+    // Save first (app bar), the appearance menu's trigger (app bar), the
+    // dbugger switch, (the radio group), the gate switch, the shortcut field
+    // (a button), the detection widget default switch, the badge switch,
+    // then the refresh control — the default shortcut shows no Reset button.
     expect(focusables).toEqual([
+      'button',
       'button',
       'switch',
       'switch',

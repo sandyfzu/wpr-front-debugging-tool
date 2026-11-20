@@ -1,22 +1,53 @@
 /**
  * Pure presentation rules for the Stylesheets page: what each state chip
- * looks like and says on hover, the row views (chips built once per row,
- * never in the renderer), row identity across refreshes, the seed heights,
- * the summary and cut lines, and which of its states the page is in.
+ * looks like and says on hover, the row views (name, preview, size and its
+ * bar, chips — built once per row, never in the renderer), the content key
+ * a row keeps across refreshes, the detail's facts, the summary and cut
+ * lines, and which of its states the page is in.
  */
+import { LABEL_OPTIMIZE_CSS_DELIVERY } from '../../../../lib/detection/labels';
 import type { AskMiss } from '../../../../lib/messaging/bounded-ask';
 import type { PageStylesheetsReply } from '../../../../lib/messaging/page-stylesheets';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
+import { optimizationBucket } from '../../../../lib/panel/detections-summary';
+import type { StatusItem, StatusItemId } from '../../../../lib/panel/detections-view-model';
+import { liftFacets, type FacetSet } from '../../../../lib/panel/resource-facets';
+import {
+  CSS_PAGE_FACETS,
+  cssStyleSearchField,
+  type CssFacetId
+} from '../../../../lib/panel/stylesheet-rows';
 import { styleIdentity } from '../../../../lib/panel/style-identity';
 import {
   CSS_STYLE_STATES,
   type CssStateId,
   type CssStyleResource
 } from '../../../../lib/panel/style-states';
-import { formatCount } from '../../../../utils/format-count';
+import {
+  ASYNC_CSS_ATTRIBUTE,
+  ASYNC_CSS_ATTRIBUTE_VALUE,
+  MINIFY_ATTRIBUTE,
+  MINIFY_ATTRIBUTE_VALUE,
+  SELF_HOSTED_FONTS_ATTRIBUTE
+} from '../../../../lib/wp-rocket/constants';
+import { countLabel, formatCompactCount, formatCount } from '../../../../utils/format-count';
+import { joinWords } from '../../../../utils/text';
 import type { AskRunState } from '../ask-run';
-import { splitStateChips, type StateChip, type StateChipSplit } from '../resource-list/state-chips';
+import type { DetailFact } from '../resource-list/detail-section';
+import { MINIFY_STAMP_LABEL, urlPreview } from '../resource-list/resource-list-view';
+import {
+  CALM_VISIBLE_STATE_CHIPS,
+  splitStateChips,
+  type StateChip,
+  type StateChipSplit
+} from '../resource-list/state-chips';
 import type { StateSource } from '../resource-list/state-sources';
+import {
+  EMPTY_STYLE_PREVIEW,
+  mediaDetail,
+  sizeShare,
+  styleName
+} from '../resource-list/style-words';
 
 /** The rows' noun. */
 export const STYLE_NOUN = { one: 'style', other: 'styles' } as const;
@@ -79,50 +110,146 @@ export function styleStateChips(row: CssStyleResource): StateChip[] {
 }
 
 /** One rendered row: the classified style plus what its renderer reads, built once. */
-export interface StyleRowView extends CssStyleResource {
-  /** The state chips, split (at most three, then "+N"). */
-  readonly chips: StateChipSplit;
-  /** `#id.class`, or `''`. */
-  readonly identity: string;
-  /** The media detail ("media: print"), or null when it says nothing. */
-  readonly mediaDetail: string | null;
+export interface StyleRowView {
+  /** The classified style (its `id` is its position in the list it came from). */
+  readonly row: CssStyleResource;
+  /** The content key: the same style keeps it across refreshes (see {@link styleRowKeys}). */
+  readonly key: string;
+  /** The row's name: a link's file name, an inline style's `#id.class` or ordinal. */
+  readonly name: string;
+  /** The name is an identifier (`#id.class`), shown in mono. */
+  readonly monoName: boolean;
+  /** The preview line: a link's URL without scheme, an inline style's CSS start. */
+  readonly preview: string;
+  /** The size cell (inline styles: characters, compact), or undefined. */
+  readonly size: string | undefined;
+  /** The size bar's share (0–1, square-root scale against the largest inline style). */
+  readonly sizeShare: number | undefined;
+  /** Every state chip (the detail lists them all). */
+  readonly chips: readonly StateChip[];
+  /** The row's chips: at most two, then "+N". */
+  readonly rowChips: StateChipSplit;
 }
 
+/** The snapshot-only critical row's key (live keys never start with `snapshot`). */
+export const SNAPSHOT_ROW_KEY = 'snapshot:critical';
+
+/** Separates the fields of a content key (never typed into an attribute or id). */
+const KEY_FIELD = '\u0001';
+
 /**
- * The media detail a row shows: none for no media or `all` (the default
- * every page writes — noise on most rows), the attribute's own words otherwise.
+ * The content key of every row: the snapshot row's fixed key; for live rows
+ * type, `id`, `href`, class, media and preview, plus an occurrence counter
+ * for exact duplicates (list positions shift whenever a style is added
+ * above, so they cannot identify a row across refreshes).
  *
- * @param media The element's media attribute.
- * @returns E.g. `media: print`, or null.
+ * @param rows The classified rows, in list order.
+ * @returns One unique key per row, same order.
  */
-export function mediaDetail(media: string): string | null {
-  const value = media.trim();
-  return value === '' || value.toLowerCase() === 'all' ? null : `media: ${value}`;
+export function styleRowKeys(rows: readonly CssStyleResource[]): string[] {
+  const seen = new Map<string, number>();
+  return rows.map((row) => {
+    if (row.source === 'snapshot') return SNAPSHOT_ROW_KEY;
+    const base = [row.type, row.elementId, row.href, row.className, row.media, row.preview].join(
+      KEY_FIELD
+    );
+    const occurrence = seen.get(base) ?? 0;
+    seen.set(base, occurrence + 1);
+    return `live${KEY_FIELD}${base}${KEY_FIELD}${String(occurrence)}`;
+  });
 }
 
 /**
- * Build the row views.
+ * What the snapshot-only critical row says in place of CSS (its preview and
+ * its detail). Neutral: WP Rocket's on-load removal is the usual cause, not
+ * the only one.
+ */
+export const CRITICAL_SNAPSHOT_NOTE = 'No longer on the page';
+
+/** The snapshot row's detail: where it comes from and why it has no CSS. */
+export const CRITICAL_SNAPSHOT_DETAIL =
+  "Captured from the served HTML — its CSS isn't kept. WP Rocket usually removes this style once the stylesheets have loaded; a page script or a RUCSS test can remove it too.";
+
+/**
+ * A row's preview line: the media first when it says anything ("media:
+ * print · …"), then a link's URL without scheme or an inline style's CSS.
  *
- * @param rows The classified styles.
+ * @param row The classified style.
+ */
+export function stylePreview(row: CssStyleResource): string {
+  if (row.source === 'snapshot') return CRITICAL_SNAPSHOT_NOTE;
+  const text =
+    row.type === 'external'
+      ? urlPreview(row.href)
+      : row.preview === ''
+        ? EMPTY_STYLE_PREVIEW
+        : row.preview;
+  const media = mediaDetail(row.media);
+  return media === null ? text : `${media} · ${text}`;
+}
+
+/**
+ * Build the row views (chips, names and sizes once per row).
+ *
+ * @param rows The classified styles, in list order.
  * @returns One view per row, same order.
  */
 export function styleRowViews(rows: readonly CssStyleResource[]): StyleRowView[] {
-  return rows.map((row) => ({
-    ...row,
-    chips: splitStateChips(styleStateChips(row)),
-    identity: styleIdentity({ id: row.elementId, className: row.className }),
-    mediaDetail: mediaDetail(row.media)
-  }));
+  const keys = styleRowKeys(rows);
+  const live = rows.filter((row) => row.type === 'inline' && row.source === 'live');
+  const max = live.reduce((largest, row) => Math.max(largest, row.chars), 0);
+  let inline = 0;
+  return rows.map((row, index) => {
+    if (row.type === 'inline') inline += 1;
+    const chips = styleStateChips(row);
+    const { name, mono } = styleName(
+      {
+        kind: row.type === 'external' ? 'link' : 'inline',
+        id: row.elementId,
+        className: row.className,
+        href: row.href
+      },
+      inline
+    );
+    const sized = row.type === 'inline' && row.source === 'live';
+    return {
+      row,
+      key: keys[index] ?? SNAPSHOT_ROW_KEY,
+      name,
+      monoName: mono,
+      preview: stylePreview(row),
+      size: sized ? formatCompactCount(row.chars) : undefined,
+      sizeShare: sized ? sizeShare(row.chars, max) : undefined,
+      chips,
+      rowChips: splitStateChips(chips, CALM_VISIBLE_STATE_CHIPS)
+    };
+  });
 }
 
 /**
- * Whether two views with the same id show the same thing (the refresh reuse
- * test: chips and identity derive from these fields).
+ * Whether two views of one key show the same thing — every field the view
+ * derives from, and the position (the CSS read addresses it).
  *
  * @param a The previous view.
  * @param b The fresh view.
  */
-export function sameStyleRow(a: StyleRowView, b: StyleRowView): boolean {
+export function sameStyleView(a: StyleRowView, b: StyleRowView): boolean {
+  return (
+    a.row.id === b.row.id &&
+    a.name === b.name &&
+    a.size === b.size &&
+    a.sizeShare === b.sizeShare &&
+    sameStyleRow(a.row, b.row)
+  );
+}
+
+/**
+ * Whether two classified styles carry the same data (position ignored).
+ *
+ * @param a The previous row.
+ * @param b The fresh row.
+ */
+export function sameStyleRow(a: CssStyleResource, b: CssStyleResource): boolean {
   return (
     a.type === b.type &&
     a.source === b.source &&
@@ -133,37 +260,81 @@ export function sameStyleRow(a: StyleRowView, b: StyleRowView): boolean {
     a.preview === b.preview &&
     a.chars === b.chars &&
     a.minified === b.minified &&
+    a.minifyAttribute === b.minifyAttribute &&
     a.critical === b.critical &&
     a.rocketAsync === b.rocketAsync &&
     a.hostedFont === b.hostedFont
   );
 }
 
-/**
- * Seed heights (px): a link's name + URL lines (measured at the regular
- * tier; its states stack below when compact), an inline style's chips +
- * preview lines.
- */
-export const STYLE_ROW_ESTIMATE = { external: 55, inline: 50 } as const;
+/** The page's facets over row views (the row facets, lifted). */
+export const CSS_VIEW_FACETS: FacetSet<StyleRowView, CssFacetId> = liftFacets(
+  CSS_PAGE_FACETS,
+  (view: StyleRowView) => view.row
+);
 
 /**
- * A row's seed height (measurement refines it).
+ * A view's searched field: a link's URL, an inline style's identity and CSS preview.
  *
- * @param row The view.
+ * @param view The row view.
  */
-export function estimateStyleRow(row: StyleRowView): number {
-  return STYLE_ROW_ESTIMATE[row.type];
+export function styleSearchField(view: StyleRowView): string {
+  return cssStyleSearchField(view.row);
 }
 
 /**
- * What the snapshot-only critical row says in place of CSS. Neutral: WP
- * Rocket's on-load removal is the usual cause, not the only one.
+ * The detail's caps kind label.
+ *
+ * @param view The row view.
  */
-export const CRITICAL_SNAPSHOT_NOTE = 'No longer on the page';
+export function styleKind(view: StyleRowView): string {
+  if (view.row.source === 'snapshot') return 'Critical-path style';
+  return view.row.type === 'inline' ? 'Inline style' : 'Stylesheet link';
+}
 
-/** Its hover text: where the row comes from and what usually removed it. */
-export const CRITICAL_SNAPSHOT_TITLE =
-  'Seen when the page finished parsing. WP Rocket usually removes it once the stylesheets have loaded; a page script or a RUCSS test can remove it too.';
+/** Characters, in their two count forms. */
+const CHARACTER_NOUN = { one: 'character', other: 'characters' } as const;
+
+/**
+ * The facts a style's element carries — only those that hold.
+ *
+ * @param view The row view.
+ * @returns The facts, in reading order.
+ */
+export function styleFacts(view: StyleRowView): DetailFact[] {
+  const { row } = view;
+  const facts: DetailFact[] = [];
+  const identity = styleIdentity({ id: row.elementId, className: row.className });
+  if (row.type === 'external' && identity !== '')
+    facts.push({ label: 'Element', value: identity, mono: true });
+  if (row.media.trim() !== '') facts.push({ label: 'Media', value: row.media, mono: true });
+  if (row.rocketAsync)
+    facts.push({
+      label: 'Async stamp',
+      value: `${ASYNC_CSS_ATTRIBUTE}="${ASYNC_CSS_ATTRIBUTE_VALUE}"`,
+      mono: true
+    });
+  if (row.minifyAttribute)
+    facts.push({
+      label: MINIFY_STAMP_LABEL,
+      value: `${MINIFY_ATTRIBUTE}="${MINIFY_ATTRIBUTE_VALUE}"`,
+      mono: true
+    });
+  if (row.hostedFont)
+    facts.push({ label: 'Hosted font', value: SELF_HOSTED_FONTS_ATTRIBUTE, mono: true });
+  if (row.type === 'inline' && row.source === 'live')
+    facts.push({ label: 'Size', value: countLabel(row.chars, CHARACTER_NOUN), mono: false });
+  return facts;
+}
+
+/**
+ * Whether the page has more styles than one read lists (the list is cut).
+ *
+ * @param reply The inventory.
+ */
+export function isListCut(reply: Pick<PageStylesheetsReply, 'styles' | 'total'>): boolean {
+  return reply.total > reply.styles.length;
+}
 
 /**
  * The muted line under the summary when the page has more styles than one
@@ -172,8 +343,8 @@ export const CRITICAL_SNAPSHOT_TITLE =
  * @param reply The inventory.
  * @returns The note, or `null` while every style is listed.
  */
-export function listCutNote(reply: PageStylesheetsReply): string | null {
-  if (reply.total <= reply.styles.length) return null;
+export function listCutNote(reply: Pick<PageStylesheetsReply, 'styles' | 'total'>): string | null {
+  if (!isListCut(reply)) return null;
   return `Showing the first ${formatCount(reply.styles.length)} of ${formatCount(reply.total)} styles.`;
 }
 
@@ -232,4 +403,78 @@ export function stylesheetsView(
     refreshing: false,
     refreshMiss: failure?.kind === 'page-unreachable' ? failure.miss : null
   };
+}
+
+/** One WP Rocket feature that changes stylesheets: its settings name and Detections card. */
+interface StyleFeature {
+  readonly name: string;
+  readonly card: StatusItemId;
+}
+
+/**
+ * The features behind the style states, in the settings' order. Remove
+ * Unused CSS and Load CSS asynchronously share one card (and their settings
+ * group's name: one switch between them in the plugin's UI).
+ */
+const STYLE_FEATURES: readonly StyleFeature[] = [
+  { name: LABEL_OPTIMIZE_CSS_DELIVERY, card: 'remove_unused_css' },
+  { name: getRealOptionName('minify_css'), card: 'minify_css' },
+  { name: getRealOptionName('lazyload_css_bg_img'), card: 'lazyload_css_bg_img' },
+  { name: getRealOptionName('host_fonts_locally'), card: 'self_hosted_fonts' }
+];
+
+/**
+ * Whether a Detections card says its feature is off: the cards' own "off"
+ * bucket, minus the unknown verdict (absence the page cannot prove is no
+ * "off"). Collecting is its own bucket, so it never reads as off.
+ *
+ * @param card The feature's Detections card.
+ */
+function cardSaysOff(card: StatusItem): boolean {
+  return optimizationBucket(card) === 'off' && card.status !== 'unknown';
+}
+
+/** The page note when no listed style carries a WP Rocket state. */
+export interface UnchangedStylesNotice {
+  readonly title: string;
+  /** The style features Detections shows off (null when none is). */
+  readonly detail: string | null;
+}
+
+/**
+ * The note's title: what the rows prove, never more — a state needs WP
+ * Rocket's own footprint, and a change without one (a CDN host swap) is not
+ * read here, so it says "shows", not "changed".
+ */
+export const UNCHANGED_STYLES_TITLE = 'No stylesheet shows a WP Rocket change.';
+
+/**
+ * The page note for a list where WP Rocket changed nothing: shown only when
+ * WP Rocket is proven on the page (else the top bar's "Not detected" says
+ * it all) and the whole list is read (a cut list may hide a changed style)
+ * with rows, none with a state. Its detail names the style features whose
+ * Detections card says off — the usual reason; unknown and collecting
+ * features stay unnamed, so the note never contradicts their cards.
+ *
+ * @param reply The inventory (its cut decides, see {@link isListCut}).
+ * @param views The listed rows.
+ * @param cards The page's Detections cards (null before data).
+ * @returns The note, or null when it does not apply.
+ */
+export function unchangedStylesNotice(
+  reply: Pick<PageStylesheetsReply, 'styles' | 'total'>,
+  views: readonly StyleRowView[],
+  cards: readonly StatusItem[] | null
+): UnchangedStylesNotice | null {
+  if (cards === null || isListCut(reply)) return null;
+  const byId = new Map(cards.map((card) => [card.id, card]));
+  if (byId.get('wpr')?.status !== 'active') return null;
+  if (views.length === 0 || views.some((view) => view.chips.length > 0)) return null;
+  const off = STYLE_FEATURES.filter((feature) => {
+    const card = byId.get(feature.card);
+    return card !== undefined && cardSaysOff(card);
+  }).map((feature) => feature.name);
+  const detail =
+    off.length === 0 ? null : `${joinWords(off)} ${off.length === 1 ? 'is' : 'are'} off.`;
+  return { title: UNCHANGED_STYLES_TITLE, detail };
 }

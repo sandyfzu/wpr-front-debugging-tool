@@ -26,6 +26,7 @@ function asksAnswering(answer: Promise<unknown>): TabAsks {
     processPageData: vi.fn(() => Promise.resolve(true)),
     getFdtData: vi.fn(() => answer),
     getScriptSourceChunk: vi.fn(() => Promise.resolve(null)),
+    getServedScriptTag: vi.fn(() => Promise.resolve(null)),
     startRucssTest: vi.fn(() => Promise.resolve(null)),
     applyRucssTest: vi.fn(() => Promise.resolve(null)),
     runBeaconTest: vi.fn(() => Promise.resolve(null)),
@@ -33,7 +34,8 @@ function asksAnswering(answer: Promise<unknown>): TabAsks {
     getScriptRuntimeStatuses: vi.fn(() => Promise.resolve(null)),
     getCurrentVisitVitals: vi.fn(() => Promise.resolve(null)),
     listPageStyles: vi.fn(() => Promise.resolve(null)),
-    listPageStylesheets: vi.fn(() => Promise.resolve(null))
+    listPageStylesheets: vi.fn(() => Promise.resolve(null)),
+    getStyleSourceChunk: vi.fn(() => Promise.resolve(null))
   };
 }
 

@@ -1,5 +1,5 @@
 /**
- * The options page: the P9A page model mounted with its real storage IO, its
+ * The options page: its page model mounted with the real storage IO, its
  * registry-driven section cards, and the supplemental behaviors the settings
  * surface owns — the appearance choice (persisting instantly so every open
  * surface restyles through their existing storage watches), the instant rows
@@ -10,13 +10,20 @@
  * setting; injected UIs only read. The Save flow is the model's
  * — dirty-gated, busy-guarded, awaiting one write, its typed outcome toasts —
  * with no artificial delay anywhere.
+ *
+ * Layout: a sticky app bar (brand, name, version; the unsaved marker, Save
+ * and the appearance menu) over one centered column of section cards.
  */
-import type { JSX } from 'solid-js';
-import { createEffect, createSignal, onCleanup } from 'solid-js';
-import { For, Show } from 'solid-js';
-import { PageHeader } from '../../components/ui/page-header';
+import type { Accessor, JSX } from 'solid-js';
+import { createEffect, createSignal, on, onCleanup } from 'solid-js';
+import { For, Index, Show } from 'solid-js';
+import { AppBar } from '../../components/ui/app-bar';
+import { BrandMark } from '../../components/ui/brand-mark';
+import { Card } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
+// The Kobalte-free class module: the menu's own code loads lazily (./lazy-appearance-menu).
+import { MENU_ICON_TRIGGER_SIZE } from '../../components/ui/menu-classes';
 import { Skeleton } from '../../components/ui/skeleton';
 import { ErrorState } from '../../components/ui/error-state';
 import { Toasts } from '../../components/ui/toast';
@@ -29,6 +36,7 @@ import {
   type OptionsPageIO,
   type OptionsPageSnapshot
 } from '../../lib/options/page-model';
+import { cn } from '../../utils/cn';
 import { capitalize } from '../../utils/text';
 import { isAppearance, type Appearance } from '../../utils/theme';
 import { PAGE_SURFACE_NAMES, PAGE_UI_MENU_RESCUE } from '../../lib/page-commands/commands';
@@ -50,9 +58,11 @@ import {
 } from '../../lib/options/keyboard-layout';
 import { chordsEqual, formatChord, type PaletteChord } from '../../lib/storage/palette-chord';
 import { resolveChordPlatform, type ChordPlatform } from '../../lib/storage/palette-chord-platform';
+import { DRAFTED_OPTION_ROWS, type AppearanceOptionRow } from '../../lib/options/registry';
 import { OptionSections, type OptionRowScope } from './sections';
 import type { InstantRowsScope } from './instant-rows';
 import { KnownConflictsFreshness } from './kc-freshness';
+import { LazyAppearanceMenu } from './lazy-appearance-menu';
 
 const log = createLogger('options');
 
@@ -69,6 +79,38 @@ const CHORD_SAVED_TITLE = `${capitalize(PAGE_SURFACE_NAMES.commandPalette)} shor
 const CHORD_FAILURE_TITLE = `The ${PAGE_SURFACE_NAMES.commandPalette} shortcut could not be saved`;
 const INSTANT_FAILURE_DESCRIPTION =
   'The previous value stays — check that the extension is still enabled, then try again.';
+/** The app bar's marker while the draft holds edits Save has not written. */
+const UNSAVED_MARKER = 'Unsaved changes';
+
+/**
+ * The appearance row — the one row both the section and the app bar's menu
+ * edit (through the same scope path).
+ *
+ * @throws {@link Error} At module load when the registry has no appearance
+ *   row (a broken registry, never a runtime state).
+ */
+const APPEARANCE_ROW: AppearanceOptionRow = (() => {
+  const row = DRAFTED_OPTION_ROWS.find(
+    (candidate): candidate is AppearanceOptionRow => candidate.kind === 'appearance'
+  );
+  if (row === undefined) throw new Error('The options registry has no appearance row.');
+  return row;
+})();
+
+/**
+ * The app bar's placement: sticky at the top of the document scroller, its
+ * own `@container` (the unsaved marker's compact form reads the bar's
+ * width), and its content edges on the body column's edges — 12 px in on a narrow tab,
+ * the centered 48 rem column's 12 px gutters on a wider one (the start slot
+ * adds its own 3 px of focus-ring room, so its frame padding is 3 px less).
+ */
+const APP_BAR_PLACEMENT =
+  'sticky top-0 z-10 @container ' +
+  'pl-[max(calc(var(--spacing)*2.25),calc((100%_-_var(--container-3xl))_/_2_+_var(--spacing)_*_2.25))] ' +
+  'pr-[max(calc(var(--spacing)*3),calc((100%_-_var(--container-3xl))_/_2_+_var(--spacing)_*_3))]';
+
+/** The loading skeleton's cards: rows per section, as the registry renders them. */
+const SKELETON_CARD_ROWS = [1, 1, 4] as const;
 
 export interface OptionsPageProps {
   /** The extension's product name, as the manifest declares it (the h1). */
@@ -91,6 +133,13 @@ export interface OptionsPageProps {
   resolvePlatform?: () => Promise<ChordPlatform>;
   /** The active keyboard layout (default: the Keyboard Map API, feature-detected). */
   readLayout?: () => Promise<KeyLayoutLookup | null>;
+  /**
+   * The stored appearance this document follows (the boot's appearance
+   * follow: every validated write, from any surface). Its changes after
+   * mount reach the model, so the row and the menu show another surface's
+   * pick live unless the row holds an unsaved edit. Absent: no follow.
+   */
+  storedAppearance?: Accessor<Appearance>;
 }
 
 /**
@@ -136,6 +185,20 @@ export function App(props: OptionsPageProps): JSX.Element {
   const model = createOptionsPageModel(props.io, setSnapshot);
   void model.load();
 
+  // Another surface's appearance write (or this page's own, echoed) reaches
+  // the model as it lands; the value at mount predates the model's own read,
+  // so only later changes count. The model holds one arriving mid-load or
+  // mid-save and keeps an unsaved edit of the row.
+  createEffect(
+    on(
+      () => props.storedAppearance?.(),
+      (stored) => {
+        if (stored !== undefined) model.followStoredOption(APPEARANCE_ROW.id, stored);
+      },
+      { defer: true }
+    )
+  );
+
   /** The toast announcement guard: one toast per outcome object identity. */
   let announced: OptionsSaveOutcome | null = null;
   createEffect(() => {
@@ -152,15 +215,28 @@ export function App(props: OptionsPageProps): JSX.Element {
     }
   });
 
-  /** The appearance choice's instant write: the failures doom the draft here. */
-  const writeAppearance = (next: Appearance): void => {
+  /**
+   * The appearance choice's instant write. Success marks the row stored (its
+   * baseline moves, the row reads clean), so a later Save never writes this
+   * choice back over a newer one from another surface; a failure keeps it a
+   * pending edit for Save.
+   *
+   * @param rowId The appearance row's id.
+   * @param next The chosen appearance.
+   */
+  const writeAppearance = (rowId: string, next: Appearance): void => {
     const write = props.writeAppearance ?? setAppearanceOption;
-    void write(next).catch((cause: unknown) => {
-      log.error('The appearance write failed — the choice stays unsaved', cause);
-      toast.error(APPEARANCE_WRITE_FAILURE_TITLE, {
-        description: APPEARANCE_WRITE_FAILURE_DESCRIPTION
-      });
-    });
+    void write(next).then(
+      () => {
+        model.markOptionStored(rowId, next);
+      },
+      (cause: unknown) => {
+        log.error('The appearance write failed — the choice stays unsaved', cause);
+        toast.error(APPEARANCE_WRITE_FAILURE_TITLE, {
+          description: APPEARANCE_WRITE_FAILURE_DESCRIPTION
+        });
+      }
+    );
   };
 
   /**
@@ -187,7 +263,9 @@ export function App(props: OptionsPageProps): JSX.Element {
       // Synchronous, untracked read (an event handler): the save state at
       // click time is what gates the write.
       const saving = current.status === 'ready' && current.saving;
-      if (row.kind === 'appearance' && isAppearance(value) && !saving) writeAppearance(value);
+      if (row.kind === 'appearance' && isAppearance(value) && !saving) {
+        writeAppearance(row.id, value);
+      }
     }
   };
 
@@ -301,37 +379,102 @@ export function App(props: OptionsPageProps): JSX.Element {
     const current = ready();
     return current !== null && current.dirty && !current.saving;
   };
+  /** The appearance row's drafted value (what the row and the menu both show). */
+  const draftedAppearance = (): Appearance => {
+    const value = scope.read(APPEARANCE_ROW);
+    return isAppearance(value) ? value : 'system';
+  };
 
   return (
     <>
+      {/* Outside the animated body (never part of the mount entrance, never
+          inside its containing block) and outside the @container root, so
+          it sticks to the document scroller. */}
+      <AppBar
+        data-fdt="options-app-bar"
+        class={APP_BAR_PLACEMENT}
+        start={
+          <>
+            <BrandMark />
+            <div class="flex min-w-0 items-baseline gap-1.5">
+              {/* The name elides first; its full text stays the tooltip. */}
+              <h1
+                title={props.name}
+                class="min-w-0 truncate text-base font-semibold text-fg-primary"
+              >
+                {props.name}
+              </h1>
+              {/* Below the bar's regular tier the label leaves the row
+                  (kept as accessible text), so the name gets its room. */}
+              <span class="sr-only shrink-0 text-xs text-fg-secondary @regular:not-sr-only">
+                Options
+              </span>
+            </div>
+            {/* One text node: a split "v" + version yields two client rects,
+                which axe's contrast check reads as partially obscured when
+                rows scroll under the sticky bar. */}
+            <Badge kind="neutral" variant="outline" class="shrink-0 font-mono">
+              {`v${props.version}`}
+            </Badge>
+          </>
+        }
+        end={
+          <>
+            {/* Plain text, not a live region: Save's enabled state says the
+                same. A compact bar shows an accent dot instead (the words
+                stay its title and its accessible text), so the name keeps
+                room beside the version chip down to a 320 px tab. */}
+            <Show when={ready()?.dirty === true}>
+              <span
+                data-fdt="options-unsaved"
+                title={UNSAVED_MARKER}
+                class="me-1.5 inline-flex items-center"
+              >
+                <span aria-hidden="true" class="size-1.5 rounded-full bg-accent @regular:hidden" />
+                <span class="sr-only whitespace-nowrap text-2xs text-fg-muted @regular:not-sr-only">
+                  {UNSAVED_MARKER}
+                </span>
+              </span>
+            </Show>
+            <Button
+              variant="primary"
+              size="sm"
+              class="me-1"
+              disabled={!canSave()}
+              loading={ready()?.saving === true}
+              onClick={() => {
+                void model.save();
+              }}
+            >
+              Save
+            </Button>
+            {/* The menu edits the draft, so it exists once the draft does; its
+                box is held meanwhile (no shift when it arrives). */}
+            <Show
+              when={ready() !== null}
+              fallback={
+                <span
+                  aria-hidden="true"
+                  data-fdt="options-menu-placeholder"
+                  class={cn(MENU_ICON_TRIGGER_SIZE, 'shrink-0')}
+                />
+              }
+            >
+              <LazyAppearanceMenu
+                value={draftedAppearance()}
+                onChange={(next) => {
+                  scope.edit(APPEARANCE_ROW, next);
+                }}
+              />
+            </Show>
+          </>
+        }
+      />
       <main class="fdt-page @container" data-fdt-page="options">
         <div
           data-fdt="options-body"
           class="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-3 px-3 pb-8 pt-4"
         >
-          <PageHeader
-            title={props.name}
-            subtitle="Options"
-            actions={
-              <div class="flex items-center gap-1.5">
-                <Badge kind="neutral" variant="outline" class="font-mono">
-                  v{props.version}
-                </Badge>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={!canSave()}
-                  loading={ready()?.saving === true}
-                  onClick={() => {
-                    void model.save();
-                  }}
-                >
-                  Save
-                </Button>
-              </div>
-            }
-          />
-
           <Show
             when={snapshot().status !== 'loading'}
             fallback={
@@ -339,20 +482,27 @@ export function App(props: OptionsPageProps): JSX.Element {
                 <span class="sr-only" role="status">
                   Loading the options
                 </span>
-                <div class="h-12 rounded-md border border-line-1 bg-surface-1 p-2.5">
-                  <Skeleton class="h-3 w-32" />
-                  <Skeleton class="mt-2 h-3 w-64" />
-                </div>
-                <For each={[0, 1, 2]}>
-                  {() => (
-                    <div
-                      aria-hidden="true"
-                      class="rounded-md border border-line-1 bg-surface-1 p-2.5"
-                    >
-                      <Skeleton class="h-3 w-24" />
-                      <Skeleton class="mt-3 h-3 w-full" />
-                      <Skeleton class="mt-2 h-3 w-full" />
-                    </div>
+                {/* Shaped like the section cards: heading, then switch rows. */}
+                <For each={SKELETON_CARD_ROWS}>
+                  {(rows) => (
+                    <Card level={1}>
+                      <div aria-hidden="true" class="flex flex-col gap-1">
+                        <div class="flex flex-col gap-1.5 px-1 pt-0.5 pb-1">
+                          <Skeleton class="h-3.5 w-28" />
+                          <Skeleton class="h-3 w-64 max-w-full" />
+                        </div>
+                        <Index each={Array.from({ length: rows })}>
+                          {() => (
+                            <div class="flex items-center gap-1.5 px-1 py-2">
+                              <span class="inline-flex w-9 shrink-0 justify-center">
+                                <Skeleton class="h-3.5 w-7 rounded-full" />
+                              </span>
+                              <Skeleton class="h-3 w-56 max-w-full" />
+                            </div>
+                          )}
+                        </Index>
+                      </div>
+                    </Card>
                   )}
                 </For>
               </div>

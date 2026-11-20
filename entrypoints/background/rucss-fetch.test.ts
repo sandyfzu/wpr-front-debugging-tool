@@ -18,6 +18,7 @@ import {
   answerRucssFetch,
   createRucssInflight,
   keepBackgroundAlive,
+  rucssConsentHeld,
   rucssRequestUrlFor,
   sendRucssRequest,
   type RucssFetchDeps
@@ -260,6 +261,57 @@ describe('answerRucssFetch', () => {
     await expect(first).resolves.toMatchObject({
       outcome: { ok: false, failure: { kind: 'cancelled' } }
     });
+  });
+});
+
+describe('the data-consent check (where the browser has one)', () => {
+  it('sends when the grant is held, checking it on every request', async () => {
+    const fetch = fetchAnswering(OK_BODY);
+    const consent = vi.fn(() => Promise.resolve(true));
+    const d = { ...deps(fetch), consent };
+    await answerRucssFetch(SENDER, REQUEST, createRucssInflight(), d);
+    await answerRucssFetch(SENDER, REQUEST, createRucssInflight(), d);
+    expect(consent).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends nothing and answers consent-missing without the grant', async () => {
+    const fetch = fetchAnswering(OK_BODY);
+    const d = { ...deps(fetch), consent: () => Promise.resolve(false) };
+    await expect(answerRucssFetch(SENDER, REQUEST, createRucssInflight(), d)).resolves.toEqual({
+      kind: 'consent-missing'
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(d.log.lines).toEqual([
+      ['info', 'RUCSS request not sent: the data-sharing consent is not granted']
+    ]);
+  });
+
+  it('reads a failed grant read as not granted (logged), sending nothing', async () => {
+    const fetch = fetchAnswering(OK_BODY);
+    const d = { ...deps(fetch), consent: () => Promise.reject(new Error('dead context')) };
+    await expect(answerRucssFetch(SENDER, REQUEST, createRucssInflight(), d)).resolves.toEqual({
+      kind: 'consent-missing'
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(d.log.lines[0]).toEqual([
+      'error',
+      'Reading the data-sharing consent failed; the RUCSS request is not sent',
+      'dead context'
+    ]);
+  });
+
+  it('checks no consent for a refused sender (refusal first)', async () => {
+    const consent = vi.fn(() => Promise.resolve(true));
+    const d = { ...deps(fetchAnswering(OK_BODY)), consent };
+    await expect(
+      answerRucssFetch({ ...SENDER, frameId: 1 }, REQUEST, createRucssInflight(), d)
+    ).resolves.toEqual({ kind: 'refused' });
+    expect(consent).not.toHaveBeenCalled();
+  });
+
+  it('with no check to run, the grant counts as held', async () => {
+    await expect(rucssConsentHeld({ log: logDouble() })).resolves.toBe(true);
   });
 });
 

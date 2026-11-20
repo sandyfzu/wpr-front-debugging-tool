@@ -36,17 +36,16 @@
  * ("Fetched …"); the cookie side shows when the page read its cookies
  * ("Captured …"). Both tick through one aging clock owned by the page.
  */
-import { createMemo, createSignal, Match, onCleanup, Show, Switch, type JSX } from 'solid-js';
+import { createMemo, Match, onCleanup, Show, Switch, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import Cookie from 'lucide-solid/icons/cookie';
 import Info from 'lucide-solid/icons/info';
 import RotateCw from 'lucide-solid/icons/rotate-cw';
 import ScrollText from 'lucide-solid/icons/scroll-text';
-import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { EmptyState } from '../../../../components/ui/empty-state';
-import { FilterBar } from '../../../../components/ui/filter-bar';
+import { SearchField } from '../../../../components/ui/search-field';
 import { KeyValue } from '../../../../components/ui/key-value';
 import { STATUS_ICONS, STATUS_TEXT_CLASSES } from '../../../../components/ui/status-badge';
 import { Tooltip } from '../../../../components/ui/tooltip';
@@ -64,17 +63,17 @@ import { cn } from '../../../../utils/cn';
 import { useFdtData, useSearch } from '../../state/use-fdt-data';
 import { bindSearchField } from '../../state/search-field';
 import type { SearchStore } from '../../state/search';
-import { createAgingClock, realAgingClockDeps } from '../../status-bar/aging-clock';
+import { createAgingClock, realAgingClockDeps } from '../../state/aging-clock';
 import { relativeAge } from '../../../../utils/relative-age';
 import { CURRENT_MATCH_ROW, createCurrentMatch } from '../current-match';
-import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
+import { NoMatches, PAGE_CANVAS, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
+import { CALM_ROW_GAP } from '../resource-list/list-row';
 import { createResultsAnnouncement } from '../results-announcement';
 import { WithheldLegend, WithheldValue } from '../withheld-value';
 import { inspectedReloadAction } from '../reload-inspected';
 import {
   allHeadersCopyText,
   buildInventory,
-  COOKIES_LEAD,
   estimateRowHeight,
   filterInventory,
   headerCopyLabel,
@@ -85,6 +84,7 @@ import {
   isoStamp,
   SECTION_NOUNS,
   SECTION_TITLES,
+  sectionIndexes,
   shownStamp,
   type InventoryRow,
   type InventorySectionId
@@ -115,6 +115,27 @@ const LIST_LABEL = 'Response headers and cookies';
  * a generous buffer keeps keyboard traversal inside the list.
  */
 const LIST_OVERSCAN = 24;
+
+/**
+ * A section heading band's box, each part's class beside its painted size
+ * (Tailwind's 4 px spacing step) so the scroll padding sums what renders:
+ * the fixed heading line, and the separation above every heading but the
+ * first (painted by the band, so it stays part of a stuck band).
+ */
+export const SECTION_BAND = {
+  line: { class: 'h-9', px: 36 },
+  gap: { class: 'pt-3', px: 12 }
+} as const;
+
+/**
+ * The tallest stuck section band (px): a later heading's line plus its gap.
+ * Scrolled rows (find requests and focus alike) land this far down, never
+ * under the band; under the first heading (36 px) they sit 12 px clear of it.
+ */
+export const STUCK_BAND_PX = SECTION_BAND.line.px + SECTION_BAND.gap.px;
+
+/** A list row's box (T-3): 36 px one-line floor, 14 px inline padding, no hairlines. */
+const ROW_BOX = 'min-h-9 px-3.5';
 
 /** Props of {@link HeadersCookiesView}. */
 export interface HeadersCookiesViewProps {
@@ -193,7 +214,8 @@ export function HeadersCookiesPage(props: HeadersCookiesPageProps = {}): JSX.Ele
  *
  * Layout: the frame's fill mode; the fetched line, then the filter field,
  * then one virtual list over the flattened inventory (section headings +
- * rows) — one scroller for everything, never nested ones. The list renders
+ * rows) — one scroller for everything, never nested ones; each section's
+ * heading sticks to the list's top while its rows scroll. The list renders
  * the query's matches; a query that matches nothing lands on the shared
  * filtered-empty view with its one-click way back.
  *
@@ -247,25 +269,8 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
   const hasWithheld = createMemo(() =>
     rows().some((row) => row.kind === 'header' && row.header.redacted)
   );
-  // The scroll-edge hairline appears only once the list has scrolled.
-  const [scrolled, setScrolled] = createSignal(false);
-  /**
-   * Arm the scroll-edge signal on the list's wrapper.
-   *
-   * @param wrapper The layout-free element around the list.
-   */
-  const watchListScroll = (wrapper: HTMLDivElement): void => {
-    const onScroll = (event: Event): void => {
-      const target = event.target;
-      if (target instanceof HTMLElement && target.dataset.fdt === 'virtual-list') {
-        setScrolled(target.scrollTop > 0);
-      }
-    };
-    wrapper.addEventListener('scroll', onScroll, { capture: true, passive: true });
-    onCleanup(() => {
-      wrapper.removeEventListener('scroll', onScroll, { capture: true });
-    });
-  };
+  // The section headings stick to the list's top while their rows scroll.
+  const stuck = createMemo(() => sectionIndexes(visible()));
   let controls: HTMLDivElement | undefined;
   /** Where focus lands after the filtered-empty view's way back clears the field. */
   const focusAfter = (): HTMLElement | null | undefined =>
@@ -356,13 +361,13 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
       <Show when={items().length > 0}>
         {/* Esc in the field is the binding's rule; the ref targets the way-back focus. */}
         <div ref={controls} onKeyDown={field.onKeyDown}>
-          <FilterBar
-            searchQuery={field.value()}
-            onSearchChange={(raw) => {
+          <SearchField
+            value={field.value()}
+            onValueChange={(raw) => {
               field.input(raw);
             }}
-            searchLabel={SEARCH_LABEL}
-            searchPlaceholder={SEARCH_PLACEHOLDER}
+            label={SEARCH_LABEL}
+            placeholder={SEARCH_PLACEHOLDER}
           />
         </div>
       </Show>
@@ -381,43 +386,41 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
             </div>
           }
         >
-          {/* A layout-free wrapper: scroll does not bubble, so the list's own
-              scroll reaches the edge-hairline signal through a capture listener. */}
-          <div ref={watchListScroll} class="contents">
-            <VirtualList
-              scrollerRole="list"
-              aria-label={LIST_LABEL}
-              count={visible().length}
-              estimateSize={(index) => {
-                const row = visible()[index];
-                return row === undefined ? 32 : estimateRowHeight(row);
-              }}
-              getItemKey={(index) => visible()[index]?.id ?? fallbackRowKey(index)}
-              overscan={LIST_OVERSCAN}
-              createVirtualizer={props.createVirtualizer}
-              scrollTo={match.request}
-              class={cn(
-                PAGE_FILL_SCROLLER,
-                '-mx-1 border-t px-1',
-                scrolled() ? 'border-line-2' : 'border-transparent'
-              )}
-            >
-              {(item) => (
-                <Show when={visible()[item.index]}>
-                  {(row) => (
-                    <InventoryItem
-                      row={row()}
-                      position={item.index + 1}
-                      total={visible().length}
-                      matched={match.current() === item.index}
-                      cookiesCapturedAt={cookiesCapturedAt()}
-                      now={props.now}
-                    />
-                  )}
-                </Show>
-              )}
-            </VirtualList>
-          </div>
+          <VirtualList
+            scrollerRole="list"
+            aria-label={LIST_LABEL}
+            count={visible().length}
+            estimateSize={(index) => {
+              const row = visible()[index];
+              return row === undefined ? 36 : estimateRowHeight(row);
+            }}
+            getItemKey={(index) => visible()[index]?.id ?? fallbackRowKey(index)}
+            overscan={LIST_OVERSCAN}
+            gap={CALM_ROW_GAP}
+            stickyIndexes={stuck()}
+            scrollPaddingStart={STUCK_BAND_PX}
+            createVirtualizer={props.createVirtualizer}
+            scrollTo={match.request}
+            // Opaque in the canvas's own color (no visible change): overscan
+            // rows past the visible window then resolve their text background
+            // to it, and the stuck band paints the same canvas over the rows.
+            class={cn(PAGE_FILL_SCROLLER, PAGE_CANVAS)}
+          >
+            {(item) => (
+              <Show when={visible()[item.index]}>
+                {(row) => (
+                  <InventoryItem
+                    row={row()}
+                    position={item.index + 1}
+                    total={visible().length}
+                    matched={match.current() === item.index}
+                    cookiesCapturedAt={cookiesCapturedAt()}
+                    now={props.now}
+                  />
+                )}
+              </Show>
+            )}
+          </VirtualList>
         </Show>
       </Show>
       <div role="status" aria-live={live()} class="sr-only" data-fdt="headers-results-status">
@@ -444,18 +447,18 @@ interface InventoryItemProps {
 }
 
 /**
- * Render one list row as a `listitem`, dispatching on its kind. Rows are
- * hairline-separated (a heading's line is one step stronger); the last row
- * has nothing below it to separate, so it draws none. The find's active
- * match renders the shared current-row marker (a start-edge rail + wash,
- * with `aria-current` — shape, never color alone); only item rows can
+ * Render one list row as a `listitem`, dispatching on its kind. Rows sit on
+ * the list's 4 px gap with no hairlines (T-3): item rows tint on hover and
+ * while their control has focus (instant — no transition), the section
+ * heading paints the canvas so it can stick over the rows. The find's
+ * active match renders the shared current-row marker (a start-edge rail +
+ * wash, with `aria-current` — shape, never color alone); only item rows can
  * match, the scaffolding never does.
  *
  * @param props See {@link InventoryItemProps}.
  * @returns The `listitem`.
  */
 function InventoryItem(props: InventoryItemProps): JSX.Element {
-  const last = (): boolean => props.position === props.total;
   // One narrowing accessor per kind: a soft refresh hands the same index a
   // new row object of the same kind, and the non-keyed branches below keep
   // their DOM (focus on a copy button included) while the values update.
@@ -463,6 +466,7 @@ function InventoryItem(props: InventoryItemProps): JSX.Element {
   const header = () => (props.row.kind === 'header' ? props.row : undefined);
   const cookie = () => (props.row.kind === 'cookie' ? props.row : undefined);
   const note = () => (props.row.kind === 'note' ? props.row : undefined);
+  const lead = () => (props.row.kind === 'lead' ? props.row : undefined);
   return (
     <div
       role="listitem"
@@ -471,8 +475,8 @@ function InventoryItem(props: InventoryItemProps): JSX.Element {
       data-fdt-inventory-row={props.row.kind}
       aria-current={props.matched ? 'true' : undefined}
       class={cn(
-        !last() && 'border-b',
-        props.row.kind === 'section' ? 'border-line-2' : 'border-line-1',
+        (props.row.kind === 'header' || props.row.kind === 'cookie') &&
+          'rounded-lg focus-within:bg-surface-2 hover:bg-surface-2',
         props.matched && CURRENT_MATCH_ROW
       )}
     >
@@ -493,7 +497,7 @@ function InventoryItem(props: InventoryItemProps): JSX.Element {
         </Match>
         <Match when={cookie()}>
           {(row) => (
-            <div class="flex min-h-8 items-center gap-2 px-1 py-1.5">
+            <div class={cn(ROW_BOX, 'flex items-center gap-2 py-1.5')}>
               <Cookie size={12} class="shrink-0 text-fg-muted" aria-hidden="true" />
               <span class="min-w-0 font-mono text-xs break-all text-fg-primary">{row().name}</span>
             </div>
@@ -501,10 +505,22 @@ function InventoryItem(props: InventoryItemProps): JSX.Element {
         </Match>
         <Match when={note()}>
           {(row) => (
-            <p class="flex min-h-8 items-center px-1 py-1.5 text-2xs text-fg-secondary">
-              {row().text}
+            // The capture's own callout (what its absence says): a tinted
+            // note row, so it never reads as one more item.
+            <p
+              data-fdt="headers-note"
+              class={cn(
+                ROW_BOX,
+                'flex items-center gap-1.5 rounded-lg bg-status-info-soft py-2 text-2xs text-fg-secondary'
+              )}
+            >
+              <Info size={12} class="shrink-0 text-status-info" aria-hidden="true" />
+              <span>{row().text}</span>
             </p>
           )}
+        </Match>
+        <Match when={lead()}>
+          {(row) => <p class="px-3.5 pb-1 text-2xs text-fg-secondary">{row().text}</p>}
         </Match>
       </Switch>
     </div>
@@ -526,42 +542,40 @@ interface SectionHeadingProps {
 }
 
 /**
- * Render a section's heading band: the level-2 heading with its count, plus
- * — for cookies — the capture stamp and the lead line naming both limits.
+ * Render a section's sticky heading band: one 36 px line with the level-2
+ * caps heading and its tabular count, plus — for cookies — the capture
+ * stamp at the end (truncating, never wrapping: the band's height is the
+ * list's scroll padding). The band paints the canvas, so the rows scrolling
+ * under it while it is stuck stay hidden.
  *
  * @param props See {@link SectionHeadingProps}.
  * @returns The heading band.
  */
 function SectionHeading(props: SectionHeadingProps): JSX.Element {
-  const noun = (): string => {
-    return countNoun(props.count, SECTION_NOUNS[props.section]);
-  };
+  const noun = (): string => countNoun(props.count, SECTION_NOUNS[props.section]);
   return (
-    <div class={cn('px-1 pb-1.5', props.first ? 'pt-0.5' : 'pt-5')}>
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+    <div class={cn(PAGE_CANVAS, 'px-3.5', !props.first && SECTION_BAND.gap.class)}>
+      <div class={cn(SECTION_BAND.line.class, 'flex min-w-0 items-center gap-3')}>
         <div
           role="heading"
           aria-level="2"
-          class="flex items-center gap-1.5 text-sm font-semibold text-fg-primary"
+          class="flex shrink-0 items-center gap-1.5 text-2xs font-semibold tracking-wide text-fg-muted uppercase"
         >
           <span>{SECTION_TITLES[props.section]}</span>{' '}
           {/* The space keeps the accessible name "<title> <count> <noun>". */}
-          <Badge class="tabular-nums">
+          <span data-fdt="headers-section-count" class="text-fg-secondary tabular-nums">
             {props.count}
             <span class="sr-only"> {noun()}</span>
-          </Badge>
+          </span>
         </div>
         <Show when={props.capturedAt !== null ? props.capturedAt : undefined}>
           {(at) => (
-            <span class="ms-auto text-2xs text-fg-muted">
+            <span class="ms-auto min-w-0 truncate text-2xs text-fg-muted">
               <Stamp verb="Captured" at={at()} now={props.now} plain />
             </span>
           )}
         </Show>
       </div>
-      <Show when={props.section === 'cookies'}>
-        <p class="mt-0.5 text-2xs text-fg-secondary">{COOKIES_LEAD}</p>
-      </Show>
     </div>
   );
 }
@@ -575,27 +589,28 @@ interface HeaderItemProps {
 }
 
 /**
- * Render one header row: the name over its value (side by side from the
- * regular tier; the list itself is capped at the wide tier, so the copy
- * control stays near the value), the verdict hint under the value when the
- * shared model has one — its status-vocabulary icon carries the verdict's
- * tone (shape + color; the wording always states the meaning) — and an
- * always-visible copy control for the wire form `name: value`. A withheld
- * value renders through the shared `WithheldValue` (lock + marker; the
- * reason on hover and for screen readers). The row tints on hover and
- * while its control has focus (instant — no transition).
+ * Render one header row: one key-value line (the name in a fixed column
+ * beside its value from the regular tier, stacked above it when compact;
+ * values break anywhere, so a long one wraps inside its column), the
+ * verdict hint under the value when the shared model has one — its
+ * status-vocabulary icon carries the verdict's tone (shape + color; the
+ * wording always states the meaning) — and an always-visible, muted copy
+ * control for the wire form `name: value`. A withheld value renders through
+ * the shared `WithheldValue` (lock + marker; the reason on hover and for
+ * screen readers). The text's 4 px inset centres its first line on the
+ * 24 px control, which stays at the top beside a wrapped value.
  *
  * @param props See {@link HeaderItemProps}.
  * @returns The header row.
  */
 function HeaderItem(props: HeaderItemProps): JSX.Element {
   return (
-    <div class="flex items-start gap-1 rounded-sm py-1.5 ps-1 focus-within:bg-surface-2 hover:bg-surface-2">
+    <div class={cn(ROW_BOX, 'flex items-start gap-2 py-1.5')}>
       <KeyValue
         stacked
         term={props.header.name}
         class={cn(
-          'min-w-0 flex-1 gap-y-0.5 @regular:flex-row @regular:gap-x-3',
+          'min-w-0 flex-1 gap-y-0.5 py-1 @regular:flex-row @regular:gap-x-3.5',
           '[&>[data-fdt-key-value-term]]:font-mono [&>[data-fdt-key-value-term]]:break-all',
           '@regular:[&>[data-fdt-key-value-term]]:w-40 @wide:[&>[data-fdt-key-value-term]]:w-56',
           '@regular:[&>[data-fdt-key-value-value]]:flex-1'
@@ -627,8 +642,13 @@ function HeaderItem(props: HeaderItemProps): JSX.Element {
       </KeyValue>
       {/* The wrapper's title names the icon-only control on hover (no
           per-row tooltip component inside a virtual row). */}
-      <span class="-my-0.5 shrink-0" title={`Copy ${props.copyLabel}`}>
-        <CopyButton text={headerCopyText(props.header)} label={props.copyLabel} showLabel={false} />
+      <span class="shrink-0" title={`Copy ${props.copyLabel}`}>
+        <CopyButton
+          text={headerCopyText(props.header)}
+          label={props.copyLabel}
+          showLabel={false}
+          class="text-fg-muted"
+        />
       </span>
     </div>
   );

@@ -54,7 +54,7 @@ export function IconButton(props: IconButtonProps): JSX.Element {
       data-fdt="icon-button"
       aria-label={own.label}
       class={cn(
-        'inline-grid shrink-0 place-items-center rounded border',
+        'inline-grid shrink-0 place-items-center rounded-control border',
         FOCUS_RING,
         DISABLED,
         buttonVariantClasses(own.variant ?? 'ghost', isHeld(rest.disabled, rest['aria-disabled'])),

@@ -84,6 +84,25 @@ describe('runRucssTest', () => {
     expect(d.apply).toHaveBeenCalledWith({ runId: RUN, css: 'b{}', keepLinks: [0] });
   });
 
+  it('with a consent gate: runs on `granted`, stops before the request otherwise', async () => {
+    const granted = deps({ consent: vi.fn(() => Promise.resolve('granted' as const)) });
+    await expect(runRucssTest(granted)).resolves.toMatchObject({ kind: 'applied' });
+    expect(granted.consent).toHaveBeenCalledOnce();
+    for (const gate of ['asking', 'ask-failed'] as const) {
+      const d = deps({ consent: () => Promise.resolve(gate) });
+      await expect(runRucssTest(d)).resolves.toEqual({ kind: 'consent-needed', reason: gate });
+      expect(d.start).not.toHaveBeenCalled();
+      expect(d.build).not.toHaveBeenCalled();
+    }
+  });
+
+  it('asks no consent before the patterns compile (an invalid run never opens the ask)', async () => {
+    const consent = vi.fn(() => Promise.resolve('asking' as const));
+    const d = deps({ consent }, { ...DEFAULT_RUCSS_TESTER_CONFIG, excludeFiles: '(' });
+    await expect(runRucssTest(d)).resolves.toMatchObject({ kind: 'invalid-config' });
+    expect(consent).not.toHaveBeenCalled();
+  });
+
   it('stops before any request when the configuration cannot be read', async () => {
     const d = deps({ readConfig: () => Promise.reject(new Error('context invalidated')) });
     await expect(runRucssTest(d)).resolves.toEqual({ kind: 'config-unreadable' });
@@ -129,6 +148,14 @@ describe('runRucssTest', () => {
     });
     await expect(runRucssTest(d)).resolves.toMatchObject({ miss: 'failed' });
     expect(warn).toHaveBeenCalledWith('RUCSS test start failed', 'boom');
+  });
+
+  it('reads the background consent refusal as the consent outcome (asked again like a decline)', async () => {
+    const d = deps({
+      start: () => Promise.resolve(reply({ ok: false, failure: { kind: 'consent-missing' } }))
+    });
+    await expect(runRucssTest(d)).resolves.toEqual({ kind: 'consent-needed', reason: 'declined' });
+    expect(d.build).not.toHaveBeenCalled();
   });
 
   it('answers a start failure without building or applying', async () => {
@@ -179,6 +206,7 @@ describe('rucssTabSteps', () => {
       processPageData: vi.fn(),
       getFdtData: vi.fn(),
       getScriptSourceChunk: vi.fn(),
+      getServedScriptTag: vi.fn(),
       startRucssTest: vi.fn(() => Promise.resolve(start)),
       applyRucssTest: vi.fn(() => Promise.resolve(apply)),
       runBeaconTest: vi.fn(),
@@ -186,7 +214,8 @@ describe('rucssTabSteps', () => {
       getScriptRuntimeStatuses: vi.fn(),
       getCurrentVisitVitals: vi.fn(),
       listPageStyles: vi.fn(),
-      listPageStylesheets: vi.fn()
+      listPageStylesheets: vi.fn(),
+      getStyleSourceChunk: vi.fn()
     };
   }
 

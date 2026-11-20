@@ -245,12 +245,13 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     active?.localName === COMMAND_PALETTE_HOST_NAME;
   /**
    * Move focus once the target is visible (next frame: visibility flips
-   * first). A just-revealed panel can stay hidden for a frame (reduced motion
-   * turns its instant visibility switch into a 0.01 ms transition), so a move
-   * that does not take is tried again on the next frames — never once another
-   * UI (e.g. a palette opened meanwhile) claimed focus. Not keyed on
-   * `transitionend`: without reduced motion the switch is no transition at
-   * all (no event would come), and the frames bound the wait either way.
+   * first). A just-revealed panel can still resolve as hidden for a frame
+   * (an attempt may run before the frame's style recalc), so a move that
+   * does not take is tried again on the next frames — never once another UI
+   * (e.g. a palette opened meanwhile) claimed focus. Not keyed on
+   * `transitionend`: the visibility switch is no transition (and reduced
+   * motion drops every transition), so no event would come; the frames
+   * bound the wait.
    *
    * @param element The control to focus, read on each attempt (`undefined` gives up).
    */

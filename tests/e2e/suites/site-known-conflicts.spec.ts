@@ -1,8 +1,8 @@
 /**
- * P4.3 suite 3 — Known Conflicts over the real plugin tables and the real
+ * Known Conflicts over the real plugin tables and the real
  * DB flows.
  *
- * The wp-admin scans run against the P4.2 site's real `plugins.php` (62
+ * The wp-admin scans run against the docker site's real `plugins.php` (62
  * preinstalled conflict plugins); the DB flows run against the background's
  * real storage and its real serve path.
  *

@@ -1,37 +1,36 @@
 /**
- * The JavaScript page's pure view layer: state chips, the inline-code shape
- * (line counting, the bounded preview, expandability), chips, estimates, the
- * per-row keyed flag bookkeeping (expanded, wrapped) and the count phrases.
+ * The JavaScript page's pure view layer: state chips, the calm row's name,
+ * preview, size and chip split, the detail's facts and code language, the
+ * facets over views, line counting and the bounded detail text.
  */
 import { describe, expect, it } from 'vitest';
 import type { JsScriptResource } from '../../../../lib/panel/resources-view-model';
 import type { ScriptSimulation } from '../../../../lib/panel/script-states';
-import { JS_PAGE_RESOURCES } from '../../../../lib/panel/resources-view-model';
+import { JS_PAGE_FACETS } from '../../../../lib/panel/resources-view-model';
+import { applyFacets } from '../../../../lib/panel/resource-facets';
 import { formatCount } from '../../../../utils/format-count';
-import { buildRowView } from './script-identity';
 import {
-  COLLAPSED_CODE_LINES,
-  JS_VIEW_RESOURCES,
-  PREVIEW_LINE_CHARS,
-  ROW_ESTIMATES,
-  buildChips,
-  codeCaption,
-  codeToggleLabel,
+  EMPTY_SRC_NAME,
+  JS_CHIP_SOURCES,
+  JS_VIEW_FACETS,
+  NO_CODE_PREVIEW,
+  PREVIEW_CHARS,
   collapsedPreview,
-  delaySummaryBadge,
   countLines,
-  estimateRowSize,
   expandedCutNote,
   expandedText,
-  inlineCode,
   lineCount,
-  pruneRowFlags,
-  ORIGINAL_TYPE_TITLE,
-  originalTypeDetail,
+  notableScriptType,
   sameScript,
-  scriptChipSplit,
-  scriptStateChips,
-  JS_CHIP_SOURCES
+  scriptCodeLanguage,
+  scriptFacts,
+  scriptKind,
+  scriptName,
+  scriptPreview,
+  scriptRowView,
+  scriptSearchField,
+  scriptSize,
+  scriptStateChips
 } from './script-view';
 import { UNVERIFIED_SIMULATION_SUFFIX } from '../resource-list/state-chips';
 
@@ -47,18 +46,11 @@ function script(overrides: Partial<JsScriptResource> = {}): JsScriptResource {
     fdtExcluded: null,
     minified: false,
     combined: false,
+    minifyAttribute: false,
     originalType: null,
     ...overrides
   };
 }
-
-describe('delaySummaryBadge', () => {
-  it('served, simulated (never "Not detected"), absent', () => {
-    expect(delaySummaryBadge(true, false)).toEqual({ label: 'Detected', kind: 'ok' });
-    expect(delaySummaryBadge(false, true)).toEqual({ label: 'Simulated', kind: 'info' });
-    expect(delaySummaryBadge(false, false)).toEqual({ label: 'Not detected', kind: 'neutral' });
-  });
-});
 
 /** Delay JS and Defer JS both run by a verified simulation. */
 const BOTH_SIMULATED: ScriptSimulation = { delay: 'simulated', defer: 'simulated' };
@@ -206,65 +198,214 @@ describe('scriptStateChips', () => {
   });
 });
 
-describe('scriptChipSplit', () => {
-  it('shows every chip of a row within the cap, no "+N"', () => {
-    const split = scriptChipSplit(script({ delayed: true, deferred: true, minified: true }));
-    expect(split.visible.map((chip) => chip.id)).toEqual(['delayed', 'deferred', 'minified']);
-    expect(split.overflow).toBeNull();
-  });
-
-  it('a plain row has no chips at all', () => {
-    expect(scriptChipSplit(script())).toEqual({ visible: [], overflow: null });
-  });
-
-  it('past the cap, the least important chips go behind "+N"', () => {
-    // A row shape the detection does not produce today (the states are
-    // mostly exclusive), held to the cap all the same.
-    const split = scriptChipSplit(
-      script({ fdtExcluded: 'defer_all_js', delayed: true, minified: true, combined: true })
+describe('scriptRowView', () => {
+  it('splits the chips at two for the row and keeps them all for the detail', () => {
+    const view = scriptRowView(
+      script({ delayed: true, deferred: true, deferredByWPR: true, minified: true }),
+      'k'
     );
-    expect(split.visible.map((chip) => chip.id)).toEqual(['excluded', 'delayed', 'combined']);
-    expect(split.overflow).toEqual({
-      label: '+1',
-      title: 'Also: Minified (WP Rocket)',
-      hidesWpRocket: true
-    });
+    expect(view.chips.map((chip) => chip.label)).toEqual(['Delayed', 'Deferred', 'Minified']);
+    expect(view.rowChips.visible.map((chip) => chip.label)).toEqual(['Delayed', 'Deferred']);
+    expect(view.rowChips.overflow?.label).toBe('+1');
+    expect(view).toMatchObject({ key: 'k', capture: 'complete', preview: 'example.test/a.js' });
+  });
+
+  it('attributes a stamped defer to a verified simulation', () => {
+    const stamped = script({ deferredByWPR: true, deferred: true });
+    expect(scriptRowView(stamped, 'e', 'complete', BOTH_SIMULATED).chips[0]?.source).toBe(
+      'simulated'
+    );
+    expect(scriptRowView(stamped, 'e').chips[0]?.source).toBe('wp-rocket');
   });
 });
 
-describe('originalTypeDetail', () => {
-  it.each([
-    'text/javascript',
-    ' Text/JavaScript ',
-    'application/javascript',
-    'text/jscript',
-    ' ',
-    '\t\n'
-  ])('hides a classic or blank type (%j): it says nothing new', (originalType) => {
-    expect(originalTypeDetail(script({ delayed: true, originalType }))).toBeNull();
-  });
+describe('notableScriptType', () => {
+  it.each(['text/javascript', ' Text/JavaScript ', 'application/javascript', ' ', '\t\n'])(
+    'hides a classic or blank type (%j)',
+    (originalType) => {
+      expect(notableScriptType(script({ delayed: true, originalType }))).toBeNull();
+    }
+  );
 
-  it('shows module whatever its case', () => {
-    expect(originalTypeDetail(script({ delayed: true, originalType: 'Module' }))).toBe(
-      'type: Module'
+  it('names module, JSON and data-block types as written; none without one', () => {
+    expect(notableScriptType(script({ delayed: true, originalType: 'Module' }))).toBe('Module');
+    expect(notableScriptType(script({ delayed: true, originalType: 'importmap' }))).toBe(
+      'importmap'
     );
-  });
-
-  it('names a delayed row’s original type; none without one', () => {
-    expect(originalTypeDetail(script({ delayed: true, originalType: 'module' }))).toBe(
-      'type: module'
-    );
-    expect(originalTypeDetail(script({ delayed: true }))).toBeNull();
-    expect(originalTypeDetail(script({ delayed: true, originalType: 'text/template' }))).toBe(
-      'type: text/template'
-    );
-    // Parameters make a type a data block, not classic: worth showing.
     expect(
-      originalTypeDetail(script({ delayed: true, originalType: 'text/javascript; charset=utf-8' }))
-    ).toBe('type: text/javascript; charset=utf-8');
-    expect(ORIGINAL_TYPE_TITLE).toBe(
-      "The script's own type, restored when Delay JavaScript execution runs it"
+      notableScriptType(script({ delayed: true, originalType: 'text/javascript; charset=utf-8' }))
+    ).toBe('text/javascript; charset=utf-8');
+    expect(notableScriptType(script({ delayed: true }))).toBeNull();
+  });
+});
+
+describe('collapsedPreview', () => {
+  it('collapses every whitespace run to one space and trims both ends', () => {
+    expect(collapsedPreview('  if (a) {\n\t  b();\r\n}  ')).toBe('if (a) { b(); }');
+    expect(collapsedPreview('\n\n')).toBe('');
+  });
+
+  it('keeps at most the cap, never ending on half a surrogate pair', () => {
+    expect(collapsedPreview('x'.repeat(PREVIEW_CHARS + 50))).toHaveLength(PREVIEW_CHARS);
+    const astral = `${'x'.repeat(PREVIEW_CHARS - 1)}😀tail`;
+    expect(collapsedPreview(astral)).toBe('x'.repeat(PREVIEW_CHARS - 1));
+  });
+
+  it('scans a huge script only as far as its preview', () => {
+    const huge = `a${' '.repeat(5)}b${'c'.repeat(600_000)}`;
+    expect(collapsedPreview(huge)).toBe(`a b${'c'.repeat(PREVIEW_CHARS - 3)}`);
+  });
+});
+
+describe('scriptPreview', () => {
+  it('prefixes the notable type to code and URLs alike', () => {
+    expect(
+      scriptPreview(
+        script({
+          type: 'inline',
+          content: '{"imports":{}}',
+          delayed: true,
+          originalType: 'importmap'
+        }),
+        'complete'
+      )
+    ).toBe('importmap · {"imports":{}}');
+    expect(scriptPreview(script({ delayed: true, originalType: 'module' }), 'complete')).toBe(
+      'module · example.test/a.js'
     );
+  });
+
+  it('tells a blank script from text the size budget left out', () => {
+    expect(scriptPreview(script({ type: 'inline', content: '  ' }), 'complete')).toBe(
+      NO_CODE_PREVIEW.blank
+    );
+    expect(scriptPreview(script({ type: 'inline', content: '' }), 'not-captured')).toBe(
+      NO_CODE_PREVIEW['not-captured']
+    );
+  });
+});
+
+describe('scriptName / scriptKind', () => {
+  it('names an external script by its file, an inline one by its ordinal', () => {
+    expect(scriptName(scriptRowView(script(), 'e'), 0)).toBe('a.js');
+    expect(scriptName(scriptRowView(script({ content: '' }), 'e'), 0)).toBe(EMPTY_SRC_NAME);
+    expect(scriptName(scriptRowView(script({ type: 'inline', content: 'x()' }), 'i'), 3)).toBe(
+      'Inline script #3'
+    );
+    expect(scriptKind(scriptRowView(script(), 'e'))).toBe('External script');
+    expect(scriptKind(scriptRowView(script({ type: 'inline' }), 'i'))).toBe('Inline script');
+  });
+});
+
+describe('scriptSize', () => {
+  const inline = (content: string): JsScriptResource => script({ type: 'inline', content });
+
+  it('counts an inline script compactly, floored when clipped', () => {
+    expect(scriptSize(scriptRowView(inline('x'.repeat(742)), 'i'))).toBe('742');
+    expect(scriptSize(scriptRowView(inline('x'.repeat(18_611)), 'i'))).toBe('18.6K');
+    expect(scriptSize(scriptRowView(inline('x'.repeat(2000)), 'i', 'clipped'))).toBe('≥ 2K');
+  });
+
+  it('rounds a clipped size down, so the floor never reads above the text', () => {
+    const clipped = (chars: number): string | undefined =>
+      scriptSize(scriptRowView(inline('x'.repeat(chars)), 'i', 'clipped'));
+    expect(clipped(524_288)).toBe('≥ 524.2K');
+    expect(clipped(999_960)).toBe('≥ 999.9K');
+    // A whole (unclipped) count still rounds to nearest.
+    expect(scriptSize(scriptRowView(inline('x'.repeat(524_288)), 'i'))).toBe('524.3K');
+  });
+
+  it('leaves the cell empty for an external script or text left out', () => {
+    expect(scriptSize(scriptRowView(script(), 'e'))).toBeUndefined();
+    expect(scriptSize(scriptRowView(inline(''), 'i', 'not-captured'))).toBeUndefined();
+  });
+});
+
+describe('scriptFacts', () => {
+  it('lists only the facts that hold', () => {
+    expect(scriptFacts(scriptRowView(script(), 'e'))).toEqual([]);
+  });
+
+  it('lists every marker in reading order, attribute values mono', () => {
+    const facts = scriptFacts(
+      scriptRowView(
+        script({
+          delayed: true,
+          originalType: 'module',
+          deferred: true,
+          deferredByWPR: true,
+          minifyAttribute: true,
+          fdtExcluded: 'defer_all_js'
+        }),
+        'e'
+      )
+    );
+    expect(facts).toEqual([
+      { label: 'Delayed', value: 'Delay JS type', mono: false },
+      { label: 'Original type', value: 'module', mono: true },
+      { label: 'Defer', value: 'defer', mono: true },
+      { label: 'WP Rocket defer', value: 'data-rocket-defer', mono: true },
+      { label: 'Minify stamp', value: 'data-minify="1"', mono: true },
+      { label: 'FDT exclusion', value: 'data-wpr-fdt-excluded="defer_all_js"', mono: true }
+    ]);
+  });
+
+  it('sizes an inline script exactly, floored when clipped, never when left out', () => {
+    const inline = script({ type: 'inline', content: 'x'.repeat(1200) });
+    expect(scriptFacts(scriptRowView(inline, 'i')).at(-1)).toEqual({
+      label: 'Size',
+      value: '1,200 characters',
+      mono: false
+    });
+    expect(scriptFacts(scriptRowView(inline, 'i', 'clipped')).at(-1)?.value).toBe(
+      '≥ 1,200 characters (clipped)'
+    );
+    expect(
+      scriptFacts(scriptRowView(script({ type: 'inline', content: '' }), 'i', 'not-captured'))
+    ).toEqual([]);
+  });
+});
+
+describe('scriptCodeLanguage', () => {
+  it('reads a delayed script by its original type, at once', () => {
+    expect(scriptCodeLanguage(script({ delayed: true }), undefined, false)).toBe('javascript');
+    expect(
+      scriptCodeLanguage(
+        script({ delayed: true, originalType: 'application/ld+json' }),
+        undefined,
+        false
+      )
+    ).toBe('json');
+  });
+
+  it('waits for the served type of an undelayed script, then reads it', () => {
+    const row = script({ type: 'inline' });
+    expect(scriptCodeLanguage(row, undefined, false)).toBeUndefined();
+    expect(scriptCodeLanguage(row, 'importmap', true)).toBe('json');
+    expect(scriptCodeLanguage(row, 'module', true)).toBe('javascript');
+    expect(scriptCodeLanguage(row, null, true)).toBe('javascript');
+  });
+
+  it('falls back to JavaScript once a failed read settled', () => {
+    expect(scriptCodeLanguage(script({ type: 'inline' }), undefined, true)).toBe('javascript');
+  });
+});
+
+describe('JS_VIEW_FACETS / scriptSearchField', () => {
+  it('lifts the shared facets through the row (ids, labels and predicates unchanged)', () => {
+    expect(
+      JS_VIEW_FACETS.facets.map((facet) => [facet.id, facet.values.map((v) => v.label)])
+    ).toEqual(JS_PAGE_FACETS.facets.map((facet) => [facet.id, facet.values.map((v) => v.label)]));
+    const views = [
+      scriptRowView(script({ delayed: true }), 'a'),
+      scriptRowView(script({ type: 'inline', content: 'needle()' }), 'b')
+    ];
+    const search = { field: scriptSearchField, query: '' };
+    expect(applyFacets(views, JS_VIEW_FACETS, { delay: 'delayed' }, search)).toEqual([views[0]]);
+    expect(applyFacets(views, JS_VIEW_FACETS, {}, { ...search, query: 'needle' })).toEqual([
+      views[1]
+    ]);
+    expect(views.map(scriptSearchField)).toEqual(['https://example.test/a.js', 'needle()']);
   });
 });
 
@@ -286,70 +427,6 @@ describe('countLines', () => {
   });
 });
 
-describe('collapsedPreview', () => {
-  it('returns the text itself when nothing is cut', () => {
-    for (const text of ['', 'a', 'a\nb\nc', 'a\nb\nc\n']) {
-      expect(collapsedPreview(text)).toEqual({ preview: text, lineCut: false, cutLines: [] });
-    }
-  });
-
-  it('keeps only the first three lines', () => {
-    expect(collapsedPreview('a\nb\nc\nd\ne')).toEqual({
-      preview: 'a\nb\nc',
-      lineCut: false,
-      cutLines: []
-    });
-  });
-
-  it('cuts a long line at the cap, writing no mark into the code', () => {
-    const long = 'y'.repeat(PREVIEW_LINE_CHARS + 1);
-    // No mark inside the code: the cut is announced by the toggle.
-    const cut = 'y'.repeat(PREVIEW_LINE_CHARS);
-    expect(collapsedPreview(long)).toEqual({ preview: cut, lineCut: true, cutLines: [0] });
-    expect(collapsedPreview(`a\n${long}\nc`)).toEqual({
-      preview: `a\n${cut}\nc`,
-      lineCut: true,
-      cutLines: [1]
-    });
-    // Exactly at the cap is not cut.
-    const exact = 'y'.repeat(PREVIEW_LINE_CHARS);
-    expect(collapsedPreview(exact)).toEqual({ preview: exact, lineCut: false, cutLines: [] });
-  });
-});
-
-describe('inlineCode', () => {
-  it('is expandable past three lines, or when a preview line was cut', () => {
-    expect(inlineCode('a\nb\nc\nd')).toEqual({
-      lines: 4,
-      expandable: true,
-      preview: 'a\nb\nc',
-      lineCut: false,
-      cutLines: [],
-      blank: false
-    });
-    expect(inlineCode('a\nb\nc').expandable).toBe(false);
-    expect(inlineCode('z'.repeat(PREVIEW_LINE_CHARS + 1)).expandable).toBe(true);
-    // A long-but-uncut line needs the block's clamp report to offer the toggle.
-    expect(inlineCode('z'.repeat(200)).expandable).toBe(false);
-  });
-
-  it('marks empty and whitespace-only sources blank and never expandable', () => {
-    expect(inlineCode('')).toMatchObject({ blank: true, expandable: false });
-    expect(inlineCode('  \n\n\n\n  ')).toMatchObject({ blank: true, expandable: false });
-  });
-});
-
-describe('codeToggleLabel', () => {
-  it('names how much the click reveals, or collapses', () => {
-    expect(codeToggleLabel(inlineCode('a\nb\nc\nd'), false)).toBe('Show all 4 lines');
-    expect(codeToggleLabel(inlineCode('z'.repeat(COLLAPSED_CODE_LINES)), false)).toBe('Expand');
-    expect(codeToggleLabel(inlineCode('z'.repeat(PREVIEW_LINE_CHARS + 1)), false)).toBe(
-      'Show full lines'
-    );
-    expect(codeToggleLabel(inlineCode('a\nb\nc\nd'), true)).toBe('Collapse');
-  });
-});
-
 describe('sameScript', () => {
   it('compares every data field, never the position', () => {
     const base = script();
@@ -363,84 +440,11 @@ describe('sameScript', () => {
       { fdtExcluded: 'delay_js' },
       { minified: true },
       { combined: true },
+      { minifyAttribute: true },
       { originalType: 'module' }
     ]) {
       expect(sameScript(base, { ...base, ...change })).toBe(false);
     }
-  });
-});
-
-describe('JS_VIEW_RESOURCES', () => {
-  it('lifts the shared chip table through the row (ids and labels unchanged)', () => {
-    expect(JS_VIEW_RESOURCES.filters.map((filter) => [filter.id, filter.label])).toEqual(
-      JS_PAGE_RESOURCES.filters.map((filter) => [filter.id, filter.label])
-    );
-    const view = buildRowView(script({ delayed: true }), 'k');
-    const delayed = JS_VIEW_RESOURCES.filters.find((filter) => filter.id === 'delayed');
-    expect(delayed?.predicate(view)).toBe(true);
-    expect(delayed?.predicate(buildRowView(script(), 'k'))).toBe(false);
-    expect(JS_VIEW_RESOURCES.searchField(view)).toBe('https://example.test/a.js');
-  });
-});
-
-describe('buildChips', () => {
-  const counts = {
-    all: 3,
-    delayed: 0,
-    'non-delayed': 3,
-    deferred: 0,
-    'non-deferred': 3,
-    minified: 0,
-    combined: 0,
-    excluded: 0,
-    inline: 0,
-    external: 3
-  };
-
-  it('disables zero-count chips except "all" and the selected one', () => {
-    const chips = buildChips(JS_PAGE_RESOURCES.filters, counts, 'deferred');
-    const disabled = chips.filter((chip) => chip.disabled).map((chip) => chip.value);
-    expect(disabled).toEqual(['delayed', 'minified', 'combined', 'excluded', 'inline']);
-    expect(chips.find((chip) => chip.value === 'deferred')).toMatchObject({
-      count: 0,
-      disabled: false
-    });
-  });
-
-  it('keeps "all" enabled on an empty page whichever chip is selected', () => {
-    const empty = Object.fromEntries(Object.keys(counts).map((key) => [key, 0])) as typeof counts;
-    for (const selected of ['all', 'delayed'] as const) {
-      const all = buildChips(JS_PAGE_RESOURCES.filters, empty, selected)[0];
-      expect(all).toMatchObject({ value: 'all', disabled: false, label: 'Show all' });
-    }
-  });
-});
-
-describe('estimateRowSize', () => {
-  it('seeds per row shape', () => {
-    expect(estimateRowSize(buildRowView(script(), 'k'))).toBe(ROW_ESTIMATES.external);
-    const inline = (content: string): number =>
-      estimateRowSize(buildRowView(script({ type: 'inline', content }), 'k'));
-    expect(inline('')).toBe(ROW_ESTIMATES.inlineBlank);
-    expect(inline('a')).toBe(ROW_ESTIMATES.inlineShort);
-    expect(inline('a\nb\nc\nd')).toBe(ROW_ESTIMATES.inlineCollapsed);
-  });
-});
-
-describe('row-flag bookkeeping', () => {
-  const a = buildRowView(script({ content: 'a' }), 'a');
-  const b = buildRowView(script({ content: 'b' }), 'b');
-
-  it('keeps keys whose view survived unchanged, by identity', () => {
-    const flags = new Set(['a', 'b']);
-    expect(pruneRowFlags(flags, [a, b], [b, a])).toBe(flags);
-    expect(pruneRowFlags(new Set<string>(), [a], [])).toEqual(new Set());
-  });
-
-  it('drops keys whose script is gone or changed under the same key', () => {
-    const changed = buildRowView(script({ content: 'b2' }), 'b');
-    expect([...pruneRowFlags(new Set(['a', 'b']), [a, b], [a])]).toEqual(['a']);
-    expect([...pruneRowFlags(new Set(['a', 'b']), [a, b], [a, changed])]).toEqual(['a']);
   });
 });
 
@@ -449,11 +453,6 @@ describe('phrases', () => {
     expect(formatCount(5000)).toBe('5,000');
     expect(lineCount(1)).toBe('1 line');
     expect(lineCount(1040)).toBe('1,040 lines');
-  });
-
-  it('joins the language and the count into the row caption', () => {
-    expect(codeCaption('javascript', 1)).toBe('javascript · 1 line');
-    expect(codeCaption('javascript', 1040)).toBe('javascript · 1,040 lines');
   });
 });
 

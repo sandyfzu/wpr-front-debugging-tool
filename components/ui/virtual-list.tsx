@@ -7,13 +7,26 @@
  * virtualization math anywhere in the port.
  */
 import type { Accessor, JSX } from 'solid-js';
-import { createComputed, createEffect, createMemo, For, on, onCleanup, splitProps } from 'solid-js';
+import {
+  createComputed,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  mergeProps,
+  on,
+  onCleanup,
+  splitProps
+} from 'solid-js';
 import type { EntryMaskHandle } from './virtual-list-entry';
-import { createVirtualizer } from '@tanstack/solid-virtual';
-import type { VirtualItem } from '@tanstack/solid-virtual';
+import { createVirtualizer, observeElementRect } from '@tanstack/solid-virtual';
+import type { Range, VirtualItem } from '@tanstack/solid-virtual';
 import { createLogger } from '../../lib/logger';
 import { attachEntryMask } from './virtual-list-entry';
 import { focusedElementOf, preserveMovedFocus } from './virtual-list-focus';
+import { snapshotKeys, type KeySnapshot } from './virtual-list-keys';
+import { frameDeferredRect } from './virtual-list-rect';
+import { stickyRangeExtractor } from './virtual-list-sticky';
 
 /** The virtual row type the wrapper renders (re-exported for consumers/tests). */
 export type { VirtualItem };
@@ -49,6 +62,13 @@ export interface VirtualListOptions {
   paddingStart?: number;
   /** Padding from the last row to the scroller bottom (px). */
   paddingEnd?: number;
+  /**
+   * Space kept above a row an index scroll lands at the top edge (px) — the
+   * height a sticky row covers there.
+   */
+  scrollPaddingStart?: number;
+  /** The window's indexes for a computed range (absent: the core's default window). */
+  rangeExtractor?: (range: Range) => number[];
 }
 
 /** The instance surface the wrapper consumes from its virtualizer. */
@@ -97,8 +117,18 @@ export interface VirtualScrollRequest {
  */
 export type VirtualizerFactory = (options: VirtualListOptions) => VirtualizerInstance;
 
-/** The default factory: the library's own `createVirtualizer`. */
-const defaultVirtualizerFactory: VirtualizerFactory = (options) => createVirtualizer(options);
+/**
+ * The scroller-size watch the default factory gives the core: its own, with
+ * shrinks applied one frame late (`frameDeferredRect`: a shrinking list
+ * otherwise unmounts watched rows inside a resize callback, which Chromium
+ * reports as a `ResizeObserver` loop error); growth lands at once.
+ */
+const deferredElementRect = frameDeferredRect(observeElementRect);
+
+/** The default factory: the library's own `createVirtualizer`, with the deferred size watch. */
+const defaultVirtualizerFactory: VirtualizerFactory = (options) =>
+  // `mergeProps` keeps the options' getters lazy (a spread would read them once).
+  createVirtualizer(mergeProps(options, { observeElementRect: deferredElementRect }));
 
 /**
  * Name the duplicate keys of a window (dev only): the map keeps one item
@@ -152,6 +182,21 @@ export type VirtualListProps = {
   paddingStart?: number;
   /** Bottom padding in px. */
   paddingEnd?: number;
+  /**
+   * Rows that stick to the scroller's top while the rows after them scroll
+   * under (section headings), as ascending indexes. Opt-in; absent or empty,
+   * every row is translated as usual. The active one (the last at or above
+   * the first visible row) is always rendered and carries
+   * `data-fdt-stuck`; it is laid out `position: sticky` over the rows, so
+   * its content must paint an opaque background.
+   */
+  stickyIndexes?: readonly number[];
+  /**
+   * Space kept above a row scrolled to the top edge (px) — the height of the
+   * sticky row covering it: applied to the scroll requests and, as the
+   * scroller's CSS `scroll-padding-top`, to the browser's own focus scrolling.
+   */
+  scrollPaddingStart?: number;
   /** The instance seam (default: the TanStack factory). */
   createVirtualizer?: VirtualizerFactory;
   /**
@@ -219,6 +264,11 @@ export type VirtualListProps = {
  * first or last visible row's control instead of an offscreen overscan row
  * (see `./virtual-list-entry`).
  *
+ * Sticky rows (opt-in `stickyIndexes`): a range extractor keeps the active
+ * one in every window and that row alone is laid out `position: sticky`
+ * (see `./virtual-list-sticky`); its measured size still places the rows
+ * after it, so sticking never moves them.
+ *
  * Rows render exactly what the caller's `children` maps per row — this
  * wrapper owns geometry only, never data shape.
  *
@@ -231,6 +281,8 @@ export type VirtualListProps = {
  * @param props.gap Row gap (px).
  * @param props.paddingStart Scroller-top padding (px).
  * @param props.paddingEnd Bottom padding (px).
+ * @param props.stickyIndexes Rows that stick to the top while their section scrolls (opt-in).
+ * @param props.scrollPaddingStart Space a scroll request keeps above its row (px).
  * @param props.createVirtualizer Instance seam.
  * @param props.scrollTo The row a scroll request lands on (see the prop's doc).
  * @param props.class Classes on the scroller.
@@ -247,6 +299,8 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
     'gap',
     'paddingStart',
     'paddingEnd',
+    'stickyIndexes',
+    'scrollPaddingStart',
     'createVirtualizer',
     'scrollTo',
     'class',
@@ -263,6 +317,30 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
    * correct semantics for a bootstrap).
    */
   const factoryOf = (): VirtualizerFactory => own.createVirtualizer ?? defaultVirtualizerFactory;
+
+  // The caller's keys, re-issued under a new function identity whenever they
+  // change: the core re-keys its rows only when `count` or the key function's
+  // identity changes, so rows swapped at an equal count would keep their old
+  // keys (and the list would render rows no longer listed). Reading every key
+  // here tracks the caller's rows; unchanged keys keep the same snapshot.
+  const itemKeys = createMemo<KeySnapshot | undefined>((previous) => {
+    const keyOf = own.getItemKey;
+    return keyOf === undefined ? undefined : snapshotKeys(previous, keyOf, own.count);
+  });
+
+  // The stuck row: written by the sticky extractor each time the core
+  // computes a window (the core's range is not reactive), read by the rows.
+  const [activeSticky, setActiveSticky] = createSignal<number | null>(null);
+  // A new extractor per sticky list: the core recomputes its window only
+  // when the extractor's identity (or the range) changes.
+  const rangeExtractor = createMemo(() => {
+    const sticky = own.stickyIndexes;
+    return sticky === undefined || sticky.length === 0
+      ? undefined
+      : stickyRangeExtractor(sticky, setActiveSticky);
+  });
+  /** The stuck row's index, or null (none for a list without sticky rows). */
+  const stuckIndex = (): number | null => (rangeExtractor() === undefined ? null : activeSticky());
 
   // Options are a lazy getter object: reads happen when the virtualizer pulls
   // them (inside the adapter's own update cycle), so count/filter changes
@@ -281,7 +359,7 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
       return own.overscan ?? DEFAULT_OVERSCAN;
     },
     get getItemKey() {
-      return own.getItemKey;
+      return itemKeys()?.at;
     },
     get gap() {
       return own.gap;
@@ -291,6 +369,12 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
     },
     get paddingEnd() {
       return own.paddingEnd;
+    },
+    get scrollPaddingStart() {
+      return own.scrollPaddingStart;
+    },
+    get rangeExtractor() {
+      return rangeExtractor();
     }
   });
 
@@ -402,6 +486,10 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
       }}
       data-fdt="virtual-list"
       role={own.scrollerRole}
+      style={{
+        'scroll-padding-top':
+          own.scrollPaddingStart === undefined ? undefined : `${String(own.scrollPaddingStart)}px`
+      }}
       // A plain join, not a class merge: the wrapper's two utilities never
       // conflict with a caller's (callers own sizing/borders), and a merge
       // library would ride along into every consumer, Tailwind or not.
@@ -424,22 +512,32 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
           {(key) => {
             // eslint-disable-next-line solid/reactivity -- the view is a stable object of reactive getters (created once per keyed element); its fields are read live
             const row = rowView(key);
+            const stuck = (): boolean => stuckIndex() === row.index;
             return (
               <div
                 data-index={row.index}
+                data-fdt-stuck={stuck() ? '' : undefined}
                 ref={(el) => {
                   bindRow(el, row.index);
                 }}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  // No height: the row sizes to its content so the measurement
-                  // ref (border-box ResizeObserver) reads the real height and
-                  // re-flows siblings when it changes (wrap, expand/collapse).
-                  transform: `translateY(${String(row.start)}px)`
-                }}
+                // No height: the row sizes to its content so the measurement
+                // ref (border-box ResizeObserver) reads the real height and
+                // re-flows siblings when it changes (wrap, expand/collapse).
+                // The stuck row is the spacer's only in-flow child, so its
+                // sticky box starts at the spacer's top and pins at the
+                // scroller's; above the translated rows (their transforms
+                // stack them), it covers the rows scrolling under it.
+                style={
+                  stuck()
+                    ? { position: 'sticky', top: 0, 'z-index': 1, width: '100%' }
+                    : {
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${String(row.start)}px)`
+                      }
+                }
               >
                 {own.children(row)}
               </div>

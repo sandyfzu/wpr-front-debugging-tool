@@ -1087,7 +1087,7 @@ describe('the "On this page" toggle', () => {
     expect(specificity('.l :where(button, input)')).toBe(100);
   });
 
-  it('turns the chevron instantly under reduced motion: the token sheet collapses it', () => {
+  it('turns the chevron instantly under reduced motion: the token sheet resets its transition', () => {
     const styles = readFileSync(`${import.meta.dirname}/styles.css`, 'utf8');
     const tokensImport = styles.indexOf("@import '../../assets/css/tokens.css';");
     // The tokens (with the reduced-motion reset) load into the same shadow root, first.

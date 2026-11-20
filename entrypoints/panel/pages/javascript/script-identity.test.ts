@@ -4,14 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { JsScriptResource } from '../../../../lib/panel/resources-view-model';
-import {
-  buildRowView,
-  domIdOf,
-  fnv1a,
-  reconcileRowViews,
-  scriptKeys,
-  scriptSignature
-} from './script-identity';
+import { fnv1a, reconcileRowViews, scriptKeys, scriptSignature } from './script-identity';
 
 /** A classified script with overrides. */
 function script(overrides: Partial<JsScriptResource> = {}): JsScriptResource {
@@ -25,6 +18,7 @@ function script(overrides: Partial<JsScriptResource> = {}): JsScriptResource {
     fdtExcluded: null,
     minified: false,
     combined: false,
+    minifyAttribute: false,
     originalType: null,
     ...overrides
   };
@@ -72,41 +66,6 @@ describe('scriptKeys', () => {
     const before = scriptKeys(rows);
     const after = scriptKeys([inline('new'), ...rows]);
     expect(after.slice(1)).toEqual(before);
-  });
-});
-
-describe('domIdOf', () => {
-  it('is id-safe, stable and distinct per key', () => {
-    expect(domIdOf('e|https://a b#0')).toMatch(/^fdt-js-code-[0-9a-z]+$/);
-    expect(domIdOf('k')).toBe(domIdOf('k'));
-    expect(domIdOf('k#0')).not.toBe(domIdOf('k#1'));
-  });
-});
-
-describe('buildRowView', () => {
-  it('carries key, id, capture, chips, type detail and code (inline only)', () => {
-    const view = buildRowView(inline('x'), 'k', 'clipped');
-    expect(view).toMatchObject({ key: 'k', domId: domIdOf('k'), capture: 'clipped' });
-    expect(view.code?.lines).toBe(1);
-    expect(buildRowView(script(), 'e').code).toBeNull();
-    expect(buildRowView(script(), 'e').capture).toBe('complete');
-    expect(buildRowView(script(), 'e').chips).toEqual({ visible: [], overflow: null });
-    expect(buildRowView(script(), 'e').typeDetail).toBeNull();
-    const delayed = buildRowView(script({ delayed: true, originalType: 'module' }), 'd');
-    expect(delayed.typeDetail).toBe('type: module');
-    expect(delayed.chips.visible.map((chip) => chip.label)).toEqual(['Delayed']);
-  });
-
-  it('attributes a stamped defer to the simulation when a verified simulation ran Defer JS', () => {
-    const stamped = script({ deferredByWPR: true, deferred: true });
-    const simulated = { delay: null, defer: 'simulated' } as const;
-    expect(buildRowView(stamped, 'e', 'complete', simulated).chips.visible[0]?.source).toBe(
-      'simulated'
-    );
-    expect(reconcileRowViews([], [stamped], [], simulated)[0]?.chips.visible[0]?.source).toBe(
-      'simulated'
-    );
-    expect(buildRowView(stamped, 'e').chips.visible[0]?.source).toBe('wp-rocket');
   });
 });
 

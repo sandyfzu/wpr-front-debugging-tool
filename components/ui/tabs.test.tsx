@@ -197,8 +197,41 @@ describe('Tabs', () => {
     expect(disabled.className).toContain('opacity-60');
     expect(disabled.className).toContain('text-fg-muted');
     expect(disabled.className).not.toContain('pointer-events-none');
-    expect(disabled.className).not.toContain('hover:bg-surface-3');
-    expect(enabled.className).toContain('hover:bg-surface-3');
+    expect(disabled.className).not.toContain('hover:text-fg-primary');
+    expect(enabled.className).toContain('hover:text-fg-primary');
     expect(enabled.className).not.toContain('opacity-60');
+  });
+
+  it('draws underline tabs: text on one quiet hairline, the accent rule only on the selected one', () => {
+    render(() => (
+      <Tabs items={ITEMS} label="Views">
+        <BILL />
+      </Tabs>
+    ));
+    const list = screen.getByRole('tablist').className.split(/\s+/);
+    expect(list).toEqual(expect.arrayContaining(['gap-4', 'border-b', 'border-line-1']));
+    expect(list).not.toContain('border-line-2');
+    for (const tab of screen.getAllByRole('tab')) {
+      const tokens = tab.className.split(/\s+/);
+      expect(tokens).toEqual(
+        expect.arrayContaining([
+          'h-8',
+          'px-0.5',
+          '-mb-px',
+          'border-b-2',
+          'border-transparent',
+          'data-selected:border-accent',
+          'data-selected:text-fg-primary',
+          'text-fg-muted'
+        ])
+      );
+      // No fill on hover or selection: the underline is the only emphasis.
+      expect(tokens.filter((token) => token.includes('bg-'))).toEqual([]);
+    }
+    const selected = screen.getByRole('tab', { selected: true });
+    expect(selected.hasAttribute('data-selected')).toBe(true);
+    expect(screen.getByRole('tab', { name: /Optimizations/ }).hasAttribute('data-selected')).toBe(
+      false
+    );
   });
 });

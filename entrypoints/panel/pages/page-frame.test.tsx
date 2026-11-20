@@ -1,8 +1,8 @@
 /**
  * Render tests for the page seam: the frame contract (entrance class, unpadded
  * container root, focus target, single `h1`, fill mode), the filtered-empty
- * view (sentence per input, gated buttons, the focus hand-off), and the
- * external link (new-tab safety, accessible name, unsafe-scheme fallback).
+ * view (sentence per input, gated buttons, the focus hand-off), and the page
+ * layout tiers.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
@@ -10,8 +10,10 @@ import type { JSX } from 'solid-js';
 import { createSignal, Show } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ROUTE_HEADING_SELECTOR } from '../palette/focus';
+import type { RouteId } from '../routes';
+import { createDetailPresence, DetailPresenceContext } from '../state/detail-presence';
 import {
-  ExternalLink,
+  canvasSizeOf,
   NO_MATCHES_QUERY_MAX,
   NoMatches,
   type NoMatchesFocusTarget,
@@ -56,6 +58,20 @@ describe('PageFrame', () => {
     expect(frameBody().classList).not.toContain('flex-1');
   });
 
+  it('hands its ref the container root (the box tier variants read)', () => {
+    let received: HTMLElement | undefined;
+    render(() => (
+      <PageFrame
+        id="javascript"
+        title="JavaScript"
+        ref={(element) => {
+          received = element;
+        }}
+      />
+    ));
+    expect(received).toBe(frameRoot());
+  });
+
   it('renders exactly one h1 — the shell’s route-switch focus target', () => {
     render(() => (
       <PageFrame id="lazyload" title="Lazyload" subtitle="Images the page deferred">
@@ -70,11 +86,57 @@ describe('PageFrame', () => {
   });
 
   it('centers and bounds the entire workspace, including its header', () => {
-    render(() => <PageFrame id="javascript" title="JavaScript" />);
+    render(() => <PageFrame id="lcp-vitals" title="LCP & Vitals" />);
     for (const token of ['mx-auto', 'w-full', 'min-w-0', 'max-w-7xl']) {
       expect(frameBody().classList).toContain(token);
     }
     expect(frameBody().classList).not.toContain('max-w-4xl');
+  });
+
+  it('keeps master–detail list routes on the standard canvas until a detail opens, then spans the content', () => {
+    for (const [id, title] of [
+      ['javascript', 'JavaScript'],
+      ['stylesheets', 'Stylesheets'],
+      ['lazyload', 'Lazyload'],
+      ['preloaded-resources', 'Preloaded Resources']
+    ] as const) {
+      let open: ((value: boolean) => void) | undefined;
+      render(() => {
+        const presence = createDetailPresence(() => id);
+        const claim = presence.claim();
+        open = (value) => {
+          claim.set(value);
+        };
+        return (
+          <DetailPresenceContext.Provider value={presence}>
+            <PageFrame id={id} title={title} fill />
+          </DetailPresenceContext.Provider>
+        );
+      });
+      expect(frameBody().classList, id).toContain('max-w-7xl');
+      expect(frameBody().dataset.fdtCanvas, id).toBe('standard');
+      open?.(true);
+      expect(frameBody().classList, id).toContain('max-w-none');
+      expect(frameBody().classList, id).not.toContain('max-w-7xl');
+      expect(frameBody().dataset.fdtCanvas, id).toBe('full');
+      open?.(false);
+      expect(frameBody().classList, id).toContain('max-w-7xl');
+      expect(frameRoot().classList, id).toContain('@container');
+      cleanup();
+    }
+  });
+
+  it('never widens a standard or reading route for an open detail', () => {
+    render(() => {
+      const presence = createDetailPresence(() => 'lcp-vitals');
+      presence.claim().set(true);
+      return (
+        <DetailPresenceContext.Provider value={presence}>
+          <PageFrame id="lcp-vitals" title="LCP & Vitals" />
+        </DetailPresenceContext.Provider>
+      );
+    });
+    expect(frameBody().classList).toContain('max-w-7xl');
   });
 
   it('uses a shorter reading canvas without changing the query container', () => {
@@ -95,6 +157,26 @@ describe('PageFrame', () => {
     const kids = [...frameBody().children];
     expect(kids[0]?.getAttribute('data-fdt')).toBe('page-header');
     expect(kids.slice(1).map((el) => el.textContent)).toEqual(['first', 'second']);
+  });
+
+  it('ties `actions` to the route registry at compile time', () => {
+    // Type-level pins (`pnpm compile` checks them): each line stops compiling
+    // — failing the build on the unused directive — once the route list and
+    // a page's actions slot drift apart.
+    // Widened on purpose: a `RouteId`-typed const would narrow to its literal.
+    const loose = 'javascript' as RouteId;
+    render(() => (
+      <>
+        {/* @ts-expect-error a header-action route must pass its actions */}
+        <PageFrame id="headers-cookies" title="Headers & Cookies" />
+        {/* @ts-expect-error a route outside the list cannot take actions */}
+        <PageFrame id="javascript" title="JavaScript" actions={<span />} />
+        {/* A route known only as some RouteId (the shell's frames) may do either. */}
+        <PageFrame id={loose} title="Loose" actions={<span />} />
+        <PageFrame id={loose} title="Loose" />
+      </>
+    ));
+    expect(document.querySelectorAll('[data-fdt-page]')).toHaveLength(4);
   });
 
   it('fill mode makes the frame an at-least-full-height column for one flex scroller', () => {
@@ -143,6 +225,106 @@ describe('noMatchesSentence', () => {
     const cut = noMatchesSentence(undefined, `${head}${emoji}x`);
     expect(cut).toBe(`Nothing matches "${head}${emoji}…".`);
     expect(cut.isWellFormed()).toBe(true);
+  });
+});
+
+describe('noMatchesSentence with facet values', () => {
+  it('quotes one value as the chip sentence does', () => {
+    expect(noMatchesSentence(undefined, undefined, ['Delayed'])).toBe(
+      'Nothing matches the "Delayed" filter.'
+    );
+  });
+
+  it('lists several values in order, plural, and pairs them with the query', () => {
+    expect(noMatchesSentence(undefined, '', ['Delayed', 'Inline'])).toBe(
+      'Nothing matches the "Delayed", "Inline" filters.'
+    );
+    expect(noMatchesSentence(undefined, ' jq ', ['Delayed', 'Inline'])).toBe(
+      'Nothing in "Delayed", "Inline" matches "jq".'
+    );
+  });
+
+  it('ignores blank values, falls back to the chip, then to the query alone', () => {
+    expect(noMatchesSentence('Inline', 'x', [' ', ''])).toBe('Nothing in "Inline" matches "x".');
+    expect(noMatchesSentence(undefined, 'x', [])).toBe('Nothing matches "x".');
+    expect(noMatchesSentence(undefined, undefined, [' '])).toBe(
+      'Nothing matches the current filters.'
+    );
+  });
+
+  it('values win over a chip label (the two inputs are exclusive; values are what narrows)', () => {
+    expect(noMatchesSentence('Inline', undefined, ['Delayed'])).toBe(
+      'Nothing matches the "Delayed" filter.'
+    );
+  });
+});
+
+describe('NoMatches with facets', () => {
+  it('offers Clear filters (it clears the query too), replacing Clear search', () => {
+    const clearFilters = vi.fn();
+    const clearSearch = vi.fn();
+    render(() => (
+      <NoMatches
+        filterLabels={['Delayed', 'Inline']}
+        query="jq"
+        onClearFilters={clearFilters}
+        onClearSearch={clearSearch}
+      />
+    ));
+    expect(screen.getByText('Nothing in "Delayed", "Inline" matches "jq".')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
+    const button = screen.getByRole('button', { name: 'Clear filters' });
+    expect(button.dataset.fdtNoMatchesAction).toBe('clear-filters');
+    fireEvent.click(button);
+    expect(clearFilters).toHaveBeenCalledOnce();
+    expect(clearSearch).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Clear search while no facet narrows (labels blank or none)', () => {
+    const [labels, setLabels] = createSignal<readonly string[]>([' ']);
+    render(() => (
+      <NoMatches
+        filterLabels={labels()}
+        query="jq"
+        onClearFilters={vi.fn()}
+        onClearSearch={vi.fn()}
+      />
+    ));
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Clear search' })).toBeTruthy();
+    setLabels(['Excluded']);
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
+  });
+
+  it('offers no Clear filters without its handler', () => {
+    render(() => <NoMatches filterLabels={['Delayed']} />);
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('hands focus to the declared target after Clear filters unmounts the view', () => {
+    const [narrowed, setNarrowed] = createSignal(true);
+    render(() => (
+      <div data-fdt-page="javascript">
+        <h1 tabIndex={-1}>JavaScript</h1>
+        <input type="search" aria-label="Search scripts" />
+        <Show when={narrowed()}>
+          <NoMatches
+            filterLabels={['Delayed']}
+            onClearFilters={() => setNarrowed(false)}
+            focusAfter={(action) =>
+              action === 'clear-filters'
+                ? screen.getByRole('searchbox', { name: 'Search scripts' })
+                : null
+            }
+          />
+        </Show>
+      </div>
+    ));
+    const button = screen.getByRole('button', { name: 'Clear filters' });
+    button.focus();
+    fireEvent.click(button);
+    expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search scripts' }));
   });
 });
 
@@ -339,87 +521,6 @@ describe('NoMatches focus hand-off', () => {
   });
 });
 
-describe('ExternalLink', () => {
-  const url = 'https://example.com/wp-content/a.js?ver=1';
-
-  it.each(['https://example.com/', 'data:image/svg+xml,'])(
-    'caps long hover text without altering full display text or link targets: %s',
-    (prefix) => {
-      const href = `${prefix}${'😀'.repeat(301)}`;
-      render(() => <ExternalLink href={href} />);
-      const text = document.querySelector('[data-fdt="external-link"] .truncate');
-      expect(text?.getAttribute('title')).toBe(`${Array.from(href).slice(0, 300).join('')}…`);
-      expect(text?.textContent).toBe(href);
-      if (prefix.startsWith('https:')) {
-        expect(
-          screen.getByRole('link', { name: `${href} (opens in a new tab)` }).getAttribute('href')
-        ).toBe(href);
-      } else {
-        expect(screen.queryByRole('link')).toBeNull();
-      }
-    }
-  );
-
-  it('updates bounded titles and full hrefs reactively', () => {
-    const [href, setHref] = createSignal(url);
-    render(() => <ExternalLink href={href()} />);
-    const link = screen.getByRole('link');
-    const long = `https://example.com/${'x'.repeat(400)}`;
-    setHref(long);
-    expect(link.getAttribute('href')).toBe(long);
-    expect(link.querySelector('.truncate')?.getAttribute('title')).toBe(`${long.slice(0, 300)}…`);
-    setHref(url);
-    expect(link.querySelector('.truncate')?.getAttribute('title')).toBe(url);
-  });
-
-  it('opens http(s) URLs in a new tab without opener or referrer', () => {
-    render(() => <ExternalLink href={url} />);
-    const link = screen.getByRole('link');
-    expect(link.getAttribute('href')).toBe(url);
-    expect(link.getAttribute('target')).toBe('_blank');
-    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
-  });
-
-  it('names the new tab in the accessible name; the full URL rides the text span’s title', () => {
-    render(() => <ExternalLink href={url} />);
-    const link = screen.getByRole('link', { name: `${url} (opens in a new tab)` });
-    // Not on the anchor: a title there would be read again as the description.
-    expect(link.hasAttribute('title')).toBe(false);
-    expect(link.querySelector('.truncate')?.getAttribute('title')).toBe(url);
-    expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-  });
-
-  it('renders mono, truncating, keyboard-focus-ringed text and merges caller classes', () => {
-    render(() => <ExternalLink href="http://example.com/" class="text-2xs" />);
-    const link = screen.getByRole('link');
-    expect(link.classList).toContain('font-mono');
-    expect(link.classList).toContain('min-w-0');
-    expect(link.classList).toContain('focus-visible:outline-accent');
-    expect(link.classList).toContain('text-2xs');
-    expect(link.classList).not.toContain('text-xs');
-    expect(link.querySelector('.truncate')?.textContent).toBe('http://example.com/');
-  });
-
-  it.each([
-    'javascript:alert(1)',
-    'JAVASCRIPT:alert(1)',
-    'data:text/html,<p>x</p>',
-    'chrome-extension://abc/page.html',
-    '/relative/path.js',
-    '//cdn.example.com/a.js',
-    'not a url',
-    ''
-  ])('renders %j as plain text, never a link', (href) => {
-    render(() => <ExternalLink href={href} />);
-    expect(screen.queryByRole('link')).toBeNull();
-    const plain = document.querySelector('[data-fdt="external-link"]');
-    expect(plain?.tagName).toBe('SPAN');
-    expect(plain?.querySelector('.truncate')?.getAttribute('title')).toBe(href);
-    expect(plain?.textContent).toBe(href);
-    expect(plain?.querySelector('svg')).toBeNull();
-  });
-});
-
 describe('page layout tiers', () => {
   /** Every non-test page source under `pages/`, recursively. */
   function pageSources(dir: string): string[] {
@@ -438,5 +539,16 @@ describe('page layout tiers', () => {
       /@(min|max)-\[(480|768)px\]/.test(readFileSync(path, 'utf8'))
     );
     expect(strays).toEqual([]);
+  });
+});
+
+describe('canvasSizeOf', () => {
+  it('widens only a split route, only while a detail is open', () => {
+    expect(canvasSizeOf('split', true)).toBe('full');
+    expect(canvasSizeOf('split', false)).toBe('standard');
+    expect(canvasSizeOf(undefined, true)).toBe('standard');
+    expect(canvasSizeOf(undefined, false)).toBe('standard');
+    expect(canvasSizeOf('reading', true)).toBe('reading');
+    expect(canvasSizeOf('reading', false)).toBe('reading');
   });
 });

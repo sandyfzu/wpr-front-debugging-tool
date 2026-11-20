@@ -1,5 +1,5 @@
 /**
- * The Beacon Tester page over a real run (P14C C1): the panel asks the
+ * The Beacon Tester page over a real run: the panel asks the
  * fixture tab to run WP Rocket's beacon — the runner injected on demand —
  * and renders each outcome: the desktop viewport bail at WP Rocket's
  * 1600 × 700 defaults (the fixture window is 1280 × 800), then, with lower
@@ -8,24 +8,29 @@
  * is screenshotted in both palettes at the compact floor and a wide size
  * (no horizontal overflow at either).
  *
- * The beacon instructions card over the local WordPress site's beacon page
- * (P14.5C.5): the summary matches the page's own config, the three groups,
+ * The beacon instructions card over the local WordPress site's beacon page:
+ * the summary matches the page's own config, the three groups,
  * the raw JSON and its copy (no request field), every width, both palettes
  * and reduced motion, a reload keeping the view, and a navigation to a page
  * without the beacon reading "No longer on the page" until dismissed.
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import { settleFrames } from '../helpers/frames';
 import { devtoolsShim, openPanelForFixture, panelPageUrl } from '../helpers/panel-data';
 import { openSitePage, SITE_URL } from '../helpers/site';
 
-/** Open the Beacon Tester route and wait for its loaded form. */
+/**
+ * Open the Beacon Tester route and wait for its loaded form (the device
+ * section is always open; a feature's section of defaults starts folded
+ * while the feature is off).
+ */
 async function openTester(panel: Page): Promise<void> {
   await panel.evaluate(() => {
     location.hash = '#/beacon-tester';
   });
   await expect(panel.getByRole('heading', { level: 1, name: 'Beacon Tester' })).toBeVisible();
-  await expect(panel.getByLabel('Candidate elements')).toBeVisible();
+  await expect(panel.getByLabel('Viewport width (px)')).toBeVisible();
 }
 
 /**
@@ -43,6 +48,56 @@ async function toggle(panel: Page, name: string): Promise<void> {
 /** The finished run's outcome block. */
 function outcome(panel: Page) {
   return panel.locator('[data-fdt="beacon-outcome"]');
+}
+
+/** Short single-column panel sizes (width, height), where the list's floor decides its box. */
+const SHORT_SIZES: readonly (readonly [number, number])[] = [
+  [760, 300],
+  [420, 260]
+];
+
+/** Where the result column's tabs end, what of them paints lowest, and where the settings start. */
+interface ResultStack {
+  readonly tabsBottom: number;
+  readonly paintedBottom: number;
+  readonly settingsTop: number;
+}
+
+/**
+ * Measure the result column's stack: the tabs box's bottom, the lowest
+ * painted bottom of anything inside it (each element clipped by the
+ * scrollers it sits in — virtual rows below a scroller's edge are not
+ * painted), and the settings column's top.
+ *
+ * @param panel The panel page.
+ * @returns The three edges, in viewport pixels.
+ */
+async function resultStack(panel: Page): Promise<ResultStack> {
+  return panel.evaluate(() => {
+    const tabs = document.querySelector('[data-fdt="beacon-result-column"] [role="tablist"]');
+    const root = tabs?.parentElement;
+    const settings = document.querySelector('[data-fdt="beacon-settings"]');
+    if (!root || !settings) throw new Error('Beacon result tabs or settings column not rendered');
+    /** An element's bottom edge, cut by every clipping ancestor up to the tabs root. */
+    const paintedBottom = (element: Element): number => {
+      let bottom = element.getBoundingClientRect().bottom;
+      for (let up = element.parentElement; up && up !== root; up = up.parentElement) {
+        if (getComputedStyle(up).overflowY !== 'visible') {
+          bottom = Math.min(bottom, up.getBoundingClientRect().bottom);
+        }
+      }
+      return bottom;
+    };
+    let lowest = -Infinity;
+    for (const element of root.querySelectorAll('*')) {
+      lowest = Math.max(lowest, paintedBottom(element));
+    }
+    return {
+      tabsBottom: root.getBoundingClientRect().bottom,
+      paintedBottom: lowest,
+      settingsTop: settings.getBoundingClientRect().top
+    };
+  });
 }
 
 test('runs the beacon on the inspected page: viewport bail, results, persisted settings', async ({
@@ -87,6 +142,7 @@ test('runs the beacon on the inspected page: viewport bail, results, persisted s
       await panel.emulateMedia({ colorScheme: scheme });
       for (const width of [320, 1280]) {
         await panel.setViewportSize({ width, height: 800 });
+        await settleFrames(panel);
         await panel.getByRole('tab', { name: /Critical images/ }).click();
         const overflow = await panel
           .locator('[data-fdt="panel-content"]')
@@ -96,8 +152,11 @@ test('runs the beacon on the inspected page: viewport bail, results, persisted s
           body: await panel.screenshot({ fullPage: true }),
           contentType: 'image/png'
         });
-        await panel.getByRole('tab', { name: 'Settings' }).click();
-        await expect(panel.getByLabel('Candidate elements')).toBeVisible();
+        // The settings sit beside the results (from @wide) or under them: never a tab.
+        await expect(panel.getByRole('tab', { name: 'Settings' })).toHaveCount(0);
+        const settings = panel.locator('[data-fdt="beacon-settings"]');
+        await settings.scrollIntoViewIfNeeded();
+        await expect(settings.getByLabel('Viewport width (px)')).toBeVisible();
         expect(
           await panel
             .locator('[data-fdt="panel-content"]')
@@ -106,6 +165,47 @@ test('runs the beacon on the inspected page: viewport bail, results, persisted s
         ).toBe(0);
         await info.attach(`beacon-tester-settings-${scheme}-${String(width)}`, {
           body: await panel.locator('[data-fdt="panel-content"]').screenshot(),
+          contentType: 'image/png'
+        });
+      }
+    }
+
+    // Short single-column heights: the shown list's box holds its own content,
+    // so nothing of it paints over the settings stacked under it.
+    for (const scheme of ['light', 'dark'] as const) {
+      await panel.emulateMedia({ colorScheme: scheme });
+      for (const [width, height] of SHORT_SIZES) {
+        await panel.setViewportSize({ width, height });
+        await settleFrames(panel);
+        await panel.getByRole('tab', { name: /Critical images/ }).click();
+        const where = `${String(width)} × ${String(height)} (${scheme})`;
+        const stack = await resultStack(panel);
+        expect(stack.tabsBottom, `tabs box over the settings at ${where}`).toBeLessThanOrEqual(
+          stack.settingsTop
+        );
+        expect(
+          stack.paintedBottom,
+          `results painted past their box at ${where}`
+        ).toBeLessThanOrEqual(stack.tabsBottom);
+        // The settings heading is what a pointer reaches at its own spot.
+        const heading = panel.locator('#beacon-settings-title');
+        await heading.scrollIntoViewIfNeeded();
+        expect(
+          await heading.evaluate((element) => {
+            const box = element.getBoundingClientRect();
+            const hit = document.elementFromPoint(box.left + 4, box.top + box.height / 2);
+            return hit !== null && element.contains(hit);
+          }),
+          `settings heading covered at ${where}`
+        ).toBe(true);
+        expect(
+          await panel
+            .locator('[data-fdt="panel-content"]')
+            .evaluate((element) => element.scrollWidth - element.clientWidth),
+          `horizontal overflow at ${where}`
+        ).toBe(0);
+        await info.attach(`beacon-tester-short-${scheme}-${String(width)}x${String(height)}`, {
+          body: await panel.screenshot(),
           contentType: 'image/png'
         });
       }
@@ -211,6 +311,7 @@ test('beacon instructions card: follows the site page, groups, raw copy, stale a
       await panel.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
       for (const [width, height] of sizes) {
         await panel.setViewportSize({ width, height });
+        await settleFrames(panel);
         const overflow = await panel
           .locator('[data-fdt="panel-content"]')
           .evaluate((element) => element.scrollWidth - element.clientWidth);

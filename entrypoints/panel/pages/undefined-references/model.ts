@@ -10,8 +10,8 @@ import type { ScriptAsset, ScriptOrigin } from '../../../../lib/panel/undefined-
 import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
 import { countNoun, type CountNoun } from '../../../../utils/format-count';
 
-/** The page's own noun, in its two count forms. */
-const UNDEFINED_REFERENCE_NOUN: CountNoun = {
+/** The page's own noun, in its two count forms (summary, announcements, the list). */
+export const UNDEFINED_REFERENCE_NOUN: CountNoun = {
   one: 'undefined reference',
   other: 'undefined references'
 };
@@ -26,7 +26,7 @@ export type ScanFailure = 'list-failed' | 'timed-out' | 'context-invalidated';
  * - `idle` — not started (no words yet, Delay JS still holds the scripts, or
  *   a new page landed with nothing to search).
  * - `scanning` — a read is in flight. `previous` keeps the last asset list so
- *   the cards stay on screen while it runs (a user rescan, or a refresh of
+ *   the rows stay on screen while it runs (a user rescan, or a refresh of
  *   the page's data); `null` on a first read or a retry. `keepOnFailure`
  *   says what a failed read leaves: the kept assets (a user rescan of the
  *   same page — they still describe it) or the failure (a data refresh — the
@@ -51,7 +51,7 @@ export type ScanState =
 export type ScanEvent =
   /** User start: first read, retry, or rescan — the state decides which. */
   | { readonly type: 'start' }
-  /** The page's data was refetched: read again, keeping the cards up meanwhile. */
+  /** The page's data was refetched: read again, keeping the rows up meanwhile. */
   | { readonly type: 'refresh' }
   /** The in-flight read answered. */
   | { readonly type: 'settled'; readonly assets: readonly ScriptAsset[] }
@@ -150,7 +150,7 @@ export type PageView =
   | { readonly kind: 'failed'; readonly failure: ScanFailure }
   /** No words; `monitoring` while scripts may still produce some. */
   | { readonly kind: 'empty'; readonly monitoring: boolean }
-  /** The word cards; `searched` is false when this browser cannot search. */
+  /** The word rows; `searched` is false when this browser cannot search. */
   | { readonly kind: 'results'; readonly searched: boolean };
 
 /**
@@ -179,13 +179,13 @@ export function resolvePageView(input: PageViewInput): PageView {
 }
 
 /**
- * One word's search answer as the store hands it to the card: its origins,
+ * One word's search answer as the store hands it to the row and the detail: its origins,
  * `'pending'` while the cooperative search has not reached it, `null` when
  * no search runs (no asset list: feature absent or the read failed).
  */
 export type DefinitionAnswer = readonly ScriptOrigin[] | 'pending' | null;
 
-/** One word's answer, as the card states it. */
+/** One word's answer, as the row and the detail state it. */
 export type WordVerdict =
   /** Possible definitions exist (`count` origins). */
   | { readonly kind: 'found'; readonly count: number }
@@ -213,7 +213,7 @@ export function isCrossOriginSentinel(word: string): boolean {
 }
 
 /**
- * The word as the card shows it: the sentinel reads as the browser's own
+ * The word as the row shows it: the sentinel reads as the browser's own
  * message, every other word verbatim.
  *
  * @param word A word from the page.
@@ -265,7 +265,7 @@ export function wordVerdict(
  * The verdict's visible text (status is never color alone).
  *
  * @param verdict The verdict.
- * @returns The card header's right-hand text.
+ * @returns The verdict's words (the row preview, the detail).
  */
 export function verdictText(verdict: WordVerdict): string {
   switch (verdict.kind) {
@@ -307,7 +307,7 @@ export function arrivedWords(known: ReadonlySet<string>, next: readonly string[]
 
 /**
  * The word list without repeats, first occurrence kept. The capture already
- * merges uniquely; repeating the guard here keeps the keyed card list valid
+ * merges uniquely; repeating the guard here keeps the keyed row list valid
  * against any payload.
  *
  * @param words The page's words.
@@ -324,7 +324,7 @@ export interface ResultsSummary {
   readonly undefinedNames: number;
   /** Names with at least one possible definition. */
   readonly withDefinition: number;
-  /** Whether a cross-origin "Script error." card is listed too. */
+  /** Whether a cross-origin "Script error." row is listed too. */
   readonly crossOriginError: boolean;
 }
 
@@ -454,28 +454,16 @@ function parseHttpUrl(url: string): URL | null {
   return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed : null;
 }
 
-/** A script URL split for display, the way a network panel lists requests. */
+/** A script URL's display parts: what names a definition in a row, a toast or a copy. */
 export interface ScriptUrlParts {
   /** The file (last path segment, no query, decoded for display) — e.g. `jquery.min.js`. */
   readonly file: string;
-  /** The query, shown muted after the file — e.g. `?ver=3.7.1`; empty when none. */
-  readonly query: string;
-  /**
-   * The directory in one short form: no leading `/`, and WordPress's
-   * `wp-content/` dropped, so the plugin or theme slug leads the line and
-   * survives a narrow panel — e.g. `plugins/some-plugin/assets/js/`,
-   * `themes/t/js/`, `wp-includes/js/jquery/`; empty for a root file.
-   */
-  readonly directory: string;
   /**
    * The host when the script is not from the inspected page's origin (or
    * that origin is unknown); `null` for the page's own scripts.
    */
   readonly host: string | null;
 }
-
-/** The leading `/` and WordPress's `wp-content/` folder, dropped from every displayed directory. */
-const DIRECTORY_PREFIX = /^\/(?:wp-content\/)?/;
 
 /**
  * Decode percent-escapes for display only (`mi%20plugin` → `mi plugin`,
@@ -501,10 +489,10 @@ function decodeForDisplay(text: string): string {
 }
 
 /**
- * Split a script URL for display. A truncated full URL hides the file name
- * behind the ellipsis on narrow panels, and the inspected page's own host is
- * noise on every row, so it is dropped. A non-http(s) or file-less URL keeps
- * its whole text as the `file`.
+ * Name a script URL for display: its file (a full URL truncated on a narrow
+ * panel hides the file behind the ellipsis), plus its host only when it is
+ * another origin's (the inspected page's own host is noise on every row). A
+ * non-http(s) or file-less URL keeps its whole text as the `file`.
  *
  * @param url The script URL (page-derived; parsed, never fetched).
  * @param pageOrigin The inspected page's origin, or `null` when unknown.
@@ -512,30 +500,14 @@ function decodeForDisplay(text: string): string {
  */
 export function splitScriptUrl(url: string, pageOrigin: string | null): ScriptUrlParts {
   const parsed = parseHttpUrl(url);
-  if (parsed === null) return { file: url, query: '', directory: '', host: null };
+  if (parsed === null) return { file: url, host: null };
   const path = parsed.pathname;
-  const cut = path.lastIndexOf('/');
-  const file = path.slice(cut + 1);
-  if (file === '') return { file: url, query: '', directory: '', host: null };
+  const file = path.slice(path.lastIndexOf('/') + 1);
+  if (file === '') return { file: url, host: null };
   return {
     file: decodeForDisplay(file),
-    query: parsed.search,
-    directory: decodeForDisplay(path.slice(0, cut + 1).replace(DIRECTORY_PREFIX, '')),
     host: parsed.origin === pageOrigin ? null : parsed.host
   };
-}
-
-/**
- * The muted location line: the short directory first (its slug must survive
- * the end truncation), then the host for another origin.
- *
- * @param parts The display parts.
- * @returns The line, e.g. `plugins/p/js/ · cdn.example.com` (empty for the
- *   page's own root files).
- */
-export function scriptLocation(parts: ScriptUrlParts): string {
-  if (parts.host === null) return parts.directory;
-  return parts.directory === '' ? parts.host : `${parts.directory} · ${parts.host}`;
 }
 
 /**

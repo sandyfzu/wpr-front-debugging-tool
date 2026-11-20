@@ -1,20 +1,22 @@
 /**
- * Live tools in Chromium: themes, motion and perf (P14.1 box 4).
+ * Live tools in Chromium: themes, motion and perf.
  *
  * - Themes: the three live-tool surfaces (Beacon Tester, LCP & Vitals, the
  *   JavaScript page's Runtime states) render each palette from the tokens —
  *   the page background and the primary text flip between light and dark,
  *   with no horizontal overflow at the 320 px floor.
  * - Motion: with reduced motion asked, no animation or transition of any
- *   length runs on those surfaces (the Details chevron included); without
- *   it, the chevron turns on the motion token, never longer.
+ *   length runs on those surfaces (a Runtime states row's drill-in detail
+ *   included); without it, that view enters on the motion token, never
+ *   longer.
  * - Perf (UI bar P-3, at this list's own cap): a 1,201-script page (1,200 delayed + its generator) read
- *   into Runtime states (1,000 listed, the cut named), then a state chip, a
- *   source chip and a search — no long task over 50 ms, total blocking time
- *   under 200 ms in those warm steps.
+ *   into Runtime states (1,000 listed, the cut named), then a State value, a
+ *   Source value, a search and opening the row — no long task over 50 ms,
+ *   total blocking time under 200 ms in those warm steps.
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import { openScriptDetail, pickFacet } from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
 
 /** The live-tool surfaces and the element each one is ready on. */
@@ -81,20 +83,23 @@ test('themes and motion on the three live-tool surfaces', async ({ extension }) 
       expect(overflow, `${surface.hash} overflow at 320 px`).toBe(0);
     }
 
-    // The Details chevron: the turn token without a preference, nothing with reduce.
-    const chevron = panel.locator('[data-fdt-runtime-toggle] svg').first();
-    const turn = async (): Promise<number> =>
-      await chevron.evaluate((element) =>
+    // A row's drill-in detail (320 px): the view entrance on the motion token
+    // without a preference, nothing with reduce.
+    const drill = await openScriptDetail(panel, panel.locator('[data-fdt="runtime-row"]').first());
+    await expect(drill).toHaveAttribute('data-fdt', 'drill-detail');
+    const entrance = async (): Promise<number> =>
+      await drill.evaluate((element) =>
         Math.max(
           ...getComputedStyle(element)
-            .transitionDuration.split(',')
+            .animationDuration.split(',')
             .map((value) => parseFloat(value) * (value.trim().endsWith('ms') ? 1 : 1000))
         )
       );
-    expect(await turn()).toBeGreaterThan(0);
-    expect(await turn()).toBeLessThanOrEqual(280);
+    expect(await entrance()).toBeGreaterThan(0);
+    expect(await entrance()).toBeLessThanOrEqual(280);
     await panel.emulateMedia({ reducedMotion: 'reduce' });
-    expect(await turn()).toBeLessThan(1);
+    expect(await entrance()).toBeLessThan(1);
+    await panel.locator('[data-fdt="drill-back"]').click();
     for (const surface of SURFACES) {
       await show(panel, surface);
       const lasting = await panel.evaluate(() =>
@@ -123,7 +128,7 @@ test('themes and motion on the three live-tool surfaces', async ({ extension }) 
   }
 });
 
-test('Runtime states at its cap: read, chips and search without a long task', async ({
+test('Runtime states at its cap: read, facets, search and open without a long task', async ({
   extension
 }, info) => {
   const { panel, fixture } = await openPanelForFixture(extension, '/runtime/many.html');
@@ -146,17 +151,14 @@ test('Runtime states at its cap: read, chips and search without a long task', as
 
     await panel.locator('[data-fdt-runtime-read]').click();
     await expect(panel.locator('[data-fdt-runtime-read]')).toBeEnabled();
-    await panel
-      .locator(
-        '[data-fdt="runtime-states"] [data-fdt="filter-bar"]:not([data-fdt-runtime-sources]) [data-fdt-filter-chip="pending"]'
-      )
-      .click();
-    await panel.locator('[data-fdt-runtime-sources] [data-fdt-filter-chip="plugin"]').click();
+    await pickFacet(panel, 'pending');
+    await pickFacet(panel, 'plugin');
     await expect(panel.locator('[data-fdt="runtime-row"]').first()).toContainText(
       '/wp-content/plugins/'
     );
     await panel.locator('[data-fdt="runtime-states"] input[type="search"]').fill('p401');
     await expect(panel.locator('[data-fdt="runtime-row"]')).toHaveCount(1);
+    await openScriptDetail(panel, panel.locator('[data-fdt="runtime-row"]'));
     // Let the last frame and the search debounce settle before reading the tasks.
     await panel.waitForTimeout(500);
 

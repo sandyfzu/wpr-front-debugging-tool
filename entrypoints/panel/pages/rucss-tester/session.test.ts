@@ -16,6 +16,8 @@ import {
 } from '../../../../lib/rucss-tester/config';
 import type { RucssTestOutcome } from '../../../../lib/rucss-tester/run-test';
 import {
+  consentAnswerEffect,
+  consentAnswerWaits,
   createRucssTesterSession,
   dropAnsweredQuestion,
   RUN_THREW_OUTCOME,
@@ -645,5 +647,319 @@ describe('dispose', () => {
     await session.flush();
     expect(deps.writeConfig).not.toHaveBeenCalled();
     expect(deps.watchConfig).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('data consent', () => {
+  const ASKING: RucssTestOutcome = { kind: 'consent-needed', reason: 'asking' };
+
+  /** A loaded session whose consent watch hands its listener out. */
+  async function withConsentWatch(runTest: RucssTesterSessionDeps['runTest']) {
+    const watch: {
+      answer?: (granted: boolean) => void;
+      stop: ReturnType<typeof vi.fn<() => void>>;
+    } = { stop: vi.fn<() => void>() };
+    const built = await loaded({
+      runTest,
+      watchConsentAnswers: (onAnswer) => {
+        watch.answer = onAnswer;
+        return watch.stop;
+      }
+    });
+    return { ...built, watch };
+  }
+
+  it('a run waiting on the consent starts again once allowed', async () => {
+    const runTest = vi
+      .fn<() => Promise<RucssTestOutcome>>()
+      .mockResolvedValueOnce(ASKING)
+      .mockResolvedValue(APPLIED);
+    const { session, watch } = await withConsentWatch(runTest);
+    await session.start();
+    expect(session.run()).toMatchObject({ status: 'finished', outcome: ASKING });
+    watch.answer?.(true);
+    await settle();
+    expect(runTest).toHaveBeenCalledTimes(2);
+    expect(session.run()).toMatchObject({ status: 'finished', outcome: APPLIED });
+  });
+
+  it('a decline turns the waiting run into the declined state (no new run)', async () => {
+    const runTest = vi.fn(() => Promise.resolve(ASKING));
+    const { session, watch } = await withConsentWatch(runTest);
+    await session.start();
+    watch.answer?.(false);
+    expect(session.run()).toMatchObject({
+      status: 'finished',
+      outcome: { kind: 'consent-needed', reason: 'declined' }
+    });
+    expect(runTest).toHaveBeenCalledOnce();
+  });
+
+  it('an answer with no run waiting on it changes nothing', async () => {
+    const { session, watch, deps } = await withConsentWatch(vi.fn(() => Promise.resolve(APPLIED)));
+    watch.answer?.(true);
+    expect(session.run()).toEqual({ status: 'idle' });
+    await session.start();
+    const finished = session.run();
+    watch.answer?.(true);
+    watch.answer?.(false);
+    expect(session.run()).toBe(finished);
+    expect(deps.runTest).toHaveBeenCalledOnce();
+  });
+
+  it('a grant restarts nothing once the run was declined or its ask failed', async () => {
+    const runTest = vi.fn(() => Promise.resolve(ASKING));
+    const { session, watch } = await withConsentWatch(runTest);
+    await session.start();
+    watch.answer?.(false);
+    watch.answer?.(true);
+    await settle();
+    expect(session.run()).toMatchObject({ outcome: { reason: 'declined' } });
+    expect(runTest).toHaveBeenCalledOnce();
+
+    const failed = await withConsentWatch(
+      vi.fn(() =>
+        Promise.resolve<RucssTestOutcome>({ kind: 'consent-needed', reason: 'ask-failed' })
+      )
+    );
+    await failed.session.start();
+    const shown = failed.session.run();
+    failed.watch.answer?.(true);
+    failed.watch.answer?.(false);
+    await settle();
+    expect(failed.session.run()).toBe(shown);
+    expect(failed.deps.runTest).toHaveBeenCalledOnce();
+  });
+
+  it('a grant after the page reloaded or navigated starts no test on the new load', async () => {
+    const runTest = vi.fn(() => Promise.resolve(ASKING));
+    const { session, watch, setPageId } = await withConsentWatch(runTest);
+    await session.start();
+    const shown = session.run();
+    setPageId('page-2');
+    await settle();
+    watch.answer?.(true);
+    await settle();
+    expect(runTest).toHaveBeenCalledOnce();
+    expect(session.run()).toBe(shown);
+  });
+
+  it('a grant while the page identity is refetching starts nothing', async () => {
+    const runTest = vi.fn(() => Promise.resolve(ASKING));
+    const { session, watch, setPageSettled } = await withConsentWatch(runTest);
+    await session.start();
+    setPageSettled(false);
+    watch.answer?.(true);
+    await settle();
+    expect(runTest).toHaveBeenCalledOnce();
+  });
+
+  it('dispose stops the watch; an answer after it is ignored', async () => {
+    const runTest = vi.fn(() => Promise.resolve(ASKING));
+    const { session, watch } = await withConsentWatch(runTest);
+    await session.start();
+    session.dispose();
+    expect(watch.stop).toHaveBeenCalledOnce();
+    watch.answer?.(true);
+    expect(runTest).toHaveBeenCalledOnce();
+  });
+
+  it('an answer reaching a disposed session (the watch not yet stopped) changes nothing', async () => {
+    const runTest = vi.fn(() => Promise.resolve(ASKING));
+    const { session, watch } = await withConsentWatch(runTest);
+    await session.start();
+    const shown = session.run();
+    session.dispose();
+    watch.answer?.(false);
+    watch.answer?.(true);
+    await settle();
+    expect(session.run()).toBe(shown);
+    expect(runTest).toHaveBeenCalledOnce();
+  });
+
+  it('a forced run restarts forced: the repeat question is not asked twice', async () => {
+    const runTest = vi
+      .fn<() => Promise<RucssTestOutcome>>()
+      .mockResolvedValueOnce(ASKING)
+      .mockResolvedValue(APPLIED);
+    const { session, watch, setPageRuns } = await withConsentWatch(runTest);
+    setPageRuns(1);
+    await session.start();
+    expect(session.run()).toMatchObject({ status: 'confirm-repeat' });
+    await session.start({ force: true });
+    watch.answer?.(true);
+    await settle();
+    expect(runTest).toHaveBeenCalledTimes(2);
+    expect(session.run()).toMatchObject({ status: 'finished', outcome: APPLIED });
+  });
+
+  it('an unforced run restarts unforced: a test applied meanwhile is still asked about', async () => {
+    const runTest = vi.fn(() => Promise.resolve(ASKING));
+    const { session, watch, setPageRuns } = await withConsentWatch(runTest);
+    await session.start();
+    setPageRuns(1);
+    watch.answer?.(true);
+    await settle();
+    expect(runTest).toHaveBeenCalledOnce();
+    expect(session.run()).toMatchObject({ status: 'confirm-repeat' });
+  });
+
+  it('a grant heard while the page identity refetches restarts once it settles on the same load', async () => {
+    const runTest = vi
+      .fn<() => Promise<RucssTestOutcome>>()
+      .mockResolvedValueOnce(ASKING)
+      .mockResolvedValue(APPLIED);
+    const { session, watch, setPageSettled } = await withConsentWatch(runTest);
+    await session.start();
+    setPageSettled(false);
+    watch.answer?.(true);
+    await settle();
+    expect(runTest).toHaveBeenCalledOnce();
+    setPageSettled(true);
+    await settle();
+    expect(runTest).toHaveBeenCalledTimes(2);
+    expect(session.run()).toMatchObject({ status: 'finished', outcome: APPLIED });
+  });
+
+  it('a held grant starts nothing when the refetch settles on another load (and is gone)', async () => {
+    const runTest = vi.fn(() => Promise.resolve(ASKING));
+    const { session, watch, setPageId, setPageSettled } = await withConsentWatch(runTest);
+    await session.start();
+    setPageSettled(false);
+    watch.answer?.(true);
+    setPageId('page-2');
+    setPageSettled(true);
+    await settle();
+    setPageId('page-1');
+    setPageSettled(false);
+    setPageSettled(true);
+    await settle();
+    expect(runTest).toHaveBeenCalledOnce();
+  });
+
+  it("an answer heard while the run's own ask is in flight is judged once it lands", async () => {
+    const lands: ((outcome: RucssTestOutcome) => void)[] = [];
+    const runTest = vi.fn(
+      () =>
+        new Promise<RucssTestOutcome>((resolve) => {
+          lands.push(resolve);
+        })
+    );
+    const { session, watch } = await withConsentWatch(runTest);
+    const first = session.start();
+    await settle();
+    watch.answer?.(true);
+    lands[0]?.(ASKING);
+    await first;
+    await settle();
+    expect(runTest).toHaveBeenCalledTimes(2);
+    lands[1]?.(ASKING);
+    await settle();
+    watch.answer?.(false);
+    expect(session.run()).toMatchObject({ outcome: { reason: 'declined' } });
+
+    const declined = await withConsentWatch(vi.fn(() => Promise.resolve<RucssTestOutcome>(ASKING)));
+    const run = declined.session.start();
+    declined.watch.answer?.(false);
+    await run;
+    await settle();
+    expect(declined.session.run()).toMatchObject({ outcome: { reason: 'declined' } });
+    expect(declined.deps.runTest).toHaveBeenCalledOnce();
+  });
+
+  it('an answer held for an earlier run is dropped by a new run', async () => {
+    const runTest = vi.fn(() => Promise.resolve(ASKING));
+    const { session, watch, setPageSettled } = await withConsentWatch(runTest);
+    await session.start();
+    setPageSettled(false);
+    watch.answer?.(true);
+    await session.start();
+    setPageSettled(true);
+    await settle();
+    expect(runTest).toHaveBeenCalledTimes(2);
+    expect(session.run()).toMatchObject({ outcome: ASKING });
+  });
+
+  it('an answer held until dispose is never acted on', async () => {
+    const runTest = vi.fn(() => Promise.resolve(ASKING));
+    const { session, watch, setPageSettled } = await withConsentWatch(runTest);
+    await session.start();
+    setPageSettled(false);
+    watch.answer?.(true);
+    session.dispose();
+    setPageSettled(true);
+    await settle();
+    expect(runTest).toHaveBeenCalledOnce();
+  });
+});
+
+describe('consentAnswerWaits', () => {
+  const finished = (provisional: boolean): FinishedRun => ({
+    status: 'finished',
+    outcome: { kind: 'consent-needed', reason: 'asking' },
+    page: 'page-1',
+    provisional,
+    sequence: 1
+  });
+
+  it('every answer waits for a run in flight', () => {
+    for (const granted of [true, false]) {
+      expect(consentAnswerWaits({ status: 'running' }, granted, true)).toBe(true);
+    }
+  });
+
+  it('a grant waits while the load is unknown: a refetch or a provisional stamp', () => {
+    expect(consentAnswerWaits(finished(false), true, false)).toBe(true);
+    expect(consentAnswerWaits(finished(true), true, true)).toBe(true);
+    expect(consentAnswerWaits({ status: 'idle' }, true, false)).toBe(true);
+    expect(consentAnswerWaits(finished(false), true, true)).toBe(false);
+    expect(consentAnswerWaits({ status: 'idle' }, true, true)).toBe(false);
+  });
+
+  it('a decline never waits for the load', () => {
+    expect(consentAnswerWaits(finished(false), false, false)).toBe(false);
+    expect(consentAnswerWaits(finished(true), false, true)).toBe(false);
+  });
+});
+
+describe('consentAnswerEffect', () => {
+  const asking = (overrides: Partial<FinishedRun> = {}): FinishedRun => ({
+    status: 'finished',
+    outcome: { kind: 'consent-needed', reason: 'asking' },
+    page: 'page-1',
+    provisional: false,
+    sequence: 1,
+    ...overrides
+  });
+
+  it('restarts a run waiting on its ask, on its own settled load only', () => {
+    expect(consentAnswerEffect(asking(), true, 'page-1', true)).toBe('restart');
+    expect(consentAnswerEffect(asking(), true, 'page-2', true)).toBe('keep');
+    expect(consentAnswerEffect(asking(), true, 'page-1', false)).toBe('keep');
+    expect(consentAnswerEffect(asking(), true, null, true)).toBe('keep');
+    expect(consentAnswerEffect(asking({ page: null }), true, null, true)).toBe('keep');
+    expect(consentAnswerEffect(asking({ provisional: true }), true, 'page-1', true)).toBe('keep');
+  });
+
+  it('a decline marks a waiting run, whatever the load', () => {
+    expect(consentAnswerEffect(asking(), false, 'page-1', true)).toBe('declined');
+    expect(consentAnswerEffect(asking(), false, 'page-2', false)).toBe('declined');
+  });
+
+  it('keeps every run not waiting on its ask', () => {
+    for (const reason of ['declined', 'ask-failed'] as const) {
+      const run = asking({ outcome: { kind: 'consent-needed', reason } });
+      expect(consentAnswerEffect(run, true, 'page-1', true)).toBe('keep');
+      expect(consentAnswerEffect(run, false, 'page-1', true)).toBe('keep');
+    }
+    expect(consentAnswerEffect(asking({ outcome: APPLIED }), true, 'page-1', true)).toBe('keep');
+    for (const state of [
+      { status: 'idle' },
+      { status: 'running' },
+      { status: 'blocked' },
+      { status: 'confirm-repeat', previous: asking() }
+    ] as const) {
+      expect(consentAnswerEffect(state, true, 'page-1', true)).toBe('keep');
+    }
   });
 });

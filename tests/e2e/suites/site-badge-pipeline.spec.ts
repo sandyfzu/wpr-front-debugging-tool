@@ -1,5 +1,5 @@
 /**
- * P4.3 suite 2 — Toolbar badge over the real site's pages.
+ * Toolbar badge over the real site's pages.
  *
  * The fixture pipeline suite pins the badge MECHANICS (dot glyph, transparent
  * tile, green/gray states) over fixture pages. This suite pins the state

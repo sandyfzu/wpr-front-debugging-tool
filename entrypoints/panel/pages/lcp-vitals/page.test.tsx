@@ -1,12 +1,13 @@
 /**
  * The LCP & Vitals page over a session with injected doubles: the analysis
- * card's states (never analysed, pending keeping the shown answer, every
- * miss with typed recoveries, unsupported, no LCP, no navigation, the
- * breakdown with its total and notes, the candidates with the LCP marked),
- * the highlight choice, the vitals card's states (first read on open,
- * per-metric values/ratings/unsupported/no data, restored and capped notes,
- * misses, refresh keeping the values), stale answers after a reload, and a
- * data refresh keeping the view.
+ * card's states (never analysed = the empty result card, the first
+ * analysis's skeleton, pending keeping the shown answer, every miss with
+ * typed recoveries, unsupported, no LCP, no navigation, the breakdown with
+ * its total and notes, the candidates with the LCP marked), the highlight
+ * choice, the vitals tiles' states (skeleton tiles on the first read,
+ * per-metric values/ratings/meters/unsupported/no data, restored and capped
+ * notes, misses, refresh keeping the values), the section order, stale
+ * answers after a reload, and a data refresh keeping the view.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
@@ -27,10 +28,11 @@ import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
 import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
-import { HIGHLIGHT_LABEL, LCP_DISCLOSURE, LCP_STALE_COPY } from './lcp-card';
+import { meterLegend } from '../../../../lib/web-vitals/vital-meter';
+import { HIGHLIGHT_LABEL, LCP_DISCLOSURE, LCP_EMPTY, LCP_STALE_COPY } from './lcp-card';
 import { createLcpVitalsHandle, LCP_VITALS_SUBTITLE, LcpVitalsPage } from './page';
 import { createLcpVitalsSession, type LcpVitalsSessionDeps } from './session';
-import { VITALS_STALE_COPY } from './vitals-card';
+import { VITAL_STATE_VALUES, VITALS_STALE_COPY } from './vitals-card';
 
 const IMAGE: LcpCandidateFacts = {
   startTime: 1200,
@@ -333,6 +335,7 @@ describe('LcpVitalsPage — current-visit vitals', () => {
     fireEvent.click(find('[data-fdt-vitals-refresh]'));
     await settle();
     expect(readVitals).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('[data-fdt-vitals-loading]')).toBeNull();
     expect(find('[data-fdt-vital="lcp"]').textContent).toContain('1,200 ms');
     finish({
       ...READ,
@@ -407,5 +410,168 @@ describe('LcpVitalsPage — page loads and refreshes', () => {
     // A navigation changes the load too: the lines name both.
     expect(LCP_STALE_COPY).toMatch(/^The page reloaded or changed since this analysis/);
     expect(VITALS_STALE_COPY).toMatch(/^The page reloaded or changed since this read/);
+  });
+});
+
+describe('LcpVitalsPage — redesigned layout', () => {
+  it('leads with the vitals, then the LCP run bar and its result card', async () => {
+    renderPage();
+    await settle();
+    const vitals = find('[data-fdt="vitals-card"]');
+    const lcp = find('[data-fdt="lcp-card"]');
+    expect(vitals.compareDocumentPosition(lcp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)
+    ).toEqual(['Core Web Vitals of this visit', 'Largest Contentful Paint']);
+    // The run bar holds the action, the highlight choice and the scope note.
+    const bar = find('[data-fdt="lcp-run-bar"]');
+    expect(bar.querySelector('[data-fdt-lcp-analyse]')).not.toBeNull();
+    expect(bar.textContent).toContain(HIGHLIGHT_LABEL);
+    expect(bar.textContent).toContain(LCP_DISCLOSURE);
+  });
+
+  it('shows an empty result card saying what Analyse produces, until the first analysis', async () => {
+    renderPage();
+    await settle();
+    const empty = find('[data-fdt="lcp-empty"]');
+    expect(empty.textContent).toContain(LCP_EMPTY.title);
+    expect(empty.textContent).toContain(LCP_EMPTY.description);
+    // Opaque canvas fill (never transparent): its text needs an enclosing background to rate.
+    const frame = empty.closest('[data-fdt="card"]');
+    expect(frame?.classList.contains('bg-surface-0')).toBe(true);
+    expect(frame?.classList.contains('bg-transparent')).toBe(false);
+    expect(document.querySelector('[data-fdt-lcp-loading]')).toBeNull();
+    expect(document.querySelector('[data-fdt="lcp-result"]')).toBeNull();
+    await analyseNow();
+    expect(document.querySelector('[data-fdt="lcp-empty"]')).toBeNull();
+    expect(
+      find('[data-fdt="lcp-result"]').querySelector('[data-fdt="lcp-breakdown"]')
+    ).not.toBeNull();
+  });
+
+  it('shows a skeleton shaped like the result only while the first analysis is on its way', async () => {
+    let finish: (outcome: LcpAnalysisOutcome) => void = () => undefined;
+    renderPage({
+      analyse: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    });
+    await analyseNow();
+    const loading = find('[data-fdt-lcp-loading]');
+    // Outcome block, total line, the four parts, candidates.
+    expect(loading.querySelectorAll('[data-fdt="skeleton"]').length).toBeGreaterThanOrEqual(
+      LCP_PARTS.length * 3
+    );
+    expect(document.querySelector('[data-fdt="lcp-empty"]')).toBeNull();
+    finish(ANALYSED);
+    await settle();
+    expect(document.querySelector('[data-fdt-lcp-loading]')).toBeNull();
+    expect(find('[data-fdt="lcp-outcome"]').textContent).toContain('LCP at 1,200 ms');
+  });
+
+  it('keeps the result (no skeleton) while analysing again', async () => {
+    let finish: (outcome: LcpAnalysisOutcome) => void = () => undefined;
+    let call = 0;
+    renderPage({
+      analyse: () =>
+        call++ === 0
+          ? Promise.resolve(ANALYSED)
+          : new Promise((resolve) => {
+              finish = resolve;
+            })
+    });
+    await analyseNow();
+    const result = find('[data-fdt="lcp-result"]');
+    await analyseNow();
+    expect(document.querySelector('[data-fdt-lcp-loading]')).toBeNull();
+    expect(find('[data-fdt="lcp-result"]')).toBe(result);
+    finish(ANALYSED);
+    await settle();
+  });
+
+  it('puts the total in the breakdown header and the parts in their grid', async () => {
+    renderPage();
+    await analyseNow();
+    const breakdown = find('[data-fdt="lcp-breakdown"]');
+    expect(breakdown.querySelector('h3')?.textContent).toBe('Breakdown');
+    expect(find('[data-fdt-lcp-total]').textContent).toBe('LCP 1,200 ms');
+    const grid = find('[data-fdt-lcp-part]').parentElement;
+    expect(grid?.className).toContain('@wide:grid-cols-4');
+    expect(grid?.children).toHaveLength(LCP_PARTS.length);
+  });
+
+  it('shows three skeleton tiles while the first vitals read is on its way', async () => {
+    let finish: (outcome: CurrentVisitOutcome) => void = () => undefined;
+    renderPage({
+      readVitals: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    });
+    await settle();
+    const loading = find('[data-fdt-vitals-loading]');
+    expect(loading.querySelectorAll('[data-fdt="card"]')).toHaveLength(3);
+    finish(READ);
+    await settle();
+    expect(document.querySelector('[data-fdt-vitals-loading]')).toBeNull();
+    // The tiles land in the same grid the skeleton held.
+    expect(find('[data-fdt="vitals-rows"]').className).toBe(loading.className);
+  });
+
+  it('renders each measured metric as a stat tile with its rating and threshold meter', async () => {
+    renderPage({
+      readVitals: () =>
+        Promise.resolve({
+          kind: 'read',
+          vitals: {
+            lcp: { state: 'measured', value: 1250, rating: 'good' },
+            cls: { state: 'measured', value: 0.175, rating: 'needs-improvement' },
+            inp: { state: 'measured', value: 9000, rating: 'poor', interactions: 3 }
+          },
+          capped: false
+        })
+    });
+    await settle();
+    const expected = [
+      ['lcp', 'good', 'Good', '1,250 ms', 1 / 6, 'text-status-ok'],
+      ['cls', 'needs-improvement', 'Needs improvement', '0.175', 1 / 2, 'text-status-warn'],
+      ['inp', 'poor', 'Poor', '9,000 ms', 1, 'text-status-error']
+    ] as const;
+    for (const [key, band, label, value, position, tone] of expected) {
+      const tile = find(`[data-fdt-vital="${key}"]`);
+      expect(tile.querySelector('[data-fdt="stat-tile"]')).not.toBeNull();
+      const shown = tile.querySelector('[data-fdt="stat-tile-value"]');
+      expect(shown?.className).toContain('text-stat');
+      expect(shown?.textContent).toBe(`${value}${label}`);
+      const meter = tile.querySelector<HTMLElement>('[data-fdt="vital-meter"]');
+      expect(meter?.getAttribute('data-fdt-vital-band')).toBe(band);
+      expect(meter?.getAttribute('aria-hidden')).toBe('true');
+      // Only the value's band is painted, in its status tone; the others stay quiet.
+      for (const segment of meter?.querySelectorAll<HTMLElement>('[data-fdt-meter-band]') ?? []) {
+        const painted = segment.getAttribute('data-fdt-meter-band') === band;
+        expect(segment.className.includes(tone), `${key} ${String(painted)}`).toBe(painted);
+        expect(segment.className.includes('bg-surface-4')).toBe(!painted);
+      }
+      const marker = tile.querySelector<HTMLElement>('[data-fdt="vital-meter-marker"]');
+      expect(parseFloat(marker?.style.left ?? '')).toBeCloseTo(position * 100, 6);
+      expect(tile.querySelector('[data-fdt-vital-legend]')?.textContent).toBe(meterLegend(key));
+    }
+    expect(find('[data-fdt-vital="inp"]').textContent).toContain('From 3 interactions.');
+  });
+
+  it('says an unsupported metric or one without data in words, without a meter', async () => {
+    renderPage();
+    await settle();
+    for (const key of ['cls', 'inp'] as const) {
+      const tile = find(`[data-fdt-vital="${key}"]`);
+      const state = tile.getAttribute('data-fdt-vital-state') as 'unsupported' | 'no-data';
+      const value = tile.querySelector('[data-fdt="stat-tile-value"]');
+      expect(value?.textContent).toBe(VITAL_STATE_VALUES[state]);
+      expect(value?.className).toContain('text-tile');
+      expect(value?.className).toContain('text-fg-muted');
+      expect(tile.querySelector('[data-fdt="vital-meter"]')).toBeNull();
+    }
+    expect(find('[data-fdt-vital="lcp"] [data-fdt="vital-meter"]')).not.toBeNull();
   });
 });

@@ -1,6 +1,5 @@
 /**
- * P6.1 browser acceptance — the source-build parity round (row 1 of
- * 07-phase-6-panel-pages.md).
+ * Panel browser acceptance — the source-build parity round.
  *
  * The port and the source extension's own build are installed in two
  * separate Chromium contexts (one unpacked extension per context) and both
@@ -9,8 +8,8 @@
  * footprints, a server/platform header pair) fulfilled by each context's
  * own route interception from one shared `{ body, headers }` build. Every
  * assertion reads rendered state on both sides — the Detections cards'
- * names/verdicts/subtitles, the resource pages' chip counts and filter
- * results, and the undefined-references page's definition search — and the
+ * names/verdicts/subtitles, the resource pages' chip (JavaScript: facet)
+ * counts and filter results, and the undefined-references page's definition search — and the
  * deltas the port ships on purpose are pinned next to the comparison.
  *
  * Known intentional deltas this file pins (provenance recorded with the
@@ -37,6 +36,8 @@ import {
   panelPageUrl,
   type ExtensionDriver
 } from '../helpers/extension';
+import { showDetectionsList } from '../helpers/detections-page';
+import { facetCount, pickFacet } from '../helpers/javascript-page';
 import {
   devtoolsShim,
   openPanelForFixture,
@@ -48,6 +49,7 @@ import {
   sourceTest,
   type SourceBuildDriver
 } from '../helpers/source-build';
+import { openWordDetail, wordRows } from '../helpers/undefined-references-page';
 import { STATUS_LABELS } from '../../../lib/panel/detections-summary';
 
 /** The source round's fixture version stamp (the generator meta's). */
@@ -406,17 +408,19 @@ function sourceRowCount(panel: Page): Promise<number> {
 }
 
 /**
- * One port chip's count span text.
+ * One port facet segment's count text (the JavaScript page's facets: each
+ * value counts the rows it keeps, as the chips did).
  *
  * @param panel The port panel page.
- * @param chipId The chip id.
+ * @param valueId The facet value id.
  */
-function portChipCount(panel: Page, chipId: string): Promise<string | null> {
+function portFacetCount(panel: Page, valueId: string): Promise<string | null> {
   return panel.evaluate(
     (id) =>
-      document.querySelector(`[data-fdt-filter-chip="${id}"] [data-fdt-filter-count]`)
-        ?.textContent ?? null,
-    chipId
+      document.querySelector(
+        `[data-fdt="choice"][data-fdt-choice-value="${id}"] [data-fdt-choice-count]`
+      )?.textContent ?? null,
+    valueId
   );
 }
 
@@ -459,6 +463,8 @@ sourceTest.describe('source-build parity over one served fixture', () => {
         const sourceList = sourcePanel.locator('main .grid > li').first();
         await expect(sourceList).toBeVisible();
 
+        // List: every port row in model order, page facts included.
+        await showDetectionsList(portPanel);
         const port = await portCards(portPanel);
         const origin = await sourceCards(sourcePanel);
         // Every source card exists on the port side with the same verdict;
@@ -478,7 +484,7 @@ sourceTest.describe('source-build parity over one served fixture', () => {
           // the critical-images card's subtitle follows the port's dedicated
           // family model (the preload count is the applied evidence, so it
           // states the count — the source's own rendering says "Beacon
-          // detected" for that evidence; the recorded P1.1 delta).
+          // detected" for that evidence; a deliberate delta).
           if (sourceCard.name === 'Cached') {
             expect(portCard?.subtitle ?? '', 'the cached card ages its stamp').toMatch(
               /^Generated \d+ (?:s|min|h|d) ago$/
@@ -543,7 +549,7 @@ sourceTest.describe('source-build parity over one served fixture', () => {
         await expect(
           round.sourcePanel.locator('div.rounded-lg.shadow-inner > button').first()
         ).toBeVisible();
-        // The source's summary numbers are the chips' counts on the port side.
+        // The source's summary numbers are the facet counts on the port side.
         const originSummary = await sourceSummaryCounts(round.sourcePanel, [
           'Delayed',
           'Non-delayed',
@@ -560,32 +566,32 @@ sourceTest.describe('source-build parity over one served fixture', () => {
         expect(originSummary['Inline']).toBe(SCRIPT_COUNTS.inline);
         expect(originSummary['External']).toBe(SCRIPT_COUNTS.external);
         expect(originSummary['Total']).toBe(SCRIPT_COUNTS.total);
-        expect(await portChipCount(round.portPanel, 'delayed')).toBe(
+        expect(await portFacetCount(round.portPanel, 'delayed')).toBe(
           SCRIPT_COUNTS.delayed.toString()
         );
-        expect(await portChipCount(round.portPanel, 'non-delayed')).toBe(
+        expect(await portFacetCount(round.portPanel, 'non-delayed')).toBe(
           SCRIPT_COUNTS.nonDelayed.toString()
         );
-        expect(await portChipCount(round.portPanel, 'deferred')).toBe(
+        expect(await portFacetCount(round.portPanel, 'deferred')).toBe(
           SCRIPT_COUNTS.portDeferred.toString()
         );
-        expect(await portChipCount(round.portPanel, 'non-deferred')).toBe(
+        expect(await portFacetCount(round.portPanel, 'non-deferred')).toBe(
           SCRIPT_COUNTS.portNonDeferred.toString()
         );
-        expect(await portChipCount(round.portPanel, 'inline')).toBe(
+        expect(await portFacetCount(round.portPanel, 'inline')).toBe(
           SCRIPT_COUNTS.inline.toString()
         );
-        expect(await portChipCount(round.portPanel, 'external')).toBe(
+        expect(await portFacetCount(round.portPanel, 'external')).toBe(
           SCRIPT_COUNTS.external.toString()
         );
 
         // One filter result parity: the source's Delayed click renders exactly
-        // its count (its lists are not virtualized); the port's count line
-        // states the same number.
+        // its count (its lists are not virtualized); the port's Delayed facet
+        // pick leaves its count line stating the same number.
         await round.sourcePanel.getByRole('button', { name: 'Delayed', exact: true }).click();
         expect(await sourceRowCount(round.sourcePanel)).toBe(SCRIPT_COUNTS.delayed);
-        await round.portPanel.locator('[data-fdt-filter-chip="delayed"]').click();
-        await expect(round.portPanel.locator('[data-fdt="script-results-status"]')).toHaveText(
+        await pickFacet(round.portPanel, 'delayed');
+        await expect(round.portPanel.locator('[data-fdt="resource-results-status"]')).toHaveText(
           `Showing ${SCRIPT_COUNTS.delayed.toLocaleString('en-US')} of ${SCRIPT_COUNTS.total.toLocaleString('en-US')} scripts`
         );
 
@@ -609,12 +615,12 @@ sourceTest.describe('source-build parity over one served fixture', () => {
           location.hash = '#/lazyload';
         });
         const portLazyPage = round.portPanel.locator('[data-fdt-page="lazyload"]');
-        await expect(
-          portLazyPage.locator('[data-fdt-filter-chip="lazyloaded"] [data-fdt-filter-count]')
-        ).toHaveText(LAZY_IMAGE_COUNT.toString());
-        await expect(
-          portLazyPage.locator('[data-fdt-filter-chip="non-lazyloaded"] [data-fdt-filter-count]')
-        ).toHaveText(PLAIN_IMAGE_COUNT.toString());
+        await expect(facetCount(portLazyPage, 'lazyloaded')).toHaveText(
+          LAZY_IMAGE_COUNT.toString()
+        );
+        await expect(facetCount(portLazyPage, 'non-lazyloaded')).toHaveText(
+          PLAIN_IMAGE_COUNT.toString()
+        );
 
         // --- Preloaded Resources page, both sides. Same new-route-evidence
         //     wait as the lazyload switch: the label is only the incoming
@@ -635,12 +641,12 @@ sourceTest.describe('source-build parity over one served fixture', () => {
           location.hash = '#/preloaded-resources';
         });
         const portPreloadedPage = round.portPanel.locator('[data-fdt-page="preloaded-resources"]');
-        await expect(
-          portPreloadedPage.locator('[data-fdt-filter-chip="images"] [data-fdt-filter-count]')
-        ).toHaveText(PRELOAD_IMAGE_COUNT.toString());
-        await expect(
-          portPreloadedPage.locator('[data-fdt-filter-chip="fonts"] [data-fdt-filter-count]')
-        ).toHaveText(PRELOAD_FONT_COUNT.toString());
+        await expect(facetCount(portPreloadedPage, 'images')).toHaveText(
+          PRELOAD_IMAGE_COUNT.toString()
+        );
+        await expect(facetCount(portPreloadedPage, 'fonts')).toHaveText(
+          PRELOAD_FONT_COUNT.toString()
+        );
         // The feature label delta: the source names the lazyload feature on
         // this page; the port's badge says whether any hint is WP Rocket's.
         await expect(round.sourcePanel.locator('div.bg-gray-800.p-3')).toContainText('Lazyload');
@@ -680,19 +686,26 @@ sourceTest.describe('source-build parity over one served fixture', () => {
         RESOURCES
       );
       try {
-        // --- Port: the word card answers with the file origin (its display
-        //     form is the file's name; the source's is the full URL — the
-        //     display delta — so the origin identity rides the href).
+        // --- Port: the word's row names the file, its detail answers with
+        //     the file origin (its display form is the tile's path; the
+        //     source's is the full URL — the display delta — so the origin
+        //     identity rides the href).
         await expect(
           portRound.panel.getByRole('heading', { name: 'Undefined References', level: 1 })
         ).toBeVisible();
-        await expect(portRound.panel.locator('[data-fdt-word]')).toHaveText('wocketInventory');
+        await expect(wordRows(portRound.panel).locator('[data-fdt="list-row-name"]')).toHaveText(
+          'wocketInventory'
+        );
+        await expect(wordRows(portRound.panel).locator('[data-fdt="list-row-preview"]')).toHaveText(
+          'wocket-definer.js'
+        );
+        await openWordDetail(portRound.panel, 'wocketInventory');
         const portDefinition = portRound.panel
-          .locator('[data-fdt-definition="url"] [data-fdt="script-link"]')
+          .locator('[data-fdt-definition="url"] [data-fdt="source-link-path"]')
           .first();
         await expect(portDefinition).toContainText('wocket-definer.js');
         const portHref = await portRound.panel
-          .locator('[data-fdt-definition="url"] a')
+          .locator('[data-fdt-definition="url"] [data-fdt="source-link-open"]')
           .first()
           .getAttribute('href');
         expect(portHref).toBe(`${ORIGIN_A}/errors/wocket-definer.js`);

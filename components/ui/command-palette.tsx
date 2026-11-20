@@ -25,6 +25,7 @@
 import type { JSX } from 'solid-js';
 import { For, Show, createEffect, createMemo, createSignal, on } from 'solid-js';
 import type { LucideIcon } from 'lucide-solid';
+import Search from 'lucide-solid/icons/search';
 import { Dynamic } from 'solid-js/web';
 import { cn } from '../../utils/cn';
 import { FOCUS_RING } from './classes';
@@ -38,7 +39,7 @@ import {
   scrollDeltaToReveal,
   type AnnouncementCause
 } from './command-palette-model';
-import { ModalDialog } from './dialog';
+import { ModalDialog, type ModalDialogVariant } from './dialog';
 
 /** One runnable entry of the palette: a page or an action. */
 export interface PaletteCommand {
@@ -82,7 +83,18 @@ export interface CommandPaletteProps<T extends PaletteCommand = PaletteCommand> 
   description?: string;
   /** Content under the list (e.g. a surface's shortcut hint); none by default. */
   footer?: JSX.Element;
+  /**
+   * The look (default `default`, today's — the on-page palette renders it,
+   * restyled by its own stylesheet over the `data-fdt` hooks). `panel` — the
+   * devtools panel's: a search field with its icon above a hairline, taller
+   * rows, the highlight in the accent tint (the selected-row tint of lists).
+   * Opt-in, so the on-page palette's markup never changes.
+   */
+  variant?: CommandPaletteVariant;
 }
+
+/** The palette's looks: the dialog's (one vocabulary for both primitives). */
+export type CommandPaletteVariant = ModalDialogVariant;
 
 /**
  * The field: full-width inside the dialog, at the shell's field height, with
@@ -102,6 +114,77 @@ const ROW_CLASSES =
 
 /** The no-match line: a real empty result, never a dead dropdown. */
 const EMPTY_CLASSES = 'px-2 py-1.5 text-xs text-fg-muted';
+
+/**
+ * What a look styles, part by part — class strings only (the markup, ids,
+ * roles and `data-fdt` hooks are the same in every look, except the field
+ * frame a look opts into). The shared focus ring is merged onto the field
+ * and the rows by the component, never repeated here.
+ */
+interface PaletteLook {
+  /** Classes merged onto the dialog plate (padding; the caller's `class` still wins). */
+  readonly plate: string;
+  /** The combobox's column (field, list, live line): its flex column and spacing. */
+  readonly root: string;
+  /**
+   * The wrapper the field sits in when the look leads it with the search
+   * icon (positioning context, padding, divider); null = the bare field is
+   * the column's first child.
+   */
+  readonly fieldFrame: string | null;
+  /** The combobox field: height, frame, fill, inset (room for the icon when framed), type. */
+  readonly field: string;
+  /** The listbox: height cap, scrolling and padding (the component adds `flex-1 min-h-0`). */
+  readonly list: string;
+  /** An option row: height, spacing, type and its highlighted/disabled states. */
+  readonly row: string;
+  /** A row's leading icon: never shrinking, its resting (and highlighted) tone. */
+  readonly rowIcon: string;
+  /** A row's trailing hint (or disabled note): never shrinking, its size and tone. */
+  readonly hint: string;
+  /** The visible no-match line (the live line is `sr-only` while rows show). */
+  readonly empty: string;
+}
+
+/**
+ * Every look — adding one is one row here. `default` is the shipped look,
+ * byte for byte (the on-page palette's markup depends on it).
+ */
+export const PALETTE_LOOKS: Readonly<Record<CommandPaletteVariant, PaletteLook>> = {
+  default: {
+    plate: 'pt-1.5',
+    root: 'flex min-h-0 flex-1 flex-col gap-1',
+    fieldFrame: null,
+    field: FIELD_CLASSES,
+    list: LIST_CLASSES,
+    row: ROW_CLASSES,
+    rowIcon: 'shrink-0 text-fg-muted',
+    hint: 'shrink-0 text-2xs',
+    empty: EMPTY_CLASSES
+  },
+  panel: {
+    plate: '',
+    root: 'flex min-h-0 flex-1 flex-col',
+    fieldFrame: 'relative shrink-0 border-b border-line-1 p-2',
+    field:
+      'h-8 w-full rounded-control border border-line-2 bg-surface-1 ps-8 pe-2.5 text-xs text-fg-primary placeholder:text-fg-muted hover:border-line-3',
+    list: 'max-h-72 overflow-y-auto p-1.5',
+    row:
+      'group flex h-8 w-full cursor-pointer select-none items-center gap-2.5 rounded-md px-2 text-left text-xs text-fg-secondary no-underline' +
+      ' data-highlighted:bg-accent-soft data-highlighted:text-fg-primary' +
+      ' data-disabled:cursor-not-allowed data-disabled:text-fg-muted',
+    rowIcon: 'shrink-0 text-fg-muted group-data-highlighted:text-accent',
+    hint: 'shrink-0 text-2xs text-fg-muted',
+    empty: 'px-3 py-6 text-center text-xs text-fg-secondary'
+  }
+};
+
+/**
+ * The search icon's place inside the panel look's field frame: 8 px frame
+ * padding + 10 px field inset, centered on the 32 px field.
+ */
+const FIELD_ICON_CLASSES =
+  'pointer-events-none absolute start-4.5 top-1/2 -translate-y-1/2 text-fg-muted';
 
 /**
  * The element ids. Static: one palette renders per document or shadow
@@ -135,20 +218,25 @@ function rowId(commandId: string): string {
  * @param props.mount The injected UI's render node (the dialog's mounted mode).
  * @param props.description The accessible description override.
  * @param props.footer Content rendered under the list (optional).
+ * @param props.variant The look (default `default`).
  */
 export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
   props: CommandPaletteProps<T>
 ): JSX.Element {
   /** The field, focused as the dialog mounts (no task gap another UI could take focus in). */
   let field: HTMLInputElement | undefined;
+  // eslint-disable-next-line solid/reactivity -- a look is fixed per mount
+  const variant = props.variant ?? 'default';
+  const look = PALETTE_LOOKS[variant];
   return (
     <ModalDialog
       onClose={props.onClose}
       initialFocus={() => field}
       title="Command palette"
       description={props.description ?? 'Filter the pages and actions, run the highlighted one'}
-      class={cn('pt-1.5', props.class)}
+      class={cn(look.plate, props.class)}
       mount={props.mount}
+      variant={variant}
       onKeyDownCapture={(event) => {
         // Tab = dismiss: the field is the dialog's only stop (the list never
         // takes focus), so Tab would cycle back into the same field — ending
@@ -160,6 +248,7 @@ export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
       }}
     >
       <PaletteCombobox
+        look={look}
         commands={props.commands}
         filter={props.filter}
         onRun={props.onRun}
@@ -174,6 +263,8 @@ export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
 
 /** Props of {@link PaletteCombobox}. */
 interface PaletteComboboxProps<T extends PaletteCommand> {
+  /** The look (fixed per mount). */
+  look: PaletteLook;
   /** The commands, in registry order (before matching). */
   commands: readonly T[];
   /** The caller's matcher (raw query → ordered rows). */
@@ -277,32 +368,43 @@ function PaletteCombobox<T extends PaletteCommand>(props: PaletteComboboxProps<T
     return command === undefined ? undefined : rowId(command.id);
   };
 
+  const fieldElement = (
+    <input
+      ref={(element) => {
+        props.fieldRef(element);
+      }}
+      id={FIELD_ID}
+      data-fdt="palette-input"
+      type="text"
+      role="combobox"
+      class={cn(props.look.field, FOCUS_RING)}
+      placeholder="Type a command…"
+      aria-label="Search commands"
+      aria-haspopup="listbox"
+      aria-autocomplete="list"
+      aria-controls={LIST_ID}
+      // Expanded only while the list has rows to show (it stays mounted,
+      // hidden, while empty — `aria-controls` keeps naming it).
+      aria-expanded={!empty()}
+      aria-activedescendant={activeDescendant()}
+      autocomplete="off"
+      autocapitalize="off"
+      spellcheck={false}
+      onInput={(event) => setQuery(event.currentTarget.value)}
+      onKeyDown={onFieldKeyDown}
+    />
+  );
+
   return (
-    <div data-fdt="palette" class="flex min-h-0 flex-1 flex-col gap-1">
-      <input
-        ref={(element) => {
-          props.fieldRef(element);
-        }}
-        id={FIELD_ID}
-        data-fdt="palette-input"
-        type="text"
-        role="combobox"
-        class={cn(FIELD_CLASSES, FOCUS_RING)}
-        placeholder="Type a command…"
-        aria-label="Search commands"
-        aria-haspopup="listbox"
-        aria-autocomplete="list"
-        aria-controls={LIST_ID}
-        // Expanded only while the list has rows to show (it stays mounted,
-        // hidden, while empty — `aria-controls` keeps naming it).
-        aria-expanded={!empty()}
-        aria-activedescendant={activeDescendant()}
-        autocomplete="off"
-        autocapitalize="off"
-        spellcheck={false}
-        onInput={(event) => setQuery(event.currentTarget.value)}
-        onKeyDown={onFieldKeyDown}
-      />
+    <div data-fdt="palette" class={props.look.root}>
+      <Show when={props.look.fieldFrame} fallback={fieldElement}>
+        {(frame) => (
+          <div class={frame()}>
+            <Search size={14} class={FIELD_ICON_CLASSES} aria-hidden="true" />
+            {fieldElement}
+          </div>
+        )}
+      </Show>
       <ul
         ref={(element) => {
           list = element;
@@ -311,7 +413,7 @@ function PaletteCombobox<T extends PaletteCommand>(props: PaletteComboboxProps<T
         role="listbox"
         aria-label="Commands"
         data-fdt="palette-list"
-        class={cn(LIST_CLASSES, 'flex-1 min-h-0')}
+        class={cn(props.look.list, 'flex-1 min-h-0')}
         hidden={empty()}
         // Pressing a row must not move focus out of the field (the field is
         // the combobox; a blur would also read as an outside focus move).
@@ -322,6 +424,7 @@ function PaletteCombobox<T extends PaletteCommand>(props: PaletteComboboxProps<T
         <For each={ranked()}>
           {(command) => (
             <CommandRow
+              look={props.look}
               command={command}
               highlighted={command.id === activeId()}
               onHover={() => {
@@ -339,7 +442,7 @@ function PaletteCombobox<T extends PaletteCommand>(props: PaletteComboboxProps<T
           current query, so it is never blank or stale (an empty command set,
           a re-rank without a query change) — visually hidden (counts, and the
           highlighted row on Apple platforms) otherwise. */}
-      <p data-fdt="palette-empty" role="status" class={empty() ? EMPTY_CLASSES : 'sr-only'}>
+      <p data-fdt="palette-empty" role="status" class={empty() ? props.look.empty : 'sr-only'}>
         {empty() ? noMatchText(query()) : announcement()}
       </p>
     </div>
@@ -348,6 +451,8 @@ function PaletteCombobox<T extends PaletteCommand>(props: PaletteComboboxProps<T
 
 /** Props of {@link CommandRow}. */
 interface CommandRowProps {
+  /** The look (fixed per mount). */
+  look: PaletteLook;
   /** The ranked row. */
   command: PaletteCommand;
   /** Whether the highlight rests on this row. */
@@ -372,7 +477,7 @@ function CommandRow(props: CommandRowProps): JSX.Element {
     <li
       id={rowId(props.command.id)}
       role="option"
-      class={cn(ROW_CLASSES, FOCUS_RING)}
+      class={cn(props.look.row, FOCUS_RING)}
       data-fdt="palette-command"
       aria-selected={props.highlighted}
       aria-disabled={disabled()}
@@ -387,11 +492,11 @@ function CommandRow(props: CommandRowProps): JSX.Element {
     >
       <Show when={props.command.icon}>
         {(icon) => (
-          <Dynamic component={icon()} size={14} class="shrink-0 text-fg-muted" aria-hidden="true" />
+          <Dynamic component={icon()} size={14} class={props.look.rowIcon} aria-hidden="true" />
         )}
       </Show>
       <span class="min-w-0 flex-1 truncate">{props.command.label}</span>
-      <span data-fdt="palette-command-hint" class="shrink-0 text-2xs">
+      <span data-fdt="palette-command-hint" class={props.look.hint}>
         {disabled() ? props.command.disabledNote : props.command.hint}
       </span>
     </li>

@@ -5,10 +5,10 @@
  * first visit (its own chunk).
  *
  * State matrix (the shell owns loading, fetch errors and render crashes —
- * this body renders on `ready`/`refreshing`): the LCP card (see
- * `./lcp-card`) above the vitals card (see `./vitals-card`). The vitals are
- * read on the page's first open (a passive read); the analysis waits for
- * Analyse (it may frame the element).
+ * this body renders on `ready`/`refreshing`): the vitals tiles (see
+ * `./vitals-card`) above the LCP run bar and result card (see `./lcp-card`).
+ * The vitals are read on the page's first open (a passive read), so they
+ * lead; the analysis waits for Analyse (it may frame the element).
  *
  * The session outlives the page body (panel lifetime): leaving the route
  * mid-ask keeps the ask, and its answer is there on return. A data refresh
@@ -83,8 +83,8 @@ export function LcpVitalsPage(props: LcpVitalsPageProps = {}): JSX.Element {
   return (
     <Show when={hasData()}>
       <PageFrame id="lcp-vitals" title={LCP_VITALS_TITLE} subtitle={LCP_VITALS_SUBTITLE}>
-        <LcpCard session={session} reloadPage={reloadPage} />
         <VitalsCard session={session} reloadPage={reloadPage} />
+        <LcpCard session={session} reloadPage={reloadPage} />
       </PageFrame>
     </Show>
   );

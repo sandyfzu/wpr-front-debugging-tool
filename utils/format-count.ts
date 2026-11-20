@@ -11,6 +11,18 @@ export function formatCount(count: number): string {
   return COUNT_FORMAT.format(count);
 }
 
+/**
+ * Format a count that may be a capture floor: the grouped figures, then `+`
+ * when entries beyond the captured list may exist (`5,000+`).
+ *
+ * @param count A non-negative count.
+ * @param partial Whether the count is only a lower bound.
+ * @returns The figures, floor-marked when partial.
+ */
+export function formatCountFloor(count: number, partial: boolean): string {
+  return `${formatCount(count)}${partial ? '+' : ''}`;
+}
+
 /** A noun in its two English count forms ("script" / "scripts"). */
 export interface CountNoun {
   /** The singular form, used for exactly one. */
@@ -32,7 +44,7 @@ export interface CountNoun {
  * @returns The counted phrase.
  */
 export function countLabel(count: number, noun: CountNoun, partial = false): string {
-  return `${formatCount(count)}${partial ? '+' : ''} ${partial ? noun.other : countNoun(count, noun)}`;
+  return `${formatCountFloor(count, partial)} ${partial ? noun.other : countNoun(count, noun)}`;
 }
 
 /**
@@ -44,4 +56,41 @@ export function countLabel(count: number, noun: CountNoun, partial = false): str
  */
 export function countNoun(count: number, noun: CountNoun): string {
   return count === 1 ? noun.one : noun.other;
+}
+
+/** Compact notation, one fraction digit at most ("742", "18.6K", "1.2M"). */
+const COMPACT_OPTIONS: Intl.NumberFormatOptions = {
+  notation: 'compact',
+  maximumFractionDigits: 1
+};
+
+/** Shared compact formatter, rounding to nearest. */
+const COMPACT_FORMAT = new Intl.NumberFormat('en-US', COMPACT_OPTIONS);
+
+/** Compact formatter rounding down, so a floor never reads above its count. */
+const COMPACT_FLOOR_FORMAT = new Intl.NumberFormat('en-US', {
+  ...COMPACT_OPTIONS,
+  roundingMode: 'floor'
+});
+
+/**
+ * Format a non-negative count compactly, for narrow cells ("18.6K").
+ *
+ * @param count The count.
+ * @returns The compact figure, without a noun.
+ */
+export function formatCompactCount(count: number): string {
+  return COMPACT_FORMAT.format(count);
+}
+
+/**
+ * Format a lower bound compactly, rounded down ("524.2K" for 524,288,
+ * "999.9K" for 999,960): a figure shown after "≥" must never exceed the
+ * count it bounds, which nearest rounding would.
+ *
+ * @param count The non-negative lower bound.
+ * @returns The compact figure, without a noun or the "≥" mark.
+ */
+export function formatCompactFloor(count: number): string {
+  return COMPACT_FLOOR_FORMAT.format(count);
 }

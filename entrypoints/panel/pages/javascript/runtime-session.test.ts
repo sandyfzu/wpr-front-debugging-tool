@@ -16,7 +16,13 @@ function logDouble(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
-const READ: LiveScriptsOutcome = { kind: 'read', scripts: [], total: 0, truncated: false };
+const READ: LiveScriptsOutcome = {
+  kind: 'read',
+  scripts: [],
+  total: 0,
+  truncated: false,
+  baseUrl: null
+};
 
 /** Let queued promise callbacks run. */
 async function settle(): Promise<void> {

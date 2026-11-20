@@ -1,7 +1,7 @@
 /**
  * The Stylesheets page's row shape and style states — the one declaring
- * site of what each state means, read by both the row chips and the filter
- * chips (a filter selects exactly the rows that show its chip). Only states WP Rocket's own
+ * site of what each state means, read by both the row chips and the facet
+ * values (a value selects exactly the rows that show its chip). Only states WP Rocket's own
  * markup proves get one: the reserved ids of the styles it prints, the
  * stamps on the links it rewrote.
  *
@@ -68,6 +68,8 @@ export interface CssStyleResource {
   readonly minified: boolean;
   /** The critical-path style (see {@link isLiveCriticalStyle}; always on the snapshot row). */
   readonly critical: boolean;
+  /** The link carries Minify CSS's exact stamp beside an `href` (a tag fact; `minified` is the verdict). */
+  readonly minifyAttribute: boolean;
   /** The link carries Load CSS asynchronously's stamp. */
   readonly rocketAsync: boolean;
   /** The link carries Self-host Google Fonts' attribute. */

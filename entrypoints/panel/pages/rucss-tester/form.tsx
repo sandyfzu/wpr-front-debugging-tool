@@ -1,18 +1,20 @@
 /**
- * The tester's settings form: what is sent (Mobile, Home, the safelist),
- * which page styles stay (inline markers, stylesheet patterns), and how the
- * returned CSS is adjusted (before/after CSS, ordered replacements). Every
- * pattern is checked live exactly as a run compiles it, every pair states
- * its effect (an empty replacement deletes its matches), every field holds
- * at most its stored cap, and the save state is always in view — a save the
- * store refuses or the storage rejects is shown, never swallowed.
+ * The tester's settings form: three disclosure sections — what is sent
+ * (Mobile, Home, the safelist), which page styles stay (inline markers,
+ * stylesheet patterns), and how the returned CSS is adjusted (before/after
+ * CSS, ordered replacements) — each header summing up what it holds and how
+ * many of its patterns do not compile, so a folded section never hides a
+ * problem. Every pattern is checked live exactly as a run compiles it (once
+ * per edit, shared by the fields and the summaries), every pair states its
+ * effect (an empty replacement deletes its matches), and every field holds
+ * at most its stored cap. The save state sits in the settings heading (the
+ * page's).
  */
 import type { JSX } from 'solid-js';
-import { createMemo, For, Index, Show } from 'solid-js';
+import { createMemo, For, Index, Show, type Accessor } from 'solid-js';
 import Plus from 'lucide-solid/icons/plus';
 import Trash from 'lucide-solid/icons/trash';
 import { Button } from '../../../../components/ui/button';
-import { Card } from '../../../../components/ui/card';
 import { IconButton } from '../../../../components/ui/icon-button';
 import { Input } from '../../../../components/ui/input';
 import { STATUS_TEXT_CLASSES } from '../../../../components/ui/status-badge';
@@ -22,12 +24,20 @@ import { RUCSS_CONFIG_LIMITS } from '../../../../lib/rucss-tester/config';
 import {
   checkExcludeLines,
   checkReplacementPair,
+  countInvalidPatterns,
   type RucssPairCheck
 } from '../../../../lib/rucss-tester/form-check';
 import { DEFAULT_INLINE_PRESERVES } from '../../../../lib/rucss-tester/run-plan';
+import {
+  initialRucssSectionsOpen,
+  rucssSectionSummaries,
+  type RucssSettingsSection
+} from '../../../../lib/rucss-tester/settings-summary';
 import { formatCount } from '../../../../utils/format-count';
+import type { SectionSummary } from '../../../../lib/panel/section-summary';
 import { cn } from '../../../../utils/cn';
-import { SaveLine } from '../settings/save-line';
+import { DisclosureSection } from '../settings/disclosure-section';
+import type { SectionsState } from '../settings/sections';
 import type { RucssTesterSession, RucssTextField } from './session';
 
 /** The element id of a text field (the `review-patterns` recovery focuses it). */
@@ -83,13 +93,40 @@ const FIELD_MAX: Readonly<Record<RucssTextField, number>> = {
   append: RUCSS_CONFIG_LIMITS.cssChars
 };
 
-/** A section heading (`h2`) and its body column; the form card's hairline divides sections. */
-function Section(props: { title: string; children: JSX.Element }): JSX.Element {
+/** The sections' titles (their `h3`s, under the page's "Settings" `h2`). */
+export const SECTION_TITLES: Readonly<Record<RucssSettingsSection, string>> = {
+  request: 'Request',
+  keep: 'Styles to keep',
+  adjust: 'Adjust the result'
+};
+
+/** Props of {@link Section}. */
+interface SectionProps {
+  section: RucssSettingsSection;
+  summary: SectionSummary;
+  sections: SectionsState<RucssSettingsSection>;
+  children: JSX.Element;
+}
+
+/**
+ * One settings section (the shared disclosure card, under this page's hooks).
+ *
+ * @param props See {@link SectionProps}.
+ */
+function Section(props: SectionProps): JSX.Element {
   return (
-    <section class="flex min-w-0 flex-col gap-2 py-3 first:pt-0 last:pb-0">
-      <h2 class="text-sm font-semibold text-fg-primary">{props.title}</h2>
+    <DisclosureSection
+      page="rucss"
+      section={props.section}
+      title={SECTION_TITLES[props.section]}
+      summary={props.summary}
+      open={props.sections.isOpen(props.section)}
+      onOpenChange={(open) => {
+        props.sections.setOpen(props.section, open);
+      }}
+    >
       {props.children}
-    </section>
+    </DisclosureSection>
   );
 }
 
@@ -229,9 +266,12 @@ function PairRow(props: PairRowProps): JSX.Element {
  * The ordered replacements with their add control (held at the cap).
  *
  * @param props.session The session.
+ * @param props.checks Each pair's live check, in pair order.
  */
-function Replacements(props: { session: RucssTesterSession }): JSX.Element {
-  const checks = createMemo(() => props.session.form.replacements.map(checkReplacementPair));
+function Replacements(props: {
+  session: RucssTesterSession;
+  checks: readonly RucssPairCheck[];
+}): JSX.Element {
   /** Whether the pair cap is reached (Add is then held). */
   const full = (): boolean =>
     props.session.form.replacements.length >= RUCSS_CONFIG_LIMITS.replacements;
@@ -271,7 +311,7 @@ function Replacements(props: { session: RucssTesterSession }): JSX.Element {
               <PairRow
                 session={props.session}
                 index={index}
-                check={checks()[index] ?? { effect: 'skipped', problem: null }}
+                check={props.checks[index] ?? { effect: 'skipped', problem: null }}
               />
             )}
           </Index>
@@ -285,63 +325,93 @@ function Replacements(props: { session: RucssTesterSession }): JSX.Element {
 export interface RucssFormProps {
   /** The session (its settings are loaded: the page shows the form only then). */
   session: RucssTesterSession;
+  /** Which sections are open (panel lifetime; seeded from the settings on the first mount). */
+  sections: SectionsState<RucssSettingsSection>;
 }
 
 /**
- * Render the form: one card (sections divided by hairlines, the save line in
- * its footer). The card's solid surface also sits behind every line of text,
- * so text scrolled past the panel's fold keeps a resolvable background.
+ * The live checks, once per edit: the exclusion lines' problems (as the
+ * field's error lines, one per typed line, and as the header's count of
+ * distinct invalid patterns) and each pair's check.
  *
- * @param props See {@link RucssFormProps}.
+ * @param session The session.
  */
-export function RucssForm(props: RucssFormProps): JSX.Element {
+function createFormChecks(session: RucssTesterSession): {
+  excludeErrors: Accessor<string[]>;
+  invalidExcludePatterns: Accessor<number>;
+  pairChecks: Accessor<RucssPairCheck[]>;
+} {
+  const excludeProblems = createMemo(() => checkExcludeLines(session.form.excludeFiles));
   const excludeErrors = createMemo(() =>
-    checkExcludeLines(props.session.form.excludeFiles).map(
+    excludeProblems().map(
       (problem) =>
         `Line ${formatCount(problem.lineNumber)} (“${problem.line}”) is not a valid pattern: ${problem.message}`
     )
   );
+  const invalidExcludePatterns = createMemo(() => countInvalidPatterns(excludeProblems()));
+  const pairChecks = createMemo(() => session.form.replacements.map(checkReplacementPair));
+  return { excludeErrors, invalidExcludePatterns, pairChecks };
+}
+
+/**
+ * Render the form: one card per section. Each card's solid surface sits
+ * behind every line of its text, so text scrolled past the panel's fold
+ * keeps a resolvable background.
+ *
+ * @param props See {@link RucssFormProps}.
+ */
+export function RucssForm(props: RucssFormProps): JSX.Element {
+  // eslint-disable-next-line solid/reactivity -- read once on purpose: the session is fixed per mount
+  const { excludeErrors, invalidExcludePatterns, pairChecks } = createFormChecks(props.session);
+  // The first mount follows the loaded settings: a filled advanced section starts open.
+  // eslint-disable-next-line solid/reactivity -- read once on purpose: the defaults are seeded once
+  props.sections.seed(initialRucssSectionsOpen(props.session.form));
+  const summaries = createMemo(() =>
+    rucssSectionSummaries(props.session.form, {
+      excludeLines: invalidExcludePatterns(),
+      pairs: pairChecks().filter((check) => check.problem !== null).length
+    })
+  );
   return (
-    <Card level={1} footer={<SaveLine state={props.session.save()} />}>
-      <div data-fdt="rucss-form" class="flex min-w-0 flex-col divide-y divide-line-1">
-        <Section title="Request">
-          <div class="flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
-            <Switch
-              label="Mobile"
-              checked={props.session.form.mobile}
-              onChange={(checked) => {
-                props.session.setFlag('mobile', checked);
-              }}
-            />
-            <Switch
-              label="Home page"
-              checked={props.session.form.home}
-              onChange={(checked) => {
-                props.session.setFlag('home', checked);
-              }}
-            />
-          </div>
-          <TextField session={props.session} field="safelist" height="h-20" />
-        </Section>
-        <Section title="Styles to keep">
-          <div class="grid gap-3 @wide:grid-cols-2">
-            <TextField session={props.session} field="inlinePreserve" height="h-20" />
-            <TextField
-              session={props.session}
-              field="excludeFiles"
-              errors={excludeErrors()}
-              height="h-20"
-            />
-          </div>
-        </Section>
-        <Section title="Adjust the result">
-          <div class="grid gap-3 @wide:grid-cols-2">
-            <TextField session={props.session} field="prepend" height="h-20" />
-            <TextField session={props.session} field="append" height="h-20" />
-          </div>
-          <Replacements session={props.session} />
-        </Section>
-      </div>
-    </Card>
+    <div data-fdt="rucss-form" class="flex min-w-0 flex-col gap-2">
+      <Section section="request" summary={summaries().request} sections={props.sections}>
+        <div class="flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
+          <Switch
+            label="Mobile"
+            checked={props.session.form.mobile}
+            onChange={(checked) => {
+              props.session.setFlag('mobile', checked);
+            }}
+          />
+          <Switch
+            label="Home page"
+            checked={props.session.form.home}
+            onChange={(checked) => {
+              props.session.setFlag('home', checked);
+            }}
+          />
+        </div>
+        <TextField session={props.session} field="safelist" height="h-20" />
+      </Section>
+      <Section section="keep" summary={summaries().keep} sections={props.sections}>
+        {/* Side by side only while the settings span the page (one column from @wide). */}
+        <div class="grid gap-3 @regular:grid-cols-2 @wide:grid-cols-1">
+          <TextField session={props.session} field="inlinePreserve" height="h-20" />
+          <TextField
+            session={props.session}
+            field="excludeFiles"
+            errors={excludeErrors()}
+            height="h-20"
+          />
+        </div>
+      </Section>
+      <Section section="adjust" summary={summaries().adjust} sections={props.sections}>
+        <div class="grid gap-3 @regular:grid-cols-2 @wide:grid-cols-1">
+          <TextField session={props.session} field="prepend" height="h-20" />
+          <TextField session={props.session} field="append" height="h-20" />
+        </div>
+        <Replacements session={props.session} checks={pairChecks()} />
+      </Section>
+    </div>
   );
 }

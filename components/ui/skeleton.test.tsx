@@ -16,13 +16,13 @@ describe('Skeleton', () => {
     const skeleton = document.querySelector<HTMLElement>('[data-fdt="skeleton"]');
     expect(skeleton).toBeTruthy();
     expect(skeleton?.className).toContain('animate-pulse');
-    expect(skeleton?.className).toContain('bg-surface-3');
+    expect(skeleton?.className).toContain('bg-surface-4');
     expect(skeleton?.className).toContain('h-3');
   });
 
   it('carries the motion-token pulse class, neutralized by reduced motion globally', () => {
-    // The token stylesheet collapses every animation under
-    // `prefers-reduced-motion`; the component only contributes the class.
+    // The token stylesheet drops every animation (`animation-name: none`)
+    // under `prefers-reduced-motion`; the component only contributes the class.
     render(() => <Skeleton />);
     expect(document.querySelector('[data-fdt="skeleton"]')?.className).toContain('animate-pulse');
   });

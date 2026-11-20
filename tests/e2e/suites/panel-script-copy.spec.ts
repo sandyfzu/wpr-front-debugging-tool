@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { expect, openFixturePage, test } from '../helpers/extension';
+import { openScriptDetail, scriptDetail, scriptRows } from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
 
 /** Dev-time accessibility engine, evaluated outside the extension page's CSP. */
@@ -40,14 +41,18 @@ test('copies full inline content and URL beyond transport preview caps after liv
       external.setAttribute('data-rocket-src', '/wrong-after-capture.js');
     });
 
-    const rows = panel.locator('[data-fdt="script-row"]');
-    const copyInline = rows.nth(1).getByRole('button', { name: 'Inline script — copy' });
+    // Each copy lives in its row's detail header.
+    const rows = scriptRows(panel);
+    const inlineDetail = await openScriptDetail(panel, rows.nth(1));
+    const copyInline = inlineDetail.getByRole('button', { name: 'Inline script — copy' });
     await copyInline.focus();
     await expect(copyInline).toBeFocused();
     await copyInline.press('Enter');
     await expect(panel.getByText('Inline script copied', { exact: true })).toBeVisible();
     expect(await panel.evaluate(() => navigator.clipboard.readText())).toBe(inline);
-    await rows.nth(2).getByRole('button', { name: 'Script URL — copy' }).click();
+    const externalDetail = await openScriptDetail(panel, rows.nth(2));
+    const copyUrl = externalDetail.getByRole('button', { name: 'Script URL — copy' });
+    await copyUrl.click();
     await expect(panel.getByText('Script URL copied', { exact: true })).toBeVisible();
     expect(await panel.evaluate(() => navigator.clipboard.readText())).toBe(url);
 
@@ -64,7 +69,10 @@ test('copies full inline content and URL beyond transport preview caps after liv
       await panel.evaluate((theme) => {
         document.documentElement.dataset['theme'] = theme;
       }, theme);
-      await expect(rows.nth(2).getByRole('button', { name: 'Script URL — copy' })).toBeVisible();
+      // Back at 1280 px the pane shows the same row again, its copy with it.
+      await expect(
+        scriptDetail(panel).getByRole('button', { name: 'Script URL — copy' })
+      ).toBeVisible();
     }
     await panel.evaluate(async () => {
       await document.fonts.ready;
@@ -158,7 +166,8 @@ test('copy success feedback keeps valid live-region accessibility semantics', as
   try {
     await expect(panel.getByRole('heading', { level: 1, name: 'JavaScript' })).toBeVisible();
     await extension.browserContext.grantPermissions(['clipboard-read', 'clipboard-write']);
-    await panel.getByRole('button', { name: 'Script URL — copy' }).click();
+    const detail = await openScriptDetail(panel, scriptRows(panel).nth(2));
+    await detail.getByRole('button', { name: 'Script URL — copy' }).click();
     await expect(panel.getByText('Script URL copied', { exact: true })).toBeVisible();
     await panel.emulateMedia({ reducedMotion: 'reduce' });
     await panel.evaluate(async () => {

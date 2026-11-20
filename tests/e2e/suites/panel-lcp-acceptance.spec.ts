@@ -1,5 +1,5 @@
 /**
- * LCP & Vitals browser acceptance (P14.1 box 2), in Chromium:
+ * LCP & Vitals browser acceptance, in Chromium:
  *
  * - golden + live: the panel's candidates and parts equal the browser's own
  *   entries for the same visit (read in the page: candidate count, order,

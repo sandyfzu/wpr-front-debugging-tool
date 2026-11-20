@@ -12,9 +12,9 @@
  * does not exist in Chromium (verified live against the installed build and
  * the committed `@types/chrome`), so exactly-once is probed by duplicate
  * id creation (the browser rejects a second item with the same id), and the
- * title/contexts/documentUrlPatterns parity shapes stay pinned by the P2 unit
- * table (`entrypoints/background/context-menus.test.ts`), which this suite
- * cross-checks against the probe list by id.
+ * title/contexts/documentUrlPatterns parity shapes stay pinned by the menu
+ * registry's unit table (`entrypoints/background/context-menus.test.ts`),
+ * which this suite cross-checks against the probe list by id.
  *
  * Reload leg: the in-place `chrome.runtime.reload()` in this Chromium build
  * destroys any content-script extension without ever rebuilding it (verified:
@@ -59,7 +59,7 @@ test.describe('boot & registry', () => {
       'registered'
     ]);
     // The probe list is the parity table's id column: a registry that renamed
-    // or dropped a menu fails either the probe or the P2 unit table.
+    // or dropped a menu fails either the probe or the menu registry's unit table.
   });
 
   test('the eight context-menu entries still exist exactly once after extension reload', async ({

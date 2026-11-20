@@ -1,10 +1,16 @@
 /**
  * The Detections presentation rules: the link table's rows (and only
- * those), the verdict → vocabulary mapping and the cache-age line.
+ * those), the verdict → vocabulary mapping (tone + row word) and the cache-age line.
  */
 import { describe, expect, it } from 'vitest';
 import { navRoute } from '../../routes';
-import { CARD_PAGE_LINKS, cacheAgeText, STATUS_TONES } from './card-presentation';
+import { STATUS_LABELS } from '../../../../lib/panel/detections-summary';
+import {
+  CARD_PAGE_LINKS,
+  cacheAgeText,
+  ENTRY_STATE_LABELS,
+  STATUS_TONES
+} from './card-presentation';
 
 describe('CARD_PAGE_LINKS', () => {
   it('links exactly the features that own a page, each to a real route', () => {
@@ -16,6 +22,19 @@ describe('CARD_PAGE_LINKS', () => {
     for (const route of CARD_PAGE_LINKS.values()) {
       expect(navRoute(route)).toBeDefined();
     }
+  });
+});
+
+describe('ENTRY_STATE_LABELS', () => {
+  it('words a row like the summary, except not active reads the Off filter word', () => {
+    expect(ENTRY_STATE_LABELS).toEqual({
+      active: 'Active',
+      collecting: 'Collecting',
+      unknown: 'Unknown',
+      'not-active': 'Off'
+    });
+    // The report keeps its own word.
+    expect(STATUS_LABELS['not-active']).toBe('Not active');
   });
 });
 

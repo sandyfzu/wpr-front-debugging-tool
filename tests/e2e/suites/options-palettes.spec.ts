@@ -1,5 +1,5 @@
 /**
- * P9.1 — the options page's appearance suite: the three-way choice over the
+ * The options page's appearance suite: the three-way choice over the
  * real page, its persistence, and the live cross-surface restyling.
  *
  * The seams this suite pins (all through shipped code, no test doubles):
@@ -31,7 +31,8 @@ import {
   readDocumentTheme,
   resetStoredOptions,
   stampRealm,
-  SURFACE_0,
+  INJECTED_SURFACE_0,
+  PAGE_SURFACE_0,
   writeStoredOptions
 } from '../helpers/options';
 import { openSitePage, SITE_URL } from '../helpers/site';
@@ -108,21 +109,58 @@ async function clearStripOptIn(driver: ExtensionDriver): Promise<void> {
   }, WIDGET_ORIGINS_KEY);
 }
 
+/**
+ * Every switch's knob against its pill on the page: the WCAG contrast of
+ * the handle's painted color over the pill's, per switch and state.
+ *
+ * @param page The options page.
+ * @returns One `{ checked, ratio }` per switch.
+ */
+function switchKnobContrasts(page: Page): Promise<{ checked: boolean; ratio: number }[]> {
+  return page.evaluate(() => {
+    /** Relative luminance of a computed `rgb(…)` color. */
+    const luminance = (color: string): number => {
+      const [r = 0, g = 0, b = 0] = (color.match(/\d+(\.\d+)?/gu) ?? []).map(Number);
+      const linear = (channel: number): number => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    };
+    return [...document.querySelectorAll('[data-fdt="switch"]')].map((root) => {
+      const handle = root.querySelector('[data-fdt-switch-handle]');
+      const pill = root.querySelector('[data-fdt-switch-thumb]');
+      if (handle === null || pill === null) throw new Error('a switch without its knob or pill');
+      const [lighter, darker] = [
+        luminance(getComputedStyle(handle).backgroundColor),
+        luminance(getComputedStyle(pill).backgroundColor)
+      ].sort((a, b) => b - a) as [number, number];
+      return {
+        checked: root.querySelector('input')?.checked === true,
+        ratio: (lighter + 0.05) / (darker + 0.05)
+      };
+    });
+  });
+}
+
 test.describe('options appearance', () => {
   test('System follows the emulated OS scheme live, without a remount', async ({ extension }) => {
     await resetStoredOptions(extension); // No stored choice — the System default.
     const page = await openOptionsPage(extension, { colorScheme: 'dark' });
     try {
+      // The static scope attribute survives the build (it selects the
+      // extension-page token block the values below come from).
+      await expect(page.locator('html')).toHaveAttribute('data-fdt-surface', 'extension-page');
       // System declares no attribute (the media query chain owns the answer).
       const dark = await readDocumentTheme(page);
       expect(dark.dataTheme, 'system keeps the extension document unattributed').toBeNull();
-      expect(dark.background).toBe(SURFACE_0.dark);
+      expect(dark.background).toBe(PAGE_SURFACE_0.dark);
       await stampRealm(page);
 
       await page.emulateMedia({ colorScheme: 'light' });
       await expect
         .poll(async () => (await readDocumentTheme(page)).background, RESTYLE_POLL)
-        .toBe(SURFACE_0.light);
+        .toBe(PAGE_SURFACE_0.light);
       expect(
         (await readDocumentTheme(page)).dataTheme,
         'the flip is the stylesheet answer, not an attribute write'
@@ -132,7 +170,7 @@ test.describe('options appearance', () => {
       await page.emulateMedia({ colorScheme: 'dark' });
       await expect
         .poll(async () => (await readDocumentTheme(page)).background, RESTYLE_POLL)
-        .toBe(SURFACE_0.dark);
+        .toBe(PAGE_SURFACE_0.dark);
       await expectRealmAlive(page);
     } finally {
       await resetStoredOptions(extension);
@@ -151,7 +189,7 @@ test.describe('options appearance', () => {
         .poll(async () => (await readDocumentTheme(page)).dataTheme, RESTYLE_POLL)
         .toBe('dark');
       expect((await readDocumentTheme(page)).background, 'the pinned palette renders').toBe(
-        SURFACE_0.dark
+        PAGE_SURFACE_0.dark
       );
       // Instant persistence: the store already carries it (no Save pressed).
       await expect
@@ -162,7 +200,7 @@ test.describe('options appearance', () => {
       await page.reload({ waitUntil: 'load' });
       const resolved = await readDocumentTheme(page);
       expect(resolved.dataTheme).toBe('dark');
-      expect(resolved.background).toBe(SURFACE_0.dark);
+      expect(resolved.background).toBe(PAGE_SURFACE_0.dark);
       expect(
         await page.evaluate(() => document.documentElement.getAttribute('data-theme-lock')),
         'the paint lock released'
@@ -175,7 +213,7 @@ test.describe('options appearance', () => {
       await expect
         .poll(async () => (await readDocumentTheme(page)).dataTheme, RESTYLE_POLL)
         .toBe('light');
-      expect((await readDocumentTheme(page)).background).toBe(SURFACE_0.light);
+      expect((await readDocumentTheme(page)).background).toBe(PAGE_SURFACE_0.light);
     } finally {
       await resetStoredOptions(extension);
       await page.close();
@@ -197,7 +235,9 @@ test.describe('options appearance', () => {
     try {
       const resolved = await readDocumentTheme(page);
       expect(resolved.dataTheme, 'the stored choice is on the tree').toBe('dark');
-      expect(resolved.background, 'no wrong-palette frame survives the boot').toBe(SURFACE_0.dark);
+      expect(resolved.background, 'no wrong-palette frame survives the boot').toBe(
+        PAGE_SURFACE_0.dark
+      );
       expect(
         await page.evaluate(() => document.documentElement.getAttribute('data-theme-lock')),
         'the paint lock released'
@@ -206,6 +246,43 @@ test.describe('options appearance', () => {
     } finally {
       await resetStoredOptions(extension);
       await page.close();
+    }
+  });
+
+  test('the panel document takes the extension-page palette under System, Dark and Light', async ({
+    extension
+  }) => {
+    // The scope attribute and `data-theme` share `<html>`: every appearance
+    // arm must resolve the extension-page pair, never the shared one.
+    await resetStoredOptions(extension);
+    const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html', {
+      emulation: { colorScheme: 'dark' }
+    });
+    const background = async (): Promise<string> => (await readDocumentTheme(panel)).background;
+    try {
+      await expect(panel.locator('html')).toHaveAttribute('data-fdt-surface', 'extension-page');
+      // System: no attribute, the OS scheme picks the branch, live.
+      expect((await readDocumentTheme(panel)).dataTheme).toBeNull();
+      await expect.poll(background, RESTYLE_POLL).toBe(PAGE_SURFACE_0.dark);
+      await panel.emulateMedia({ colorScheme: 'light' });
+      await expect.poll(background, RESTYLE_POLL).toBe(PAGE_SURFACE_0.light);
+
+      // Explicit choices win over the OS scheme (each set against the other arm).
+      await writeStoredOptions(extension, { improvements: {}, appearance: 'dark', features: {} });
+      await expect
+        .poll(async () => (await readDocumentTheme(panel)).dataTheme, RESTYLE_POLL)
+        .toBe('dark');
+      expect(await background()).toBe(PAGE_SURFACE_0.dark);
+      await panel.emulateMedia({ colorScheme: 'dark' });
+      await writeStoredOptions(extension, { improvements: {}, appearance: 'light', features: {} });
+      await expect
+        .poll(async () => (await readDocumentTheme(panel)).dataTheme, RESTYLE_POLL)
+        .toBe('light');
+      expect(await background()).toBe(PAGE_SURFACE_0.light);
+    } finally {
+      await resetStoredOptions(extension);
+      await panel.close();
+      await fixture.page.close();
     }
   });
 
@@ -229,7 +306,7 @@ test.describe('options appearance', () => {
       // unattributed, the overlay's container declaring itself.
       expect((await readDocumentTheme(panel)).dataTheme).toBeNull();
       expect((await readOverlayState(overlayPage.page)).theme).toBe('system');
-      expect((await readOverlayState(overlayPage.page)).background).toBe(SURFACE_0.light);
+      expect((await readOverlayState(overlayPage.page)).background).toBe(INJECTED_SURFACE_0.light);
 
       // One click in options — every open surface restyles live.
       await choiceTile(options, 'dark').click();
@@ -239,9 +316,12 @@ test.describe('options appearance', () => {
       await expect
         .poll(async () => (await readDocumentTheme(panel)).dataTheme, RESTYLE_POLL)
         .toBe('dark');
+      // The panel repaints with the extension-page values, the overlay keeps
+      // the shared ones: one choice, two token scopes.
+      expect((await readDocumentTheme(panel)).background).toBe(PAGE_SURFACE_0.dark);
       await expect
         .poll(async () => (await readOverlayState(overlayPage.page)).background, RESTYLE_POLL)
-        .toBe(SURFACE_0.dark);
+        .toBe(INJECTED_SURFACE_0.dark);
       for (const page of [options, panel, overlayPage.page]) await expectRealmAlive(page);
 
       // …and back, still live, still no reload anywhere.
@@ -249,9 +329,10 @@ test.describe('options appearance', () => {
       await expect
         .poll(async () => (await readDocumentTheme(panel)).dataTheme, RESTYLE_POLL)
         .toBe('light');
+      expect((await readDocumentTheme(panel)).background).toBe(PAGE_SURFACE_0.light);
       await expect
         .poll(async () => (await readOverlayState(overlayPage.page)).background, RESTYLE_POLL)
-        .toBe(SURFACE_0.light);
+        .toBe(INJECTED_SURFACE_0.light);
       for (const page of [options, panel, overlayPage.page]) await expectRealmAlive(page);
     } finally {
       await resetStoredOptions(extension);
@@ -306,6 +387,32 @@ test.describe('options appearance', () => {
       await resetStoredOptions(extension);
       await clearStripOptIn(extension);
       if (sitePage !== null) await sitePage.page.close();
+    }
+  });
+
+  test('every switch keeps a visible knob, off and on, in both palettes', async ({ extension }) => {
+    await resetStoredOptions(extension);
+    const page = await openOptionsPage(extension, { colorScheme: 'light' });
+    try {
+      for (const palette of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme: palette });
+        await expect
+          .poll(async () => (await readDocumentTheme(page)).background, RESTYLE_POLL)
+          .toBe(PAGE_SURFACE_0[palette]);
+        // The switches as they load, then each pressed once (a row can gate
+        // another): both states measured on the page.
+        const resting = await switchKnobContrasts(page);
+        const tracks = page.locator('[data-fdt="switch"] [data-fdt-switch-track]');
+        for (const track of await tracks.all()) await track.click();
+        const pressed = await switchKnobContrasts(page);
+        const knobs = [...resting, ...pressed];
+        expect(new Set(knobs.map((knob) => knob.checked))).toEqual(new Set([true, false]));
+        for (const knob of knobs)
+          expect(knob.ratio, `${palette} ${knob.checked ? 'on' : 'off'}`).toBeGreaterThanOrEqual(3);
+      }
+    } finally {
+      await resetStoredOptions(extension);
+      await page.close();
     }
   });
 });

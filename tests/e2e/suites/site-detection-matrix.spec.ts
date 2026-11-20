@@ -1,5 +1,5 @@
 /**
- * P11.1 — the detection site matrix over the real docker site.
+ * The detection site matrix over the real docker site.
  *
  * Three WP Rocket settings combinations are written through wp-cli (config
  * regenerated, caches purged), and per-request fixture flags vary what the
@@ -297,35 +297,70 @@ async function prepareUrl(round: MatrixRound): Promise<string> {
 }
 
 /**
- * Read one panel card by id: its badge word and source chip.
+ * Read one panel row by id: its state word and the source chip it shows —
+ * its own, or (Grouped) the group header's when the row shares the norm the
+ * header states; the row's `data-fdt-card-source-kind` hook must agree, and
+ * a header norm over a row without that source reads as a mismatch.
  *
  * @param panel The panel page.
- * @param id The card id.
+ * @param id The row id.
  */
 async function readCard(
   panel: Page,
   id: string
 ): Promise<{ name: string; status: string; source: string | null; bypassWarned: boolean } | null> {
   return await panel.evaluate((cardId: string) => {
-    const card = document.querySelector(`[data-fdt="status-card"][data-fdt-card-id="${cardId}"]`);
+    const card = document.querySelector<HTMLElement>(
+      `[data-fdt="status-card"][data-fdt-card-id="${cardId}"]`
+    );
     if (card === null) return null;
-    const source = card.querySelector('[data-fdt-card-source]');
-    // The chip's visible word is its first text node (sr-only spans carry the rest).
-    const chipWord =
-      source === null
+    /** A chip's visible word: its own text nodes (sr-only spans carry the rest). */
+    const chipWord = (chip: Element | null | undefined): string | null =>
+      chip === null || chip === undefined
         ? null
-        : [...source.childNodes]
+        : [...chip.childNodes]
             .filter((node) => node.nodeType === Node.TEXT_NODE)
             .map((node) => node.textContent ?? '')
             .join('')
             .trim();
+    const own = chipWord(card.querySelector('[data-fdt-card-source]'));
+    const group = card.closest<HTMLElement>('[data-fdt="detections-group"]');
+    const kind = card.dataset['fdtCardSourceKind'];
+    // A hidden own chip is only ever the group's norm.
+    const shared =
+      own === null && kind !== undefined && group?.dataset['fdtGroupNorm'] === kind
+        ? chipWord(group.querySelector('[data-fdt-group-source]'))
+        : null;
+    const source = own ?? shared;
+    // A header chip must be true of every row under it (a sourceless or
+    // other-source row there would read as credited by the header).
+    const norm = group?.dataset['fdtGroupNorm'];
+    const miscredited = norm !== undefined && kind !== norm;
+    const state = card.querySelector('[data-fdt-card-state]');
     return {
       name: card.querySelector('[data-fdt-card-name]')?.textContent ?? '',
-      status: card.querySelector('[data-fdt="status-badge"]')?.textContent ?? '',
-      source: chipWord,
+      // The visible state word (the sr-only separator excluded).
+      status: (state?.textContent ?? '').replace(/^, /u, ''),
+      // A source the hook names but no chip states would read as a mismatch.
+      source: miscredited
+        ? `credited ${norm} by its group, has ${kind ?? 'none'}`
+        : kind !== undefined && source === null
+          ? `unstated ${kind}`
+          : source,
       bypassWarned: card.querySelector('[data-fdt-card-bypass-warning]') !== null
     };
   }, id);
+}
+
+/**
+ * The state word a row shows for a round's expectation: the matrix keeps the
+ * strip's verdict vocabulary; a row says "Off" for "Not active".
+ *
+ * @param status The expected verdict.
+ * @returns The row's word.
+ */
+function rowWord(status: ParsedExpectation['status']): string {
+  return status === 'Not active' ? 'Off' : status;
 }
 
 /**
@@ -418,7 +453,7 @@ async function assertCards(panel: Page, round: MatrixRound): Promise<void> {
     const expected = parse(expectation);
     expect(await readCard(panel, row), `${round.id}: card ${row}`).toEqual({
       name: ROW_UI[row].name,
-      status: expected.status,
+      status: rowWord(expected.status),
       source: expected.source,
       bypassWarned: bypassWarns(round, expected)
     });
@@ -426,7 +461,7 @@ async function assertCards(panel: Page, round: MatrixRound): Promise<void> {
   const css = cssDeliveryCard(round);
   expect(await readCard(panel, 'remove_unused_css'), `${round.id}: CSS delivery card`).toEqual({
     name: css.name,
-    status: css.expected.status,
+    status: rowWord(css.expected.status),
     source: css.expected.source,
     bypassWarned: bypassWarns(round, css.expected)
   });
@@ -441,11 +476,11 @@ async function assertCards(panel: Page, round: MatrixRound): Promise<void> {
   if (round.cache.layer === null) await expect(layerFact).toHaveCount(0);
   else await expect(layerFact).toHaveText(`${round.cache.layer} cache-layer marker captured`);
 
-  // The status bar's cache segment reads the same vocabulary (the cached
+  // The top bar's cache answer reads the same vocabulary (the cached
   // form is its age chip, every other state its copy chip as a link).
-  const statusBar = panel.locator('[data-fdt="panel-status-bar"]');
-  if (round.cache.chip === '✓ Cached') await expect(statusBar).toContainText('Cached');
-  else await expect(statusBar.getByRole('link', { name: round.cache.chip })).toBeVisible();
+  const topBar = panel.locator('[data-fdt="panel-top-bar"]');
+  if (round.cache.chip === '✓ Cached') await expect(topBar).toContainText('Cached');
+  else await expect(topBar.getByRole('link', { name: round.cache.chip })).toBeVisible();
 }
 
 /**
@@ -632,7 +667,7 @@ let found: WprSettings | null = null;
  */
 let foundOverrides: { readonly value: unknown } | null = null;
 
-test.describe('detection site matrix (P11.1)', () => {
+test.describe('detection site matrix', () => {
   test.describe.configure({ mode: 'serial' });
 
   test.beforeAll(async ({ extension }) => {

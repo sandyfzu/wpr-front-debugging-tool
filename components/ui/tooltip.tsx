@@ -11,8 +11,17 @@ import type { ComponentProps, JSX } from 'solid-js';
 import { Match, Switch } from 'solid-js';
 import { Tooltip as KobalteTooltip } from '@kobalte/core';
 import { cn } from '../../utils/cn';
-import { FOCUS_RING } from './classes';
+import { FOCUS_RING, TOOLTIP_TRIGGER_FRAME } from './classes';
 import { MenuTooltipTrigger } from './menu';
+
+/**
+ * The floating label's look: a raised `surface-3` chip under the matching
+ * line, so it stands apart from the `surface-2` cards and menus it floats
+ * over in both palettes; the menu's 6 px corner (both are small floating
+ * surfaces); 8 × 4 px padding keeps a one-line label light.
+ */
+const TOOLTIP_CONTENT_CLASSES =
+  'z-50 max-w-64 rounded-md border border-line-3 bg-surface-3 px-2 py-1 text-2xs leading-snug text-fg-primary shadow-elev-2 break-words';
 
 /** Where the tooltip floats — derived from Kobalte's own placement vocabulary. */
 export type TooltipPlacement = NonNullable<ComponentProps<typeof KobalteTooltip.Root>['placement']>;
@@ -86,6 +95,11 @@ export type TooltipProps = {
    * platform's; the wrapper only adds the attribution surface.
    */
   onClick?: (event: MouseEvent) => void;
+  /**
+   * A callback ref receiving the trigger element (every form) — for callers
+   * that manage focus on the trigger itself.
+   */
+  ref?: (element: HTMLElement) => void;
   /** Extra classes on the trigger element, merged last so callers win. */
   class?: string;
   /** The trigger's content — an icon, or a short label. */
@@ -113,6 +127,7 @@ export type TooltipProps = {
  *   or `menu-trigger` (the composed menu trigger; no click passthrough crosses).
  * @param props.href The anchor trigger's href (`as="a"` only).
  * @param props.ariaCurrent Whether the anchor trigger marks the active page.
+ * @param props.ref A callback ref receiving the trigger element.
  * @param props.class Extra classes on the trigger element.
  * @param props.children The trigger's content.
  */
@@ -127,7 +142,7 @@ export function Tooltip(props: TooltipProps): JSX.Element {
         ? // Anchor trigger: only the hit-area floor is built in — the caller
           // owns the link's layout (e.g. nav rail rows).
           'min-h-6 min-w-6'
-        : 'inline-grid min-h-6 min-w-6 place-items-center rounded',
+        : TOOLTIP_TRIGGER_FRAME,
       FOCUS_RING,
       props.class
     );
@@ -137,6 +152,7 @@ export function Tooltip(props: TooltipProps): JSX.Element {
     'aria-label': props.ariaLabel,
     'aria-haspopup': props.ariaHasPopup,
     'aria-expanded': props.ariaExpanded,
+    ref: props.ref,
     children: props.children
   });
   return (
@@ -187,12 +203,7 @@ export function Tooltip(props: TooltipProps): JSX.Element {
         </Match>
       </Switch>
       <KobalteTooltip.Portal>
-        <KobalteTooltip.Content
-          data-fdt="tooltip"
-          class={cn(
-            'z-50 max-w-64 rounded border border-line-3 bg-surface-3 px-1.5 py-1 text-2xs leading-snug text-fg-primary shadow-elev-2 break-words'
-          )}
-        >
+        <KobalteTooltip.Content data-fdt="tooltip" class={TOOLTIP_CONTENT_CLASSES}>
           {props.content}
         </KobalteTooltip.Content>
       </KobalteTooltip.Portal>

@@ -14,6 +14,7 @@ import type { Logger } from '../logger';
 import {
   createOptionsPageModel,
   createStorageOptionsPageIO,
+  draftAfterSave,
   draftFromOptions,
   INITIAL_OPTIONS_PAGE_SNAPSHOT,
   isDraftDirty,
@@ -123,11 +124,12 @@ describe('the pure draft core', () => {
         detectionWidget: true
       }
     };
-    const merged = optionsWithDraft(base, {
-      'wp-dashboard-dbugger-entry': false,
-      appearance: 'light',
-      toolbarBadge: false
-    });
+    // Baseline = base: no concurrent write, every differing row is an edit.
+    const merged = optionsWithDraft(
+      base,
+      { 'wp-dashboard-dbugger-entry': false, appearance: 'light', toolbarBadge: false },
+      base
+    );
     expect(merged.improvements).toEqual({
       'wp-dashboard-dbugger-entry': false,
       'future-flag': false
@@ -155,10 +157,436 @@ describe('the pure draft core', () => {
       appearance: 'neon',
       toolbarBadge: 'yes'
     } as unknown as OptionsDraft;
-    const merged = optionsWithDraft(base, corrupted);
+    const merged = optionsWithDraft(base, corrupted, base);
     expect(merged.appearance).toBe('dark');
     expect(merged.features).toEqual(base.features);
     expect(merged.improvements).toEqual(base.improvements);
+  });
+});
+
+describe('edited rows only — concurrent registry-row writes survive', () => {
+  /** The loaded baseline: defaults, so the draft starts as the fallback shape. */
+  const BASELINE: StoredOptions = {
+    improvements: { 'wp-dashboard-dbugger-entry': true },
+    appearance: 'system',
+    features: { ...STORED_NONDEFAULT.features, toolbarBadge: true, detectionWidget: true }
+  };
+
+  it('optionsWithDraft keeps a fresh appearance another surface wrote when another row is saved', () => {
+    const fresh: StoredOptions = { ...BASELINE, appearance: 'dark' };
+    const draft: OptionsDraft = {
+      ...draftFromOptions(BASELINE),
+      'wp-dashboard-dbugger-entry': false
+    };
+    const merged = optionsWithDraft(fresh, draft, BASELINE);
+    expect(merged.appearance).toBe('dark'); // Untouched on the page: the fresh value wins.
+    expect(merged.improvements['wp-dashboard-dbugger-entry']).toBe(false); // The edit lands.
+  });
+
+  it('optionsWithDraft still writes a row the user changed over a concurrent write to it', () => {
+    const fresh: StoredOptions = { ...BASELINE, appearance: 'dark' };
+    const draft: OptionsDraft = { ...draftFromOptions(BASELINE), appearance: 'light' };
+    expect(optionsWithDraft(fresh, draft, BASELINE).appearance).toBe('light');
+  });
+
+  it('optionsWithDraft skips a corrupted changed value, keeping the fresh (not the baseline) value', () => {
+    const fresh: StoredOptions = { ...BASELINE, appearance: 'dark' };
+    const corrupted = {
+      ...draftFromOptions(BASELINE),
+      appearance: 'neon'
+    } as unknown as OptionsDraft;
+    expect(optionsWithDraft(fresh, corrupted, BASELINE).appearance).toBe('dark');
+  });
+
+  it('draftAfterSave follows the stored value except rows edited while the write was in flight', () => {
+    const stored: StoredOptions = {
+      ...BASELINE,
+      appearance: 'dark',
+      improvements: { 'wp-dashboard-dbugger-entry': false }
+    };
+    const saved: OptionsDraft = {
+      ...draftFromOptions(BASELINE),
+      'wp-dashboard-dbugger-entry': false
+    };
+    const current: OptionsDraft = { ...saved, toolbarBadge: false };
+    const rebased = draftAfterSave(stored, saved, current);
+    expect(rebased).toEqual({
+      'wp-dashboard-dbugger-entry': false, // saved edit
+      appearance: 'dark', // the concurrent write the merge kept
+      detectionWidget: true,
+      toolbarBadge: false // the in-flight edit
+    });
+    expect(Object.isFrozen(rebased)).toBe(true);
+    expect(isDraftDirty(stored, rebased)).toBe(true); // Only the in-flight edit is pending.
+    expect(isDraftDirty(stored, { ...rebased, toolbarBadge: true })).toBe(false);
+  });
+
+  it('a Save of one row neither reverts a concurrent appearance write nor re-reverts it on the next Save', async () => {
+    await optionsStore.setValue(BASELINE);
+    const fx = createFixture();
+    await fx.model.load();
+    // Another surface (the panel's appearance menu) writes after the load.
+    await optionsStore.setValue({ ...BASELINE, appearance: 'dark' });
+    fx.model.setOption('wp-dashboard-dbugger-entry', false);
+    await fx.model.save();
+    expect((await getOptions()).appearance).toBe('dark');
+    expect((await getOptions()).improvements['wp-dashboard-dbugger-entry']).toBe(false);
+    const snapshot = fx.model.snapshot();
+    if (snapshot.status !== 'ready') throw new Error('expected ready');
+    // The draft caught up with the kept write: clean, so no later Save carries the stale choice.
+    expect(snapshot.draft['appearance']).toBe('dark');
+    expect(snapshot.dirty).toBe(false);
+    fx.model.setOption('toolbarBadge', false);
+    await fx.model.save();
+    expect((await getOptions()).appearance).toBe('dark');
+  });
+});
+
+describe('markOptionStored — a row persisted outside Save', () => {
+  it('an instant-written appearance reads clean and a later Save keeps a newer write from another surface', async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT);
+    const fx = createFixture();
+    await fx.model.load();
+    // The page's own pick, written instantly (the row's write path).
+    fx.model.setOption('appearance', 'light');
+    await optionsStore.setValue({ ...STORED_NONDEFAULT, appearance: 'light' });
+    fx.model.markOptionStored('appearance', 'light');
+    expect(fx.model.snapshot()).toMatchObject({ dirty: false });
+    // A newer pick elsewhere (the panel menu), then a Save of another row.
+    await optionsStore.setValue({ ...STORED_NONDEFAULT, appearance: 'system' });
+    fx.model.setOption('toolbarBadge', true);
+    await fx.model.save();
+    expect((await getOptions()).appearance).toBe('system');
+    expect((await getOptions()).features.toolbarBadge).toBe(true);
+  });
+
+  it("moves only that row's baseline: other pending edits stay dirty", async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT);
+    const fx = createFixture();
+    await fx.model.load();
+    fx.model.setOption('toolbarBadge', true);
+    fx.model.setOption('appearance', 'light');
+    fx.model.markOptionStored('appearance', 'light');
+    const snapshot = fx.model.snapshot();
+    if (snapshot.status !== 'ready') throw new Error('expected ready');
+    expect(snapshot.dirty).toBe(true); // the badge edit is still pending
+    expect(snapshot.options.appearance).toBe('light');
+    expect(snapshot.options.features).toEqual(STORED_NONDEFAULT.features);
+    expect(Object.isFrozen(snapshot.options)).toBe(true);
+    expect(Object.isFrozen(snapshot.options.features)).toBe(true);
+    fx.model.setOption('toolbarBadge', false); // reverted → clean
+    expect(fx.model.snapshot()).toMatchObject({ dirty: false });
+  });
+
+  it('a draft moved on past the written value stays dirty (an older write landing late)', async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT);
+    const fx = createFixture();
+    await fx.model.load();
+    fx.model.setOption('appearance', 'light');
+    fx.model.setOption('appearance', 'system');
+    fx.model.markOptionStored('appearance', 'light');
+    expect(fx.model.snapshot()).toMatchObject({ dirty: true });
+  });
+
+  it('throws on wiring bugs: not ready, unknown row, illegal value', async () => {
+    const fx = createFixture();
+    expect(() => {
+      fx.model.markOptionStored('appearance', 'dark');
+    }).toThrow(/markOptionStored: the options page is not ready \(status 'loading'\)/);
+    await fx.model.load();
+    expect(() => {
+      fx.model.markOptionStored('nope', true);
+    }).toThrow("markOptionStored: unknown option row 'nope'.");
+    expect(() => {
+      fx.model.markOptionStored('appearance', true);
+    }).toThrow("markOptionStored: true is not a legal value for the 'appearance' row.");
+  });
+});
+
+describe('followStoredOption — a value another writer stored', () => {
+  /** The ready snapshot, or a thrown expectation. */
+  function readySnapshot(fx: ModelFixture): Extract<OptionsPageSnapshot, { status: 'ready' }> {
+    const snapshot = fx.model.snapshot();
+    if (snapshot.status !== 'ready') throw new Error(`expected ready, got ${snapshot.status}`);
+    return snapshot;
+  }
+
+  it('a clean row adopts it live: baseline and draft move, the page stays clean', async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT);
+    const fx = createFixture();
+    await fx.model.load();
+    const before = fx.snapshots.length;
+    fx.model.followStoredOption('appearance', 'light');
+    const snapshot = readySnapshot(fx);
+    expect(snapshot.draft['appearance']).toBe('light');
+    expect(snapshot.options.appearance).toBe('light');
+    expect(snapshot.dirty).toBe(false);
+    expect(fx.snapshots.length).toBe(before + 1); // one notify
+    // Other rows' baselines are untouched; exposed state stays frozen.
+    expect(snapshot.options.features).toEqual(STORED_NONDEFAULT.features);
+    expect(snapshot.options.improvements).toEqual(STORED_NONDEFAULT.improvements);
+    expect(Object.isFrozen(snapshot.options)).toBe(true);
+    expect(Object.isFrozen(snapshot.options.features)).toBe(true);
+    expect(Object.isFrozen(snapshot.draft)).toBe(true);
+  });
+
+  it('an unsaved edit is kept (never clobbered) and re-dirties against the new baseline', async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT); // dark
+    const fx = createFixture();
+    await fx.model.load();
+    fx.model.setOption('appearance', 'light'); // e.g. its instant write failed
+    fx.model.followStoredOption('appearance', 'system');
+    let snapshot = readySnapshot(fx);
+    expect(snapshot.draft['appearance']).toBe('light');
+    expect(snapshot.options.appearance).toBe('system');
+    expect(snapshot.dirty).toBe(true);
+    // The writer stores the very value drafted here: nothing is pending any more.
+    fx.model.followStoredOption('appearance', 'light');
+    snapshot = readySnapshot(fx);
+    expect(snapshot.draft['appearance']).toBe('light');
+    expect(snapshot.dirty).toBe(false);
+  });
+
+  it('a value equal to the baseline changes nothing and notifies nothing', async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT);
+    const fx = createFixture();
+    await fx.model.load();
+    fx.model.setOption('appearance', 'light');
+    const before = fx.snapshots.length;
+    const draft = readySnapshot(fx).draft;
+    fx.model.followStoredOption('appearance', 'dark'); // the loaded baseline
+    expect(fx.snapshots.length).toBe(before);
+    expect(readySnapshot(fx).draft).toBe(draft);
+  });
+
+  it("leaves other rows' pending edits and the last save's outcome alone", async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT);
+    const fx = createFixture();
+    await fx.model.load();
+    fx.model.setOption('toolbarBadge', true);
+    await fx.model.save();
+    const lastSave = readySnapshot(fx).lastSave;
+    fx.model.setOption('wp-dashboard-dbugger-entry', true);
+    fx.model.followStoredOption('appearance', 'light');
+    const snapshot = readySnapshot(fx);
+    expect(snapshot.dirty).toBe(true); // the dbugger edit is still pending
+    expect(snapshot.draft['wp-dashboard-dbugger-entry']).toBe(true);
+    expect(snapshot.lastSave).toBeNull(); // cleared by the edit, not by the follow
+    fx.model.setOption('wp-dashboard-dbugger-entry', false);
+    fx.model.followStoredOption('appearance', 'system');
+    expect(readySnapshot(fx).lastSave).toBeNull();
+    expect(lastSave).toMatchObject({ ok: true, wrote: true });
+    // A Save after the follow writes only the edited row: the followed value
+    // is the baseline, never written back over storage.
+    fx.model.setOption('toolbarBadge', false);
+    await optionsStore.setValue({ ...STORED_NONDEFAULT, appearance: 'light' }); // newer elsewhere
+    await fx.model.save();
+    expect((await getOptions()).appearance).toBe('light');
+  });
+
+  it('holds a value observed during the load and takes it once loaded (it may be newer than the read)', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    await optionsStore.setValue(STORED_NONDEFAULT); // dark — what the read returns
+    const read = vi.fn(async () => {
+      const value = await getOptions();
+      await gate;
+      return value;
+    });
+    const fx = createFixture(tracedIO({ read }));
+    const loading = fx.model.load();
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenCalled();
+    });
+    fx.model.followStoredOption('appearance', 'system');
+    fx.model.followStoredOption('appearance', 'light'); // the latest wins
+    expect(fx.model.snapshot().status).toBe('loading');
+    release();
+    await loading;
+    const snapshot = readySnapshot(fx);
+    expect(snapshot.draft['appearance']).toBe('light');
+    expect(snapshot.options.appearance).toBe('light');
+    expect(snapshot.dirty).toBe(false);
+  });
+
+  it('holds a value observed mid-save and takes it after the save (success and failure arms)', async () => {
+    for (const outcome of ['written', 'rejected'] as const) {
+      fakeBrowser.reset();
+      await optionsStore.setValue(STORED_NONDEFAULT); // dark
+      let release!: () => void;
+      const gate = new Promise<void>((done) => {
+        release = done;
+      });
+      const write = vi.fn(async (options: StoredOptions) => {
+        await gate;
+        if (outcome === 'rejected') throw new Error('QUOTA_BYTES quota exceeded');
+        await optionsStore.setValue(options);
+      });
+      const fx = createFixture(tracedIO({ write }));
+      await fx.model.load();
+      fx.model.setOption('toolbarBadge', true);
+      const saving = fx.model.save();
+      await vi.waitFor(() => {
+        expect(write).toHaveBeenCalled();
+      });
+      fx.model.followStoredOption('appearance', 'light');
+      // Never mid-save: the save's own rebase would read it as an edit.
+      expect(readySnapshot(fx).draft['appearance']).toBe('dark');
+      release();
+      await saving;
+      const snapshot = readySnapshot(fx);
+      expect(snapshot.saving, outcome).toBe(false);
+      expect(snapshot.draft['appearance'], outcome).toBe('light');
+      expect(snapshot.options.appearance, outcome).toBe('light');
+      // Only the badge edit decides dirtiness: clean once written, dirty when not.
+      expect(snapshot.dirty, outcome).toBe(outcome === 'rejected');
+    }
+  });
+
+  /**
+   * A read that waits on a gate the test opens.
+   *
+   * @param outcome What the read settles with once released.
+   * @returns The read and its release.
+   */
+  function gatedRead(outcome: StoredOptions | Error): {
+    read: () => Promise<StoredOptions>;
+    release: () => void;
+  } {
+    let release!: () => void;
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    const read = async (): Promise<StoredOptions> => {
+      await gate;
+      if (outcome instanceof Error) throw outcome;
+      return outcome;
+    };
+    return { read, release };
+  }
+
+  it('a taken value is spent: a newer direct follow survives a later save', async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT); // dark
+    let release!: () => void;
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    const read = vi
+      .fn<() => Promise<StoredOptions>>()
+      .mockImplementationOnce(() => getOptions()) // the load
+      .mockImplementationOnce(async () => {
+        await gate; // the first save's fresh read
+        return getOptions();
+      })
+      .mockImplementation(() => getOptions());
+    const fx = createFixture(tracedIO({ read }));
+    await fx.model.load();
+    fx.model.setOption('toolbarBadge', true);
+    const saving = fx.model.save();
+    // Another surface stores light while the save is in flight.
+    await optionsStore.setValue({ ...STORED_NONDEFAULT, appearance: 'light' });
+    fx.model.followStoredOption('appearance', 'light'); // held mid-save
+    release();
+    await saving;
+    expect(readySnapshot(fx).draft['appearance']).toBe('light');
+    // A newer value, the page idle: followed directly.
+    await optionsStore.setValue({ ...(await getOptions()), appearance: 'system' });
+    fx.model.followStoredOption('appearance', 'system');
+    expect(readySnapshot(fx).draft['appearance']).toBe('system');
+    fx.model.setOption('toolbarBadge', false);
+    await fx.model.save();
+    // The second save's settle takes nothing: the spent held value never returns.
+    const snapshot = readySnapshot(fx);
+    expect(snapshot.draft['appearance']).toBe('system');
+    expect(snapshot.options.appearance).toBe('system');
+    expect(snapshot.dirty).toBe(false);
+  });
+
+  it('a value held during a load that fails is dropped: the retry shows only what it reads', async () => {
+    const failing = gatedRead(new Error('Extension context invalidated.'));
+    const read = vi
+      .fn<() => Promise<StoredOptions>>()
+      .mockImplementationOnce(failing.read)
+      .mockImplementation(() => Promise.resolve(STORED_NONDEFAULT));
+    const fx = createFixture(tracedIO({ read }));
+    const loading = fx.model.load();
+    fx.model.followStoredOption('appearance', 'light'); // held: the read is in flight
+    failing.release();
+    await loading;
+    expect(fx.model.snapshot().status).toBe('failed');
+    await fx.model.load(); // the retry returns dark
+    const snapshot = readySnapshot(fx);
+    expect(snapshot.draft['appearance']).toBe('dark');
+    expect(snapshot.options.appearance).toBe('dark');
+  });
+
+  it("drops a value while a failed page is idle (the retry reads fresh), holds it during the retry's read", async () => {
+    const retry = gatedRead(STORED_NONDEFAULT); // dark, badge off
+    const read = vi
+      .fn<() => Promise<StoredOptions>>()
+      .mockRejectedValueOnce(new Error('Extension context invalidated.'))
+      .mockImplementationOnce(retry.read);
+    const fx = createFixture(tracedIO({ read }));
+    // Before any load: dropped, no throw, no notify.
+    fx.model.followStoredOption('toolbarBadge', true);
+    expect(fx.snapshots.length).toBe(0);
+    await fx.model.load();
+    expect(fx.model.snapshot().status).toBe('failed');
+    // Idle and failed: dropped, no notify.
+    const before = fx.snapshots.length;
+    fx.model.followStoredOption('toolbarBadge', true);
+    expect(fx.snapshots.length).toBe(before);
+    const retrying = fx.model.load();
+    fx.model.followStoredOption('appearance', 'light'); // held: the retry's read is in flight
+    retry.release();
+    await retrying;
+    const snapshot = readySnapshot(fx);
+    // The held value is taken over the read's dark; the dropped badge never is.
+    expect(snapshot.draft['appearance']).toBe('light');
+    expect(snapshot.options.appearance).toBe('light');
+    expect(snapshot.draft['toolbarBadge']).toBe(false);
+    expect(snapshot.options.features.toolbarBadge).toBe(false);
+    expect(snapshot.dirty).toBe(false);
+  });
+
+  it("a value held while the save's fresh read rejects is taken once the save settles", async () => {
+    const fresh = gatedRead(new Error('Extension context invalidated.'));
+    const read = vi
+      .fn<() => Promise<StoredOptions>>()
+      .mockImplementationOnce(() => Promise.resolve(STORED_NONDEFAULT)) // the load: dark
+      .mockImplementationOnce(fresh.read);
+    const io = tracedIO({ read });
+    const fx = createFixture(io);
+    await fx.model.load();
+    fx.model.setOption('toolbarBadge', true);
+    const saving = fx.model.save();
+    fx.model.followStoredOption('appearance', 'light'); // held: the fresh read is in flight
+    expect(readySnapshot(fx).draft['appearance']).toBe('dark');
+    fresh.release();
+    await saving;
+    const snapshot = readySnapshot(fx);
+    expect(snapshot.lastSave).toMatchObject({ ok: false });
+    expect(snapshot.saving).toBe(false);
+    expect(snapshot.draft['appearance']).toBe('light');
+    expect(snapshot.options.appearance).toBe('light');
+    expect(snapshot.dirty).toBe(true); // the badge edit was never written
+    expect(io.write).not.toHaveBeenCalled();
+  });
+
+  it('throws on wiring bugs in every state: unknown row, illegal value', async () => {
+    const fx = createFixture();
+    expect(() => {
+      fx.model.followStoredOption('nope', true);
+    }).toThrow("followStoredOption: unknown option row 'nope'.");
+    await fx.model.load();
+    expect(() => {
+      fx.model.followStoredOption('appearance', true);
+    }).toThrow("followStoredOption: true is not a legal value for the 'appearance' row.");
+    expect(() => {
+      fx.model.followStoredOption('toolbarBadge', 'dark');
+    }).toThrow('followStoredOption: "dark" is not a legal value for the \'toolbarBadge\' row.');
   });
 });
 

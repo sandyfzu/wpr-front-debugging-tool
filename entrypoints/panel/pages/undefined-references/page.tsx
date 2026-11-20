@@ -1,22 +1,26 @@
 /**
  * The Undefined References page: the names the page's errors reported as
- * undefined, each with where it may be defined, plus a copyable Delay JS
- * exclusion for the script that defines it.
+ * undefined, as one calm list (name, how many scripts may define it, where),
+ * each row opening its detail — the possible definitions as source-link
+ * tiles with a copyable Delay JS exclusion (side pane from the split width,
+ * drill-in below it).
  *
  * State matrix (one body at a time, chosen by `resolvePageView`):
  * - waiting for interaction — Delay JS still holds the scripts;
  * - processing — words exist and the first script read is in flight
- *   (skeletons shaped like the cards; the real wait only, never a timer);
+ *   (skeleton rows shaped like the list's; the real wait only, never a timer);
  * - empty — no words (monitoring while the capture may still report some);
- * - results — the word cards; answers stream in as the search reaches them;
+ * - results — the word rows; answers stream in as the search reaches them;
  *   when this browser cannot list the page's scripts (feature absent) the
  *   words list unsearched under a notice;
  * - failed — the words list unsearched under the error, with Retry (or, after
  *   an extension reload, the reopen-DevTools remedy).
  *
  * Results and failed share one mounted list, so moving between them (a
- * refetch whose read fails, a rescan) never rebuilds the cards or drops
- * focus. The page owns its store (created per mount, disposed with it).
+ * refetch whose read fails, a rescan) never rebuilds the rows, the selection
+ * or focus. The list joins the panel's search/find protocol (the words are
+ * searched by name). The page owns its store (created per mount, disposed
+ * with it).
  */
 import type { JSX } from 'solid-js';
 import {
@@ -32,11 +36,13 @@ import {
 } from 'solid-js';
 import Check from 'lucide-solid/icons/check';
 import CircleCheck from 'lucide-solid/icons/circle-check';
+import EyeOff from 'lucide-solid/icons/eye-off';
 import Info from 'lucide-solid/icons/info';
 import MousePointerClick from 'lucide-solid/icons/mouse-pointer-click';
 import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import ScanSearch from 'lucide-solid/icons/scan-search';
 import TriangleAlert from 'lucide-solid/icons/triangle-alert';
+import Variable from 'lucide-solid/icons/variable';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
 import { EmptyState } from '../../../../components/ui/empty-state';
@@ -44,15 +50,28 @@ import { MOTION_REVEAL } from '../../../../components/ui/classes';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import { STATUS_TEXT_CLASSES } from '../../../../components/ui/status-badge';
 import { toast } from '../../../../components/ui/toast-store';
+import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { LABEL_DELAY_JAVASCRIPT_EXECUTION } from '../../../../lib/detection/labels';
 import { runtimeOnPage } from '../../../../lib/detection/simulation-fact';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { inlineScriptsCut } from '../javascript/capture-bounds';
 import { cn } from '../../../../utils/cn';
 import { useFdtData } from '../../state/use-fdt-data';
+import { openResourceCapability, type OpenResource } from '../open-resource';
 import { PageFrame } from '../page-frame';
+import { CalmFilteredList } from '../resource-list/calm-list';
+import {
+  calmRowClass,
+  calmRowEstimate,
+  ListRow,
+  ListRowHead,
+  type ListRowColumns
+} from '../resource-list/list-row';
 import { realInspectedScripts, type InspectedScripts } from './inspected-scripts';
 import {
+  UNDEFINED_REFERENCE_NOUN,
+  displayWord,
+  isCrossOriginSentinel,
   isRetryable,
   scanFailureMessage,
   summarizeResults,
@@ -66,7 +85,17 @@ import {
   type UndefinedReferencesStore
 } from './store';
 import { COPIED_FLASH_MS } from '../../../../components/ui/copy-flash';
-import { WordCard } from './word-card';
+import { WordDetail } from './word-detail';
+import {
+  wordDefinitionCount,
+  wordKind,
+  wordPreview,
+  wordRow,
+  wordRowView,
+  wordSearchField,
+  type WordRow,
+  type WordRowView
+} from './word-view';
 
 /** The page title (the route's nav label). */
 const TITLE = 'Undefined References';
@@ -102,7 +131,14 @@ export const STALE_NOTE = 'New scripts loaded since the last read.';
 export interface UndefinedReferencesPageProps {
   /** Override the store's effects (inspected-window reader, timers, search pacing). */
   deps?: Partial<UndefinedReferencesDeps>;
+  /** The list's virtualizer seam (default: the list's own; tests inject a double). */
+  createVirtualizer?: VirtualizerFactory;
+  /** "Open in Sources" seam (`null`: none); production detects DevTools' own. */
+  openResource?: OpenResource | null;
 }
+
+/** The list's optional columns (rows and head share them): the definition count, no chips. */
+const COLUMNS: ListRowColumns = { size: true, states: false };
 
 /** A stable empty list, so absent data never re-triggers the word memo. */
 const NO_WORDS: readonly string[] = [];
@@ -159,6 +195,10 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
     }
   );
 
+  const openResource =
+    // eslint-disable-next-line solid/reactivity -- read once on purpose: the seam is fixed per page
+    props.openResource === undefined ? openResourceCapability(browser) : props.openResource;
+
   const listed = (): boolean => {
     const kind = store.view().kind;
     return kind === 'results' || kind === 'failed';
@@ -214,6 +254,8 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
               const delayJs = loaded()?.wprDetections.delay_js;
               return delayJs !== undefined && inlineScriptsCut(delayJs);
             }}
+            openResource={openResource}
+            createVirtualizer={props.createVirtualizer}
           />
         </Match>
       </Switch>
@@ -231,33 +273,33 @@ function CenteredState(props: { children: JSX.Element }): JSX.Element {
   return <div class="flex flex-1 flex-col justify-center pb-8">{props.children}</div>;
 }
 
-/** The processing body: two skeleton cards in the word card's shape. */
+/** The processing body: two skeleton rows in the list's calm row shape. */
 function ProcessingState(): JSX.Element {
   return (
-    <div data-fdt="undefined-refs-processing" aria-busy="true" class="flex w-full flex-col gap-2">
-      <p class="text-2xs text-fg-secondary">Reading the page's scripts…</p>
-      <For each={[0, 1]}>{() => <SkeletonCard />}</For>
+    <div data-fdt="undefined-refs-processing" aria-busy="true" class="flex w-full flex-col gap-1">
+      <p class="mb-2 text-2xs text-fg-secondary">Reading the page's scripts…</p>
+      <For each={[0, 1]}>{() => <SkeletonRow />}</For>
     </div>
   );
 }
 
-/** One placeholder card: badge · word · verdict, then two definition lines. */
-function SkeletonCard(): JSX.Element {
+/** The skeleton row's surface: the list's own two-line row geometry, at rest. */
+const SKELETON_ROW_CLASS = cn(
+  calmRowClass({ lines: 'two', interactive: false, selected: false, current: false }),
+  'gap-3.5'
+);
+
+/** One placeholder row: icon tile, name and preview lines, the count. */
+function SkeletonRow(): JSX.Element {
   return (
-    <Card
-      header={
-        <div class="flex w-full items-center gap-1.5">
-          <Skeleton class="h-4 w-16" />
-          <Skeleton class="h-3.5 w-24" />
-          <Skeleton class="ms-auto h-3 w-16" />
-        </div>
-      }
-    >
-      <div class="flex flex-col gap-2">
-        <Skeleton class="h-3.5 w-full" />
-        <Skeleton class="h-3.5 w-3/4" />
+    <div data-fdt="skeleton-row" class={SKELETON_ROW_CLASS}>
+      <Skeleton class="size-8 shrink-0 rounded-lg" />
+      <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+        <Skeleton class="h-3.5 w-28" />
+        <Skeleton class="h-3 w-48 max-w-full" />
       </div>
-    </Card>
+      <Skeleton class="h-3 w-6 shrink-0" />
+    </div>
   );
 }
 
@@ -271,14 +313,20 @@ interface WordsStateProps {
    * search saw only part of them.
    */
   inlineCut: () => boolean;
+  /** DevTools' "Open in Sources", or `null` (the detail's tiles open a new tab). */
+  openResource: OpenResource | null;
+  /** The list's virtualizer seam (tests). */
+  createVirtualizer?: VirtualizerFactory;
 }
 
 /**
  * The listed words — the results, or the failure's unsearched list under its
- * notice. A plain keyed list, not a virtual one: the capture caps a page at
- * 50 words, so every card renders at once and keeps its DOM (and focus)
- * across pushes, answers and refetches. Its first paint fades in once (the
- * container's insert), never per card.
+ * notice — as the calm list with its detail. Rows are the words alone (one
+ * object per word for the list's life, reconciled by word); each row's cells
+ * and the detail read the word's answer live ({@link WordRowView}), so a row's
+ * DOM, focus and open detail survive pushes, streaming answers, refetches and
+ * failures. The body's first paint fades in once (the container's insert),
+ * never per row.
  *
  * @param props See {@link WordsStateProps}.
  */
@@ -298,8 +346,24 @@ function WordsState(props: WordsStateProps): JSX.Element {
   const summary = createMemo(() =>
     summarizeResults(props.store.words(), (word) => props.store.answerOf(word))
   );
+  const rows = createMemo((): readonly WordRow[] => props.store.words().map(wordRow));
+  /**
+   * A word's current view (read live by its row cells and the detail).
+   *
+   * @param word The word.
+   */
+  const viewOf = (word: string): WordRowView =>
+    wordRowView(
+      word,
+      props.store.answerOf(word),
+      props.store.unreadableScripts(),
+      props.inlineCut()
+    );
   return (
-    <div data-fdt="undefined-refs-results" class={cn('flex w-full flex-col gap-2', MOTION_REVEAL)}>
+    <div
+      data-fdt="undefined-refs-results"
+      class={cn('flex min-h-0 w-full flex-1 flex-col gap-3', MOTION_REVEAL)}
+    >
       <Show when={failure()}>
         {(kind) => <FailureNotice failure={kind()} store={props.store} />}
       </Show>
@@ -339,21 +403,55 @@ function WordsState(props: WordsStateProps): JSX.Element {
           <RescanButton store={props.store} />
         </Show>
       </div>
-      <ul aria-label="Undefined references" class="flex flex-col gap-2">
-        <For each={props.store.words()}>
-          {(word) => (
-            <li>
-              <WordCard
-                word={word}
-                answer={props.store.answerOf(word)}
-                pageOrigin={props.store.pageOrigin()}
-                unreadable={props.store.unreadableScripts()}
-                inlineCut={props.inlineCut()}
-              />
-            </li>
-          )}
-        </For>
-      </ul>
+      <CalmFilteredList
+        rows={rows()}
+        rowKey={(row) => row.key}
+        // A row is its word: the same word is the same row (its answer is read live).
+        sameRow={(a, b) => a.word === b.word}
+        searchField={wordSearchField}
+        noun={UNDEFINED_REFERENCE_NOUN}
+        listLabel="Undefined references"
+        searchLabel="Search undefined references"
+        searchPlaceholder="Search names…"
+        rowHook="word-row"
+        empty={
+          <EmptyState
+            icon={<CircleCheck size={16} aria-hidden="true" />}
+            title="No undefined references detected"
+          />
+        }
+        head={<ListRowHead columns={COLUMNS} icon name="Name" size="Scripts" />}
+        estimateSize={(_view, compact) => calmRowEstimate('two', compact, false)}
+        renderRow={(row) => {
+          const view = createMemo(() => viewOf(row.word));
+          return (
+            <ListRow
+              columns={COLUMNS}
+              icon={isCrossOriginSentinel(row.word) ? EyeOff : Variable}
+              name={displayWord(row.word)}
+              mono={!isCrossOriginSentinel(row.word)}
+              preview={wordPreview(view(), props.store.pageOrigin())}
+              size={wordDefinitionCount(view())}
+            />
+          );
+        }}
+        detail={{
+          kind: wordKind,
+          title: (row) => displayWord(row.word),
+          body: (row) => (
+            <WordDetail
+              view={() => viewOf(row().word)}
+              pageOrigin={props.store.pageOrigin}
+              unreadable={props.store.unreadableScripts}
+              inlineCut={props.inlineCut}
+              openResource={props.openResource}
+            />
+          ),
+          // Short on purpose: the drill bar (Back · ↑/↓ · "n of m") fits the 320 px floor.
+          backLabel: 'References'
+        }}
+        createVirtualizer={props.createVirtualizer}
+      />
     </div>
   );
 }

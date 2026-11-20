@@ -23,6 +23,11 @@
  */
 
 import { createScriptSnapshotId, readScriptSourceChunk } from '../../lib/messaging/script-source';
+import {
+  keepServedScriptTags,
+  readServedScriptTag,
+  type ServedScriptTag
+} from '../../lib/messaging/served-script-tag';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { onMessage, sendMessage } from '../../lib/messaging/index';
 import { windowMessenger } from '../../lib/messaging/window-bridge';
@@ -50,6 +55,7 @@ import { detectPreloadedResources } from '../../lib/detection/detect-optimizatio
 import { detectWordPressVersion } from '../../lib/detection/wordpress-version';
 import { createLogger } from '../../lib/logger';
 import { rucssTestModeFor } from './rucss-test';
+import { restoreRawText } from './snapshot-text';
 import {
   createSimulationMarkerVerifier,
   UNVERIFIED_MARKERS,
@@ -139,6 +145,12 @@ export interface PageData {
   wordpressVersion: string | null;
   /** The page carries WP Rocket's generator meta, readable or degraded (never on a bypass render). */
   wprGeneratorMeta: boolean;
+  /**
+   * Each script's served opening tag, rebuilt from the parsed snapshot in
+   * document order (bounded; `null` past the keep budget). Hub-side only:
+   * read one at a time by `getServedScriptTag`, never part of a payload.
+   */
+  servedScriptTags: readonly (ServedScriptTag | null)[];
 }
 
 /**
@@ -176,6 +188,14 @@ export function pageDataFor(ctx: ContentScriptContext): PageDataRead | null {
 }
 
 /**
+ * Where a pass's HTML comes from: `xml-snapshot` — the hub's own capture
+ * (`XMLSerializer`, which escapes `& < >` in raw-text element text; the
+ * pass restores it, see `./snapshot-text`); `markup` — page markup as
+ * served (fixtures, benches), read as is.
+ */
+export type PageHtmlOrigin = 'markup' | 'xml-snapshot';
+
+/**
  * Run the whole page pass over serialized HTML: detection engine, preloaded
  * resources, the WordPress generator version.
  *
@@ -190,14 +210,18 @@ export function pageDataFor(ctx: ContentScriptContext): PageDataRead | null {
  * @param verify Verifies the page's simulation marker — asked only when the
  *   page carries a well-formed one (default: vouches for nothing, so a
  *   marker reads as unverified and changes no verdict).
+ * @param origin How `pageHTML` was produced (see {@link PageHtmlOrigin}).
  * @returns The results. Throws only for impossible callers (engine checks
  *   branch on anything a page can contain).
  */
 export async function processSerializedPage(
   pageHTML: string,
-  verify: SimulationMarkerVerifier = UNVERIFIED_MARKERS
+  verify: SimulationMarkerVerifier = UNVERIFIED_MARKERS,
+  origin: PageHtmlOrigin = 'markup'
 ): Promise<PageData> {
   const page = parsePage(pageHTML);
+  // Before any reader: inline script/style text must be the page's own.
+  if (origin === 'xml-snapshot') restoreRawText(page.document);
   // No marker, or copies that disagree (no id): unverified, never asked.
   const markerId = page.simulationMarker?.markerId ?? null;
   const verified = markerId === null ? [] : await verify(markerId);
@@ -211,7 +235,8 @@ export async function processSerializedPage(
     detections,
     preloadedResources,
     wordpressVersion,
-    wprGeneratorMeta: page.featureMeta.attributePresent
+    wprGeneratorMeta: page.featureMeta.attributePresent,
+    servedScriptTags: keepServedScriptTags(page.scripts)
   };
 }
 
@@ -314,8 +339,8 @@ export function onBackForwardRestore(
 
 /**
  * Wire the data hub into this content script: capture, message serving and
- * window-bridge relays. Thin by design — the logic above and the P1 engine
- * carry the tested weight.
+ * window-bridge relays. Thin by design — the logic above and the detection
+ * engine carry the tested weight.
  *
  * @param ctx The content script's context; every listener is cleaned up
  *   through it.
@@ -455,7 +480,7 @@ export function setupDataHub(ctx: ContentScriptContext): void {
       const source = pageHTML;
       const started = performance.now();
       try {
-        const result = await processSerializedPage(source, verifyMarker);
+        const result = await processSerializedPage(source, verifyMarker, 'xml-snapshot');
         if (ctx.isInvalid) return;
         data = result;
       } catch (error) {
@@ -557,6 +582,16 @@ export function setupDataHub(ctx: ContentScriptContext): void {
       data === null || ctx.isInvalid
         ? { status: 'unavailable' }
         : readScriptSourceChunk(data.detections.delay_js.scripts, scriptSnapshotId, request)
+    )
+  );
+  ctx.onInvalidated(
+    onMessage('getServedScriptTag', ({ data: request }) =>
+      // Same snapshot as the source reads: a replaced snapshot answers `gone`.
+      readServedScriptTag(
+        ctx.isInvalid ? null : (data?.servedScriptTags ?? null),
+        scriptSnapshotId,
+        request
+      )
     )
   );
   ctx.onInvalidated(

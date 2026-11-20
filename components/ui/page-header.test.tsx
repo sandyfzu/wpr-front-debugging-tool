@@ -1,7 +1,7 @@
 /**
  * Render tests for the page header: the single `h1` with its `tabindex="-1"`
- * focus contract (the shell's route-switch focus target), the subtitle slot
- * and the actions slot.
+ * focus contract (the shell's route-switch focus target, ringless), the
+ * subtitle slot and the actions slot.
  */
 import { cleanup, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -23,6 +23,8 @@ describe('PageHeader', () => {
     const heading = screen.getByRole('heading', { name: 'JavaScript', level: 1 });
     expect(heading.getAttribute('tabindex')).toBe('-1');
     expect(heading.getAttribute('data-fdt-page-title')).toBe('');
+    // A focus target, not a control: no ring when the shell focuses it.
+    expect(heading.classList.contains('focus:outline-hidden')).toBe(true);
     expect(screen.getByText('Scripts the page shipped, and how they are treated')).toBeTruthy();
   });
 

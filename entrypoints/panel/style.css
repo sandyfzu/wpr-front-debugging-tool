@@ -8,11 +8,11 @@
  */
 
 /* ---- Mount-only page entrance ----------------------------------------------
- * One fade/slide per page mount, driven by the P0 motion tokens. Explicitly
+ * One fade/slide per page mount, driven by the motion tokens. Explicitly
  * NOT here: staggered per-item entrances, idle/loop animations, state-change
  * transitions — states swap instantly; this is the only frame animation the
- * shell itself performs. `prefers-reduced-motion` collapses it globally via
- * the token stylesheet. */
+ * shell itself performs. Under `prefers-reduced-motion` the token stylesheet
+ * (`tokens.css`) drops it: the page paints in its final state at once. */
 
 @keyframes panel-page-enter {
   from {
@@ -33,5 +33,15 @@
 }
 
 .fdt-page > [data-fdt='page-body'] {
+  animation: panel-page-enter var(--motion-base) var(--ease-entrance) both;
+}
+
+/* ---- Drill-in view swap ----------------------------------------------------
+ * A list's drill detail and the list it returns to (`data-fdt-view-enter`,
+ * set by the list kit on the view that appears) replay the page entrance —
+ * the one sanctioned keyframe for a view swap. Removing and re-adding the
+ * attribute restarts it; reduced motion drops it (`tokens.css`). */
+
+[data-fdt-view-enter] {
   animation: panel-page-enter var(--motion-base) var(--ease-entrance) both;
 }

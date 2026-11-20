@@ -1,6 +1,10 @@
 /** Independent activation, pending-write, retry, and disposal challenges. */
 import { expect, test } from '../helpers/extension';
+import { openScriptDetail, scriptRowNamed } from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
+
+/** The fixture's external script row (its URL's file name). */
+const EXTERNAL_NAME = 'script.js';
 
 for (const activation of ['Space', 'mouse'] as const) {
   test(`preserves exact ${activation} focus during slow clipboard failure and retry`, async ({
@@ -33,7 +37,9 @@ for (const activation of ['Space', 'mouse'] as const) {
           }
         });
       });
-      const copy = panel.getByRole('button', { name: 'Script URL — copy' });
+      // The copy action lives in the row's detail header.
+      const detail = await openScriptDetail(panel, scriptRowNamed(panel, EXTERNAL_NAME));
+      const copy = detail.getByRole('button', { name: 'Script URL — copy' });
       await copy.focus();
       if (activation === 'Space') await copy.press('Space');
       else await copy.click();
@@ -98,7 +104,8 @@ test('suppresses late clipboard feedback after a real page switch', async ({ ext
         }
       });
     });
-    await panel.getByRole('button', { name: 'Script URL — copy' }).click();
+    const detail = await openScriptDetail(panel, scriptRowNamed(panel, EXTERNAL_NAME));
+    await detail.getByRole('button', { name: 'Script URL — copy' }).click();
     await expect
       .poll(() => panel.evaluate(() => document.documentElement.dataset.auditWritePending))
       .toBe('true');

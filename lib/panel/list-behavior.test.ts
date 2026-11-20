@@ -2,23 +2,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { boundPreloadedResources, PAYLOAD_LIMITS } from '../messaging/payload-bounds';
 import {
-  buildFilterChips,
   countLabel,
-  defaultChipId,
   fallbackRowKey,
   listCapped,
   normalizeQuery,
-  pruneKeyedFlags,
   reconcileList,
   resultsAnnouncement,
-  toggleRowFlag,
   type CountNoun
 } from './list-behavior';
-import {
-  JS_PAGE_RESOURCES,
-  LAZYLOAD_PAGE_RESOURCES,
-  PRELOADED_PAGE_RESOURCES
-} from './resources-view-model';
 
 const IMAGES: CountNoun = { one: 'image', other: 'images' };
 const SCRIPTS: CountNoun = { one: 'script', other: 'scripts' };
@@ -60,56 +51,6 @@ describe('resultsAnnouncement (shared count line)', () => {
     // shown === total === 0 is the page's own empty state, not a filtering result.
     expect(resultsAnnouncement(0, 0, IMAGES)).toBe('');
     expect(resultsAnnouncement(0, 3, SCRIPTS)).toBe('No scripts match');
-  });
-});
-
-describe('shared chip rules', () => {
-  it('pins sentence-case labels for every shipped inventory', () => {
-    expect(JS_PAGE_RESOURCES.filters.map(({ label }) => label)).toEqual([
-      'Show all',
-      'Delayed',
-      'Non-delayed',
-      'Deferred',
-      'Non-deferred',
-      'Minified',
-      'Combined',
-      'Excluded',
-      'Inline',
-      'External'
-    ]);
-    expect(LAZYLOAD_PAGE_RESOURCES.filters.map(({ label }) => label)).toEqual([
-      'Show all',
-      'Lazyloaded',
-      'Non-lazyloaded',
-      'Excluded'
-    ]);
-    expect(PRELOADED_PAGE_RESOURCES.filters.map(({ label }) => label)).toEqual([
-      'Show all',
-      'WP Rocket',
-      'Unattributed',
-      'Preload',
-      'Images',
-      'Fonts',
-      'Module preload',
-      'Preconnect',
-      'DNS prefetch'
-    ]);
-  });
-  it('uses declaration order, not a hardcoded all id, for recovery', () => {
-    const definition = {
-      filters: [
-        { id: 'everything', label: 'Everything' },
-        { id: 'chosen', label: 'Chosen' },
-        { id: 'other', label: 'Other' }
-      ]
-    } as const;
-    expect(defaultChipId(definition)).toBe('everything');
-    expect(
-      buildFilterChips(definition, { everything: 0, chosen: 0, other: 0 }, 'chosen').map(
-        ({ disabled }) => disabled
-      )
-    ).toEqual([false, false, true]);
-    expect(() => defaultChipId({ filters: [] })).toThrow(/no filter chips/);
   });
 });
 
@@ -251,25 +192,5 @@ describe('reconcileList', () => {
       expect(actual).toHaveLength(fresh.length);
       previous = actual;
     }
-  });
-});
-
-describe('pruneKeyedFlags / toggleRowFlag', () => {
-  it('prunes any keyed rows by their key function (numeric keys too)', () => {
-    const one = { id: 1 };
-    const two = { id: 2 };
-    const flags = new Set([1, 2]);
-    const keyOf = (row: { id: number }): number => row.id;
-    expect(pruneKeyedFlags(flags, [one, two], [two, one], keyOf)).toBe(flags);
-    expect([...pruneKeyedFlags(flags, [one, two], [one, { id: 2 }], keyOf)]).toEqual([1]);
-    expect([...pruneKeyedFlags(flags, [one, two], [two], keyOf)]).toEqual([2]);
-  });
-
-  it('toggles membership into a fresh set', () => {
-    const empty = new Set<string>();
-    const one = toggleRowFlag(empty, 'k');
-    expect(one).not.toBe(empty);
-    expect([...one]).toEqual(['k']);
-    expect([...toggleRowFlag(one, 'k')]).toEqual([]);
   });
 });

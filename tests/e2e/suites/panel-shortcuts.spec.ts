@@ -245,6 +245,8 @@ test.describe('panel shortcuts (the re-owned overlay chord)', () => {
     try {
       await page.setViewportSize({ width: 700, height: 900 });
       await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      // The shell (and its global key listener) mounts after the boot's storage reads.
+      await expect(page.getByRole('link', { name: 'Detections' })).toBeVisible();
       await page.keyboard.press('/');
       const dialog = page.getByRole('dialog', SHORTCUTS_DIALOG);
       await expect(dialog).toBeVisible();
@@ -373,4 +375,86 @@ test.describe('panel shortcuts (the re-owned overlay chord)', () => {
       await page.close();
     }
   });
+});
+
+test.describe('shortcuts overlay at short heights', () => {
+  for (const height of [500, 650]) {
+    test(`320×${String(height)}: the plate stays on screen and the last row scrolls into reach`, async ({
+      extension
+    }) => {
+      const page = await extension.browserContext.newPage();
+      try {
+        await page.setViewportSize({ width: 320, height });
+        await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+        await expect(page.getByRole('link', { name: 'Detections' })).toBeVisible();
+        await page.keyboard.press('/');
+        const dialog = page.getByRole('dialog', SHORTCUTS_DIALOG);
+        await expect(dialog).toBeVisible();
+        const rows = dialog.locator('[data-fdt="shortcut-rows"]');
+
+        /** The plate's and the rows' boxes, and the last row's place in the scroller. */
+        const measure = async (): Promise<{
+          plateTop: number;
+          plateBottom: number;
+          titleVisible: boolean;
+          lastRowInside: boolean;
+          scrollTop: number;
+          overflowsY: boolean;
+          scrollsX: boolean;
+        }> =>
+          await rows.evaluate((scroller) => {
+            const plate = scroller.closest('[role="dialog"]');
+            const title = plate?.querySelector('[data-fdt="dialog-title"]');
+            const last = scroller.lastElementChild;
+            if (!plate || !title || !last) throw new Error('missing overlay parts');
+            const box = plate.getBoundingClientRect();
+            const port = scroller.getBoundingClientRect();
+            const lastBox = last.getBoundingClientRect();
+            const titleBox = title.getBoundingClientRect();
+            return {
+              plateTop: box.top,
+              plateBottom: box.bottom,
+              titleVisible: titleBox.top >= box.top && titleBox.bottom <= port.top,
+              lastRowInside: lastBox.top >= port.top - 0.5 && lastBox.bottom <= port.bottom + 0.5,
+              scrollTop: scroller.scrollTop,
+              overflowsY: scroller.scrollHeight > scroller.clientHeight,
+              scrollsX: scroller.scrollWidth > scroller.clientWidth
+            };
+          });
+
+        const initial = await measure();
+        // The plate fits the viewport (its cap follows its own top offset).
+        expect(initial.plateTop).toBeGreaterThanOrEqual(0);
+        expect(initial.plateBottom).toBeLessThanOrEqual(height);
+        expect(initial.titleVisible).toBe(true);
+        expect(initial.scrollsX).toBe(false);
+        // Both heights are short of the whole table at 320 px: the rows must scroll.
+        expect(initial.lastRowInside).toBe(false);
+        expect(initial.overflowsY).toBe(true);
+
+        // Keyboard: the scroller is the tab stop after the close control; End scrolls it.
+        await expect(dialog.locator('[data-fdt="dialog-close"]')).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(rows).toBeFocused();
+        await page.keyboard.press('End');
+        await expect.poll(async () => (await measure()).lastRowInside).toBe(true);
+        const scrolled = await measure();
+        expect(scrolled.scrollTop).toBeGreaterThan(0);
+        // The title and the plate stayed put while the rows scrolled.
+        expect(scrolled.titleVisible).toBe(true);
+        expect(scrolled.plateBottom).toBe(initial.plateBottom);
+
+        // Pointer: the wheel over the rows scrolls them back (the modal's scroll lock spares them).
+        const port = await rows.boundingBox();
+        if (port === null) throw new Error('no scroller box');
+        await page.mouse.move(port.x + port.width / 2, port.y + port.height / 2);
+        await page.mouse.wheel(0, -2000);
+        await expect.poll(async () => (await measure()).scrollTop).toBe(0);
+        await page.mouse.wheel(0, 2000);
+        await expect.poll(async () => (await measure()).lastRowInside).toBe(true);
+      } finally {
+        await page.close();
+      }
+    });
+  }
 });

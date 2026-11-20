@@ -45,6 +45,9 @@ docker/wpr/
 docker/certs/
 docker/state/
 
+# Panel/options screenshot sets (scripts/panel-screenshots.mjs) — local review artifacts
+.screenshots/
+
 # Machine-local spike harness/evidence (untracked scratch tooling; referenced by phase docs' manual steps)
 .scratch/
 

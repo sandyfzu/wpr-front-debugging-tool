@@ -7,17 +7,29 @@
  * saw the style); the async-swapped links read Async (one also Minified),
  * the self-hosted font link Font, `#wpr-usedcss` RUCSS, the two live
  * background-lazyload styles Lazy BG; the `<noscript>` fallbacks are never
- * listed; filters count every chip, search narrows, and the page never
- * scrolls sideways from 320 to 1280 px in either palette. A reload of the
- * inspected page re-reads on its own.
+ * listed; the facets count every value, a toggle and the search narrow, and
+ * the page never scrolls sideways from 320 to 1280 px in either palette,
+ * with or without a detail open. A reload of the inspected page re-reads on
+ * its own.
+ *
+ * Round 1b — a page WP Rocket serves but whose styles carry no state: the
+ * info note says so (naming the style features that are off, linking
+ * Detections), and the detail's Format re-flows the shown CSS and back.
  *
  * Round 2 — D-7: a generated page with 5,000 styles (the list cut at its
  * 2,000-entry cap, said so) stays inside the long-task (none > 50 ms) and
- * TBT (< 200 ms) budget through a filter change, a typed search and a
- * Refresh.
+ * TBT (< 200 ms) budget through a facet change, a typed search, opening a
+ * row (its CSS read) and a Refresh.
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import {
+  closeScriptDetail,
+  facetCount,
+  facetToggle,
+  openScriptDetail,
+  scriptDetail
+} from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
 
 /** One expected row: a text it shows (URL part or `#id`) and its chips in order. */
@@ -43,13 +55,13 @@ const FIXTURE_ROWS: readonly ExpectedRow[] = [
 ];
 
 /**
- * A filter chip's count text.
+ * A toggle facet's count text.
  *
  * @param page The Stylesheets page root.
- * @param id The chip id.
+ * @param id The toggle facet's id.
  */
-function chipCount(page: Locator, id: string): Locator {
-  return page.locator(`[data-fdt-filter-chip="${id}"] [data-fdt-filter-count]`);
+function toggleCount(page: Locator, id: string): Locator {
+  return facetToggle(page, id).locator('[data-fdt-toggle-count]');
 }
 
 /**
@@ -107,30 +119,30 @@ test('chips, filters and search over WP Rocket’s stylesheet markup; Critical f
     // The default media says nothing; any other media is named.
     expect(rows[1]?.text).not.toContain('media:');
     expect(rows[3]?.text).toContain('media: print');
-    await expect(page.locator('[data-fdt="style-snapshot-note"]')).toHaveText(
-      'No longer on the page'
-    );
+    await expect(
+      page.locator('[data-fdt="stylesheet-row"]').first().locator('[data-fdt="list-row-preview"]')
+    ).toHaveText('No longer on the page');
     // Never the <noscript> fallbacks (their ids), never the nostyle background style.
     await expect(page).not.toContainText('theme-css');
     await expect(page).not.toContainText('wpr-lazyload-bg-nostyle');
 
+    await expect(facetCount(page, 'any', 'Type')).toHaveText('9');
     const counts: Record<string, string> = {
-      all: '9',
+      inline: '5',
+      external: '4',
       critical: '1',
       rucss: '1',
-      'lazy-bg': '2',
-      async: '2',
-      minified: '1',
-      font: '1',
-      inline: '5',
-      external: '4'
+      'lazy-bg': '2'
     };
     for (const [id, count] of Object.entries(counts)) {
-      await expect(chipCount(page, id), id).toHaveText(count);
+      await expect(facetCount(page, id), id).toHaveText(count);
     }
-    await page.locator('[data-fdt-filter-chip="async"]').click();
+    for (const [id, count] of Object.entries({ async: '2', minified: '1', font: '1' })) {
+      await expect(toggleCount(page, id), id).toHaveText(count);
+    }
+    await facetToggle(page, 'async').click();
     await expect(page.locator('[data-fdt="stylesheet-row"]')).toHaveCount(2);
-    await page.locator('[data-fdt-filter-chip="all"]').click();
+    await facetToggle(page, 'async').click();
     await page.locator('input[type="search"]').fill('usedcss');
     await expect(page.locator('[data-fdt="stylesheet-row"]')).toHaveCount(1);
     await expect(page.locator('[data-fdt="stylesheet-row"]')).toContainText('#wpr-usedcss');
@@ -148,13 +160,21 @@ test('chips, filters and search over WP Rocket’s stylesheet markup; Critical f
           )
         )
         .toBe(0);
-      for (const width of [320, 480, 768, 1280]) {
+      for (const width of [320, 420, 480, 760, 1100, 1280]) {
         await panel.setViewportSize({ width, height: 1600 });
         await expect
           .poll(() => page.evaluate((element) => element.scrollWidth - element.clientWidth), {
             message: `stylesheets must fit at ${String(width)}px (${colorScheme})`
           })
           .toBe(0);
+        // A detail open (pane from the split width, drill-in below) fits too.
+        await openScriptDetail(panel, page.locator('[data-fdt="stylesheet-row"]').nth(5));
+        await expect
+          .poll(() => page.evaluate((element) => element.scrollWidth - element.clientWidth), {
+            message: `stylesheets + detail must fit at ${String(width)}px (${colorScheme})`
+          })
+          .toBe(0);
+        await closeScriptDetail(panel);
         const right = await page.evaluate((element) => element.getBoundingClientRect().right);
         for (const box of await page
           .locator('[data-fdt="state-chip"] [data-fdt="badge"]')
@@ -175,7 +195,7 @@ test('chips, filters and search over WP Rocket’s stylesheet markup; Critical f
       () => document.getElementById('rocket-critical-css') === null
     );
     await expect(page.locator('[data-fdt="stylesheets-total"]')).toHaveText('9 styles');
-    await expect(chipCount(page, 'critical')).toHaveText('1');
+    await expect(facetCount(page, 'critical')).toHaveText('1');
   } finally {
     await panel.close();
     await fixture.page.close();
@@ -241,23 +261,30 @@ test('5,000 styles: a capped, virtualized list inside the long-task and TBT budg
       'Showing the first 2,000 of 5,000 styles.'
     );
     await expect(page.locator('[data-fdt="stylesheets-total"]')).toHaveText('2,000+ styles');
-    await expect(chipCount(page, 'all')).toHaveText('2,000');
+    await expect(facetCount(page, 'any', 'Type')).toHaveText('2,000');
     // Virtualized: a viewport's worth of rows, never the whole list.
     expect(await page.locator('[data-fdt="stylesheet-row"]').count()).toBeLessThan(100);
 
     await panel.evaluate(() => {
       (window as unknown as { __fdtPerf: PerfState }).__fdtPerf.setPhase('warm');
     });
-    await page.locator('[data-fdt-filter-chip="async"]').click();
+    await facetToggle(page, 'async').click();
     await expect(page.locator('[data-fdt="resource-results-status"]')).toHaveText(
       'Showing 200 of 2,000 styles'
     );
-    await page.locator('[data-fdt-filter-chip="all"]').click();
-    await page.locator('input[type="search"]').fill('style-1999');
+    await facetToggle(page, 'async').click();
+    await page.locator('input[type="search"]').fill('style-1998');
     await expect(page.locator('[data-fdt="stylesheet-row"]')).toHaveCount(1);
+    // Opening the row reads its CSS from the list's snapshot.
+    const detail = await openScriptDetail(panel, page.locator('[data-fdt="stylesheet-row"]'));
+    await expect(detail.locator('[data-fdt="style-css"] [data-fdt="code-block"]')).toContainText(
+      '.style-1998{'
+    );
+    await closeScriptDetail(panel);
     await page.locator('input[type="search"]').fill('');
     await refreshList(panel);
-    await expect(chipCount(page, 'all')).toHaveText('2,000');
+    await expect(facetCount(page, 'any', 'Type')).toHaveText('2,000');
+    await expect(scriptDetail(panel)).toHaveCount(0);
 
     const audit = await panel.evaluate(() => {
       const perf = (window as unknown as { __fdtPerf: PerfState }).__fdtPerf;
@@ -275,5 +302,43 @@ test('5,000 styles: a capped, virtualized list inside the long-task and TBT budg
     await panel.close();
     await fixture.page.close();
     await extension.browserContext.unroute(PERF_PATTERN);
+  }
+});
+
+test('a page whose styles WP Rocket left alone says so; Format re-flows the shown CSS', async ({
+  extension
+}) => {
+  const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/versionless.html', {
+    bootHash: '#/stylesheets'
+  });
+  try {
+    const page = panel.locator('[data-fdt-page="stylesheets"]');
+    const note = page.locator('[data-fdt="stylesheets-unchanged"]');
+    await expect(note).toContainText('No stylesheet shows a WP Rocket change.');
+    await expect(note).toContainText('Minify CSS files');
+    await expect(note.getByRole('link', { name: 'See Detections' })).toHaveAttribute(
+      'href',
+      '#/detections'
+    );
+    const row = page.locator('[data-fdt="stylesheet-row"]', { hasText: '#plain-theme' });
+    const detail = await openScriptDetail(panel, row);
+    const css = detail.locator('[data-fdt="style-css"] [data-fdt-code-content]');
+    await expect(css).toHaveText('.plain{color:red;margin:0 auto}.plain b{font-weight:600}');
+    const format = detail.getByRole('button', { name: 'Format' });
+    await format.click();
+    await expect(format).toHaveAttribute('aria-pressed', 'true');
+    // Exact text (line breaks and indents included), not whitespace-normalized.
+    await expect
+      .poll(() => css.textContent())
+      .toBe('.plain {\n  color:red;\n  margin:0 auto\n}\n.plain b {\n  font-weight:600\n}');
+    await format.click();
+    await expect(css).toHaveText('.plain{color:red;margin:0 auto}.plain b{font-weight:600}');
+    // The note leaves with the list's owner: Detections is one click away.
+    await closeScriptDetail(panel);
+    await note.getByRole('link', { name: 'See Detections' }).click();
+    await expect(panel.locator('[data-fdt-page="detections"]')).toBeVisible();
+  } finally {
+    await panel.close();
+    await fixture.page.close();
   }
 });

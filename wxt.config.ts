@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'wxt';
+import type { FirefoxDataCollectionPermissions } from 'wxt';
+import { DATA_CONSENT_TYPE } from './lib/data-consent/consent';
 import { URL_PATTERNS } from './lib/wp-rocket/constants';
 import {
   LAZYLOAD_RUNTIME_FILE,
@@ -23,6 +25,37 @@ export const FIREFOX_ADDON_ID = '{f6991cc9-09e3-43d0-a6dd-4aae5f676452}';
 
 /** Explicit supported Firefox floor (owner-chosen). */
 export const FIREFOX_MIN_VERSION = '150.0';
+
+/**
+ * Firefox's built-in data-collection consent (required for new AMO
+ * submissions; Firefox 140+, below the floor). Collection here means data
+ * leaving the browser for a server other than the page's own site.
+ *
+ * - `required: ['none']`: installing collects nothing (Firefox shows no data
+ *   line at install).
+ * - `optional: ['browsingActivity']`: two features send the current page's
+ *   address off-device, each only on the user's explicit command — the
+ *   RUCSS Tester's start (the address minus fragment and credentials, the
+ *   Mobile/Home flags and the user's safelist, to WP Rocket's RUCSS
+ *   service; no page content, no cookies) and the PageSpeed Insights views
+ *   (the address in a `pagespeed.web.dev` tab or frame). Every such send
+ *   is gated: the RUCSS start (checked in the panel and again by the
+ *   background before the request), the PageSpeed Insights tab (opened by
+ *   the background only once allowed) and the analysis page's two
+ *   comparison frames (loaded only once allowed). Each asks at its first
+ *   use (`lib/data-consent`, the consent page) and checks on every use, so
+ *   a grant revoked in the Add-ons Manager is asked again.
+ * - Not declared, because nothing about the user travels: the Known
+ *   Conflicts DB and the latest exclusion list are plain downloads of
+ *   public data (a fixed address, no query, no body); every other request
+ *   (reloads, header reads, the beacon test, Exclusion Builder rewrites)
+ *   stays between the browser and the site being debugged; no analytics,
+ *   telemetry or crash reports exist (`technicalAndInteraction` none).
+ */
+const FIREFOX_DATA_COLLECTION = {
+  required: ['none'],
+  optional: [DATA_CONSENT_TYPE]
+} satisfies FirefoxDataCollectionPermissions;
 
 /** The clobber-proof extension namespace module `@wxt-dev/browser` resolves to. */
 const EXTENSION_API_MODULE = path.join(
@@ -61,6 +94,11 @@ export default defineConfig({
   modules: ['@wxt-dev/module-solid'],
   vite: () => ({
     plugins: [tailwindcss(), extensionApiBeforeMessaging()],
+    // Workers build as ES modules (Vite's default `iife` cannot split code):
+    // the code highlighter's worker fetches its CSS/HTML grammar chunk on the
+    // first block that needs it. Every worker is spawned `type: 'module'`
+    // (module workers and `import()` in them: Chromium 80+, Firefox 114+).
+    worker: { format: 'es' },
     resolve: {
       // Every runtime `browser` (ours, WXT's, its storage's) comes from
       // `@wxt-dev/browser`, whose lookup a page's DOM can forge in a content
@@ -85,12 +123,17 @@ export default defineConfig({
     // emits the key for a popup entrypoint; the MV2 build gets it renamed to
     // `browser_action`. The tooltip names the extension.
     action: { default_title: NAME },
-    // Firefox only: the add-on id (see FIREFOX_ADDON_ID) and the supported
+    // Firefox only: the add-on id (see FIREFOX_ADDON_ID), the supported
     // floor — without it any old Firefox could install a build it was never
-    // verified on.
+    // verified on — and the data-collection declaration (see
+    // FIREFOX_DATA_COLLECTION).
     ...(browser === 'firefox' && {
       browser_specific_settings: {
-        gecko: { id: FIREFOX_ADDON_ID, strict_min_version: FIREFOX_MIN_VERSION }
+        gecko: {
+          id: FIREFOX_ADDON_ID,
+          strict_min_version: FIREFOX_MIN_VERSION,
+          data_collection_permissions: FIREFOX_DATA_COLLECTION
+        }
       },
       // Firefox only: a simulated page's LazyLoad runtime request is
       // redirected (`webRequest`) to its packaged copy, and a page may load

@@ -9,7 +9,7 @@
  * word is then searched by a cooperative loop that yields the main thread
  * between slices and streams answers in as they complete — a push adding one
  * word searches that one word. A refetch of the page's data reads again with
- * the cards kept on screen (answers swap in place); a rescan does the same on
+ * the rows kept on screen (answers swap in place); a rescan does the same on
  * demand. Results render the moment they are computed — no artificial delay.
  */
 import { createEffect, createMemo, createSignal, on, onCleanup, untrack } from 'solid-js';
@@ -241,7 +241,7 @@ export function createUndefinedReferencesStore(
   };
 
   // The data was refetched (a reload, a navigation, the palette's reload):
-  // read again with the cards kept, or drop the read when there is nothing
+  // read again with the rows kept, or drop the read when there is nothing
   // to search yet. An idle scan is the gate's to start.
   createEffect(
     on(

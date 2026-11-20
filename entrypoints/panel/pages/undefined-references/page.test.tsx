@@ -1,12 +1,12 @@
 /**
- * The page over the shell's data context: one body per state (trigger
- * conditions through real data shapes), the failure notice over the
- * unsearched words with Retry and its focus hand-off, the results list's live
- * updates (append in place, DOM and focus kept, one polite announcement), a
- * same-page data refresh that keeps cards and focus, the rescan control's
- * busy/done feedback, the stale-scripts hint, and the list-size pin that
- * keeps the plain (non-virtual) list honest. User-facing copy is pinned
- * literally.
+ * The page over the shell's contexts (data, search, detail presence): one
+ * body per state (trigger conditions through real data shapes), the failure
+ * notice over the unsearched words with Retry and its focus hand-off, the
+ * calm list's rows (name, count, preview) and their detail (pane and drill),
+ * live updates (append in place, DOM and focus kept, one polite
+ * announcement), a same-page data refresh that keeps rows, the open detail
+ * and focus, the search, the rescan control's busy/done feedback and the
+ * stale-scripts hint. User-facing copy is pinned literally.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
@@ -14,13 +14,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MOTION_REVEAL } from '../../../../components/ui/classes';
 import { toast, toastItems } from '../../../../components/ui/toast-store';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
-import { ERROR_WORD_LIMIT } from '../../../../lib/messaging/validate';
 import type { InlineScriptSource, ScriptAsset } from '../../../../lib/panel/undefined-refs';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeDelayScript, makeFdtData } from '../../state/fixtures';
-import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
+import { createDetailPresence, DetailPresenceContext } from '../../state/detail-presence';
+import { createDetailShare, DetailShareContext } from '../../state/detail-share';
+import { SEARCH_DEBOUNCE_MS, createSearchStore, type SearchStore } from '../../state/search';
+import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
+import {
+  installFakeResizeObserver,
+  type FakeResizeObservers
+} from '../resource-list/fake-resize-observer';
+import { calmRowClass } from '../resource-list/list-row';
+import { renderWindowedRows } from '../resource-list/page-harness';
 import type { InspectedScripts } from './inspected-scripts';
 import { UndefinedReferencesPage } from './page';
 
@@ -31,13 +39,17 @@ const ASSETS: ScriptAsset[] = [
   { origin: { kind: 'inline' }, content: 'beta = 2;' }
 ];
 
+let observers: FakeResizeObservers;
+
 beforeEach(() => {
   toast.clear();
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  observers = installFakeResizeObserver();
 });
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   toast.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -115,14 +127,23 @@ function mount(options: MountOptions) {
   // the stub records what the rows write without touching the platform.
   const writeText = vi.fn<() => Promise<void>>(() => Promise.resolve());
   vi.stubGlobal('navigator', { clipboard: { writeText } });
+  const search = createSearchStore();
   render(() => (
     <FdtDataContext.Provider value={store}>
-      <UndefinedReferencesPage
-        deps={{
-          inspected: options.unsupported ? null : inspected,
-          yieldToMain: () => Promise.resolve()
-        }}
-      />
+      <SearchContext.Provider value={search}>
+        <DetailPresenceContext.Provider value={createDetailPresence(() => 'undefined-references')}>
+          <DetailShareContext.Provider value={createDetailShare(null, () => Promise.resolve())}>
+            <UndefinedReferencesPage
+              deps={{
+                inspected: options.unsupported ? null : inspected,
+                yieldToMain: () => Promise.resolve()
+              }}
+              createVirtualizer={renderWindowedRows}
+              openResource={null}
+            />
+          </DetailShareContext.Provider>
+        </DetailPresenceContext.Provider>
+      </SearchContext.Provider>
     </FdtDataContext.Provider>
   ));
   /** Patch the loaded data like a push does (same fetch, same stamp). */
@@ -138,8 +159,11 @@ function mount(options: MountOptions) {
     setState({ status: 'refreshing', data: current.data, requestedAt: fetchedAt });
     setState({ status: 'ready', data, fetchedAt });
   };
-  return { reads, added, push, refresh, writeText };
+  return { reads, added, push, refresh, writeText, search };
 }
+
+/** Mount controls (see {@link mount}). */
+type Mounted = ReturnType<typeof mount>;
 
 /** The page's polite status line. */
 function statusLine(): HTMLElement {
@@ -153,9 +177,46 @@ function summary(): string | null | undefined {
   return document.querySelector('[data-fdt="undefined-refs-summary"]')?.textContent;
 }
 
-/** The card list item holding a word. */
-function cardOf(word: string): HTMLElement | null {
-  return screen.getByText(word).closest('li');
+/**
+ * Commit a search query (the store debounces; the caller runs fake timers).
+ *
+ * @param search The page's search store.
+ * @param query The raw query.
+ */
+function commit(search: SearchStore, query: string): void {
+  search.perform(query);
+  vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+}
+
+/** Every rendered word row. */
+function rows(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('[data-fdt="word-row"]')];
+}
+
+/** The rendered rows' names, in order. */
+function names(): string[] {
+  return rows().map((row) => row.querySelector('[data-fdt="list-row-name"]')?.textContent ?? '');
+}
+
+/** A row by its name (throws when absent). */
+function rowOf(word: string): HTMLElement {
+  const row = rows().find(
+    (candidate) => candidate.querySelector('[data-fdt="list-row-name"]')?.textContent === word
+  );
+  if (row === undefined) throw new Error(`no row ${word}`);
+  return row;
+}
+
+/** A row's cell text by hook (`list-row-size`, `list-row-preview`). */
+function cell(word: string, hook: string): string | null | undefined {
+  return rowOf(word).querySelector(`[data-fdt="${hook}"]`)?.textContent;
+}
+
+/** Open a row's detail by its name. */
+function open(word: string): void {
+  const button = rowOf(word).querySelector<HTMLButtonElement>('[data-fdt-row-open]');
+  if (button === null) throw new Error(`no open button on ${word}`);
+  fireEvent.click(button);
 }
 
 describe('UndefinedReferencesPage — states', () => {
@@ -203,17 +264,28 @@ describe('UndefinedReferencesPage — states', () => {
     expect(screen.queryByText('Waiting for page interaction')).toBeNull();
   });
 
-  it('shows skeleton cards while the real read is in flight, then the results', async () => {
+  it('shows skeleton rows while the real read is in flight, then the results', async () => {
     const { reads } = mount({ data: pageData({ delay: true, loaded: true, words: ['alpha'] }) });
     const processing = document.querySelector('[data-fdt="undefined-refs-processing"]');
     expect(processing?.getAttribute('aria-busy')).toBe('true');
-    expect(processing?.querySelectorAll('[data-fdt="card"]')).toHaveLength(2);
+    // Shaped like the list's calm rows (58 px floor), two of them.
+    const skeletons = processing?.querySelectorAll('[data-fdt="skeleton-row"]');
+    expect(skeletons).toHaveLength(2);
+    expect(skeletons?.[0]?.className).toContain('min-h-14.5');
+    // The geometry is the list's own two-line row surface, never re-typed.
+    const surface = calmRowClass({
+      lines: 'two',
+      interactive: false,
+      selected: false,
+      current: false
+    });
+    for (const token of surface.split(' ')) expect(skeletons?.[0]?.classList).toContain(token);
     expect(screen.getByText("Reading the page's scripts…")).toBeTruthy();
     expect(reads[0]?.inline).toEqual([makeDelayScript({ inline: true, content: 'beta = 2;' })]);
     reads[0]?.resolve(ASSETS);
     await flush();
     expect(document.querySelector('[data-fdt="undefined-refs-processing"]')).toBeNull();
-    expect(screen.getByText('alpha')).toBeTruthy();
+    expect(names()).toEqual(['alpha']);
   });
 
   it('shows the empty state with no read — monitoring until Delay JS reports loaded', () => {
@@ -235,7 +307,9 @@ describe('UndefinedReferencesPage — states', () => {
         "This browser can't list the inspected page's scripts, so no definition search runs. The names come straight from the page's errors."
       )
     ).toBeTruthy();
-    expect(screen.getByText('Not searched')).toBeTruthy();
+    expect(cell('alpha', 'list-row-preview')).toBe('Not searched');
+    // No search runs, so no count to state.
+    expect(cell('alpha', 'list-row-size')).toBeUndefined();
     expect(screen.queryByRole('button', { name: /Rescan/ })).toBeNull();
     expect(summary()).toBe('1 undefined reference');
   });
@@ -251,8 +325,9 @@ describe('UndefinedReferencesPage — failures', () => {
     expect(notice?.textContent).toBe(
       "Couldn't read the page's scriptsDevTools could not list the inspected page's scripts. The names below come straight from the page's errors, unsearched.Retry"
     );
-    expect(screen.getAllByText('Not searched')).toHaveLength(2);
-    expect(screen.getByText('alpha')).toBeTruthy();
+    expect(
+      rows().map((row) => row.querySelector('[data-fdt="list-row-preview"]')?.textContent)
+    ).toEqual(['Not searched', 'Not searched']);
     const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     fireEvent.click(retry);
@@ -262,7 +337,7 @@ describe('UndefinedReferencesPage — failures', () => {
     reads[1]?.resolve(ASSETS);
     await flush();
     expect(document.querySelector('[data-fdt="undefined-refs-failure"]')).toBeNull();
-    expect(screen.getAllByText('In 1 script')).toHaveLength(2);
+    expect([cell('alpha', 'list-row-size'), cell('beta', 'list-row-size')]).toEqual(['1', '1']);
   });
 
   it('offers no Retry after an extension reload — only the reopen-DevTools remedy', async () => {
@@ -277,90 +352,180 @@ describe('UndefinedReferencesPage — failures', () => {
 });
 
 describe('UndefinedReferencesPage — results', () => {
-  /** Mount with results showing for `words`. */
-  async function withResults(words: string[]) {
+  /** Mount with results showing for `words`, the list at a pane-wide width. */
+  async function withResults(words: string[], width = 1000): Promise<Mounted> {
     const controls = mount({ data: pageData({ words }) });
     controls.reads[0]?.resolve(ASSETS);
     await flush();
+    // The calm list mounts with the results: report its width now.
+    observers.resize(width);
     return controls;
   }
 
-  it('renders one card per word with the summary, fading in once as a whole', async () => {
+  it('renders one calm row per word with the summary, fading in once as a whole', async () => {
     await withResults(['alpha', 'beta', 'nope', UNDEFINED_REFERENCE_EXTERNAL_ERROR]);
     const results = document.querySelector<HTMLElement>('[data-fdt="undefined-refs-results"]');
     for (const token of MOTION_REVEAL.split(' ')) expect(results?.classList).toContain(token);
-    // Capped on the wide tier, so actions sit near their links.
+    // The reading canvas cap stays.
     expect(results?.closest('[data-fdt="page-body"]')?.classList).toContain('max-w-4xl');
     const list = screen.getByRole('list', { name: 'Undefined references' });
-    expect(list.querySelectorAll(':scope > li')).toHaveLength(4);
-    // No per-card entrance: nothing below the container carries a transition but the chevrons.
+    expect(list.querySelectorAll('[role="listitem"]')).toHaveLength(4);
+    // No per-row entrance: no row carries a transition.
     expect(list.querySelector('[class*="transition-opacity"]')).toBeNull();
-    expect(document.querySelector('[data-fdt="virtual-list"]')).toBeNull();
+    expect(names()).toEqual(['alpha', 'beta', 'nope', 'Script error.']);
     expect(summary()).toBe(
       '3 undefined references · 2 with a possible definition · 1 cross-origin error'
     );
-    expect(screen.getByText('Inline Script')).toBeTruthy();
+    // Rows: the number of defining scripts, then where (or the verdict's words).
+    expect(
+      rows().map((row) => row.querySelector('[data-fdt="list-row-size"]')?.textContent)
+    ).toEqual(['1', '1', '0', undefined]);
+    expect(
+      rows().map((row) => row.querySelector('[data-fdt="list-row-preview"]')?.textContent)
+    ).toEqual(['a.js', 'Inline script', 'No definition found', 'Details hidden']);
+    // Words are identifiers (mono); the sentinel reads as the browser's message.
+    const nameOf = (word: string): Element | null =>
+      rowOf(word).querySelector('[data-fdt="list-row-name"]');
+    expect(nameOf('alpha')?.className).toContain('font-mono');
+    expect(nameOf('Script error.')?.className).not.toContain('font-mono');
+    // Icon tile: a variable per word, eye-off for the hidden cross-origin error.
+    const iconOf = (word: string): Element | null =>
+      rowOf(word).querySelector('[data-fdt="list-row-icon"] svg');
+    for (const word of ['alpha', 'beta', 'nope']) {
+      expect(iconOf(word)?.classList).toContain('lucide-variable');
+    }
+    expect(iconOf('Script error.')?.classList).toContain('lucide-eye-off');
+    expect(iconOf('Script error.')?.classList).not.toContain('lucide-variable');
+    const head = document.querySelector('[data-fdt="list-head"]');
+    expect(head?.textContent).toBe('NameScripts');
   });
 
-  it('copies the same-origin path through the row action', async () => {
+  it('opens a word in the side pane: kind, title, definitions with their tile', async () => {
+    await withResults(['alpha', UNDEFINED_REFERENCE_EXTERNAL_ERROR]);
+    open('alpha');
+    const pane = document.querySelector<HTMLElement>('[data-fdt="detail-pane"]');
+    expect(pane).not.toBeNull();
+    expect(pane?.querySelector('[data-fdt="detail-kind"]')?.textContent).toBe(
+      'Undefined reference'
+    );
+    expect(pane?.querySelector('[data-fdt="detail-title"]')?.textContent).toBe('alpha');
+    expect(pane?.querySelector('[data-fdt-verdict]')?.textContent).toBe('In 1 script');
+    expect(pane?.querySelector('[data-fdt="source-link-open"]')?.getAttribute('href')).toBe(URL_A);
+    expect(rowOf('alpha').hasAttribute('data-selected')).toBe(true);
+    open('Script error.');
+    expect(pane?.querySelector('[data-fdt="detail-kind"]')?.textContent).toBe('Cross-origin error');
+    expect(pane?.querySelector('[data-fdt="detail-title"]')?.textContent).toBe('Script error.');
+    expect(pane?.querySelector('[data-fdt-verdict]')?.textContent).toBe('Details hidden');
+  });
+
+  it('drills in below the split width, Back returns to the list', async () => {
+    await withResults(['alpha'], 400);
+    open('alpha');
+    expect(document.querySelector('[data-fdt="detail-pane"]')).toBeNull();
+    const drill = document.querySelector<HTMLElement>('[data-fdt="drill-detail"]');
+    expect(drill?.querySelector('[data-fdt="drill-back"]')?.textContent).toContain('References');
+    expect(drill?.querySelector('[data-fdt="drill-position"]')?.textContent).toBe('1 of 1');
+    fireEvent.click(drill?.querySelector('[data-fdt="drill-back"]') as HTMLElement);
+    expect(document.querySelector('[data-fdt="drill-detail"]')).toBeNull();
+  });
+
+  it('copies the same-origin path through the detail action', async () => {
     const { writeText } = await withResults(['alpha']);
+    open('alpha');
     fireEvent.click(screen.getByRole('button', { name: 'Copy as exclusion: a.js' }));
     await vi.waitFor(() => {
       expect(writeText).toHaveBeenCalledWith('/wp-content/plugins/p/a.js');
     });
-    expect(document.querySelector('[data-fdt="script-location"]')?.textContent).toBe('plugins/p/');
+    expect(document.querySelector('[data-fdt="source-link-path"]')?.textContent).toBe(
+      '/wp-content/plugins/p/a.js'
+    );
   });
 
-  it('appends pushed words in place: existing cards keep their DOM and focus, one announcement', async () => {
+  it('searches the words by name', async () => {
+    const { search } = await withResults(['alpha', 'beta']);
+    vi.useFakeTimers();
+    const field = screen.getByRole('searchbox', { name: 'Search undefined references' });
+    expect(field.getAttribute('placeholder')).toBe('Search names…');
+    commit(search, 'alp');
+    expect(names()).toEqual(['alpha']);
+    commit(search, 'zzz');
+    expect(rows()).toHaveLength(0);
+    // The filtered-empty view offers the way back.
+    expect(document.querySelector('[data-fdt-no-matches-action="clear-search"]')?.textContent).toBe(
+      'Clear search'
+    );
+  });
+
+  it('appends pushed words in place: existing rows keep their DOM and focus, one announcement', async () => {
     const { push } = await withResults(['alpha']);
-    const firstCard = cardOf('alpha');
+    const firstRow = rowOf('alpha');
+    open('alpha');
     const copy = screen.getByRole('button', { name: 'Copy as exclusion: a.js' });
     copy.focus();
     expect(statusLine().textContent).toBe('');
     push({ undefinedReferencesOnPage: ['alpha', 'beta', 'gamma'] });
     await flush();
-    const items = screen.getByRole('list', { name: 'Undefined references' }).children;
-    expect([...items].map((li) => li.querySelector('[data-fdt-word]')?.textContent)).toEqual([
-      'alpha',
-      'beta',
-      'gamma'
-    ]);
-    expect(cardOf('alpha')).toBe(firstCard);
+    expect(names()).toEqual(['alpha', 'beta', 'gamma']);
+    expect(rowOf('alpha')).toBe(firstRow);
     expect(document.activeElement).toBe(copy);
     // Successive messages alternate a trailing no-break space, so even an
     // identical sentence is a DOM change the screen reader announces.
-    expect(statusLine().textContent).toBe('2 new undefined references ');
+    expect(statusLine().textContent).toBe('2 new undefined references\u00a0');
     push({ undefinedReferencesOnPage: ['alpha', 'beta', 'gamma', 'delta'] });
     expect(statusLine().textContent).toBe('1 new undefined reference');
   });
 
-  it('a same-page data refresh keeps the cards, their rows and focus — no skeleton', async () => {
+  it('updates a row in place as its answer streams in: DOM and row focus kept', async () => {
+    const { push } = await withResults(['alpha']);
+    push({ undefinedReferencesOnPage: ['alpha', 'beta'] });
+    // The search has not reached the pushed word yet.
+    expect(cell('beta', 'list-row-preview')).toBe('Searching…');
+    expect(cell('beta', 'list-row-size')).toBeUndefined();
+    const row = rowOf('beta');
+    const openButton = row.querySelector<HTMLElement>('[data-fdt-row-open]');
+    openButton?.focus();
+    await flush();
+    expect(cell('beta', 'list-row-preview')).toBe('Inline script');
+    expect(cell('beta', 'list-row-size')).toBe('1');
+    expect(rowOf('beta')).toBe(row);
+    expect(document.activeElement).toBe(openButton);
+  });
+
+  it('a same-page data refresh keeps the rows, the open detail and focus — no skeleton', async () => {
     const { reads, refresh } = await withResults(['alpha']);
-    const card = cardOf('alpha');
-    const row = document.querySelector('[data-fdt-definition="url"]');
+    const row = rowOf('alpha');
+    open('alpha');
+    const definition = document.querySelector('[data-fdt-definition="url"]');
     const copy = screen.getByRole('button', { name: 'Copy as exclusion: a.js' });
     copy.focus();
     refresh(pageData({ words: ['alpha'] }), 2);
     expect(reads).toHaveLength(2);
     expect(document.querySelector('[data-fdt="undefined-refs-processing"]')).toBeNull();
-    expect(cardOf('alpha')).toBe(card);
+    expect(rowOf('alpha')).toBe(row);
     reads[1]?.resolve([...ASSETS]);
     await flush();
-    expect(cardOf('alpha')).toBe(card);
-    expect(document.querySelector('[data-fdt-definition="url"]')).toBe(row);
+    expect(rowOf('alpha')).toBe(row);
+    expect(document.querySelector('[data-fdt-definition="url"]')).toBe(definition);
     expect(document.activeElement).toBe(copy);
     expect(statusLine().textContent).toBe('');
   });
 
-  it('a refresh whose read fails keeps the cards under the failure notice', async () => {
+  it('a refresh whose read fails keeps the rows under the failure notice', async () => {
     const { reads, refresh } = await withResults(['alpha']);
-    const card = cardOf('alpha');
+    const row = rowOf('alpha');
     refresh(pageData({ words: ['alpha'] }), 2);
     reads[1]?.reject(new Error('boom'));
     await flush();
     expect(document.querySelector('[data-fdt="undefined-refs-failure"]')).not.toBeNull();
-    expect(cardOf('alpha')).toBe(card);
-    expect(screen.getByText('Not searched')).toBeTruthy();
+    expect(rowOf('alpha')).toBe(row);
+    expect(cell('alpha', 'list-row-preview')).toBe('Not searched');
+  });
+
+  it('renders a page-controlled word as inert text', async () => {
+    const hostile = '<img src=x onerror="window.__pwned=1">';
+    await withResults([hostile]);
+    expect(names()).toEqual([hostile]);
+    expect(document.querySelector('img')).toBeNull();
   });
 
   it('rescans with results and focus kept; busy and done show as text at every width', async () => {
@@ -396,7 +561,7 @@ describe('UndefinedReferencesPage — results', () => {
       description:
         "DevTools could not list the inspected page's scripts. The previous results stay listed."
     });
-    expect(screen.getByText('In 1 script')).toBeTruthy();
+    expect(cell('alpha', 'list-row-size')).toBe('1');
   });
 
   it('counts skipped scripts in the summary and softens not-found verdicts', async () => {
@@ -406,7 +571,7 @@ describe('UndefinedReferencesPage — results', () => {
     expect(summary()).toBe(
       '2 undefined references · 1 with a possible definition · 2 scripts could not be read'
     );
-    expect(screen.getByText('No definition found in the readable scripts')).toBeTruthy();
+    expect(cell('nope', 'list-row-preview')).toBe('No definition found in the readable scripts');
     // Each fact is unbreakable; lines break only between facts.
     const facts = document.querySelectorAll('[data-fdt="undefined-refs-summary"] > span');
     expect(facts).toHaveLength(3);
@@ -465,11 +630,5 @@ describe('UndefinedReferencesPage — results', () => {
     expect(document.querySelector('[data-fdt="undefined-refs-stale"]')?.textContent).toBe(
       'New scripts loaded since the last read.'
     );
-  });
-
-  it('keeps the plain list honest: the capture caps a page well under the virtualization bar', () => {
-    // Above 100 rows the UI/UX bar requires the virtual list; this page
-    // renders every card because the word contract caps the list.
-    expect(ERROR_WORD_LIMIT).toBeLessThanOrEqual(100);
   });
 });

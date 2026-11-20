@@ -34,7 +34,9 @@ import {
   HeadersCookiesView,
   SEARCH_LABEL,
   SEARCH_PLACEHOLDER,
-  SPA_NOTE
+  SECTION_BAND,
+  SPA_NOTE,
+  STUCK_BAND_PX
 } from './page';
 import { WITHHELD_LEGEND, WITHHELD_NOTE } from '../withheld-value';
 import { SEARCH_DEBOUNCE_MS, createSearchStore } from '../../state/search';
@@ -84,6 +86,33 @@ const everyRow: VirtualizerFactory = (options: VirtualListOptions) => {
     }
   };
 };
+
+/**
+ * A virtualizer double whose window starts at a scripted row and runs to the
+ * end, through the list's range extractor — the seam that keeps the active
+ * sticky heading rendered and stuck.
+ *
+ * @param start The first visible row's index (a signal the test moves).
+ */
+function windowFrom(start: () => number): VirtualizerFactory {
+  return (options: VirtualListOptions) => {
+    const base = everyRow(options);
+    return {
+      ...base,
+      getVirtualItems: (): VirtualItem[] => {
+        const all = base.getVirtualItems();
+        const range = {
+          startIndex: start(),
+          endIndex: options.count - 1,
+          overscan: 0,
+          count: options.count
+        };
+        const indexes = options.rangeExtractor?.(range) ?? [];
+        return indexes.flatMap((index) => all[index] ?? []);
+      }
+    };
+  };
+}
 
 /** Render the view for a payload, over its own (or the given) search store. */
 function renderView(
@@ -379,16 +408,102 @@ describe('HeadersCookiesView — rows', () => {
     expect(document.querySelector('[data-fdt="headers-truncated"]')).toBeNull();
   });
 
-  it('draws the scroll-edge hairline only once the list has scrolled', () => {
+  it('keeps the active section heading stuck over its rows as the list scrolls', () => {
+    const [start, setStart] = createSignal(0);
+    render(() => (
+      <HeadersCookiesView
+        data={makeFdtData({ pageHeaders: HEADERS, cookies: { names: ['a'], capturedAt: NOW } })}
+        search={createSearchStore()}
+        fetchedAt={NOW}
+        now={NOW}
+        createVirtualizer={windowFrom(start)}
+      />
+    ));
+    /** The stuck row's inventory kind + text. */
+    const stuck = (): string[] =>
+      [...document.querySelectorAll('[data-fdt-stuck] [data-fdt-inventory-row]')].map(
+        (row) => `${row.getAttribute('data-fdt-inventory-row') ?? ''}:${row.textContent}`
+      );
+    expect(stuck()).toEqual(['section:Caching evidence 2 headers']);
+    // Rows: caching band + 2, other band + 3, cookie band (index 6) + lead + 1.
+    setStart(4);
+    expect(stuck()).toEqual(['section:Other headers 3 headers']);
+    setStart(8);
+    expect(stuck()).toHaveLength(1);
+    expect(stuck()[0]).toMatch(/^section:Cookies 1 cookieCaptured just now/);
+  });
+
+  it('lands scrolled rows clear of the stuck band, for find requests and focus alike', () => {
+    let seen: VirtualListOptions | undefined;
+    const spy: VirtualizerFactory = (options) => {
+      seen = options;
+      return everyRow(options);
+    };
+    render(() => (
+      <HeadersCookiesView
+        data={makeFdtData({ pageHeaders: HEADERS })}
+        search={createSearchStore()}
+        fetchedAt={NOW}
+        now={NOW}
+        createVirtualizer={spy}
+      />
+    ));
+    // The tallest band: 36 px line + 12 px spacing (h-9 + pt-3).
+    expect(seen?.scrollPaddingStart).toBe(48);
+    expect(screen.getByRole('list').style.getPropertyValue('scroll-padding-top')).toBe('48px');
+    // The rows sit on the calm list's 4 px gap.
+    expect(seen?.gap).toBe(4);
+  });
+
+  it('sizes the scroll padding from the heading band it paints', () => {
+    // Each part's class is the size it declares (Tailwind's 4 px spacing step).
+    for (const part of Object.values(SECTION_BAND)) {
+      const step = /^(?:h|pt)-(\d+(?:\.\d+)?)$/.exec(part.class)?.[1];
+      expect(step, part.class).toBeDefined();
+      expect(Number(step) * 4).toBe(part.px);
+    }
+    expect(STUCK_BAND_PX).toBe(SECTION_BAND.line.px + SECTION_BAND.gap.px);
+    // The bands render those classes: every heading's line, the gap above all but the first.
     renderView(makeFdtData({ pageHeaders: HEADERS }));
-    const list = screen.getByRole('list');
-    expect(list.className).toContain('border-transparent');
-    list.scrollTop = 40;
-    fireEvent.scroll(list);
-    expect(list.className).toContain('border-line-2');
-    list.scrollTop = 0;
-    fireEvent.scroll(list);
-    expect(list.className).toContain('border-transparent');
+    const bands = [...document.querySelectorAll('[data-fdt-inventory-row="section"] > div')];
+    expect(bands).toHaveLength(2);
+    const [first, later] = bands;
+    expect(first?.classList.contains(SECTION_BAND.gap.class)).toBe(false);
+    expect(later?.classList.contains(SECTION_BAND.gap.class)).toBe(true);
+    for (const band of bands) {
+      expect(band.firstElementChild?.classList.contains(SECTION_BAND.line.class)).toBe(true);
+    }
+  });
+
+  it('separates rows by spacing, never hairlines; item rows tint on hover and focus', () => {
+    renderView(makeFdtData({ pageHeaders: HEADERS, cookies: { names: ['a'], capturedAt: NOW } }));
+    const rows = [...document.querySelectorAll<HTMLElement>('[data-fdt-inventory-row]')];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row.className).not.toMatch(/(^|\s)border(-[bt])?(\s|$)/);
+    for (const row of rows.filter((r) => /header|cookie/.test(r.dataset.fdtInventoryRow ?? ''))) {
+      expect(row.className).toContain('hover:bg-surface-2');
+      expect(row.className).toContain('focus-within:bg-surface-2');
+    }
+    // Headings are opaque canvas bands (they cover the rows when stuck).
+    const band = document.querySelector('[data-fdt-inventory-row="section"] > div');
+    expect(band?.className).toContain('bg-surface-0');
+  });
+
+  it('renders the caching-evidence callout as a tinted note row', () => {
+    renderView(makeFdtData({ pageHeaders: [{ name: 'Server', value: 'nginx' }] }));
+    const note = document.querySelector('[data-fdt="headers-note"]');
+    expect(note?.textContent).toContain('No caching-relevant headers in this response');
+    expect(note?.className).toContain('bg-status-info-soft');
+    expect(note?.closest('[data-fdt-inventory-row]')?.getAttribute('data-fdt-inventory-row')).toBe(
+      'note'
+    );
+  });
+
+  it('mutes the always-visible copy icon', () => {
+    renderView(makeFdtData({ pageHeaders: HEADERS }));
+    const copy = screen.getByRole('button', { name: 'age header — copy' });
+    expect(copy.className).toContain('text-fg-muted');
+    expect(copy.className).not.toContain('text-fg-secondary');
   });
 });
 
@@ -520,12 +635,15 @@ describe('HeadersCookiesView — the name filter', () => {
     const list = screen.getByRole('list');
     const items = within(list)
       .getAllByRole('listitem')
-      .filter((item) => item.getAttribute('data-fdt-inventory-row') !== 'section');
+      .filter((item) =>
+        ['header', 'cookie'].includes(item.getAttribute('data-fdt-inventory-row') ?? '')
+      );
     expect(items).toHaveLength(2);
-    // Positions keep counting the section bands (the unfiltered page's
-    // semantics — the set is the whole flattened filtered list).
-    expect(items.map((item) => item.getAttribute('aria-posinset'))).toEqual(['2', '4']);
-    expect(items.every((item) => item.getAttribute('aria-setsize') === '4')).toBe(true);
+    // Positions keep counting the scaffold (section bands, the cookie lead —
+    // the unfiltered page's semantics: the set is the whole flattened
+    // filtered list).
+    expect(items.map((item) => item.getAttribute('aria-posinset'))).toEqual(['2', '5']);
+    expect(items.every((item) => item.getAttribute('aria-setsize') === '5')).toBe(true);
   });
 
   it('never searches a value: a value-naming query lands on the filtered-empty view', () => {

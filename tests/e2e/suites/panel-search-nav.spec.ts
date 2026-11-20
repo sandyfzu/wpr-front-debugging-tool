@@ -140,9 +140,10 @@ test.describe('panel find navigation (wire-delivered)', () => {
       await expect.poll(() => markedRowName(panel)).toBe('deep-01');
 
       // User scrolling stays the user's own. The push is bounded by the
-      // live viewport geometry (measured now, not seeded by row estimates),
-      // so the marked row provably stays mounted even with zero overscan —
-      // the marker claim is valid by construction, not windowing luck.
+      // live geometry (measured now, not seeded by row estimates): it stops
+      // short of the marked row's bottom edge, so the row stays inside the
+      // viewport and provably mounted even with zero overscan — the marker
+      // claim is valid by construction, not windowing luck.
       const base = await panel.evaluate(() => {
         const list = document.querySelector<HTMLElement>('[data-fdt-page] [role="list"]');
         if (list === null) throw new Error('list missing for the scroll probe');
@@ -155,10 +156,12 @@ test.describe('panel find navigation (wire-delivered)', () => {
           throw new Error('list or marked row missing for the scroll probe');
         }
         const toRowBottom = row.getBoundingClientRect().bottom - list.getBoundingClientRect().top;
-        const distance = Math.min(350, Math.max(120, list.clientHeight - toRowBottom - 4));
+        const distance = Math.min(350, Math.floor(toRowBottom) - 4);
         list.scrollTop += distance;
         return distance;
       });
+      // A real push, not a nudge: most of a row's height.
+      expect(pushed).toBeGreaterThanOrEqual(40);
       await panel.waitForTimeout(350);
       const pushedTop = await panel.evaluate(() => {
         const list = document.querySelector<HTMLElement>('[data-fdt-page] [role="list"]');
@@ -215,8 +218,11 @@ test.describe('panel find navigation (wire-delivered)', () => {
     extension
   }) => {
     // The filter fixture's header set gives the term `cach` exactly two
-    // matches (cache-control, x-cache); no cookie name on this origin
-    // contains it, so the pins hold whatever the shared profile carried in.
+    // matches (cache-control, x-cache). The restored count below pins this
+    // fixture's 10 headers + 3 page-set cookies, and cookies persist per
+    // origin across suites (the shared worker-scoped profile — e.g. the
+    // sticky-headings suite's 60 `fdt_deep_*`), so they are cleared first.
+    await extension.browserContext.clearCookies();
     const { panel, fixture } = await openPanelForFixture(extension, '/__e2e/header-filter', {
       bootHash: '#/headers-cookies'
     });

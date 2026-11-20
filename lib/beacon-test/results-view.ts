@@ -2,11 +2,18 @@
  * A beacon test's results as list rows: the above-the-fold candidates (one
  * row per record: its image URL, the beacon's element kind and label, and
  * every value of the record as named facts for the row's details) and
- * the lazy-render hashes, each with its list definition (filter chips +
- * searched text) for the panel's shared filter/search list. Pure; rows keep
- * the beacon's report order, ids are positions in it.
+ * the lazy-render hashes, each with its facets (the candidates' Label; none
+ * for the hashes) and its searched text for the panel's calm list. Pure; rows keep
+ * the beacon's report order, ids are positions in it, keys are their content
+ * (plus an occurrence for duplicates) — a run's rows never change while
+ * listed (a new run replaces the list), so the key only has to be unique.
  */
-import type { ResourcePageDefinition } from '../panel/resources-view-model';
+import {
+  choiceFacet,
+  defineFacets,
+  type FacetSet,
+  type FacetValue
+} from '../panel/resource-facets';
 import type { AboveTheFoldCandidate, FeatureList, PictureSource } from './results';
 
 /** The beacon's label for the largest candidate (its LCP). */
@@ -17,8 +24,10 @@ export const ABOVE_THE_FOLD_LABEL = 'above-the-fold';
 
 /** One above-the-fold row. */
 export interface AboveTheFoldRow {
-  /** Position in the beacon's report (the list key). */
+  /** Position in the beacon's report. */
   readonly id: number;
+  /** The row's list key: element kind + URL + label, plus its occurrence. */
+  readonly key: string;
   /** The URL shown: the image URL, else the one the browser picked, else the first `srcset` entry's. */
   readonly url: string;
   /** The beacon's element kind (`img`, `img-srcset`, `picture`, `bg-img`, …). */
@@ -40,6 +49,8 @@ export interface CandidateFact {
 /** One lazy-render row. */
 export interface LazyRenderRow {
   readonly id: number;
+  /** The row's list key: the hash plus its occurrence. */
+  readonly key: string;
   /** The element's `data-rocket-location-hash` value. */
   readonly hash: string;
 }
@@ -145,6 +156,20 @@ function candidateDetail(candidate: AboveTheFoldCandidate): string {
 }
 
 /**
+ * Number each signature by its occurrence, so equal ones get distinct keys.
+ *
+ * @returns A keyer: signature → `signature#occurrence` (0 first).
+ */
+function occurrenceKeyer(): (signature: string) => string {
+  const seen = new Map<string, number>();
+  return (signature) => {
+    const occurrence = seen.get(signature) ?? 0;
+    seen.set(signature, occurrence + 1);
+    return `${signature}#${String(occurrence)}`;
+  };
+}
+
+/**
  * The rows of an above-the-fold list.
  *
  * @param list The validated list (null or malformed: no rows).
@@ -154,14 +179,20 @@ export function aboveTheFoldRows(
   list: FeatureList<AboveTheFoldCandidate> | null
 ): readonly AboveTheFoldRow[] {
   if (list?.kind !== 'ok') return [];
-  return list.items.map((candidate, id) => ({
-    id,
-    url: candidateUrl(candidate),
-    kind: candidate.kind,
-    label: candidate.label,
-    facts: candidateFacts(candidate),
-    detail: candidateDetail(candidate)
-  }));
+  const keyOf = occurrenceKeyer();
+  return list.items.map((candidate, id) => {
+    const url = candidateUrl(candidate);
+    return {
+      id,
+      // Unique whatever the values hold: equal signatures differ by occurrence.
+      key: keyOf(`${candidate.kind}\u001f${url}\u001f${candidate.label}`),
+      url,
+      kind: candidate.kind,
+      label: candidate.label,
+      facts: candidateFacts(candidate),
+      detail: candidateDetail(candidate)
+    };
+  });
 }
 
 /**
@@ -172,34 +203,60 @@ export function aboveTheFoldRows(
  */
 export function lazyRenderRows(list: FeatureList<string> | null): readonly LazyRenderRow[] {
   if (list?.kind !== 'ok') return [];
-  return list.items.map((hash, id) => ({ id, hash }));
+  const keyOf = occurrenceKeyer();
+  return list.items.map((hash, id) => ({ id, key: keyOf(hash), hash }));
 }
 
-/** The above-the-fold list's chip ids. */
-export type AboveTheFoldFilterId = 'all' | 'lcp' | 'above-the-fold';
-
-/** The above-the-fold list's chips (by the beacon's label) and searched text (every value shown). */
-export const ABOVE_THE_FOLD_LIST: ResourcePageDefinition<AboveTheFoldRow, AboveTheFoldFilterId> = {
-  filters: [
-    { id: 'all', label: 'All', predicate: () => true },
-    { id: 'lcp', label: 'LCP', predicate: (row) => row.label === LCP_LABEL },
-    {
-      id: 'above-the-fold',
-      label: 'Above the fold',
-      predicate: (row) => row.label === ABOVE_THE_FOLD_LABEL
-    }
-  ],
-  searchField: (row) => `${row.url}\n${row.kind}\n${row.label}\n${row.detail}`
-};
-
-/** The lazy-render list: no chips, the hash searched. */
-export const LAZY_RENDER_LIST: ResourcePageDefinition<LazyRenderRow, 'all'> = {
-  filters: [{ id: 'all', label: 'All', predicate: () => true }],
-  searchField: (row) => row.hash
-};
+/** The label facet's values, one per label the beacon writes. */
+const LABEL_VALUES: readonly FacetValue<AboveTheFoldRow>[] = [
+  { id: 'lcp', label: 'LCP', predicate: (row) => row.label === LCP_LABEL },
+  {
+    id: 'above-the-fold',
+    label: 'Above the fold',
+    predicate: (row) => row.label === ABOVE_THE_FOLD_LABEL
+  }
+];
 
 /**
- * Whether two rows with one id show the same thing (a refresh keeps the row).
+ * The above-the-fold list's searched text: every value its row and detail show.
+ *
+ * @param row The row.
+ * @returns The searched text.
+ */
+export function aboveTheFoldSearchField(row: AboveTheFoldRow): string {
+  return `${row.url}\n${row.kind}\n${row.label}\n${row.detail}`;
+}
+
+/** The above-the-fold list's facet ids. */
+export type AboveTheFoldFacetId = 'label';
+
+/**
+ * The above-the-fold list's facets: one label per record, so one choice; a
+ * label a newer beacon sends shows under Any only.
+ */
+export const ABOVE_THE_FOLD_FACETS: FacetSet<AboveTheFoldRow, AboveTheFoldFacetId> = defineFacets<
+  AboveTheFoldRow,
+  AboveTheFoldFacetId
+>([choiceFacet('label', 'Label', LABEL_VALUES)]);
+
+/** The lazy-render list's facets: none (search only). */
+export const LAZY_RENDER_FACETS: FacetSet<LazyRenderRow, never> = defineFacets<
+  LazyRenderRow,
+  never
+>([]);
+
+/**
+ * The lazy-render list's searched text: the element hash.
+ *
+ * @param row The row.
+ * @returns The searched text.
+ */
+export function lazyRenderSearchField(row: LazyRenderRow): string {
+  return row.hash;
+}
+
+/**
+ * Whether two same-key rows show the same thing (a refresh keeps the row).
  *
  * @param a A row.
  * @param b The row with the same id.
@@ -209,7 +266,7 @@ export function sameAboveTheFoldRow(a: AboveTheFoldRow, b: AboveTheFoldRow): boo
 }
 
 /**
- * Whether two lazy-render rows with one id show the same hash.
+ * Whether two same-key lazy-render rows show the same hash.
  *
  * @param a A row.
  * @param b The row with the same id.

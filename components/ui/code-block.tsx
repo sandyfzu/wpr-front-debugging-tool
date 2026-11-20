@@ -1,9 +1,9 @@
 /**
  * The code surface — one component for every rendered source (script
- * excerpts, JSON payloads the *page itself* wants shown as source; structured
- * JSON data goes through `json-value.tsx`, never through a highlighter).
+ * excerpts, stylesheets, served markup, JSON payloads the *page itself*
+ * wants shown as source).
  *
- * shiki highlights with the javascript+json grammar pair and a light/dark
+ * shiki highlights with the `CODE_BLOCK_LANGS` grammars and a light/dark
  * theme pair whose colors resolve through `light-dark()` — code follows the
  * document palette exactly like the design tokens, with no appearance hook
  * and no re-render on theme switches.
@@ -37,6 +37,10 @@
  * (`overflow-y: clip`, so nothing can scroll it vertically), never on the
  * focusable scroller, whose focus ring a mask would cut off; the bottom
  * edge fades only while lines are actually cut off (`data-fdt-clipped`).
+ *
+ * Height cap: `maxHeight` instead bounds the code area itself (a CSS
+ * length — container units included), past which the area scrolls on both
+ * axes: the reading mode for a whole source inside a view of known height.
  */
 import type { ComponentProps, JSX } from 'solid-js';
 import {
@@ -166,6 +170,15 @@ export type CodeBlockProps = {
    */
   onClipChange?: (clipped: boolean) => void;
   /**
+   * Cap the code area's height (a non-empty CSS length, e.g.
+   * `max(10rem, 100cqh - 3.5rem)` in a size container): shorter code keeps its natural height,
+   * taller code scrolls inside the area (the area turns into the focusable
+   * scroll region like any overflowing block). `undefined` (default): the
+   * area grows with the code. Exclusive with {@link CodeBlockProps.maxLines}
+   * (a clamp hides lines, a cap scrolls them). Reactive.
+   */
+  maxHeight?: string;
+  /**
    * Line indexes (0-based) the consumer cut short — e.g. a preview's long
    * lines. Each gets a muted `…` drawn **after** the line (`::after`), outside
    * the code text: never highlighted, never selected or copied.
@@ -201,6 +214,11 @@ export type CodeBlockProps = {
    * button with no writer is a dead control.
    */
   onWrapToggle?: (wrap: boolean) => void;
+  /**
+   * Extra toolbar controls, placed before the Wrap toggle (toolbar chrome
+   * only) — e.g. a consumer's display toggle that swaps `text`.
+   */
+  actions?: JSX.Element;
   /** The overflow seam; defaults to the shared `ResizeObserver` watcher. */
   watchOverflow?: OverflowWatcher;
   /** Extra classes on the container, merged last so callers win. */
@@ -325,7 +343,7 @@ function resolveChrome(
  * mount (`resolveChrome`), which fails fast on caller bugs.
  *
  * @param props.text The code text.
- * @param props.lang The language (`javascript` | `json`).
+ * @param props.lang The language (one of {@link CODE_BLOCK_LANGS}).
  * @param props.defaultWrap Initial wrap state (toggleable afterwards).
  * @param props.toolbar `false` renders the toolbar-less chrome (default: toolbar).
  * @param props.wrap Consumer-owned, reactive wrap state (toolbar-less requires it).
@@ -336,12 +354,14 @@ function resolveChrome(
  *   pass a distinct one per block when a page shows several).
  * @param props.maxLines Clamp to N visible lines (collapsed preview).
  * @param props.onClipChange Told whether the clamp cuts lines off.
+ * @param props.maxHeight Cap the area's height; taller code scrolls inside.
  * @param props.watchOverflow Overflow seam (tests inject a manual watcher).
  * @param props.class Extra classes on the container.
  * @param props.* Native div props (`id`, `aria-*`, …) pass through.
  * @throws {@link Error} for a language outside {@link CODE_BLOCK_LANGS} — a
  *   call-site bug fails at analysis/injection time rather than shipping a
- *   mislabelled block — and for a `maxLines` that is not a positive integer.
+ *   mislabelled block — for a `maxLines` that is not a positive integer, and
+ *   for an empty `maxHeight` or one combined with `maxLines`.
  */
 export function CodeBlock(props: CodeBlockProps): JSX.Element {
   // Lang is a call-site constant — the guard must run synchronously with a
@@ -360,11 +380,13 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     'createObserver',
     'label',
     'maxLines',
+    'maxHeight',
     'onClipChange',
     'cutLines',
     'toolbar',
     'wrap',
     'onWrapToggle',
+    'actions',
     'watchOverflow',
     'class'
   ]);
@@ -416,6 +438,17 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
       throw new Error(`CodeBlock: maxLines must be a positive integer, got ${String(lines)}.`);
     }
     return lines;
+  });
+
+  /** The validated height cap (`undefined`: the area grows with the code). */
+  const maxHeight = createMemo<string | undefined>(() => {
+    const cap = own.maxHeight;
+    if (cap === undefined) return undefined;
+    if (cap.trim() === '') throw new Error('CodeBlock: maxHeight must be a non-empty CSS length.');
+    if (own.maxLines !== undefined) {
+      throw new Error('CodeBlock: maxHeight and maxLines are exclusive — pick a cap or a clamp.');
+    }
+    return cap;
   });
 
   let container: HTMLDivElement | undefined;
@@ -568,17 +601,20 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
               )}
             </Show>
           </span>
-          <Button
-            type="button"
-            data-fdt-code-block-wrap
-            variant="ghost"
-            size="sm"
-            aria-pressed={wrap()}
-            onClick={toggleWrap}
-            class="min-h-6 px-1.5 text-2xs"
-          >
-            {WRAP_LABEL}
-          </Button>
+          <span class="flex shrink-0 items-center gap-1">
+            {own.actions}
+            <Button
+              type="button"
+              data-fdt-code-block-wrap
+              variant="ghost"
+              size="sm"
+              aria-pressed={wrap()}
+              onClick={toggleWrap}
+              class="min-h-6 px-1.5 text-2xs"
+            >
+              {WRAP_LABEL}
+            </Button>
+          </span>
         </div>
       </Show>
       <div
@@ -587,6 +623,8 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
         data-fdt-scrollable={scrollable() ? '' : undefined}
         data-fdt-clamped={maxLines() !== undefined ? '' : undefined}
         data-fdt-clipped={maxLines() !== undefined && clipped() ? '' : undefined}
+        data-fdt-capped={maxHeight() !== undefined ? '' : undefined}
+        style={maxHeight() === undefined ? undefined : { 'max-height': maxHeight() }}
         // Focusable and named only while there is something to scroll (or
         // while focus is already here).
         tabindex={focusable() ? 0 : undefined}
@@ -596,7 +634,13 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
         onBlur={() => setFocused(false)}
         class={cn(
           // Never masked: a mask would clip this element's focus ring.
-          'overflow-x-auto rounded-b',
+          // Opaque in the block's own background (no visible change): a long
+          // line scrolled sideways stays backed by this scroller — over a
+          // transparent one it sits past the block's box, and contrast
+          // checks report it undeterminable.
+          'overflow-x-auto rounded-b bg-inherit',
+          // A height cap scrolls the rest vertically, inside the area.
+          maxHeight() !== undefined && 'overflow-y-auto',
           FOCUS_RING,
           // Shared `pre` typography for the one `pre` either surface renders
           // (the fallback's own, or shiki's inside the highlighted wrapper);

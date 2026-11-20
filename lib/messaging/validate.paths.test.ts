@@ -335,7 +335,7 @@ describe('parseWprDetections — rejection arms', () => {
         rocket_above_the_fold_optimization: { present: true, lcpComment: 'yes' }
       })
     ).toBeNull();
-    // The old pre-P1.1 shape (beacon field) is foreign now.
+    // The old shape (beacon field) is foreign now.
     expect(
       parseWprDetections({
         ...payload,

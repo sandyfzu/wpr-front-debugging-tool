@@ -8,9 +8,12 @@
  * The same entry fields and bounds as the RUCSS test's inventory
  * (`./page-styles`, whose narrower list is what a test strips), plus three
  * tag facts. Read-only and bounded the same way: entries past
- * `PAGE_STYLE_LIMITS.count` are dropped (`total` still counts them).
+ * `PAGE_STYLE_LIMITS.count` are dropped (`total` still counts them). Each
+ * answer carries a `snapshotId`: the page keeps the listed elements under
+ * it, so a style's full CSS can be read by position later (`./style-source`).
  */
 import { hasOnlyKeys, isRecord, ownValue } from '../../utils/is-record';
+import { isRandomId } from '../../utils/random-id';
 import {
   PAGE_STYLE_ENTRY_KEYS,
   parseStyleInventory,
@@ -34,6 +37,8 @@ export interface PageStylesheetsReply {
   readonly styles: readonly PageStylesheetEntry[];
   /** Every matching element on the page (more than `styles` when the list was cut). */
   readonly total: number;
+  /** The id the page keeps this list's elements under (random per answer). */
+  readonly snapshotId: string;
 }
 
 /** The entry keys, exactly: the shared fields, then the tag facts. */
@@ -69,5 +74,8 @@ export function parsePageStylesheetEntry(input: unknown): PageStylesheetEntry | 
  * @returns The rebuilt reply, or null on any violation (an entry included).
  */
 export function parsePageStylesheetsReply(input: unknown): PageStylesheetsReply | null {
-  return parseStyleInventory(input, parsePageStylesheetEntry);
+  const inventory = parseStyleInventory(input, parsePageStylesheetEntry, ['snapshotId']);
+  if (inventory === null || !isRecord(input)) return null;
+  const snapshotId = ownValue(input, 'snapshotId');
+  return isRandomId(snapshotId) ? { ...inventory, snapshotId } : null;
 }

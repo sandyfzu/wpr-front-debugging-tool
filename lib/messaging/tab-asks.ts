@@ -1,6 +1,7 @@
 /**
  * The DevTools surfaces' asks to the inspected tab's content script — the
- * page-data warm-up, the full page data, one script-source chunk, the
+ * page-data warm-up, the full page data, one script-source chunk, one
+ * script's served tag, the
  * RUCSS test's two steps, the page-style inventory, and the live analysis
  * tools (beacon test, LCP analysis, live script states, current-visit
  * vitals) — behind one transport choice.
@@ -16,6 +17,8 @@ import type { BeaconTestRequest } from './beacon-test';
 import type { LcpAnalysisRequest } from './lcp-analysis';
 import type { RucssApplyRequest, RucssStartRequest } from './rucss-test';
 import type { ScriptSourceRequest } from './script-source';
+import type { ServedScriptTagRequest } from './served-script-tag';
+import type { StyleSourceRequest } from './style-source';
 import { canMessageRuntime, canMessageTabs } from './tab-messaging';
 import { relayTabAsks } from './tab-relay-client';
 
@@ -34,6 +37,8 @@ export interface TabAsks {
   readonly getFdtData: (tabId: number | undefined) => Promise<unknown>;
   /** One bounded script-source read, from the tab's top frame only. */
   readonly getScriptSourceChunk: (tabId: number, request: ScriptSourceRequest) => Promise<unknown>;
+  /** One captured script's served opening tag, from the tab's top frame only. */
+  readonly getServedScriptTag: (tabId: number, request: ServedScriptTagRequest) => Promise<unknown>;
   /** Start a RUCSS test, in the top frame only. */
   readonly startRucssTest: (tabId: number, request: RucssStartRequest) => Promise<unknown>;
   /** Apply a started RUCSS test, in the top frame only. */
@@ -50,6 +55,8 @@ export interface TabAsks {
   readonly listPageStyles: (tabId: number) => Promise<unknown>;
   /** List the page's styles with their WP Rocket stamps, from the top frame only. */
   readonly listPageStylesheets: (tabId: number) => Promise<unknown>;
+  /** One chunk of an inline style's CSS from the latest stylesheet list, top frame only. */
+  readonly getStyleSourceChunk: (tabId: number, request: StyleSourceRequest) => Promise<unknown>;
 }
 
 /** The direct transport: the extension's tab send, one typed call per ask. */
@@ -58,6 +65,8 @@ export const DIRECT_TAB_ASKS: TabAsks = {
   getFdtData: (tabId) => sendMessage('getFdtData', undefined, tabId),
   getScriptSourceChunk: (tabId, request) =>
     sendMessage('getScriptSourceChunk', request, { tabId, frameId: 0 }),
+  getServedScriptTag: (tabId, request) =>
+    sendMessage('getServedScriptTag', request, { tabId, frameId: 0 }),
   startRucssTest: (tabId, request) => sendMessage('startRucssTest', request, { tabId, frameId: 0 }),
   applyRucssTest: (tabId, request) => sendMessage('applyRucssTest', request, { tabId, frameId: 0 }),
   runBeaconTest: (tabId, request) => sendMessage('runBeaconTest', request, { tabId, frameId: 0 }),
@@ -68,7 +77,9 @@ export const DIRECT_TAB_ASKS: TabAsks = {
     sendMessage('getCurrentVisitVitals', undefined, { tabId, frameId: 0 }),
   listPageStyles: (tabId) => sendMessage('listPageStyles', undefined, { tabId, frameId: 0 }),
   listPageStylesheets: (tabId) =>
-    sendMessage('listPageStylesheets', undefined, { tabId, frameId: 0 })
+    sendMessage('listPageStylesheets', undefined, { tabId, frameId: 0 }),
+  getStyleSourceChunk: (tabId, request) =>
+    sendMessage('getStyleSourceChunk', request, { tabId, frameId: 0 })
 };
 
 /** The transports {@link selectTabAsks} picks from (tests inject doubles). */

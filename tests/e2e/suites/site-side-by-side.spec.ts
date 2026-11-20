@@ -1,5 +1,5 @@
 /**
- * P4.3 suite 6 — Side-by-Side on genuinely cached pages.
+ * Side-by-Side on genuinely cached pages.
  *
  * The fixture mechanics suite pins the overlay's open/refresh/scroll
  * behavior over fixture pages; this suite pins the REAL cache-state truths

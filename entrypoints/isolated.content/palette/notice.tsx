@@ -1,11 +1,16 @@
 /**
- * The palette module's page notice: one self-removing, at-rest message over
- * the page — the gate-off confirmation (what happened, where to turn it
- * back on) and the palette's failures (a view that never loaded, a command
- * that did not run). It never takes focus; it announces politely, removes
- * itself after {@link NOTICE_DISMISS_MS} (held while the pointer or focus
- * is on it — the reader decides how long to read) and can be dismissed at
- * once. A newer notice replaces the shown one.
+ * The page notice: one self-removing, at-rest message over the page — the
+ * gate-off confirmation (what happened, where to turn it back on), the
+ * palette's failures (a view that never loaded, a command that did not
+ * run) and the compare flow's (a PageSpeed Insights open that did not
+ * happen). It never takes focus; it announces politely, removes itself
+ * after {@link NOTICE_DISMISS_MS} (held while the pointer or focus is on
+ * it — the reader decides how long to read) and can be dismissed at once.
+ * A notice may carry one action (e.g. Try again): it then stays for
+ * {@link NOTICE_ACTION_DISMISS_MS} (a question needs reading time; the
+ * action's trigger stays reachable after it leaves). A
+ * newer notice replaces the shown one; one host serves the whole world
+ * ({@link pageNoticeHost}).
  *
  * Lives in its own shadow root (the shared mount: live theme, input
  * isolation) in the browser's top layer, so it shows above every sibling
@@ -25,10 +30,21 @@ export const NOTICE_HOST_NAME = 'wpr-fdt-page-notice';
 /** How long a notice stays when nobody holds it (ms). */
 export const NOTICE_DISMISS_MS = 8000;
 
-/** One notice: a title line and one sentence (the S-3 copy shape). */
+/** How long a notice with an action stays when nobody holds it (ms). */
+export const NOTICE_ACTION_DISMISS_MS = 30_000;
+
+/** A notice's one action button. */
+export interface PageNoticeAction {
+  readonly label: string;
+  /** Runs on the click (the notice is dismissed first). */
+  readonly run: () => void;
+}
+
+/** One notice: a title line and one sentence (the S-3 copy shape), with an optional action. */
 export interface PageNotice {
   readonly title: string;
   readonly body: string;
+  readonly action?: PageNoticeAction;
 }
 
 /** The timer seams the dismiss timer runs on (context-owned in production). */
@@ -51,12 +67,12 @@ export interface DismissTimer {
  * Create the dismiss countdown.
  *
  * @param deps The timer seams.
- * @param ms The countdown.
+ * @param ms The countdown, or its source (read at every (re)start).
  * @param onElapsed Runs once the countdown elapsed unheld.
  */
 export function createDismissTimer(
   deps: DismissTimerDeps,
-  ms: number,
+  ms: number | (() => number),
   onElapsed: () => void
 ): DismissTimer {
   let id: number | null = null;
@@ -68,10 +84,13 @@ export function createDismissTimer(
   const start = (): void => {
     stop();
     if (held) return;
-    id = deps.setTimeout(() => {
-      id = null;
-      onElapsed();
-    }, ms);
+    id = deps.setTimeout(
+      () => {
+        id = null;
+        onElapsed();
+      },
+      typeof ms === 'number' ? ms : ms()
+    );
   };
   return {
     restart: start,
@@ -155,6 +174,20 @@ export function NoticeView(props: NoticeViewProps): JSX.Element {
             <p class="pn-title">{props.notice().title}</p>
             <p class="pn-body">{props.notice().body}</p>
           </Show>
+          <Show when={props.notice().action} keyed>
+            {(action) => (
+              <button
+                type="button"
+                class="pn-action"
+                onClick={() => {
+                  props.onDismiss();
+                  action.run();
+                }}
+              >
+                {action.label}
+              </button>
+            )}
+          </Show>
         </div>
         <button
           type="button"
@@ -201,7 +234,7 @@ export function createNoticeHost(ctx: ContentScriptContext, log: Logger): Notice
         clearTimeout(id);
       }
     },
-    NOTICE_DISMISS_MS,
+    () => (notice().action === undefined ? NOTICE_DISMISS_MS : NOTICE_ACTION_DISMISS_MS),
     remove
   );
 
@@ -264,4 +297,20 @@ export function createNoticeHost(ctx: ContentScriptContext, log: Logger): Notice
       else if (!mounting) void mount();
     }
   };
+}
+
+/** The world's shared notice host and the context it lives in. */
+let shared: { readonly ctx: ContentScriptContext; readonly host: NoticeHost } | null = null;
+
+/**
+ * The page's one notice host for this content-script world (created on the
+ * first ask): every feature that shows a notice goes through it, so a newer
+ * notice replaces the shown one whoever showed it.
+ *
+ * @param ctx The content script's context (a new context gets a new host).
+ * @param log The first asker's logger (the host's own reports).
+ */
+export function pageNoticeHost(ctx: ContentScriptContext, log: Logger): NoticeHost {
+  if (shared?.ctx !== ctx) shared = { ctx, host: createNoticeHost(ctx, log) };
+  return shared.host;
 }

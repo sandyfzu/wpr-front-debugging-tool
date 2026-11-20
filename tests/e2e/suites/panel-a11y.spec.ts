@@ -1,8 +1,8 @@
 /**
  * The shell's accessibility suite (the keyboard + audit floor's outstanding
- * legs): the route-switch focus rule landed on a real page body (needs the
- * ready boot — data
- * absent blobs have no heading to land on), keyboard-only reach for the
+ * legs): the route-switch focus rule landed on a real page body, ringless
+ * even under keyboard modality (needs the ready boot — data-absent blobs have
+ * no heading to land on), keyboard-only reach for the
  * shell's header control on the same boot, and the structured a11y audit
  * (the axe run the study committed as the floor gate).
  *
@@ -245,6 +245,34 @@ const OVERLAY_ALLOWANCE: readonly UnresolvedAllowance[] = [
   }
 ];
 
+/** The route heading's focus facts: text, focus ownership, modality, ring. */
+type HeadingFocus = {
+  text: string | null;
+  ownsFocus: boolean;
+  focusVisible: boolean;
+  /** The computed `outline-style` (`none` = no ring drawn). */
+  outline: string | null;
+};
+
+/**
+ * Read the current route body's h1 focus facts in the panel.
+ *
+ * @param panel The panel page.
+ * @returns Its text, whether it owns focus and matches `:focus-visible`, and
+ *   its computed outline style (`null` fields when no heading renders).
+ */
+async function readHeadingFocus(panel: Page): Promise<HeadingFocus> {
+  return await panel.evaluate((): HeadingFocus => {
+    const heading = document.querySelector<HTMLElement>('[data-fdt-page] h1');
+    return {
+      text: heading?.textContent ?? null,
+      ownsFocus: heading !== null && document.activeElement === heading,
+      focusVisible: heading?.matches(':focus-visible') ?? false,
+      outline: heading === null ? null : getComputedStyle(heading).outlineStyle
+    };
+  });
+}
+
 test.describe('panel keyboard + a11y', () => {
   test('route switches land keyboard focus on the page’s own h1', async ({ extension }) => {
     const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
@@ -285,6 +313,32 @@ test.describe('panel keyboard + a11y', () => {
           { timeout: 10_000, intervals: [50, 100, 250] }
         )
         .toEqual({ text: 'JavaScript', tabindex: '-1', ownsFocus: true });
+
+      // The keyboard arm, in both palettes: Enter on a nav link leaves the
+      // keyboard modality on, so the landed h1 matches `:focus-visible` (where
+      // the browser default would ring it) — yet it draws no outline: a focus
+      // target, not a control. Forced colors keep an outline while focused.
+      const keyboardRoutes = [
+        { scheme: 'dark', link: 'Stylesheets' },
+        { scheme: 'light', link: 'Lazyload' }
+      ] as const;
+      for (const { scheme, link } of keyboardRoutes) {
+        await panel.emulateMedia({ colorScheme: scheme, forcedColors: 'none' });
+        const navLink = panel
+          .getByRole('navigation', { name: 'WPR FDT pages' })
+          .getByRole('link', { name: link });
+        await navLink.focus();
+        await panel.keyboard.press('Enter');
+        await expect
+          .poll(async () => await readHeadingFocus(panel), {
+            timeout: 10_000,
+            intervals: [50, 100, 250]
+          })
+          .toEqual({ text: link, ownsFocus: true, focusVisible: true, outline: 'none' });
+      }
+      await panel.emulateMedia({ forcedColors: 'active' });
+      expect((await readHeadingFocus(panel)).outline).toBe('solid');
+      await panel.emulateMedia({ colorScheme: null, forcedColors: null });
 
       // The deep-link arm of the same rule: writing the hash (a real hash
       // change, as a bookmark or the devtools window would produce) lands
@@ -336,7 +390,9 @@ test.describe('panel keyboard + a11y', () => {
             outline: active instanceof HTMLElement ? getComputedStyle(active).outlineStyle : ''
           };
         });
-        if (state.name === 'Command palette') {
+        // The wide trigger's name leads with its visible words ("Jump to… —
+        // Command palette"); the icon form is "Command palette" alone.
+        if (state.name.endsWith('Command palette')) {
           expect(state.outline).toBe('solid');
           reached = true;
           break;

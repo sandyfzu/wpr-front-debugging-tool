@@ -1,37 +1,16 @@
 /**
- * Pure presentation rules shared by the resource-list pages (Lazyload,
- * Preloaded Resources): the filtered-empty chip name, query normalization,
- * row reuse across refreshes and resource naming (also used by the
- * JavaScript and Stylesheets URL rows via the shared resource link). No
- * Solid, no DOM — the page component composes these inside its memo
- * chain. Count phrasing and the results announcement are shared rules of
- * `lib/panel/list-behavior`.
+ * Pure presentation rules shared by the resource-list pages: query
+ * normalization, the list and URL clip marks, resource naming + the URL
+ * preview (the JavaScript, Stylesheets, Lazyload and Preloaded Resources
+ * rows' name and preview line) and the facts they share. No Solid, no DOM —
+ * the page component composes these inside its memo chain. Count phrasing
+ * and the results announcement are shared rules of `lib/panel/list-behavior`.
  */
-import { defaultChipId, reconcileList } from '../../../../lib/panel/list-behavior';
-export {
-  defaultChipId,
-  buildFilterChips,
-  normalizeQuery,
-  listCapped
-} from '../../../../lib/panel/list-behavior';
-import type { ResourcePageDefinition } from '../../../../lib/panel/resources-view-model';
+export { normalizeQuery, listCapped } from '../../../../lib/panel/list-behavior';
+import { parseHttpUrl } from '../../../../utils/urls';
 
-/**
- * The selected chip's label for the filtered-empty sentence, or `undefined`
- * while the default chip is selected (it narrows nothing, so naming it would
- * lie about what is filtering).
- *
- * @param definition The page's pattern.
- * @param selected The selected chip id.
- * @returns The narrowing chip's label, if any.
- */
-export function narrowingChipLabel<Row, Id extends string>(
-  definition: ResourcePageDefinition<Row, Id>,
-  selected: Id
-): string | undefined {
-  if (selected === defaultChipId(definition)) return undefined;
-  return definition.filters.find((filter) => filter.id === selected)?.label;
-}
+/** The detail fact naming WP Rocket's minify stamp on a script or a stylesheet. */
+export const MINIFY_STAMP_LABEL = 'Minify stamp';
 
 /** Schemes whose path names a resource (relative URLs resolve to `https:`). */
 const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'blob:']);
@@ -88,35 +67,6 @@ function decodeSegment(segment: string): string {
   }
 }
 
-/** Longest resource name echoed inside a control's accessible name. */
-export const LABEL_NAME_MAX = 60;
-
-/**
- * Reuse the previous refresh's row objects where a row is unchanged, so the
- * list's keyed rows keep their DOM (and the focus inside it) across a soft
- * refresh; changed and new rows take the fresh object.
- *
- * @param previous The rows the list rendered last (`[]` on the first pass).
- * @param next The freshly built rows.
- * @param same Whether two rows with the same id carry the same content.
- * @returns `previous` itself when nothing changed, else `next` with every
- *   unchanged row swapped for its previous object.
- */
-export function reconcileRows<Row extends { readonly id: number }>(
-  previous: readonly Row[],
-  next: readonly Row[],
-  same: (a: Row, b: Row) => boolean
-): readonly Row[] {
-  return reconcileList(
-    previous,
-    next,
-    (row) => row.id,
-    (row) => row.id,
-    same,
-    (row) => row
-  );
-}
-
 /**
  * Whether the capture clipped one URL at its length cap. The clip may stop one
  * unit short (it never splits a surrogate pair), so a marked payload's URL at
@@ -131,4 +81,17 @@ export function reconcileRows<Row extends { readonly id: number }>(
  */
 export function urlClipped(truncated: true | undefined, url: string, cap: number): boolean {
   return truncated === true && url.length >= cap - 1;
+}
+
+/**
+ * A resource row's URL preview: the URL without the scheme (host, path,
+ * query — the part that tells two files apart), or the raw text when it is
+ * no http(s) URL.
+ *
+ * @param url The captured URL.
+ */
+export function urlPreview(url: string): string {
+  const parsed = parseHttpUrl(url);
+  if (parsed === null) return url;
+  return `${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
 }

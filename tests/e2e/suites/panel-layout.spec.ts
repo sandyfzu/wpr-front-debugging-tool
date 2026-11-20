@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { expect, test } from '../helpers/extension';
+import { settleFrames } from '../helpers/frames';
 import { openPanelForFixture } from '../helpers/panel-data';
 import { resetStoredOptions } from '../helpers/options';
 
@@ -41,6 +42,9 @@ test('page entrances do not add transient scrollbars or suppress real overflow',
     for (const width of [1280, 768, 480, 320]) {
       for (const height of [800, 360]) {
         await panel.setViewportSize({ width, height });
+        // The shell folds its nav in the resize frame's ResizeObserver step:
+        // read the layout that frame paints, never the one before it.
+        await settleFrames(panel);
         for (const route of ROUTES) {
           await panel.evaluate((id) => {
             location.hash = `#/${id}`;
@@ -109,6 +113,9 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(panel.locator('html')).toHaveAttribute('data-theme', theme);
         for (const width of [320, 480, 768, 1280, 1920]) {
           await panel.setViewportSize({ width, height });
+          // Same frame rule as above: a read before the nav fold sees a
+          // never-painted labeled sidebar squeezing the page (overflow).
+          await settleFrames(panel);
           for (const route of ROUTES) {
             await panel.evaluate((id) => {
               location.hash = `#/${id}`;
@@ -202,8 +209,8 @@ for (const theme of ['light', 'dark'] as const) {
                 // The one reviewed incomplete allowance: contrast unresolved
                 // because a virtual row sits half-clipped at the scroller's
                 // edge (`elmPartiallyObscured` — the row is fully readable by
-                // scrolling; the P6F receipt discloses exactly this for
-                // virtual lists and P6.1 carries the same allowance). Every
+                // scrolling; a known, accepted limit of
+                // virtual lists). Every
                 // node must match the message AND resolve inside a virtual
                 // list; anything else stays unresolved and fails.
                 const insideVirtualList = (target: unknown): boolean => {

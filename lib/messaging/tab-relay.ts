@@ -16,6 +16,8 @@ import {
   type RucssStartRequest
 } from './rucss-test';
 import { parseScriptSourceRequest, type ScriptSourceRequest } from './script-source';
+import { parseServedScriptTagRequest, type ServedScriptTagRequest } from './served-script-tag';
+import { parseStyleSourceRequest, type StyleSourceRequest } from './style-source';
 import { parseBeaconTestRequest, type BeaconTestRequest } from './beacon-test';
 import { parseLcpAnalysisRequest, type LcpAnalysisRequest } from './lcp-analysis';
 import { numericTabId } from './sender';
@@ -26,6 +28,7 @@ export interface TabRelayPayloads {
   processPageData: undefined;
   getFdtData: undefined;
   getScriptSourceChunk: ScriptSourceRequest;
+  getServedScriptTag: ServedScriptTagRequest;
   startRucssTest: RucssStartRequest;
   applyRucssTest: RucssApplyRequest;
   runBeaconTest: BeaconTestRequest;
@@ -34,6 +37,7 @@ export interface TabRelayPayloads {
   getCurrentVisitVitals: undefined;
   listPageStyles: undefined;
   listPageStylesheets: undefined;
+  getStyleSourceChunk: StyleSourceRequest;
 }
 
 /** One relayable ask's name. */
@@ -93,6 +97,11 @@ export const TAB_RELAY_ASKS: { readonly [K in TabRelayAsk]: TabRelayAskRow<K> } 
     },
     forward: (asks, tabId, request) => asks.getScriptSourceChunk(tabId, request)
   },
+  // The guard rebuilds the request from its two fields only.
+  getServedScriptTag: {
+    parsePayload: (input) => box(parseServedScriptTagRequest(input)),
+    forward: (asks, tabId, request) => asks.getServedScriptTag(tabId, request)
+  },
   // Both guards rebuild their request from known fields only.
   startRucssTest: {
     parsePayload: (input) => box(parseRucssStartRequest(input)),
@@ -126,6 +135,11 @@ export const TAB_RELAY_ASKS: { readonly [K in TabRelayAsk]: TabRelayAskRow<K> } 
   listPageStylesheets: {
     parsePayload: parseNoPayload,
     forward: (asks, tabId) => asks.listPageStylesheets(tabId)
+  },
+  // The guard rebuilds the request from its three fields only.
+  getStyleSourceChunk: {
+    parsePayload: (input) => box(parseStyleSourceRequest(input)),
+    forward: (asks, tabId, request) => asks.getStyleSourceChunk(tabId, request)
   }
 };
 

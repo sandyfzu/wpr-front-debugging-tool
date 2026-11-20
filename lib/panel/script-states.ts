@@ -1,6 +1,6 @@
 /**
  * The JavaScript page's script states — the one declaring site of what each
- * state means, read by both the row chips and the filter chips (a filter
+ * state means, read by both the row chips and the facet values (a value
  * selects exactly the rows that show its chip).
  *
  * Two kinds of input: tag facts carried by each delayed-script record

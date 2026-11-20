@@ -21,12 +21,23 @@ async function manifestFor(browser: string): Promise<Record<string, unknown>> {
 }
 
 describe('manifest browser_specific_settings', () => {
-  it('pins the Firefox add-on id and floor', async () => {
+  it('pins the Firefox add-on id, floor and data-collection declaration', async () => {
     expect(FIREFOX_ADDON_ID).toBe('{f6991cc9-09e3-43d0-a6dd-4aae5f676452}');
     expect(FIREFOX_MIN_VERSION).toBe('150.0');
     expect((await manifestFor('firefox')).browser_specific_settings).toEqual({
-      gecko: { id: FIREFOX_ADDON_ID, strict_min_version: FIREFOX_MIN_VERSION }
+      gecko: {
+        id: FIREFOX_ADDON_ID,
+        strict_min_version: FIREFOX_MIN_VERSION,
+        // Store-facing: nothing required at install; the page address leaves
+        // the browser only on two user commands (RUCSS Tester, PageSpeed
+        // Insights), each asking this optional type first — never change silently.
+        data_collection_permissions: { required: ['none'], optional: ['browsingActivity'] }
+      }
     });
+  });
+
+  it('declares data collection on a floor that supports it (Firefox 140+)', () => {
+    expect(Number.parseFloat(FIREFOX_MIN_VERSION)).toBeGreaterThanOrEqual(140);
   });
 
   it('keeps Firefox-only keys out of the Chromium manifest', async () => {

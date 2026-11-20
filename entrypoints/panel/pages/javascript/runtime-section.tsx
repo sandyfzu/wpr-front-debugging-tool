@@ -3,27 +3,30 @@
  * inspected page as it is now (the live DOM — not the snapshot detection
  * parsed), each with its Delay JS state (executed, failed, skipped,
  * pending, not delayed), source group (theme, plugins, inline, other), id,
- * classes and code. Loaded on first show (its own chunk).
+ * classes and code — as a calm list (Source × State facets, search) whose
+ * rows open their detail (side pane from the split width, drill-in below
+ * it). Loaded on first show (its own chunk).
  *
  * State matrix: first read pending → skeleton rows · page-unreachable (per
- * miss, with recoveries) · read: empty (no scripts) / source-empty (the
- * chosen group has none now, with the way back) / filtered-empty (the
- * shared `NoMatches`) / populated (notes for a cut list and for scripts no
- * state chip covers) · re-reading (the shown read stays, Read again busy) ·
- * a failed re-read (its notice above the kept list) · stale once the page
- * reloaded or changed (a show re-reads; while shown, a note).
+ * miss, with recoveries) · read: empty (no scripts) / filtered-empty (the
+ * shared `NoMatches`, with Clear filters) / populated (notes for a cut list
+ * and for scripts no State value covers) · re-reading (the shown read
+ * stays, Read again busy) · a failed re-read (its notice above the kept
+ * list) · stale once the page reloaded or changed (a show re-reads; while
+ * shown, a note).
  *
- * A re-read — answered or failed — keeps the view mounted (S-2): source and
- * state chips, query, scroll and the open details of rows that did not
- * change.
+ * A re-read — answered or failed — keeps the view mounted (S-2): facets,
+ * query, scroll and the selection (rows are keyed by the script, not its
+ * state: the open detail follows a script whose state changed).
  */
 import type { JSX } from 'solid-js';
-import { createComputed, createMemo, createRoot, createSignal, For, on, Show } from 'solid-js';
+import { createMemo, createRoot, For, Show } from 'solid-js';
+import Braces from 'lucide-solid/icons/braces';
+import Code from 'lucide-solid/icons/code';
 import FileCode from 'lucide-solid/icons/file-code';
 import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import { Button } from '../../../../components/ui/button';
 import { EmptyState } from '../../../../components/ui/empty-state';
-import { FilterBar, type FilterChip } from '../../../../components/ui/filter-bar';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
@@ -33,46 +36,43 @@ import {
   LIVE_STATE_LABEL,
   NO_SCRIPTS_COPY,
   outsideFiltersNote,
-  RUNTIME_GROUP_EMPTY_TITLES,
-  RUNTIME_GROUP_LABELS,
   RUNTIME_STALE_COPY,
   truncatedNote,
   type RuntimeRecovery
 } from '../../../../lib/script-runtime/outcome-view';
-import type { ScriptGroup } from '../../../../lib/script-runtime/classify';
 import type { LiveScriptsOutcome } from '../../../../lib/script-runtime/read-live';
 import { useFdtData } from '../../state/use-fdt-data';
+import { openResourceCapability, type OpenResource } from '../open-resource';
 import { OutcomeNotice } from '../outcome-notice';
 import { RecoveryButtons } from '../recovery-buttons';
 import { inspectedReloadAction } from '../reload-inspected';
-import { FilteredList } from '../resource-list/filtered-list';
-import { reconcileRows } from '../resource-list/resource-list-view';
-import { RuntimeScriptRow } from './runtime-row';
+import { CalmFilteredList } from '../resource-list/calm-list';
+import {
+  calmRowEstimate,
+  ListRow,
+  ListRowHead,
+  type ListRowColumns
+} from '../resource-list/list-row';
+import type { CodeBlockSeams } from './code-seams';
+import { RuntimeDetail, RuntimeStateLine } from './runtime-detail';
 import { realRuntimeStatesDeps } from './runtime-real-deps';
 import {
-  estimateRuntimeRow,
-  groupCounts,
   outsideFilterCounts,
-  RUNTIME_GROUPS,
-  RUNTIME_STATE_LIST,
-  rowsOfSource,
+  RUNTIME_FACETS,
+  runtimeCopy,
+  runtimeKind,
   runtimeRows,
+  runtimeSearchField,
   sameRuntimeRow,
-  type RuntimeRow,
-  type RuntimeSourceFilter
+  urlClipped
 } from './runtime-rows';
 import { createRuntimeStatesSession, type RuntimeStatesSession } from './runtime-session';
-import type { CodeBlockSeams } from './script-row';
-import { pruneKeyedFlags, toggleRowFlag } from '../../../../lib/panel/list-behavior';
 
 /** The recoveries' button labels. */
 export const RUNTIME_RECOVERY_LABELS: Readonly<Record<RuntimeRecovery, string>> = {
   retry: 'Read again',
   'reload-page': 'Reload page'
 };
-
-/** The source chips' "every group" label. */
-export const ALL_SOURCES_LABEL = 'All sources';
 
 /** The panel-lifetime session (created on the section's first show). */
 let sharedSession: RuntimeStatesSession | null = null;
@@ -98,6 +98,8 @@ export interface RuntimeStatesSectionProps {
    * DevTools' own reload when available.
    */
   reloadInspectedPage?: (() => void) | null;
+  /** "Open in Sources" (tests; `null`: none); absent, DevTools' own when available. */
+  openResource?: OpenResource | null;
   /** The list's virtualizer seam (tests). */
   createVirtualizer?: VirtualizerFactory;
   /** Code block seams (tests). */
@@ -124,6 +126,8 @@ export function RuntimeStatesSection(props: RuntimeStatesSectionProps): JSX.Elem
     props.reloadInspectedPage === undefined
       ? inspectedReloadAction(browser)
       : (props.reloadInspectedPage ?? undefined);
+  const openResource =
+    props.openResource === undefined ? openResourceCapability(browser) : props.openResource;
   /* eslint-enable solid/reactivity */
   session.ensure();
 
@@ -208,6 +212,7 @@ export function RuntimeStatesSection(props: RuntimeStatesSectionProps): JSX.Elem
         {(current) => (
           <RuntimeList
             read={current()}
+            openResource={openResource}
             createVirtualizer={props.createVirtualizer}
             codeBlock={props.codeBlock}
           />
@@ -220,40 +225,22 @@ export function RuntimeStatesSection(props: RuntimeStatesSectionProps): JSX.Elem
 /** Props of {@link RuntimeList}. */
 interface RuntimeListProps {
   read: Extract<LiveScriptsOutcome, { kind: 'read' }>;
+  openResource: OpenResource | null;
   createVirtualizer?: VirtualizerFactory;
   codeBlock?: CodeBlockSeams;
 }
 
+/** The list's columns (rows and head share them): the state line, no size. */
+const COLUMNS: ListRowColumns = { size: false, states: true };
+
 /**
- * The source chips, the read's notes and the state-filtered list.
+ * The read's notes and the calm list: Source × State facets, the search,
+ * the rows and the selected script's detail.
  *
  * @param props See {@link RuntimeListProps}.
  */
 function RuntimeList(props: RuntimeListProps): JSX.Element {
-  // Reconciled here (not only in the list), so open details follow identity.
-  const rows = createMemo(
-    (previous: readonly RuntimeRow[]) =>
-      reconcileRows(previous, runtimeRows(props.read.scripts), sameRuntimeRow),
-    []
-  );
-  const [source, setSource] = createSignal<RuntimeSourceFilter>('all');
-  const sourceRows = createMemo(() => rowsOfSource(rows(), source()));
-  /** The chosen group, or undefined for every source. */
-  const chosenGroup = (): ScriptGroup | undefined => {
-    const current = source();
-    return current === 'all' ? undefined : current;
-  };
-  const counts = createMemo(() => groupCounts(rows()));
-  const sourceChips = createMemo((): FilterChip[] => [
-    { value: 'all', label: ALL_SOURCES_LABEL, count: rows().length },
-    ...RUNTIME_GROUPS.map((group) => ({
-      value: group,
-      label: RUNTIME_GROUP_LABELS[group],
-      count: counts()[group],
-      // An empty group cannot be chosen — unless it is the chosen one (it emptied on a re-read).
-      disabled: counts()[group] === 0 && source() !== group
-    }))
-  ]);
+  const rows = createMemo(() => runtimeRows(props.read.scripts, props.read.baseUrl));
   const notes = createMemo(() =>
     [
       truncatedNote({
@@ -261,35 +248,12 @@ function RuntimeList(props: RuntimeListProps): JSX.Element {
         total: props.read.total,
         listed: props.read.scripts.length
       }),
-      outsideFiltersNote(outsideFilterCounts(sourceRows()))
+      outsideFiltersNote(outsideFilterCounts(rows()))
     ].filter((note): note is string => note !== null)
-  );
-
-  // Open details live here, keyed by row id; a re-read that changed or
-  // removed a row closes it (another script must not open expanded).
-  const [expanded, setExpanded] = createSignal<ReadonlySet<number>>(new Set());
-  createComputed(
-    on(rows, (current, previous) => {
-      if (previous === undefined) return;
-      setExpanded((ids) => pruneKeyedFlags(ids, previous, current, (row) => row.id));
-    })
   );
 
   return (
     <>
-      <Show when={rows().length > 0}>
-        <FilterBar
-          chips={sourceChips()}
-          selected={source()}
-          onSelect={(value) => {
-            // Chip values are this bar's own ids.
-            setSource(() => value as RuntimeSourceFilter);
-          }}
-          filterLabel="Filter by source"
-          showSearch={false}
-          data-fdt-runtime-sources
-        />
-      </Show>
       <Show when={notes().length > 0}>
         <div class="flex flex-col gap-0.5">
           <For each={notes()}>
@@ -301,49 +265,53 @@ function RuntimeList(props: RuntimeListProps): JSX.Element {
           </For>
         </div>
       </Show>
-      <FilteredList
-        definition={RUNTIME_STATE_LIST}
-        rows={sourceRows()}
+      {/* The list reconciles by key: an unchanged script keeps its row, a
+          changed one updates its open detail in place (S-2). */}
+      <CalmFilteredList
+        rows={rows()}
+        rowKey={(row) => row.key}
         sameRow={sameRuntimeRow}
-        empty={
-          <Show
-            when={chosenGroup()}
-            fallback={
-              <EmptyState
-                icon={<FileCode size={16} aria-hidden="true" />}
-                title={NO_SCRIPTS_COPY.title}
-                description={NO_SCRIPTS_COPY.description}
-              />
-            }
-          >
-            {(group) => (
-              <EmptyState
-                icon={<FileCode size={16} aria-hidden="true" />}
-                title={RUNTIME_GROUP_EMPTY_TITLES[group()]}
-                description="The last read found none from this source."
-                action={
-                  <Button size="sm" variant="primary" onClick={() => setSource('all')}>
-                    Show all sources
-                  </Button>
-                }
-              />
-            )}
-          </Show>
-        }
+        facets={RUNTIME_FACETS}
+        searchField={runtimeSearchField}
         noun={SCRIPT_NOUN}
         listLabel="Live scripts"
         searchLabel="Search live scripts"
         searchPlaceholder="Search URLs, IDs, classes and code…"
-        estimateSize={(row) => estimateRuntimeRow(row, expanded().has(row.id))}
+        rowHook="runtime-row"
+        empty={
+          <EmptyState
+            icon={<FileCode size={16} aria-hidden="true" />}
+            title={NO_SCRIPTS_COPY.title}
+            description={NO_SCRIPTS_COPY.description}
+          />
+        }
+        head={<ListRowHead columns={COLUMNS} icon name="Script" states="State" />}
+        estimateSize={(_row, compact) => calmRowEstimate('two', compact, true)}
         renderRow={(row) => (
-          <RuntimeScriptRow
-            row={row}
-            expanded={expanded().has(row.id)}
-            onToggle={() => setExpanded((ids) => toggleRowFlag(ids, row.id))}
-            codeBlock={props.codeBlock}
+          <ListRow
+            columns={COLUMNS}
+            icon={
+              row.script.sourceKind === 'url' ? FileCode : row.script.structuredData ? Braces : Code
+            }
+            name={row.name}
+            preview={row.preview}
+            clipped={urlClipped(row.script)}
+            stateContent={<RuntimeStateLine script={row.script} row />}
           />
         )}
-        rowHook="runtime-row"
+        detail={{
+          kind: runtimeKind,
+          title: (row) => row.name,
+          copy: runtimeCopy,
+          body: (row) => (
+            <RuntimeDetail
+              row={row}
+              openResource={props.openResource}
+              codeBlock={props.codeBlock}
+            />
+          ),
+          backLabel: 'Live scripts'
+        }}
         createVirtualizer={props.createVirtualizer}
       />
     </>

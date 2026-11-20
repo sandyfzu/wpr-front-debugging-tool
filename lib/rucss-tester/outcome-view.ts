@@ -8,6 +8,7 @@
  * one. Pure; the panel renders the view verbatim.
  */
 import { countLabel, formatCount } from '../../utils/format-count';
+import { DATA_CONSENT_FEATURES } from '../data-consent/consent';
 import type { RucssApplyFailure, RucssStartFailure } from '../messaging/rucss-test';
 import { RUCSS_TEST_LIMITS } from '../messaging/rucss-test';
 import type { RucssBuildOutcome } from './build-client';
@@ -27,9 +28,11 @@ import { pageChangeOf, type RucssAskMiss, type RucssTestOutcome } from './run-te
  * - `retry` — run the test again;
  * - `reload-page` — reload the inspected page (a clean page, or its content script back);
  * - `review-patterns` — go to the offending field;
- * - `inspect-styles` — open the page-style inventory.
+ * - `inspect-styles` — open the page-style inventory;
+ * - `ask-consent` — ask again to send the page address (a run that asks first).
  */
-export type RucssRecovery = 'retry' | 'reload-page' | 'review-patterns' | 'inspect-styles';
+export type RucssRecovery =
+  'retry' | 'reload-page' | 'review-patterns' | 'inspect-styles' | 'ask-consent';
 
 /** The field a `review-patterns` recovery leads to. */
 export type RucssFocusTarget =
@@ -213,6 +216,9 @@ function startFailureView(failure: RucssStartFailure): RucssOutcomeView {
   switch (failure.kind) {
     case 'fetch':
       return fetchFailureView(failure.failure, failure.requestUrl);
+    case 'consent-missing':
+      // The run maps it to the consent outcome; kept for exhaustiveness.
+      return consentView('declined');
     case 'refused':
       return view(
         'error',
@@ -426,6 +432,40 @@ function staleView(outcome: RucssTestOutcome): RucssOutcomeView {
 }
 
 /**
+ * A run that may not send the page address yet (nothing sent, nothing changed).
+ *
+ * @param reason Why: being asked, declined, or the ask failed.
+ */
+function consentView(
+  reason: Extract<RucssTestOutcome, { kind: 'consent-needed' }>['reason']
+): RucssOutcomeView {
+  const sends = DATA_CONSENT_FEATURES.rucss.sends;
+  switch (reason) {
+    case 'asking':
+      return view(
+        'warn',
+        'Allow sending the page address',
+        `${sends} Answer in the tab that just opened: the test starts once you allow it. Nothing was sent. ${UNCHANGED}`,
+        ['ask-consent']
+      );
+    case 'declined':
+      return view(
+        'warn',
+        'Sending the page address was declined',
+        `${sends} The test cannot run without it. Nothing was sent. ${UNCHANGED}`,
+        ['ask-consent']
+      );
+    case 'ask-failed':
+      return view(
+        'error',
+        "Couldn't ask Firefox for permission",
+        `The extension could not check or ask for permission to send the page address. Try again; if it keeps failing, reload the extension. Nothing was sent. ${UNCHANGED}`,
+        ['ask-consent']
+      );
+  }
+}
+
+/**
  * Describe one outcome as of the page load it ran on.
  *
  * @param outcome How the run ended.
@@ -452,6 +492,8 @@ function currentView(outcome: RucssTestOutcome): RucssOutcomeView {
               : { field: 'excludeFiles' }
         }
       );
+    case 'consent-needed':
+      return consentView(outcome.reason);
     case 'page-unreachable':
       return outcome.step === 'start'
         ? startMissView(outcome.miss)

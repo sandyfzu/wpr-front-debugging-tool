@@ -1,8 +1,8 @@
 /**
- * The "Copy as exclusion" action's copy vocabulary: what the row control, its
- * toasts and its remedies say. The shared copy button renders the mechanism
- * (the guarded write, the flash, the toasts); this module owns the words and
- * aims them, through one component every row renders.
+ * The "Copy as exclusion" action's copy vocabulary: what the definition's
+ * control, its toasts and its remedies say. The shared copy button renders
+ * the mechanism (the guarded write, the flash, the toasts); this module owns
+ * the words and aims them, through one component every definition renders.
  *
  * A script that defines a name other code reads too early is the usual Delay
  * JS casualty, and excluding that script from Delay JS is the usual fix — so
@@ -14,13 +14,13 @@ import type { ClipboardLike } from '../../../../components/ui/copy-button';
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { LABEL_DELAY_JAVASCRIPT_EXECUTION } from '../../../../lib/detection/labels';
 
-/** The row control's visible action label (its rest wording above the tier). */
+/** The control's visible action label (its rest wording). */
 const VISIBLE_LABEL = 'Copy as exclusion';
 
 /** The visible label's wording while the check flash shows. */
 const FLASH_LABEL = 'Copied';
 
-/** The row control's hover hint (its purpose, in full). */
+/** The control's hover hint (its purpose, in full). */
 const HOVER_TITLE = `Copy an exclusion for this script, to exclude it from ${LABEL_DELAY_JAVASCRIPT_EXECUTION}`;
 
 /** The success toast's title. */
@@ -44,7 +44,7 @@ export function copyFailedRemedy(pattern: string): string {
 }
 
 /**
- * Why a row has no copy control: the script ships inside WP Rocket's
+ * Why a definition has no copy control: the script ships inside WP Rocket's
  * combined JS bundle (the bundle filename is an md5 digest — no original
  * path to copy), so per-file Delay exclusion is not available, and the
  * words give the working remedy instead.
@@ -69,8 +69,9 @@ export interface ExclusionCopyButtonProps {
 
 /**
  * The "Copy as exclusion" action on the shared copy button: the exact
- * pattern on the clipboard, in-place feedback at the row, the
- * setting-naming toast, and a hand-typing remedy when the write fails.
+ * pattern on the clipboard, in-place feedback, the setting-naming toast, and
+ * a hand-typing remedy when the write fails. The label shows at every width:
+ * it is the detail's primary action, never title-row chrome worth folding.
  *
  * @param props See {@link ExclusionCopyButtonProps}.
  */
@@ -81,7 +82,7 @@ export function ExclusionCopyButton(props: ExclusionCopyButtonProps): JSX.Elemen
       label={VISIBLE_LABEL}
       ariaLabel={props.name}
       title={HOVER_TITLE}
-      showLabel="regular-up"
+      showLabel
       copiedLabel={FLASH_LABEL}
       successTitle={COPIED_TITLE}
       successDescription={COPIED_DESCRIPTION}

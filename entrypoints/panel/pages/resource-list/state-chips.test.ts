@@ -1,6 +1,7 @@
 /** The state-chip split: order kept, at most three visible, "+N" naming the rest. */
 import { describe, expect, it } from 'vitest';
 import {
+  CALM_VISIBLE_STATE_CHIPS,
   MAX_VISIBLE_STATE_CHIPS,
   NO_STATE_CHIPS,
   UNVERIFIED_SIMULATION_SUFFIX,
@@ -72,6 +73,16 @@ describe('splitStateChips', () => {
     const split = splitStateChips(chips(3), 1);
     expect(split.visible.map((chip) => chip.id)).toEqual(['a']);
     expect(split.overflow?.label).toBe('+2');
+  });
+
+  it('caps calm rows at two (+N past it), the default staying at three', () => {
+    expect(CALM_VISIBLE_STATE_CHIPS).toBe(2);
+    expect(MAX_VISIBLE_STATE_CHIPS).toBe(3);
+    const calm = splitStateChips(chips(3), CALM_VISIBLE_STATE_CHIPS);
+    expect(calm.visible.map((chip) => chip.id)).toEqual(['a', 'b']);
+    expect(calm.overflow?.label).toBe('+1');
+    expect(splitStateChips(chips(2), CALM_VISIBLE_STATE_CHIPS).overflow).toBeNull();
+    expect(splitStateChips(chips(3)).overflow).toBeNull();
   });
 
   it.each([0, -1, 1.5, Number.NaN])('rejects the cap %s (a wiring bug, named)', (max) => {

@@ -53,3 +53,24 @@ export function isClassicScriptType(type: string): boolean {
 export function isBlankScriptType(type: string): boolean {
   return type.replace(ASCII_WHITESPACE_EDGES, '') === '';
 }
+
+/** The non-MIME `type` keywords whose content is JSON (import maps, speculation rules). */
+const JSON_TYPE_KEYWORDS: ReadonlySet<string> = new Set(['importmap', 'speculationrules']);
+
+/**
+ * Whether a script's `type` declares JSON content — a `…/json` or `…+json`
+ * MIME type (parameters ignored), an import map or speculation rules — so
+ * its text reads as JSON, not JavaScript.
+ *
+ * @param type The raw `type` attribute value.
+ * @returns True for a JSON-content type.
+ */
+export function isJsonScriptType(type: string): boolean {
+  const essence = type
+    .replace(ASCII_WHITESPACE_EDGES, '')
+    .replace(/[A-Z]/g, (c) => c.toLowerCase())
+    .split(';', 1)[0]
+    ?.replace(ASCII_WHITESPACE_EDGES, '');
+  if (essence === undefined || essence === '') return false;
+  return JSON_TYPE_KEYWORDS.has(essence) || essence.endsWith('/json') || essence.endsWith('+json');
+}

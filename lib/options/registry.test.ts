@@ -64,7 +64,7 @@ describe('option registry integrity', () => {
       // no row depends on a slot the storage shape does not define.
       expect(readOption(row, defaults)).not.toBeUndefined();
     }
-    // The P9A rows pinned against the documented fallback values.
+    // The registry rows pinned against the documented fallback values.
     expect(readOption(rowOf('wp-dashboard-dbugger-entry'), FALLBACK)).toBe(true);
     expect(readOption(rowOf('toolbarBadge'), FALLBACK)).toBe(true);
     expect(readOption(rowOf('appearance'), FALLBACK)).toBe('system');

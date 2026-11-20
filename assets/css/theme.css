@@ -16,11 +16,22 @@
 
 @import './tokens.css';
 
-@import 'tailwindcss';
-
-/* Project docs quote utility-like class names from prose (plans, specs); keep the
- * scanner out of that directory so documentation can never generate CSS. */
-@source not '../../docs';
+/* Class scanning: only the shipped source layers, never the whole project.
+ * Automatic detection read every non-ignored file (~1 800 files / 22 MB:
+ * docs, the browser-test tier, HTML and JSON fixtures, docker + scripts),
+ * which cost build time and turned words in tests and fixtures (`row-200`,
+ * `shadow-inner`, …) into CSS no surface uses. Tests, test helpers and data
+ * fixtures inside the layers are excluded for the same reason: their class
+ * strings pin or mimic the source, they never style a page. A new source
+ * layer must be listed here. */
+@import 'tailwindcss' source(none);
+@source '../../entrypoints';
+@source '../../components';
+@source '../../lib';
+@source '../../utils';
+@source not '../../**/*.{test,testing,fixtures}.{ts,tsx}';
+@source not '../../lib/**/fixtures';
+@source not '../../lib/**/*.json';
 
 /* ---- Tailwind namespace mappings ------------------------------------------ */
 /* `inline` so utilities resolve straight against the tokens in tokens.css
@@ -51,6 +62,7 @@
   --color-accent-strong: var(--accent-strong);
   --color-accent-from: var(--accent-from);
   --color-accent-to: var(--accent-to);
+  --color-accent-soft: var(--accent-soft);
 
   --color-status-ok: var(--status-ok);
   --color-status-ok-soft: var(--status-ok-soft);
@@ -80,6 +92,18 @@
   --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
 
+  /* Stat tiles only (UI/UX bar T-1): the tile's main number and its value
+   * line — the only sizes above the density scale on data surfaces. */
+  --text-stat: 1.25rem;
+  --text-stat--line-height: 1.5rem;
+  --text-tile: 0.9375rem;
+  --text-tile--line-height: 1.25rem;
+
+  /* Control corners: buttons, icon buttons and text fields (7 px) — one step
+   * between Tailwind's `md` (6 px) and `lg` (8 px: cards, list rows), so a
+   * control reads as nested inside the card it sits on. `rounded-control`. */
+  --radius-control: 0.4375rem;
+
   /* Elevation: the values are the tokens'; this mapping keeps the
    * `shadow-elev-*` utilities generated with the same behavior. */
   --shadow-elev-1: var(--shadow-elev-1);
@@ -92,4 +116,8 @@
    * literal at build time, so these are values, never `var()` references. */
   --container-regular: 480px;
   --container-wide: 768px;
+  /* `@split:` — a list's detail moves into a side pane from this content
+   * width. Twin of `DETAIL_PANE_MIN_CONTENT_WIDTH` (lib/panel/detail-layout),
+   * which decides the same rule in script; a test keeps the two equal. */
+  --container-split: 830px;
 }

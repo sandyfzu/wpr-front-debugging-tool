@@ -11,8 +11,11 @@ import { cn } from '../../utils/cn';
 export type PageHeaderProps = {
   /** The page title (`h1`); the shell focuses it on route switches. */
   title: string;
-  /** The one-line "what am I looking at" beneath the title. */
-  subtitle?: string;
+  /**
+   * The one-line "what am I looking at" beneath the title — its text, or a
+   * loading header's placeholder for it.
+   */
+  subtitle?: JSX.Element;
   /** The actions cluster (buttons, copy controls) aligned to the title row. */
   actions?: JSX.Element;
   /** Extra classes on the block, merged last so callers win. */
@@ -23,12 +26,14 @@ export type PageHeaderProps = {
  * Render a page title block: `h1` + subtitle line with the actions right.
  *
  * The heading carries `tabindex="-1"` — focusable by the shell's route-switch
- * handler, skipped in the tab order. Its focus styling stays the browser's
- * own: the appearance of the ring when focus is programmatic is the shell's
- * (P5E focus management) concern, not a decision to hardcode here.
+ * handler, skipped in the tab order. It is a focus target, not a control, so
+ * it draws no focus ring (the browser's `:focus-visible` default would ring it
+ * after a keyboard route switch). `focus:outline-hidden` removes the outline
+ * while focused, except under forced colors, where Tailwind keeps a 2px solid
+ * (transparent) outline for the system's palette to take over.
  *
  * @param props.title The page title, rendered as the page's single `h1`.
- * @param props.subtitle The intro line under the title (optional).
+ * @param props.subtitle The intro line under the title, or its placeholder (optional).
  * @param props.actions The actions cluster for the title row (optional).
  * @param props.class Extra classes on the block.
  */
@@ -38,13 +43,17 @@ export function PageHeader(props: PageHeaderProps): JSX.Element {
       data-fdt="page-header"
       class={cn('flex flex-wrap items-center gap-x-3 gap-y-1', props.class)}
     >
-      <h1 data-fdt-page-title tabindex="-1" class="text-base font-semibold text-fg-primary">
+      <h1
+        data-fdt-page-title
+        tabindex="-1"
+        class="text-base font-semibold text-fg-primary focus:outline-hidden"
+      >
         {props.title}
       </h1>
       <Show when={props.subtitle}>
-        <span data-fdt-page-subtitle class="text-xs text-fg-secondary">
+        <div data-fdt-page-subtitle class="text-xs text-fg-secondary">
           {props.subtitle}
-        </span>
+        </div>
       </Show>
       <div class="ms-auto flex items-center gap-1.5">{props.actions}</div>
     </div>

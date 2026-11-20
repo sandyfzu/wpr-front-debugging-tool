@@ -6,21 +6,32 @@
  * client in `code-block-worker-client.ts`. The language vocabulary is
  * declared shiki-free in `code-block-langs.ts`.
  *
- * Fine-grained shiki: the core plus exactly the two languages this tool
- * renders (extension-script sources and JSON payloads), one light/dark theme
- * pair, and the JavaScript regex engine (no WASM). Tokenizing runs over the
- * whole block — the grammar state is always right — and its cost is the
- * worker's problem: the client bounds it with a hard per-block time budget.
+ * Fine-grained shiki: the core plus exactly the languages this tool renders
+ * (`CODE_BLOCK_LANGS`), one light/dark theme pair, and the JavaScript regex
+ * engine (no WASM). Script and JSON grammars ship inside the worker; the
+ * stylesheet and markup ones are fetched on their language's first block
+ * (`GRAMMAR_SOURCES`). Tokenizing runs over the whole block — the grammar
+ * state is always right — and its cost is the worker's problem: the client
+ * bounds it (grammar fetch included) with a hard per-block time budget.
  */
 import { addClassToHast, createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
-import type { CodeToHastOptions, HighlighterCore, ShikiTransformer } from 'shiki/core';
+import type {
+  CodeToHastOptions,
+  HighlighterCore,
+  LanguageRegistration,
+  ShikiTransformer
+} from 'shiki/core';
 import javascript from 'shiki/langs/javascript.mjs';
 import json from 'shiki/langs/json.mjs';
 import githubDark from 'shiki/themes/github-dark.mjs';
 import githubLight from 'shiki/themes/github-light.mjs';
+import { createLogger } from '../../lib/logger';
 import type { CodeLanguage } from './code-block-langs';
 import { tokenClassName, type TokenStyle } from './code-block-token-styles';
+
+/** Grammar fetch failures (the block stays plain; a later block retries). */
+const logger = createLogger('code-highlighter');
 
 /** The light/dark theme pair — one resolved pair so code is always palette-paired. */
 export const THEME_PAIR = { light: 'github-light', dark: 'github-dark' } as const;
@@ -94,11 +105,12 @@ export interface CodeHighlighter {
    * @param code The raw code text (may be untrusted page-sourced).
    * @param options The language of the text.
    * @returns The `<pre>` HTML with class-tagged tokens, and the classes' light/dark rules.
-   * @throws {@link Error} for a language outside the registered code-block
-   *   language table (`CODE_BLOCK_LANGS` in `code-block-langs.ts`) — a
-   *   call-site bug must fail at analysis time, not as an unstyled block.
+   * @throws {@link Error} (rejection) for a language outside the grammar
+   *   sources (a call-site bug must fail loudly, not as an unstyled block),
+   *   or when the language's on-demand grammar failed to load (retried on
+   *   the next block of that language).
    */
-  highlight: (code: string, options: { lang: CodeLanguage }) => HighlightResult;
+  highlight: (code: string, options: { lang: CodeLanguage }) => Promise<HighlightResult>;
   /** Dispose the highlighter's state (tests; longer-lived surfaces keep it). */
   dispose: () => void;
 }
@@ -160,26 +172,77 @@ export function styleToClass(styles: Map<string, string>): ShikiTransformer {
   };
 }
 
-/** The process-wide singleton promise — grammars are expensive to wire. */
-let instance: Promise<CodeHighlighter> | undefined;
+/**
+ * Where a language's grammar comes from: compiled into the worker
+ * (`bundled`), or fetched on the language's first block (`on-demand`).
+ */
+export type GrammarSource =
+  | { readonly kind: 'bundled'; readonly grammar: LanguageRegistration[] }
+  | { readonly kind: 'on-demand'; readonly load: () => Promise<LanguageRegistration[]> };
 
 /**
- * Load (or reuse) the highlighter.
+ * One grammar source per code-block language — an exhaustive record, so a
+ * language added to `CODE_BLOCK_LANGS` fails to compile until it gets one.
+ * Script and JSON blocks are the common case and pay no fetch; CSS and
+ * HTML share one chunk (the HTML grammar embeds CSS and JavaScript, which
+ * the bundle keeps single: JavaScript stays in the worker, imported back).
+ */
+export const GRAMMAR_SOURCES: Readonly<Record<CodeLanguage, GrammarSource>> = {
+  javascript: { kind: 'bundled', grammar: javascript },
+  json: { kind: 'bundled', grammar: json },
+  css: { kind: 'on-demand', load: async () => (await import('./code-block-web-grammars')).css },
+  html: { kind: 'on-demand', load: async () => (await import('./code-block-web-grammars')).html }
+};
+
+/**
+ * Create a highlighter over the given grammar sources: the bundled grammars
+ * are registered up front, each on-demand one on its language's first block
+ * (one load in flight per language; a failed load is forgotten, so the next
+ * block retries instead of every later block failing).
  *
- * The first call resolves the dynamic chunk; every later call shares the
- * singleton, so a page with many code blocks pays loading once.
- *
+ * @param sources The grammar per language (default {@link GRAMMAR_SOURCES}; tests inject failures).
  * @returns The ready highlighter.
  */
-export function getHighlighter(): Promise<CodeHighlighter> {
-  instance ??= createHighlighterCore({
-    langs: [javascript, json],
+export async function createCodeHighlighter(
+  sources: Readonly<Record<CodeLanguage, GrammarSource>> = GRAMMAR_SOURCES
+): Promise<CodeHighlighter> {
+  const highlighter: HighlighterCore = await createHighlighterCore({
+    langs: Object.values(sources).flatMap((source) =>
+      source.kind === 'bundled' ? source.grammar : []
+    ),
     // Fine-grained mode has no bundled registry: themes and langs are passed
     // as registrations, then addressed by their registration names (`THEME_PAIR`).
     themes: [githubLight, githubDark],
     engine: createJavaScriptRegexEngine({ forgiving: true })
-  }).then((highlighter: HighlighterCore): CodeHighlighter => ({
-    highlight: (code, options) => {
+  });
+  const loading = new Map<CodeLanguage, Promise<void>>();
+
+  /** Resolve once `lang`'s grammar is registered; rejects for an unknown language or a failed load. */
+  const ensureGrammar = (lang: CodeLanguage): Promise<void> => {
+    // Own-key check: the language crossed a thread boundary as data.
+    if (!Object.hasOwn(sources, lang)) {
+      return Promise.reject(new Error(`Code highlighter: unsupported language "${lang}".`));
+    }
+    const source = sources[lang];
+    if (source.kind === 'bundled') return Promise.resolve();
+    let pending = loading.get(lang);
+    if (pending === undefined) {
+      pending = source
+        .load()
+        .then((grammar) => highlighter.loadLanguage(...grammar))
+        .catch((error: unknown) => {
+          loading.delete(lang);
+          logger.warn(`The ${lang} grammar failed to load; the block stays plain.`, error);
+          throw error;
+        });
+      loading.set(lang, pending);
+    }
+    return pending;
+  };
+
+  return {
+    highlight: async (code, options) => {
+      await ensureGrammar(options.lang);
       const styles = new Map<string, string>();
       const html = highlighter.codeToHtml(code, hastOptions(options.lang, styleToClass(styles)));
       return { html, styles: [...styles] };
@@ -187,7 +250,22 @@ export function getHighlighter(): Promise<CodeHighlighter> {
     dispose: () => {
       highlighter.dispose();
     }
-  }));
+  };
+}
+
+/** The process-wide singleton promise — grammars are expensive to wire. */
+let instance: Promise<CodeHighlighter> | undefined;
+
+/**
+ * Load (or reuse) the highlighter.
+ *
+ * The first call creates it; every later call shares the singleton, so a
+ * page with many code blocks pays loading once.
+ *
+ * @returns The ready highlighter.
+ */
+export function getHighlighter(): Promise<CodeHighlighter> {
+  instance ??= createCodeHighlighter();
   return instance;
 }
 

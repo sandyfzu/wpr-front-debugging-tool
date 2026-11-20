@@ -1,6 +1,5 @@
 /**
- * P6.1 browser acceptance — the fixture round (rows 1–2 of
- * 07-phase-6-panel-pages.md).
+ * Panel browser acceptance — the fixture round.
  *
  * The local docker site serves no `x-rocket-*`/`age`-shaped responses, so
  * this round rides known served fixtures through the real capture path:
@@ -11,7 +10,7 @@
  *   marker family, Cloudflare DYNAMIC, the edge hints) plus the platform/
  *   server cards' rows, a value-less row, a redaction-exempt caching key,
  *   and page-set cookies. On this one fixture the Detections cards, the
- *   summary strip and the support report all agree with the pure view
+ *   overview tiles and the support report all agree with the pure view
  *   model over the same served payload (summary/card consistency); the
  *   headers page lists every verdict with its evidence tone; names-only
  *   cookies never carry a value; and both clipboard forms (one row, all
@@ -42,6 +41,7 @@ import {
   openPanelForFixture,
   panelPageUrl
 } from '../helpers/panel-data';
+import { showDetectionsList } from '../helpers/detections-page';
 import { runPanelAxe } from '../helpers/audit';
 import { STRIP_HOST } from '../helpers/strip-pill';
 import { BYPASS_APPLIED_COPY } from '../../../lib/detection/bypass-applied';
@@ -195,10 +195,12 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
       const served = await readServedPayload(extension, fixture);
 
       // --- Detections: the rendered card set IS the view model over this
-      // payload (ids, names, verdicts), and the summary strip's headline
+      // payload (ids, names, verdicts), and the overview's headline
       // counts exactly what the cards say Active.
       const detections = panel.locator('[data-fdt-page="detections"]');
       await expect(detections.getByRole('heading', { level: 1, name: 'Detections' })).toBeVisible();
+      // List: every row in model order (Grouped leaves the tiles' facts to the tiles).
+      await showDetectionsList(panel);
       const pure = buildStatusItems(served);
       const summary = summarizeDetections(pure);
       const cards = await panel.evaluate(
@@ -442,7 +444,9 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
       const detections = panel.locator('[data-fdt-page="detections"]');
       await expect(detections.getByRole('heading', { level: 1, name: 'Detections' })).toBeVisible();
       // No headers → both header-derived cards omitted, and no cached card
-      // either (a plain page's plugin is absent; no cache card exists).
+      // either (a plain page's plugin is absent; no cache card exists) — read
+      // in List, where those rows would render.
+      await showDetectionsList(panel);
       const cardIds = await panel.evaluate(() =>
         Array.from(document.querySelectorAll('[data-fdt-card-id]')).map((card) =>
           card.getAttribute('data-fdt-card-id')
@@ -451,9 +455,11 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
       expect(cardIds).not.toContain('server');
       expect(cardIds).not.toContain('known-platform');
       expect(cardIds).not.toContain('cached');
-      // The strip says the absence (WP Rocket not detected on a plain page).
+      // The WP Rocket tile says the absence (neutral) and what it looked for.
+      const wprTile = panel.locator('[data-fdt-overview-tile="wpr"]');
+      await expect(wprTile.locator('[data-fdt="stat-tile-value"]')).toHaveText('Not detected');
       await expect(panel.locator('[data-fdt-summary-fact="wpr"]')).toContainText(
-        'WP Rocket was not detected'
+        'No generator tag, cache signature or optimization unique to WP Rocket found'
       );
 
       // Headers & Cookies on a null capture: the empty state, plus NO

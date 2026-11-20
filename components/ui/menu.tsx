@@ -25,47 +25,27 @@
  *
  * The chrome is declared here (the one surface all menus of the design
  * system share); the row anatomy and data binding live with the consumer —
- * the same split the dialog primitive takes.
+ * the same split the dialog primitive takes. Single-choice menus (the
+ * appearance menu) compose `RadioGroup` + `RadioItem` + `ItemIndicator`;
+ * a radio row keeps Kobalte's default of staying open on select unless the
+ * consumer sets `closeOnSelect`.
  */
 import type { ComponentProps, JSX } from 'solid-js';
 import { DropdownMenu as KobalteMenu } from '@kobalte/core';
-import { cn } from '../../utils/cn';
 
-/**
- * Where a menu content's chrome lives (the dialog plate's language,
- * tooltip-scaled).
- *
- * The plate is a *scrolling* surface, designed: the popper middleware
- * clamps its height to what the window offers (`max-h` over Kobalte's
- * available-height variable), and `overflow-y: auto` makes that clamp an
- * internal scroll instead of items painting past the plate — the menu's
- * own overflow, not the shell's (the rail itself never scrolls or gains a
- * scrollbar; its scroll-free invariant is separate and pinned). The
- * native scrollbar treatment comes from the shared token stylesheet; it
- * exists only while the clamp actually bites (`scrollbar-gutter` stays at
- * its `auto` default — deliberately *not* `stable`, which would reserve a
- * phantom right gutter on every plate at every height, shifting the
- * labels/chips even when nothing scrolls), and `overscroll-contain` keeps
- * a fast wheel from bouncing the DevTools host through the flyout.
- */
-export const MENU_CONTENT_CLASSES = cn(
-  'z-50 max-h-[var(--kb-popper-content-available-height)] w-max min-w-40 max-w-72 overflow-y-auto overscroll-contain rounded-md border border-line-2 bg-surface-2 p-1 shadow-elev-2 outline-none'
-);
-
-/**
- * One menu item: the 32px row pitch the rail's rows use (well above the
- * 24px hit floor). Kobalte's highlight state (`data-highlighted` — pointer
- * hover and keyboard focus are the same state on a menu) carries the hover
- * surface; a disabled item reads muted.
- */
-export const MENU_ITEM_CLASSES =
-  'mx-1 flex h-8 min-w-0 cursor-default items-center gap-2 rounded px-2 text-2xs font-medium no-underline outline-none data-highlighted:bg-surface-3 data-disabled:cursor-not-allowed data-disabled:text-fg-muted';
-
-/** The item's inner label slot (what Kobalte wires as the item's accessible name). */
-export const MENU_ITEM_LABEL_CLASSES = 'flex min-w-0 flex-1 items-center gap-2 font-medium';
-
-/** The separator between the menu's groups (the rail's hairline grammar). */
-export const MENU_SEPARATOR_CLASSES = 'mx-1 my-1 border-t border-line-2';
+// The chrome's class constants live in a Kobalte-free module (a surface can
+// style a stand-in trigger without loading the menu); re-exported here so the
+// menu's vocabulary stays one import.
+export {
+  MENU_CONTENT_CLASSES,
+  MENU_GROUP_LABEL_CLASSES,
+  MENU_ICON_TRIGGER_CLASSES,
+  MENU_ICON_TRIGGER_SIZE,
+  MENU_INDICATOR_SLOT_CLASSES,
+  MENU_ITEM_CLASSES,
+  MENU_ITEM_LABEL_CLASSES,
+  MENU_SEPARATOR_CLASSES
+} from './menu-classes';
 
 /**
  * Trigger attributes for the tooltip-composed menu trigger.
@@ -102,5 +82,16 @@ export const Menu = {
   Content: KobalteMenu.Content,
   Item: KobalteMenu.Item,
   ItemLabel: KobalteMenu.ItemLabel,
-  Separator: KobalteMenu.Separator
+  Separator: KobalteMenu.Separator,
+  /** A group's caption (wires the enclosing group's `aria-labelledby`). */
+  GroupLabel: KobalteMenu.GroupLabel,
+  /**
+   * A single-choice group: controlled through `value` + `onChange`; Kobalte
+   * calls `onChange` only when the pick differs from the current value.
+   */
+  RadioGroup: KobalteMenu.RadioGroup,
+  /** One choice (`role="menuitemradio"`, `aria-checked` from the group's value). */
+  RadioItem: KobalteMenu.RadioItem,
+  /** Renders its children only while its item is checked (the check mark). */
+  ItemIndicator: KobalteMenu.ItemIndicator
 } as const;

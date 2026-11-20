@@ -1,20 +1,17 @@
 /**
  * The page seam every panel page body builds on: the frame (entrance, container
- * query root, focus target, the single `h1`), the filtered-empty view, and the
- * external link. Declared once here so page folders never re-invent them.
+ * query root, focus target, the single `h1`) and the filtered-empty view.
+ * Declared once here so page folders never re-invent them.
  */
 import type { JSX } from 'solid-js';
-import { createMemo, onCleanup, Show } from 'solid-js';
-import ExternalLinkIcon from 'lucide-solid/icons/external-link';
+import { createMemo, onCleanup, Show, useContext } from 'solid-js';
 import SearchX from 'lucide-solid/icons/search-x';
 import { Button } from '../../../components/ui/button';
-import { FOCUS_RING } from '../../../components/ui/classes';
 import { EmptyState } from '../../../components/ui/empty-state';
 import { PageHeader } from '../../../components/ui/page-header';
 import { cn } from '../../../utils/cn';
-import { capTitle } from '../../../utils/cap-text';
-import { isHttpUrl } from '../../../utils/urls';
-import { navRoute, type RouteId } from '../routes';
+import { navRoute, type HeaderActionRoute, type PageCanvasWidth, type RouteId } from '../routes';
+import { DetailPresenceContext } from '../state/detail-presence';
 
 /**
  * Classes for the one scroller of a `fill` frame (usually the `VirtualList`):
@@ -26,16 +23,19 @@ import { navRoute, type RouteId } from '../routes';
  */
 export const PAGE_FILL_SCROLLER = 'min-h-48 flex-1 contain-size';
 
-/** Props of {@link PageFrame}. */
-export interface PageFrameProps {
-  /** The route the body renders — tags the root for focus management and tests. */
-  id: RouteId;
+/**
+ * The panel canvas every page sits on (the shell's own background), for a
+ * page layer that must be opaque without looking like a surface: a frameless
+ * scroller backing its rows, an overlay covering the view beneath it.
+ */
+export const PAGE_CANVAS = 'bg-surface-0';
+
+/** The props every page frame takes, whatever its route. */
+export interface PageFrameBaseProps {
   /** The page title, rendered as the page's only `h1`. */
   title: string;
-  /** The one-line "what am I looking at" under the title. */
-  subtitle?: string;
-  /** The title row's actions cluster (right-aligned, wraps under the title when narrow). */
-  actions?: JSX.Element;
+  /** The one-line "what am I looking at" under the title (or a loading placeholder for it). */
+  subtitle?: JSX.Element;
   /**
    * Fill mode for list pages: the frame spans at least the content region's
    * height as a flex column, so header/summary/filters stay put while the child
@@ -43,9 +43,33 @@ export interface PageFrameProps {
    * natural height.
    */
   fill?: boolean;
+  /**
+   * Receives the root — the page's `@container` — so a page whose script
+   * must agree with its tier variants can measure the box they read.
+   */
+  ref?: (element: HTMLElement) => void;
   /** The page content, laid out as a `gap-3` column of sections below the header. */
   children?: JSX.Element;
 }
+
+/**
+ * The title row's actions cluster (right-aligned, wraps under the title when
+ * narrow), tied to the route registry's {@link HeaderActionRoute} list: a
+ * listed literal id must pass it, any other literal id cannot. A frame whose
+ * id is only known as some `RouteId` (the shell's loading and failed frames)
+ * may pass it or not.
+ */
+export type PageFrameActionsProps<R extends RouteId> = [R] extends [HeaderActionRoute]
+  ? { actions: JSX.Element }
+  : [R] extends [Exclude<RouteId, HeaderActionRoute>]
+    ? { actions?: never }
+    : { actions?: JSX.Element };
+
+/** Props of {@link PageFrame} for route `R` (inferred from its `id`). */
+export type PageFrameProps<R extends RouteId = RouteId> = PageFrameBaseProps & {
+  /** The route the body renders — tags the root for focus management and tests. */
+  id: R;
+} & PageFrameActionsProps<R>;
 
 /**
  * Render a panel page's frame.
@@ -63,13 +87,15 @@ export interface PageFrameProps {
  * @param props.id The route id, written to `data-fdt-page`.
  * @param props.title The page `h1`.
  * @param props.subtitle Optional intro line.
- * @param props.actions Optional actions cluster.
+ * @param props.actions The actions cluster (see {@link PageFrameActionsProps}).
  * @param props.fill Full-height flex column for list pages (default `false`).
+ * @param props.ref Optional ref to the root (the `@container`).
  * @param props.children The page sections.
  */
-export function PageFrame(props: PageFrameProps): JSX.Element {
+export function PageFrame<R extends RouteId>(props: PageFrameProps<R>): JSX.Element {
   return (
     <section
+      ref={(element) => props.ref?.(element)}
       class={cn('fdt-page @container', props.fill && 'flex min-h-full flex-col')}
       data-fdt-page={props.id}
     >
@@ -79,6 +105,38 @@ export function PageFrame(props: PageFrameProps): JSX.Element {
       </PageCanvas>
     </section>
   );
+}
+
+/**
+ * The canvas's max-width classes: the 56 rem reading column, the 80 rem
+ * standard canvas, or the whole content region.
+ */
+export const PAGE_CANVAS_MAX_WIDTH = {
+  reading: 'max-w-4xl',
+  standard: 'max-w-7xl',
+  full: 'max-w-none'
+} as const;
+
+/** A canvas width {@link PAGE_CANVAS_MAX_WIDTH} declares. */
+export type PageCanvasSize = keyof typeof PAGE_CANVAS_MAX_WIDTH;
+
+/**
+ * The width a route's canvas takes now: a `split` route (master–detail list)
+ * spans the content region only while a detail is open — its pane takes the
+ * room the rows leave — and keeps the standard canvas otherwise, so on a
+ * wide panel the search, summary, facets and rows end at one edge instead of
+ * the controls drifting a screen away from capped rows.
+ *
+ * @param canvas The route's canvas (`undefined`: standard).
+ * @param detailOpen Whether the page shows a list detail.
+ * @returns The canvas width.
+ */
+export function canvasSizeOf(
+  canvas: PageCanvasWidth | undefined,
+  detailOpen: boolean
+): PageCanvasSize {
+  if (canvas === 'reading') return 'reading';
+  return canvas === 'split' && detailOpen ? 'full' : 'standard';
 }
 
 /** Props of the shared canvas used by page bodies and their shell fallbacks. */
@@ -95,15 +153,21 @@ interface PageCanvasProps {
  * Keep every state on the route's centered, padded canvas without inventing a heading.
  * The caller keeps the unpadded query container outside this wrapper.
  * @param props Destination route, optional fill mode, and body content.
- * @returns The shared body column; changing routes updates its width in place.
+ * @returns The shared body column; changing routes (or opening a list detail)
+ *   updates its width in place.
  */
 export function PageCanvas(props: PageCanvasProps): JSX.Element {
+  // Optional: shell fallbacks and standalone page renders have no presence (no detail).
+  const presence = useContext(DetailPresenceContext);
+  const size = (): PageCanvasSize =>
+    canvasSizeOf(navRoute(props.id)?.canvas, presence?.detailOpen() ?? false);
   return (
     <div
       data-fdt="page-body"
+      data-fdt-canvas={size()}
       class={cn(
         'mx-auto flex w-full min-w-0 flex-col gap-3 p-3',
-        navRoute(props.id)?.reading ? 'max-w-4xl' : 'max-w-7xl',
+        PAGE_CANVAS_MAX_WIDTH[size()],
         props.fill && 'flex-1'
       )}
     >
@@ -120,27 +184,35 @@ export const NO_MATCHES_QUERY_MAX = 60;
  *
  * Blank inputs count as unset; an over-long query is cut by code point (never
  * splitting a surrogate pair) and elided with `…`, so a pasted blob cannot
- * flood the view.
+ * flood the view. Narrowing facet values (combinable filters) take the
+ * chip's place, each quoted, in facet order.
  *
  * @param chipLabel The selected filter chip's label, if a non-"all" chip is active.
  * @param query The committed search query, if any.
- * @returns One sentence naming the chip and/or the query.
+ * @param filterLabels The narrowing facet values' labels (facet lists; blank ones ignored).
+ * @returns One sentence naming the chip or facet values and/or the query.
  */
-export function noMatchesSentence(chipLabel?: string, query?: string): string {
-  const chip = chipLabel?.trim() ?? '';
+export function noMatchesSentence(
+  chipLabel?: string,
+  query?: string,
+  filterLabels?: readonly string[]
+): string {
+  const filters = (filterLabels ?? []).map((label) => label.trim()).filter((label) => label !== '');
+  const chip = filters.length > 0 ? filters.join('", "') : (chipLabel?.trim() ?? '');
+  const noun = filters.length > 1 ? 'filters' : 'filter';
   const points = Array.from(query?.trim() ?? '');
   const shown =
     points.length > NO_MATCHES_QUERY_MAX
       ? `${points.slice(0, NO_MATCHES_QUERY_MAX).join('')}…`
       : points.join('');
   if (chip && shown) return `Nothing in "${chip}" matches "${shown}".`;
-  if (chip) return `Nothing matches the "${chip}" filter.`;
+  if (chip) return `Nothing matches the "${chip}" ${noun}.`;
   if (shown) return `Nothing matches "${shown}".`;
   return 'Nothing matches the current filters.';
 }
 
-/** The two ways back out of a filtered-empty view. */
-export type NoMatchesAction = 'clear-search' | 'show-all';
+/** The ways back out of a filtered-empty view. */
+export type NoMatchesAction = 'clear-search' | 'show-all' | 'clear-filters';
 
 /**
  * Where focus goes after a {@link NoMatches} action removes the focused
@@ -160,6 +232,18 @@ export interface NoMatchesProps {
   onShowAll?: () => void;
   /** The reset button's label when "Show all" alone would be vague (default "Show all"). */
   showAllLabel?: string;
+  /**
+   * The narrowing facet values' labels (a facet list; the chip props stay
+   * unset). Named in the sentence; with {@link NoMatchesProps.onClearFilters}
+   * they offer `Clear filters`.
+   */
+  filterLabels?: readonly string[];
+  /**
+   * Clears every facet **and** the search (one click back). `Clear filters`
+   * renders only with this and a non-blank `filterLabels` entry, and then
+   * replaces `Clear search` (it clears the query too).
+   */
+  onClearFilters?: () => void;
   /**
    * The focus target once an action's result removes its focused button
    * (typically: the search field after `clear-search`, the "All" chip after
@@ -221,15 +305,28 @@ function NoMatchesButton(props: NoMatchesButtonProps): JSX.Element {
  * @param props See {@link NoMatchesProps}.
  */
 export function NoMatches(props: NoMatchesProps): JSX.Element {
+  const canClearFilters = (): boolean =>
+    props.onClearFilters !== undefined &&
+    (props.filterLabels ?? []).some((label) => label.trim() !== '');
   const canClear = (): boolean =>
-    props.onClearSearch !== undefined && (props.query?.trim() ?? '') !== '';
+    !canClearFilters() && props.onClearSearch !== undefined && (props.query?.trim() ?? '') !== '';
   const canShowAll = (): boolean =>
     props.onShowAll !== undefined && (props.chipLabel?.trim() ?? '') !== '';
   // Built once (EmptyState reads each slot twice: its `Show` gate + the render).
   const icon = <SearchX size={16} aria-hidden="true" />;
   const action = createMemo((): JSX.Element | undefined =>
-    canClear() || canShowAll() ? (
+    canClear() || canShowAll() || canClearFilters() ? (
       <div class="flex flex-wrap justify-center gap-1.5">
+        <Show when={canClearFilters()}>
+          <NoMatchesButton
+            action="clear-filters"
+            label="Clear filters"
+            onActivate={() => {
+              props.onClearFilters?.();
+            }}
+            focusAfter={props.focusAfter}
+          />
+        </Show>
         <Show when={canClear()}>
           <NoMatchesButton
             action="clear-search"
@@ -258,75 +355,8 @@ export function NoMatches(props: NoMatchesProps): JSX.Element {
       class="wrap-anywhere"
       icon={icon}
       title="No matches"
-      description={noMatchesSentence(props.chipLabel, props.query)}
+      description={noMatchesSentence(props.chipLabel, props.query, props.filterLabels)}
       action={action()}
     />
-  );
-}
-
-/** Props of {@link ExternalLink}. */
-export interface ExternalLinkProps {
-  /** The URL — shown verbatim as the text, opened in a new tab when absolute `http(s):`. */
-  href: string;
-  /** Extra classes, merged last so callers win (e.g. a text size). */
-  class?: string;
-}
-
-/**
- * Render a URL as an external link: mono, single-line `truncate` text, a
- * trailing icon, a new tab with `rel="noopener noreferrer"`, and
- * "(opens in a new tab)" in its accessible name.
- *
- * A bounded URL preview rides `title` on the **text span**, not the anchor,
- * avoiding a duplicate link description. The visible text and accessible name
- * retain the full URL, independently of the hover preview.
- *
- * Only absolute `http:`/`https:` URLs become links. Everything else — including
- * relative and protocol-relative values, which raw captured attributes (e.g.
- * `data-lazy-src`) can be — renders as the same text without a link: the
- * panel has no inspected-page URL to resolve them against, and page-captured
- * URLs are untrusted (`javascript:`, `data:` never reach an `href`).
- *
- * Shrinks inside flex rows (`min-w-0`); give the parent a bounded width.
- *
- * @param props See {@link ExternalLinkProps}.
- */
-export function ExternalLink(props: ExternalLinkProps): JSX.Element {
-  const text = (): JSX.Element => (
-    <span class="truncate" title={capTitle(props.href)}>
-      {props.href}
-    </span>
-  );
-  return (
-    <Show
-      when={isHttpUrl(props.href)}
-      fallback={
-        <span
-          data-fdt="external-link"
-          class={cn(
-            'inline-flex max-w-full min-w-0 font-mono text-xs text-fg-primary',
-            props.class
-          )}
-        >
-          {text()}
-        </span>
-      }
-    >
-      <a
-        data-fdt="external-link"
-        href={props.href}
-        target="_blank"
-        rel="noopener noreferrer"
-        class={cn(
-          'inline-flex max-w-full min-w-0 items-center gap-1 rounded-sm font-mono text-xs text-accent hover:underline',
-          FOCUS_RING,
-          props.class
-        )}
-      >
-        {text()}
-        <ExternalLinkIcon size={12} class="shrink-0" aria-hidden="true" />
-        <span class="sr-only"> (opens in a new tab)</span>
-      </a>
-    </Show>
   );
 }

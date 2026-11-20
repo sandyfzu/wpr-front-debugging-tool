@@ -24,9 +24,15 @@ export interface HighlightedBlock {
 export type HighlightResponse =
   ({ readonly id: number } & HighlightedBlock) | { readonly id: number; readonly error: string };
 
-/** The highlighting surface the handler needs (the shiki loader's shape). */
+/**
+ * The highlighting surface the handler needs (the shiki loader's shape:
+ * asynchronous, since a language's grammar may first need fetching).
+ */
 export interface WorkerHighlighter {
-  highlight: (code: string, options: { lang: CodeLanguage }) => HighlightedBlock;
+  highlight: (
+    code: string,
+    options: { lang: CodeLanguage }
+  ) => HighlightedBlock | Promise<HighlightedBlock>;
 }
 
 /** Whether a value is a request/response id (a positive safe integer). */
@@ -68,8 +74,9 @@ export function isHighlightResponse(data: unknown): data is HighlightResponse {
 }
 
 /**
- * Answer one request: highlight the whole block, or report the failure (the
- * client renders plain text either way it fails).
+ * Answer one request: highlight the whole block, or report the failure — an
+ * unknown language, a failed load of the highlighter or of the language's
+ * grammar (the client renders plain text however it fails).
  *
  * @param load Resolves the highlighter (loaded once, on the first request).
  * @param request The request.
@@ -81,7 +88,7 @@ export async function answerHighlight(
 ): Promise<HighlightResponse> {
   try {
     const highlighter = await load();
-    const block = highlighter.highlight(request.code, { lang: request.lang });
+    const block = await highlighter.highlight(request.code, { lang: request.lang });
     return { id: request.id, html: block.html, styles: block.styles };
   } catch (error: unknown) {
     return { id: request.id, error: error instanceof Error ? error.message : String(error) };

@@ -27,6 +27,7 @@ import {
 } from './actions';
 import { exportPageDataJson, type JsonExportResult } from './export-json';
 import type { OverlayStore } from './overlays';
+import { PaletteFooter } from './palette-footer';
 import { ShortcutsOverlay } from './shortcuts-overlay';
 import type { RouteId } from '../routes';
 
@@ -146,6 +147,8 @@ export function PanelOverlays(props: PanelOverlaysProps): JSX.Element {
     <>
       <Show when={props.overlays.paletteOpen()}>
         <CommandPalette
+          variant="panel"
+          footer={<PaletteFooter />}
           commands={commands()}
           filter={rankCommands}
           onClose={() => {

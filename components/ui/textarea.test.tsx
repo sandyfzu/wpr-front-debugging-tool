@@ -4,6 +4,7 @@
  */
 import { cleanup, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
+import { Input } from './input';
 import { Textarea } from './textarea';
 
 afterEach(() => {
@@ -17,6 +18,23 @@ describe('Textarea', () => {
     expect(field.getAttribute('data-fdt')).toBe('textarea');
     expect(field.className).toContain('font-mono');
     expect(field.className).toContain('border-line-2');
+  });
+
+  it("shares Input's look: fill, border, 7 px control corner and inline padding", () => {
+    render(() => (
+      <>
+        <Textarea aria-label="Patterns" />
+        <Input aria-label="Search" />
+      </>
+    ));
+    const area = screen.getByLabelText('Patterns').className.split(/\s+/);
+    const input = screen.getByLabelText('Search').className.split(/\s+/);
+    for (const token of ['rounded-control', 'border-line-2', 'bg-surface-2', 'px-2.5']) {
+      expect(area, token).toContain(token);
+      expect(input, token).toContain(token);
+    }
+    expect(area).toContain('py-1.5');
+    expect(area).not.toContain('rounded');
   });
 
   it('paints the error state from aria-invalid', () => {

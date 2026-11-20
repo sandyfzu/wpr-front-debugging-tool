@@ -9,11 +9,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
 import { createDetectionsLayout, DetectionsLayoutContext } from '../../state/detections-layout';
-import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
+import { createSearchStore } from '../../state/search';
+import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
 
 const clock = vi.hoisted(() => ({ setLoaded: vi.fn(), stop: vi.fn(), created: 0 }));
 
-vi.mock('../../status-bar/aging-clock', () => ({
+vi.mock('../../state/aging-clock', () => ({
   realAgingClockDeps: () => ({}),
   createAgingClock: () => {
     clock.created += 1;
@@ -40,7 +41,9 @@ describe('DetectionsPage clock', () => {
     const view = render(() => (
       <FdtDataContext.Provider value={store}>
         <DetectionsLayoutContext.Provider value={createDetectionsLayout()}>
-          <DetectionsPage />
+          <SearchContext.Provider value={createSearchStore()}>
+            <DetectionsPage />
+          </SearchContext.Provider>
         </DetectionsLayoutContext.Provider>
       </FdtDataContext.Provider>
     ));

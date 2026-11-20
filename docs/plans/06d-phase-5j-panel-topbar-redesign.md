@@ -2,6 +2,8 @@
 
 ## TLDR
 
+**Resumed and superseded by [P23](./completed-panel-redesign.md) (owner 2026-11-18).**
+
 **Rail-only is the shipped final form; the wide/horizontal (top bar or dual) form is parked** (owner 2026-11-17: not planned for now, kept below to resume later). **P5J closed 2026-11-17** (owner signoff on the shipped rail; only change wanted = Diagnoser entry removal, tracked separately). Dependencies shippedP5C/D/I. Installed stack/shared nav registry/primitives, no new dependency.
 
 Owner2026-10-13 found wide top bar ugly/scrolling, below-row tooltips stealing clicks and white boot. Fixes shipped: **rail only at every width**, tooltips right/sibling hit-test safe, themed boot canvas/per-icon imports. Background-only System→stored-theme flip before content accepted; content never wrong palette. [Shell record](./completed-shell.md), [design decisions](./design-decisions.md).

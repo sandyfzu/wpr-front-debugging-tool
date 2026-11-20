@@ -1,5 +1,5 @@
 /**
- * P10K.5a suite — the exclusion builder's stored-form notes, in the real
+ * The exclusion builder's stored-form notes, in the real
  * overlay (injected into a fixture page's top frame the way the background
  * opens it) over the real session backend.
  *
@@ -9,11 +9,11 @@
  * duplicate row leaves with its note and Restore, and focus that was
  * heading into the removed row lands on Restore; a 250-row paste of
  * duplicates causes no long task; copy-all copies the stored form; a Defer
- * JS set WP Rocket turns off page-wide (P10K.5b; a warning since P10K.5c)
+ * JS set WP Rocket turns off page-wide
  * warns with the message naming its row — unverified, here — and Go to on
  * the row, Apply goes through and the preview has no script deferred, the
  * message and the counts saying why; a Delay row matching everything
- * (P10K.5c) warns, applies, and excludes every script; and, applied, a
+ * warns, applies, and excludes every script; and, applied, a
  * Delay row typed in another case matches its script while a picked row
  * whose file name holds `+` excludes its own (both scripts run). The
  * "On this page" toggle shows its open state where the shadow CSS applies:
@@ -508,7 +508,8 @@ test.describe('exclusion builder stored-form notes', () => {
     await page.keyboard.press('Enter');
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect.poll(look).toEqual(closed);
-    // Reduced motion collapses the turn (the token sheet's reset reaches the shadow root).
+    // Reduced motion leaves no turn leg: the token sheet's reset (no transition
+    // property, durations at a frame) reaches the shadow root.
     await page.emulateMedia({ reducedMotion: 'reduce' });
     expect((await look()).turnSeconds).toBeLessThan(0.001);
     await page.close();

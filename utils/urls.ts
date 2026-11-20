@@ -30,6 +30,27 @@ export function parseHttpUrl(raw: string): URL | null {
 }
 
 /**
+ * Resolve a page-captured URL (an attribute as written: relative,
+ * protocol-relative or absolute) against the page's base URL, keeping it
+ * only when the result is a plain HTTP(S) URL. Pure string work — nothing is
+ * fetched.
+ *
+ * @param raw The URL as captured.
+ * @param base The page's base URL (`document.baseURI`); only an HTTP(S) base resolves.
+ * @returns The absolute `http:`/`https:` href, or `null` (no usable base, or
+ *   a result of another scheme or unparsable).
+ */
+export function resolveHttpUrl(raw: string, base: string | null): string | null {
+  if (base === null || parseHttpUrl(base) === null) return null;
+  try {
+    const url = new URL(raw, base);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Check whether a URL string points at a plain HTTP(S) resource.
  *
  * Gate for anything the extension opens or fetches (Known Conflicts links, resource

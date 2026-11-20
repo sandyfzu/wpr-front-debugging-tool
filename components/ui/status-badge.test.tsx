@@ -9,6 +9,7 @@ import { For } from 'solid-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   StatusBadge,
+  StatusDot,
   STATUS_KINDS,
   STATUS_ICONS,
   STATUS_SOFT_CLASSES,
@@ -68,5 +69,24 @@ describe('StatusBadge title', () => {
     ));
     expect(screen.getByText('Excluded').getAttribute('title')).toBe('Excluded by FDT');
     expect(screen.getByText('Delayed').hasAttribute('title')).toBe(false);
+  });
+});
+
+describe('StatusDot', () => {
+  it('is a decorative 6 px dot in each kind’s token color, placement merged last', () => {
+    render(() => (
+      <For each={STATUS_KINDS}>
+        {(kind) => <StatusDot kind={kind} data-fdt={`dot-${kind}`} class="absolute top-1" />}
+      </For>
+    ));
+    for (const kind of STATUS_KINDS) {
+      const dot = document.querySelector<HTMLElement>(`[data-fdt="dot-${kind}"]`);
+      expect(dot?.getAttribute('aria-hidden')).toBe('true');
+      expect(dot?.textContent).toBe('');
+      for (const token of ['size-1.5', 'rounded-full', 'bg-current', STATUS_TEXT_CLASSES[kind]]) {
+        expect(dot?.classList, `${kind}: ${token}`).toContain(token);
+      }
+      expect(dot?.className.endsWith('absolute top-1')).toBe(true);
+    }
   });
 });

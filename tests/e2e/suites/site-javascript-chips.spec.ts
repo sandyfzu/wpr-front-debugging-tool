@@ -4,12 +4,15 @@
  * Minify JS on, the meta declares them). Ground truth is the served HTML:
  *
  * - each `cache/min/` script WP Rocket delayed and deferred reads exactly
- *   Delayed · Deferred · Minified, each WP Rocket's (rocket + soft fill) —
- *   three chips, no "+N";
- * - a delayed module keeps its original type as the row's detail;
- * - the Minified filter lists exactly the minified scripts, Combined has none
- *   (Combine JS off: the meta does not declare it);
- * - the page never scrolls sideways from 320 to 1280 px.
+ *   Delayed · Deferred · Minified, each WP Rocket's (rocket + soft fill): the
+ *   row shows the first two and folds Minified into a WP Rocket "+1", its
+ *   detail lists all three;
+ * - a delayed module keeps its original type: it leads the row's preview and
+ *   is the detail's "Original type" fact;
+ * - the File facet's Minified value lists exactly the minified scripts,
+ *   Combined has none (Combine JS off: the meta does not declare it);
+ * - the page never scrolls sideways from 320 to 1280 px, and the row's
+ *   chips + "+1" stay on one line from 420 px on.
  *
  * A Combine arm (Combine JavaScript files on, Delay JS off — WP Rocket forces
  * Combine off under Delay) proves Combine apart from Minify on the real
@@ -19,6 +22,13 @@
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import {
+  closeScriptDetail,
+  facetCount,
+  facetSegment,
+  openScriptDetail,
+  pickFacet
+} from '../helpers/javascript-page';
 import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
 import { openSitePage, SITE_URL } from '../helpers/site';
 import { readWprSettings, writeWprSettings, type WprSettings } from '../helpers/site-wpcli';
@@ -64,15 +74,13 @@ async function stateSources(row: Locator): Promise<(string | undefined)[]> {
 }
 
 /**
- * A filter chip's count text.
+ * A File/Delay/… facet value's count text.
  *
  * @param panel The panel page.
- * @param id The chip id.
+ * @param id The value id.
  */
 async function chipCount(panel: Page, id: string): Promise<string | null> {
-  return await panel
-    .locator(`[data-fdt-filter-chip="${id}"] [data-fdt-filter-count]`)
-    .textContent();
+  return await facetCount(panel, id).textContent();
 }
 
 /** WP Rocket's combined bundle: `cache/min/<blog id>/<md5>.js` (named by content hash). */
@@ -125,32 +133,50 @@ test('state chips and filters read WP Rocket’s real Delay, Defer and Minify JS
 
     for (const name of MINIFIED_SCRIPTS) {
       const row = rowWith(panel, name);
-      expect(await stateWords(row), name).toEqual(['Delayed', 'Deferred', 'Minified']);
-      expect(await stateSources(row), name).toEqual(['wp-rocket', 'wp-rocket', 'wp-rocket']);
-      await expect(row.locator('[data-fdt="state-chip-overflow"]')).toHaveCount(0);
+      // Two chips on the row, the third folded into a WP Rocket "+1".
+      expect(await stateWords(row), name).toEqual(['Delayed', 'Deferred']);
+      expect(await stateSources(row), name).toEqual(['wp-rocket', 'wp-rocket']);
+      const overflow = row.locator('[data-fdt="state-chip-overflow"]');
+      await expect(overflow).toHaveText('+1');
+      await expect(overflow).toHaveAttribute('data-fdt-hides-wp-rocket', '');
       // Negative states are no chips any more.
       await expect(row).not.toContainText('Not delayed');
+      // The detail lists all three, each WP Rocket's.
+      const detail = await openScriptDetail(panel, row);
+      const all = detail.locator('[data-fdt="script-detail-chips"]');
+      expect(await stateWords(all), name).toEqual(['Delayed', 'Deferred', 'Minified']);
+      expect(await stateSources(all), name).toEqual(['wp-rocket', 'wp-rocket', 'wp-rocket']);
+      await closeScriptDetail(panel);
     }
 
     // The core navigation module: delayed and deferred, not minified, its type kept.
     const module = rowWith(panel, 'block-library/navigation/view.min.js');
     expect(await stateWords(module)).toEqual(['Delayed', 'Deferred']);
     expect(await stateSources(module)).toEqual(['wp-rocket', 'wp-rocket']);
-    await expect(module.locator('[data-fdt="script-original-type"]')).toHaveText('type: module');
+    await expect(module.locator('[data-fdt="state-chip-overflow"]')).toHaveCount(0);
+    await expect(module.locator('[data-fdt="list-row-preview"]')).toHaveText(/^module · /);
+    const moduleDetail = await openScriptDetail(panel, module);
+    const facts = moduleDetail.locator('[data-fdt="script-facts"]');
+    await expect(facts.locator('dt', { hasText: 'Original type' })).toHaveCount(1);
+    await expect(facts.locator('dd', { hasText: /^module$/ })).toHaveCount(1);
+    await closeScriptDetail(panel);
 
-    // Filters cover every chip: Minified lists exactly the minified scripts.
+    // The facets cover every chip: Minified lists exactly the minified scripts.
     expect(await chipCount(panel, 'minified')).toBe(String(MINIFIED_SCRIPTS.length));
     expect(await chipCount(panel, 'combined')).toBe('0');
-    await expect(panel.locator('[data-fdt-filter-chip="combined"]')).toBeDisabled();
-    await panel.locator('[data-fdt-filter-chip="minified"]').click();
+    await expect(facetSegment(panel, 'combined').locator('input')).toBeDisabled();
+    await pickFacet(panel, 'minified');
     const shown = panel.locator('[data-fdt="script-row"]');
     await expect(shown).toHaveCount(MINIFIED_SCRIPTS.length);
     for (const name of MINIFIED_SCRIPTS) await expect(rowWith(panel, name)).toHaveCount(1);
-    await panel.locator('[data-fdt-filter-chip="all"]').click();
+    await pickFacet(panel, 'any', 'File');
 
-    // No sideways scroll at any panel width; the three chips stay on screen at 320.
+    // No sideways scroll at any panel width; the row's chips stay on screen
+    // at 320, and on one line (two chips + "+1", icons included) from the
+    // narrow panel's 420 on — at 320 the compact chip line (≈ 140 px) is
+    // narrower than the set (≈ 190 px) and wraps instead.
     const root = panel.locator('[data-fdt-page="javascript"]');
-    for (const width of [320, 480, 768, 1280]) {
+    for (const width of [320, 420, 480, 760, 768, 1100, 1280]) {
       await panel.setViewportSize({ width, height: 2400 });
       await expect
         .poll(() => root.evaluate((element) => element.scrollWidth - element.clientWidth), {
@@ -158,7 +184,7 @@ test('state chips and filters read WP Rocket’s real Delay, Defer and Minify JS
         })
         .toBe(0);
       const chips = rowWith(panel, MINIFIED_SCRIPTS[0]).locator(
-        '[data-fdt="state-chip"] [data-fdt="badge"]'
+        '[data-fdt="state-chip"] [data-fdt="badge"], [data-fdt="state-chip-overflow"] [data-fdt="badge"]'
       );
       await expect(chips).toHaveCount(3);
       const right = await root.evaluate((element) => element.getBoundingClientRect().right);
@@ -167,6 +193,19 @@ test('state chips and filters read WP Rocket’s real Delay, Defer and Minify JS
       )) {
         expect(box, `chip inside the page at ${String(width)}px`).toBeLessThanOrEqual(right + 0.5);
       }
+      // One line: every chip starts above the bottom of every other one.
+      const boxes = await chips.evaluateAll((elements) =>
+        elements.map((element) => {
+          const { top, bottom } = element.getBoundingClientRect();
+          return { top, bottom };
+        })
+      );
+      const oneLine =
+        Math.max(...boxes.map((box) => box.top)) < Math.min(...boxes.map((box) => box.bottom));
+      if (width >= 420)
+        expect(oneLine, `chips on one line at ${String(width)}px: ${JSON.stringify(boxes)}`).toBe(
+          true
+        );
     }
   } finally {
     await panel.close();
@@ -206,11 +245,13 @@ test('Combine JavaScript files: the bundle reads Combined, never Minified; the m
     const bundleName = new URL(bundles[0] ?? '', SITE_URL).pathname.split('/').pop() ?? '';
     const row = rowWith(panel, bundleName);
     await expect(row).toBeVisible();
-    const words = await stateWords(row);
+    // The detail lists every chip (a row may fold some into "+N").
+    const chips = (await openScriptDetail(panel, row)).locator('[data-fdt="script-detail-chips"]');
+    const words = await stateWords(chips);
     expect(words).toContain('Combined');
     expect(words).not.toContain('Minified');
     // WP Rocket built the bundle: the chip carries its source.
-    await expect(row.locator('[data-fdt-state="combined"]')).toHaveAttribute(
+    await expect(chips.locator('[data-fdt-state="combined"]')).toHaveAttribute(
       'data-fdt-source',
       'wp-rocket'
     );

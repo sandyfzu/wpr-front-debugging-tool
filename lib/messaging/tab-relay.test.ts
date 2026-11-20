@@ -28,6 +28,10 @@ function asksDouble(): TabAsks & { calls: unknown[][] } {
       calls.push(['getScriptSourceChunk', tabId, request]);
       return Promise.resolve({ status: 'unavailable' });
     }),
+    getServedScriptTag: vi.fn((tabId: number, request: unknown) => {
+      calls.push(['getServedScriptTag', tabId, request]);
+      return Promise.resolve({ status: 'gone' });
+    }),
     startRucssTest: vi.fn((tabId: number, request: unknown) => {
       calls.push(['startRucssTest', tabId, request]);
       return Promise.resolve({ ok: false, failure: { kind: 'refused' } });
@@ -59,18 +63,24 @@ function asksDouble(): TabAsks & { calls: unknown[][] } {
     listPageStylesheets: vi.fn((tabId: number) => {
       calls.push(['listPageStylesheets', tabId]);
       return Promise.resolve({ styles: [], total: 0 });
+    }),
+    getStyleSourceChunk: vi.fn((tabId: number, request: unknown) => {
+      calls.push(['getStyleSourceChunk', tabId, request]);
+      return Promise.resolve({ status: 'gone' });
     })
   };
 }
 
 describe('the relayable asks registry', () => {
-  it('is the closed list of the ten panel→tab asks', () => {
+  it('is the closed list of the thirteen panel→tab asks', () => {
     expect(Object.keys(TAB_RELAY_ASKS).sort()).toEqual([
       'applyRucssTest',
       'getCurrentVisitVitals',
       'getFdtData',
       'getScriptRuntimeStatuses',
       'getScriptSourceChunk',
+      'getServedScriptTag',
+      'getStyleSourceChunk',
       'listPageStyles',
       'listPageStylesheets',
       'processPageData',
@@ -139,6 +149,49 @@ describe('parseTabRelayRequest', () => {
       payload: { ...CHUNK, extra: 'smuggled' }
     })?.forward(asks);
     expect(asks.calls).toEqual([['getScriptSourceChunk', 9, CHUNK]]);
+  });
+
+  it('forwards a served-tag ask rebuilt from its two fields and refuses a malformed one', async () => {
+    const asks = asksDouble();
+    const tag = { snapshotId: CHUNK.snapshotId, scriptIndex: 3 };
+    await parseTabRelayRequest({ tabId: 9, ask: 'getServedScriptTag', payload: tag })?.forward(
+      asks
+    );
+    expect(asks.calls).toEqual([['getServedScriptTag', 9, tag]]);
+    for (const payload of [
+      { ...tag, extra: 'smuggled' },
+      { ...tag, scriptIndex: -1 },
+      { snapshotId: 'not-an-id', scriptIndex: 0 },
+      undefined
+    ]) {
+      expect(
+        parseTabRelayRequest({ tabId: 9, ask: 'getServedScriptTag', payload }),
+        JSON.stringify(payload)
+      ).toBeNull();
+    }
+  });
+
+  it('forwards a style-source ask rebuilt from its three fields and refuses any other shape', async () => {
+    const asks = asksDouble();
+    const read = { snapshotId: CHUNK.snapshotId, styleIndex: 4, offset: 65_536 };
+    await parseTabRelayRequest({ tabId: 9, ask: 'getStyleSourceChunk', payload: read })?.forward(
+      asks
+    );
+    expect(asks.calls).toEqual([['getStyleSourceChunk', 9, read]]);
+    expect(asks.calls[0]?.[2]).not.toBe(read);
+    for (const payload of [
+      { ...read, extra: 'smuggled' },
+      { ...read, styleIndex: -1 },
+      { ...read, offset: 1.5 },
+      { snapshotId: 'not-an-id', styleIndex: 0, offset: 0 },
+      { snapshotId: read.snapshotId, styleIndex: 0 },
+      undefined
+    ]) {
+      expect(
+        parseTabRelayRequest({ tabId: 9, ask: 'getStyleSourceChunk', payload }),
+        JSON.stringify(payload)
+      ).toBeNull();
+    }
   });
 
   it('forwards the RUCSS steps with their payloads rebuilt, and refuses broken ones', async () => {

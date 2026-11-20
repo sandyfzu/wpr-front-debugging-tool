@@ -100,4 +100,16 @@ describe('parseStyleInventory', () => {
     expect(parseStyleInventory({ styles: [1, 'x'], total: 2 }, numbers)).toBeNull();
     expect(parseStyleInventory({ styles: [1, 2], total: 1 }, numbers)).toBeNull();
   });
+
+  it('admits only the extra keys a wider inventory names, and returns the shared fields', () => {
+    const numbers = (item: unknown): number | null => (typeof item === 'number' ? item : null);
+    const reply = { styles: [1], total: 1, snapshotId: 'x' };
+    expect(parseStyleInventory(reply, numbers)).toBeNull();
+    expect(parseStyleInventory(reply, numbers, ['snapshotId'])).toEqual({ styles: [1], total: 1 });
+    expect(parseStyleInventory({ ...reply, other: 1 }, numbers, ['snapshotId'])).toBeNull();
+  });
+
+  it('keeps the RUCSS inventory exact: a snapshot id is not one of its keys', () => {
+    expect(parsePageStylesReply({ styles: [], total: 0, snapshotId: 'a'.repeat(32) })).toBeNull();
+  });
 });

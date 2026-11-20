@@ -62,10 +62,26 @@
     "required": true
   },
   {
-    "surface": "options JS",
-    "globs": ["chunks/options-*.js", "options.js"],
+    "surface": "options page start JS (options.html + static imports)",
+    "start": "options.html",
     "maxKb": {
-      "raw": 50
+      "raw": 198
+    }
+  },
+  {
+    "surface": "options page start JS (Firefox)",
+    "build": "firefox-mv2",
+    "start": "options.html",
+    "maxKb": {
+      "raw": 198
+    }
+  },
+  {
+    "surface": "data-sharing consent page start JS (Firefox only)",
+    "build": "firefox-mv2",
+    "start": "data-consent.html",
+    "maxKb": {
+      "raw": 93
     }
   },
   {
@@ -158,17 +174,25 @@
     }
   },
   {
-    "surface": "devtools panel JS (all panel chunks)",
-    "globs": ["chunks/panel-*.js", "panel.js", "chunks/fdt-*.js", "chunks/page-identity-*.js"],
+    "surface": "devtools panel start JS (panel.html + static imports)",
+    "start": "panel.html",
     "maxKb": {
-      "raw": 600
+      "raw": 706
+    }
+  },
+  {
+    "surface": "devtools panel start JS (Firefox)",
+    "build": "firefox-mv2",
+    "start": "panel.html",
+    "maxKb": {
+      "raw": 706
     }
   },
   {
     "surface": "panel cold-start (harness fixture)",
     "kind": "timing",
     "maxMs": 500,
-    "measuredBy": "the P5.1 harness spec (tests/e2e/suites/panel-cold-start.spec.ts)"
+    "measuredBy": "the cold-start harness spec (tests/e2e/suites/panel-cold-start.spec.ts)"
   },
   {
     "surface": "code highlighter (shiki worker, panel)",
@@ -177,6 +201,35 @@
       "raw": 368,
       "gzip": 75
     }
+  },
+  {
+    "surface": "code highlighter (shiki worker, Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["assets/code-block-highlight.worker-*.js"],
+    "maxKb": {
+      "raw": 368,
+      "gzip": 75
+    },
+    "required": true
+  },
+  {
+    "surface": "code highlighter CSS + HTML grammars (worker chunk, on demand, panel)",
+    "globs": ["assets/code-block-web-grammars-*.js"],
+    "maxKb": {
+      "raw": 112,
+      "gzip": 24
+    },
+    "required": true
+  },
+  {
+    "surface": "code highlighter CSS + HTML grammars (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["assets/code-block-web-grammars-*.js"],
+    "maxKb": {
+      "raw": 112,
+      "gzip": 24
+    },
+    "required": true
   },
   {
     "surface": "RUCSS test build worker (panel)",
@@ -201,8 +254,8 @@
     "surface": "Beacon Tester page (panel chunk, loaded on first visit)",
     "globs": ["chunks/beacon-tester-*.js"],
     "maxKb": {
-      "raw": 44.2,
-      "gzip": 14
+      "raw": 46.7,
+      "gzip": 14.7
     },
     "required": true
   },
@@ -211,8 +264,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/beacon-tester-*.js"],
     "maxKb": {
-      "raw": 44.2,
-      "gzip": 14
+      "raw": 46.7,
+      "gzip": 14.7
     },
     "required": true
   },
@@ -220,8 +273,8 @@
     "surface": "LCP & Vitals page (panel chunk, loaded on first visit)",
     "globs": ["chunks/lcp-vitals-*.js"],
     "maxKb": {
-      "raw": 26.1,
-      "gzip": 8.4
+      "raw": 32.1,
+      "gzip": 10.2
     },
     "required": true
   },
@@ -230,8 +283,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/lcp-vitals-*.js"],
     "maxKb": {
-      "raw": 26.1,
-      "gzip": 8.4
+      "raw": 32.1,
+      "gzip": 10.2
     },
     "required": true
   },
@@ -239,8 +292,8 @@
     "surface": "Stylesheets page (panel chunk, loaded on first visit)",
     "globs": ["chunks/stylesheets-*.js"],
     "maxKb": {
-      "raw": 11.4,
-      "gzip": 4.12
+      "raw": 20.4,
+      "gzip": 7.3
     },
     "required": true
   },
@@ -249,8 +302,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/stylesheets-*.js"],
     "maxKb": {
-      "raw": 11.4,
-      "gzip": 4.12
+      "raw": 20.4,
+      "gzip": 7.3
     },
     "required": true
   },
@@ -269,7 +322,7 @@
     "globs": ["chunks/runtime-states-*.js"],
     "maxKb": {
       "raw": 16.2,
-      "gzip": 6.1
+      "gzip": 6.3
     },
     "required": true
   },
@@ -293,8 +346,9 @@
   {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
+    "backstop": true,
     "maxKb": {
-      "raw": 2160
+      "raw": 2418
     }
   }
 ]

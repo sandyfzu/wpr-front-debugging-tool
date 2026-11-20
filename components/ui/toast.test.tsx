@@ -107,6 +107,32 @@ describe('toast region', () => {
     }
   });
 
+  it('draws each toast as a floating card with a control-cornered close square', () => {
+    render(() => <Toasts />);
+    toast.info('Saved');
+    const item = screen.getByRole('listitem');
+    const card = item.className.split(/\s+/);
+    expect(card).toEqual(
+      expect.arrayContaining([
+        'rounded-lg',
+        'border',
+        'border-line-2',
+        'bg-surface-2',
+        'shadow-elev-3',
+        'px-2.5',
+        'py-2',
+        'gap-2'
+      ])
+    );
+    expect(card).not.toContain('rounded-md');
+    const close = within(item).getByRole('button').className.split(/\s+/);
+    expect(close).toEqual(
+      expect.arrayContaining(['size-6', 'rounded-control', 'hover:bg-surface-3'])
+    );
+    expect(close).toContain('focus-visible:outline-accent');
+    expect(close).not.toContain('rounded');
+  });
+
   it('ranks the region above the dialog plate (the notifications layer intent)', () => {
     // The layer rank is structural (scrim 40 < plate/tooltips 50 < toasts 60):
     // pinned at the class literal so a rank change is a deliberate edit.

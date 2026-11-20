@@ -4,13 +4,15 @@
  * (no `tabs` API and no runtime send for the background relay —
  * `NO_PAGE_TRANSPORT_REASON`), or the background relay itself failed (it
  * refused the request, could not be reached, or answered outside its
- * contract — `RELAY_UNAVAILABLE_REASON`, which says to reopen DevTools). A
- * title, the one sentence naming why and what still works, and no retry —
- * nothing the panel could retry would change the answer.
+ * contract — `RELAY_UNAVAILABLE_REASON`, which says to reopen DevTools). An
+ * info tile, the title, the one sentence naming why and what still works,
+ * and no retry — nothing the panel could retry would change the answer.
+ * Same anatomy as the error view (the shell frames both alike).
  */
 import type { JSX } from 'solid-js';
 import Info from 'lucide-solid/icons/info';
 import { PageHeader } from '../../components/ui/page-header';
+import { StateIcon } from '../../components/ui/state-icon';
 
 /** The view's title (declared once; the panel's status line says the same). */
 export const DATA_UNAVAILABLE_TITLE = 'Page data isn’t available in this panel';
@@ -33,7 +35,9 @@ export function DataUnavailable(props: DataUnavailableProps): JSX.Element {
       role="status"
       class="flex flex-col items-center gap-1.5 py-6 text-center"
     >
-      <Info size={16} class="shrink-0 text-fg-muted" aria-hidden="true" />
+      <StateIcon tone="info" size="lg" class="mb-1">
+        <Info size={22} aria-hidden="true" />
+      </StateIcon>
       <PageHeader title={DATA_UNAVAILABLE_TITLE} />
       <p class="max-w-72 text-2xs leading-snug text-fg-secondary">{props.reason}</p>
     </div>

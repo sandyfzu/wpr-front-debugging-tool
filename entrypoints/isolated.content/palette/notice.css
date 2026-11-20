@@ -8,7 +8,7 @@
  * Motion: the notice enters on the floating-chrome moment (`--motion-slow`,
  * entrance easing, opacity + a 6 px drop) through `@starting-style`, and
  * leaves instantly (the state never waits on a transition); reduced motion
- * is collapsed by the token stylesheet.
+ * drops it (the token stylesheet).
  */
 
 .pn-layer {
@@ -83,6 +83,29 @@
   line-height: 16px;
   color: var(--fg-secondary);
   overflow-wrap: anywhere;
+}
+
+.pn-action {
+  display: inline-flex;
+  align-items: center;
+  margin: 8px 0 0;
+  padding: 3px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--fg-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pn-action:hover {
+  background: var(--surface-4);
+}
+
+.pn-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .pn-close {

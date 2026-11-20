@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { expect, test } from '../helpers/extension';
+import { settleFrames } from '../helpers/frames';
 import { openPanelForFixture } from '../helpers/panel-data';
 
 /** Dev-time accessibility engine evaluated outside the extension page's CSP. */
@@ -120,6 +121,9 @@ test('copy success and failure notifications preserve native list items and clea
     await expect(items.nth(1).getByRole('alert')).toContainText('The report could not be copied');
     for (const width of [320, 480, 768, 1280]) {
       await panel.setViewportSize({ width, height: 800 });
+      // The shell's measured folds (top bar, sidebar) answer the resize in the
+      // next frame's observer step: read the settled layout, not the instant one.
+      await settleFrames(panel);
       expect(
         await panel.evaluate(
           () => document.documentElement.scrollWidth === document.documentElement.clientWidth

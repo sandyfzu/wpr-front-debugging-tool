@@ -111,8 +111,8 @@ describe('visibleRowsInRail', () => {
   });
 
   it('heights too small for one row leave nothing in the rail (the menu holds everything)', () => {
-    // Smaller than one row + the palette trigger + the status bar: the rail is
-    // its trigger alone; every row is reachable through the menu instead.
+    // Smaller than one row: the rail is its overflow trigger alone; every row
+    // is reachable through the menu instead.
     for (const available of [0, 1, 31.9]) {
       const result = visibleRowsInRail(ALL, available);
       expect(result.visible).toEqual([]);

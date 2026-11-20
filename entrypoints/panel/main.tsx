@@ -5,9 +5,13 @@
  * 1. global error handlers first (the page is an exclusive extension
  *    document — there is no host page to attribute errors to);
  * 2. the stored appearance resolves onto `<html>` with its follow armed
- *    *before* the app renders — combined with `index.html`'s paint lock the
+ *    (which also feeds the top bar's appearance menu its value) *before*
+ *    the app renders — combined with `index.html`'s paint lock the
  *    first painted frame is the resolved palette (a failed read paints the
- *    token default instead, never a wrong or stuck-hidden panel);
+ *    token default instead and still follows later writes, never a wrong
+ *    or stuck-hidden panel); the sidebar pin is read concurrently (never
+ *    after it: the cold start would pay both reads), so the first frame
+ *    with the shell already has the pinned nav form;
  * 3. the Solid app mounts and the shell takes over (stores, router, data
  *    flight registration all happen inside `App`, once per panel run);
  * 4. the cold-start instrument marks script start (this module's first
@@ -16,7 +20,10 @@
 import { render } from 'solid-js/web';
 import { onUncaughtError, onUnhandledRejection } from '../../lib/uncaught-errors';
 import { createLogger } from '../../lib/logger';
-import { applyStoredAppearance, releaseThemeLock } from '../../lib/appearance/appearance';
+import { releaseThemeLock } from '../../lib/appearance/appearance';
+import { bootAppearance } from '../../components/boot-appearance';
+import { bootNavPin } from './nav/nav-pin';
+import { bootDetailShare } from './state/detail-share';
 import { panelColdStart } from './cold-start';
 import './style.css';
 import App from './App';
@@ -32,34 +39,32 @@ const root = document.getElementById('root');
 if (!root) throw new Error('#root element missing from panel/index.html');
 
 /**
- * Boot sequence: stored appearance → palette applied → lock released →
- * render. The paint lock releases in every arm — a resolved appearance and
- * its failed read (the finally), plus a boot failure beyond that (the outer
- * catch) — so the panel is never left hidden; the hidden period paints no
- * frame, only the release does, in the resolved palette.
+ * Boot sequence: stored appearance → palette applied → lock released, with
+ * the sidebar pin and the detail pane share read alongside → render. The paint lock releases in every arm — a resolved appearance and
+ * its failed read (the appearance leg), plus a boot failure beyond that
+ * (the outer catch) — so the panel is never left hidden; the hidden period
+ * paints no frame, only the release does, in the resolved palette.
  *
  * @param mountPoint The pre-checked `#root` element (the document is
  *   guarded once at module scope; everything below assumes it exists).
  * @throws Only for an unrenderable page — the mount error is logged by the
- *   caller below; the appearance leg degrades to its own documented default.
+ *   caller below; the appearance, pin and share legs degrade to their
+ *   own documented defaults (none rejects).
  */
 async function boot(mountPoint: HTMLElement): Promise<void> {
-  try {
-    // The follow handle lives for the page's lifetime (tokens.css resolves a
-    // stored `system` through the OS media query, so only writes from the
-    // options page need re-applying); a failed read degrades to the token
-    // stylesheet's system default and skips the follow.
-    await applyStoredAppearance(document.documentElement);
-  } catch (cause) {
-    log.warn(
-      "Stored appearance could not be read — following the system scheme (the token stylesheet's default)",
-      cause instanceof Error ? { message: cause.message } : cause
-    );
-  } finally {
-    releaseThemeLock(document.documentElement);
-  }
+  // The stored appearance resolves (follow armed, lock released) and the
+  // sidebar pin + detail share are read, concurrently, before the render; no
+  // leg rejects — each logs and degrades on its own.
+  const [appearance, navPin, detailShare] = await Promise.all([
+    bootAppearance(document.documentElement, log),
+    bootNavPin(log),
+    bootDetailShare(log)
+  ]);
 
-  render(() => <App />, mountPoint);
+  render(
+    () => <App appearance={appearance} navPin={navPin} detailShare={detailShare} />,
+    mountPoint
+  );
   // The shell is mounted: the third cold-start entry. A failed render above
   // never reaches this — the interactive point marks only a real shell.
   panelColdStart.markShellInteractive();

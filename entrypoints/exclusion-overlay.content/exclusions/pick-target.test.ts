@@ -252,7 +252,7 @@ describe('nameUrl', () => {
       text: 'cdn.example.net',
       file: 'cdn.example.net'
     });
-    // Changed in P10K.4b: a host-less value without a path holds no text a
+    // A host-less value without a path holds no text a
     // row could name (the host is not in the markup), so it gets no name.
     expect(nameUrl('/', PAGE)).toBeNull();
     expect(nameUrl('/?wc-ajax=1', PAGE)).toBeNull();

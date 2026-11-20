@@ -1,17 +1,20 @@
 /**
  * Resource rows lead with the file name on real Chromium: at a 320 px panel
  * (the narrowest supported) in both palettes, every URL row on the
- * JavaScript, Stylesheets and Lazyload pages shows its file name whole —
- * not cut by the row, inside the page — while the full URL stays the row's
- * link (its `title` carrying it) beneath, and the page never scrolls
- * sideways; at a regular-tier 768 px width the settled names stay whole too.
- * The palette check reads the rendered `color-scheme` (no stored Dark/Light
- * override), not just the emulated media. The fixture's URLs are deliberately
- * deep so the URL line itself truncates long before its file name: what a
- * bare URL row would hide.
+ * JavaScript, Stylesheets, Lazyload and Preloaded Resources pages shows its
+ * file name whole — not cut by the row, inside the page — while the full
+ * URL stays one step away: the row's URL preview beneath and its detail's
+ * source-link tile (href + `title`, its file name whole inside the tile);
+ * the page never scrolls sideways; at a
+ * regular-tier 768 px width the settled names stay whole too. The palette
+ * check reads the rendered `color-scheme` (no stored Dark/Light override),
+ * not just the emulated media. The fixture's URLs are deliberately deep so
+ * the URL line itself truncates long before its file name: what a bare URL
+ * row would hide.
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
+import { closeScriptDetail, openScriptDetail } from '../helpers/javascript-page';
 import { expectSystemPalette, resetStoredOptions } from '../helpers/options';
 import { openPanelForFixture } from '../helpers/panel-data';
 
@@ -19,28 +22,54 @@ import { openPanelForFixture } from '../helpers/panel-data';
 const DEEP =
   'https://example.test/wp-content/plugins/a-plugin-with-a-rather-long-directory-name/assets';
 
-/** Each page under test: its route, its row hook and the file names its rows must show. */
+/**
+ * Each page under test: its route, its row hook, its rows' name hook, the
+ * file names its rows must show (each row opens its detail, whose tile
+ * carries the full URL).
+ */
 const PAGES = [
   {
     route: 'javascript',
-    row: '[data-fdt="script-row"][data-fdt-script-type="external"]',
+    row: '[data-fdt="script-row"]',
+    name: '[data-fdt="list-row-name"]',
     names: ['frontend.min.js', 'vendor.js']
   },
   {
     route: 'stylesheets',
-    row: '[data-fdt="stylesheet-row"]:has([data-fdt="resource-name"])',
+    row: '[data-fdt="stylesheet-row"]',
+    name: '[data-fdt="list-row-name"]',
     names: ['style.min.css', 'print.css']
   },
   {
     route: 'lazyload',
-    row: '[data-fdt="resource-link"]',
+    row: '[data-fdt="lazyload-row"]',
+    name: '[data-fdt="list-row-name"]',
     names: ['hero-photo.jpg']
+  },
+  {
+    route: 'preloaded-resources',
+    row: '[data-fdt="hint-row"]',
+    name: '[data-fdt="list-row-name"]',
+    names: ['inter-var.woff2']
   }
 ] as const;
 
-/** The fixture: deep-path scripts (one delayed), stylesheets (one print-only) and an image. */
+/**
+ * The file name's pattern at the end of a URL path (before its query/hash).
+ *
+ * @param name The file name.
+ */
+function fileUrlPattern(name: string): RegExp {
+  return new RegExp(`/${name.replaceAll('.', '\\.')}`);
+}
+
+/**
+ * The fixture: deep-path scripts (one delayed), stylesheets (one
+ * print-only), a font preload and an image.
+ */
 function nameFirstPage(): string {
   return `<!doctype html><html lang="en"><head><title>Name-first rows</title>
+    <link rel="preload" as="font" href="${DEEP}/fonts/inter-var.woff2" crossorigin>
     <link rel="stylesheet" href="${DEEP}/css/style.min.css?ver=6.8.3">
     <link rel="stylesheet" media="print" href="${DEEP}/css/print/print.css?ver=1.0#x">
     </head><body><h1>Name-first rows</h1>
@@ -52,9 +81,9 @@ function nameFirstPage(): string {
 
 /**
  * One name's fit: whether its text is cut by its own box, and how far its
- * box ends past the page's right edge (≤ 0 = inside).
+ * box ends past its container's right edge (≤ 0 = inside).
  *
- * @param page The page root.
+ * @param page The container: the page root, or the detail's tile.
  * @param name The name element.
  */
 async function nameFit(page: Locator, name: Locator): Promise<{ cut: boolean; overflow: number }> {
@@ -163,7 +192,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await expect(rows).toHaveCount(target.names.length);
         for (const [index, expected] of target.names.entries()) {
           const row = rows.nth(index);
-          const name = row.locator('[data-fdt="resource-name"]');
+          const name = row.locator(target.name);
           await expect(name).toHaveText(expected);
           await expect(name).toBeVisible();
           const fit = await nameFit(page, name);
@@ -171,14 +200,40 @@ for (const colorScheme of ['light', 'dark'] as const) {
           expect(fit.overflow, `${target.route} ${expected} inside the page`).toBeLessThanOrEqual(
             0.5
           );
-          // The full URL is still the row's link, its preview on the text's title.
-          const link = row.getByRole('link');
-          await expect(link).toHaveAttribute(
-            'href',
-            new RegExp(`/${expected.replaceAll('.', '\\.')}`)
+          // The URL previews beneath the name (scheme dropped); the full URL
+          // is the detail's source-link tile: its href and its title.
+          await expect(row.locator('[data-fdt="list-row-preview"]')).toContainText(
+            DEEP.replace('https://', '')
           );
-          const title = await link.locator('[title]').getAttribute('title');
-          expect(title?.startsWith(DEEP)).toBe(true);
+          const detail = await openScriptDetail(panel, row);
+          const link = detail.locator('[data-fdt="source-link"] a[href]').first();
+          await expect(link).toHaveAttribute('href', fileUrlPattern(expected));
+          const tile = detail.locator('[data-fdt="source-link-open"]');
+          expect((await tile.getAttribute('title'))?.startsWith(DEEP)).toBe(true);
+          // The tile names the file whole however deep the path: only its
+          // directory elides, and the file stays inside the tile.
+          const file = tile.locator('[data-fdt="source-link-file"]');
+          await expect(file).toHaveText(expected);
+          await expect(file).toBeVisible();
+          const fileFit = await nameFit(tile, file);
+          expect(fileFit.cut, `${expected} tile file name whole`).toBe(false);
+          expect(fileFit.overflow, `${expected} tile file inside the tile`).toBeLessThanOrEqual(
+            0.5
+          );
+          // Nor clamped away below the path's visible lines.
+          const path = tile.locator('[data-fdt="source-link-path"]');
+          const clip = await path.evaluate((element) => {
+            const shown = element.querySelector('[data-fdt="source-link-file"]');
+            return {
+              hidden: element.scrollHeight - element.clientHeight,
+              below:
+                (shown?.getBoundingClientRect().bottom ?? Infinity) -
+                element.getBoundingClientRect().bottom
+            };
+          });
+          expect(clip.hidden, `${expected} tile path never clamped`).toBeLessThanOrEqual(0.5);
+          expect(clip.below, `${expected} tile file within the path`).toBeLessThanOrEqual(0.5);
+          await closeScriptDetail(panel);
         }
         await expect
           .poll(() => page.evaluate((element) => element.scrollWidth - element.clientWidth), {
@@ -193,7 +248,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         const rows = page.locator(target.row);
         await expect(rows).toHaveCount(target.names.length);
         for (const [index, expected] of target.names.entries()) {
-          const name = rows.nth(index).locator('[data-fdt="resource-name"]');
+          const name = rows.nth(index).locator(target.name);
           await expect(name).toBeVisible();
           await expect
             .poll(() => settledName(name), { message: `${target.route} ${expected} at 768 px` })

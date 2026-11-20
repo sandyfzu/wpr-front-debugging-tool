@@ -1,8 +1,9 @@
 /**
- * The panel nav's browser suite: the icon rail is the form at every width
- * (no morphology switch), real hash links carry `aria-current`, the tooltip
- * wiring holds for the anchor rows — and a row's
- * open tooltip never covers its sibling rows (the placement regression the
+ * The panel nav's browser suite: the nav is a vertical column in both forms
+ * (the icon rail below 1080 px, the labeled sidebar from it — the form rule
+ * itself is `panel-sidebar`'s), real hash links carry `aria-current`, the
+ * rail's tooltip wiring holds for the anchor rows — and a row's open tooltip
+ * never covers its sibling rows (the placement regression the
  * below-floating tooltip had).
  *
  * The height axis is the rail's overflow contract: shrinking the panel
@@ -176,6 +177,10 @@ interface NavGeometry {
   /** One row's resolved row layout. */
   firstRowDisplay: string;
   shellFlexDirection: string;
+  /** The nav's rendered form. */
+  form: string | null;
+  /** Page-nav traces inside the top bar (the page nav never lives there). */
+  topBarNavLinks: number;
 }
 
 async function readGeometry(page: Page): Promise<NavGeometry> {
@@ -190,13 +195,20 @@ async function readGeometry(page: Page): Promise<NavGeometry> {
       headerBorderRightWidth: header === null ? '' : getComputedStyle(header).borderRightWidth,
       headerBorderBottomWidth: header === null ? '' : getComputedStyle(header).borderBottomWidth,
       firstRowDisplay: firstRow === null ? '' : getComputedStyle(firstRow).display,
-      shellFlexDirection: shell === null ? '' : getComputedStyle(shell).flexDirection
+      shellFlexDirection: shell === null ? '' : getComputedStyle(shell).flexDirection,
+      form: nav === null ? null : nav.getAttribute('data-fdt-nav-form'),
+      // A nav landmark, or a route link beyond the answers' own Detections link.
+      topBarNavLinks:
+        document.querySelectorAll('[data-fdt="panel-top-bar"] nav').length +
+        [...document.querySelectorAll('[data-fdt="panel-top-bar"] a[href^="#/"]')].filter(
+          (link) => link.getAttribute('href') !== '#/detections'
+        ).length
     };
   });
 }
 
-test.describe('panel nav (icon rail + tooltips)', () => {
-  test('keeps the icon rail at every width — no morphology switch, no top bar', async ({
+test.describe('panel nav (vertical forms + rail tooltips)', () => {
+  test('the nav is vertical in both forms; the top bar holds identity only', async ({
     extension
   }) => {
     const page = await extension.browserContext.newPage();
@@ -206,26 +218,33 @@ test.describe('panel nav (icon rail + tooltips)', () => {
 
       // Narrow: the rail column beside the content.
       const narrow = await readGeometry(page);
+      expect(narrow.form).toBe('rail');
       expect(narrow.navFlexDirection).toBe('column');
       expect(narrow.shellFlexDirection).toBe('row');
       expect(narrow.headerBorderRightWidth).not.toBe('0px');
       expect(narrow.headerBorderBottomWidth).toBe('0px');
 
-      // RESIZE wide in the SAME page: still the rail — the header keeps its
-      // right edge and grows no bottom edge (the top bar is retired).
-      await page.setViewportSize({ width: 1000, height: 700 });
+      // RESIZE wide in the SAME page: the labeled sidebar — still a vertical
+      // column with its right edge, never a horizontal nav.
+      await page.setViewportSize({ width: 1280, height: 700 });
       await page.waitForTimeout(120);
       const wide = await readGeometry(page);
+      expect(wide.form).toBe('labeled');
       expect(wide.navFlexDirection).toBe('column');
       expect(wide.shellFlexDirection).toBe('row');
       expect(wide.headerBorderRightWidth).not.toBe('0px');
       expect(wide.headerBorderBottomWidth).toBe('0px');
       expect(wide.firstRowDisplay).toBe('flex');
 
+      // The top bar carries identity and controls, never the page nav.
+      expect(wide.topBarNavLinks).toBe(0);
+
       // And back again without a reload.
       await page.setViewportSize({ width: 700, height: 900 });
       await page.waitForTimeout(120);
-      expect((await readGeometry(page)).navFlexDirection).toBe('column');
+      const back = await readGeometry(page);
+      expect(back.form).toBe('rail');
+      expect(back.navFlexDirection).toBe('column');
     } finally {
       await page.close();
     }
@@ -494,7 +513,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
 
       // A hidden route navigates: the menu closes and the hash swaps. The
       // standalone harness's data path settles at the recorded error state
-      // (no content script answers the runtime broadcast — the P5I-verified
+      // (no content script answers the runtime broadcast — a verified
       // transport reason), so no page h1 renders here; the route's own
       // marker is honest anyway: reopening the menu shows the navigated row
       // with `aria-current="page"`.
@@ -561,7 +580,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
 
       // Enter on the focused item navigates; the selection closes the menu.
       // The standalone harness's data path settles at the recorded error
-      // state (no content script answers the broadcast — the P5I-verified
+      // state (no content script answers the broadcast — a verified
       // transport reason), so the selection's own fact is the hash landing
       // plus the reopened menu's `aria-current` on that row.
       const target = await menu
@@ -615,7 +634,11 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
           windowBottom: number;
         } => {
           const triggerBox = document
-            .querySelector<HTMLElement>('[aria-haspopup="menu"]')
+            // The rail's own trigger (the top bar's "⋯" menu trigger also
+            // carries aria-haspopup="menu" below 760 px).
+            .querySelector<HTMLElement>(
+              '[data-fdt="panel-nav-overflow-block"] [aria-haspopup="menu"]'
+            )
             ?.getBoundingClientRect();
           const tooltipBox = document
             .querySelector<HTMLElement>('[role="tooltip"]')
@@ -686,7 +709,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       // internally (the designed token-thin hairline), every hidden route
       // stays pointer-reachable through that scroll, and the rail's own
       // scroll-free invariant is untouched by the plate's.
-      for (const height of [90, 120, 170, 220, 240, 250, 260, 275]) {
+      for (const height of [90, 120, 170, 220, 240, 250, 255, 260]) {
         await shrinkTo(page, height);
         await page.getByRole('button', { name: 'More pages' }).click();
         const menu = page.locator('[data-fdt="panel-nav-overflow-menu"]');
@@ -695,13 +718,14 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
         expect(reach.plateOverflowY, `plate overflow at ${String(height)}px`).toBe('auto');
         expect(reach.plateScrollbarGutter, `plate gutter at ${String(height)}px`).toBe('auto');
         expect(reach.plateNoHorizontalOverflow).toBe(true);
-        // The clamp state: at 275 the plate fits without biting (its rows
+        // The clamp state: at 260 the plate fits without biting (its rows
         // truly fit; no scrollbar exists then); below, it bites and the
         // scroll carries the tail. The fit line follows the registry's row
-        // count — with ten rows it sits at 270 px (probed in 5 px steps,
-        // 200–420: 205–240 clamp eight hidden rows in the plate, 245–265
-        // clamp seven; 270–275 fit seven; 280 and up hide six or fewer, all fitting).
-        if (height === 275) {
+        // count and the shell's chrome above the rail (the 44 px top bar) —
+        // with ten rows it sits at 260 px (probed in 5 px steps, 200–420:
+        // 200–215 clamp eight hidden rows in the plate, 220–255 clamp seven;
+        // 260–290 fit six; 295 and up hide five or fewer, all fitting).
+        if (height === 260) {
           expect(reach.plateClamped).toBe(false);
         } else {
           expect(reach.plateClamped, `plate clamped at ${String(height)}px`).toBe(true);

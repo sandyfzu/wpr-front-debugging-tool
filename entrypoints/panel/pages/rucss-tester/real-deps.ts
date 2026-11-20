@@ -1,8 +1,9 @@
 /**
  * The tester session's production wiring: the shared settings store, the
  * inspected tab's transport (direct where the panel has `tabs`, relayed
- * through the background elsewhere — Firefox), the build worker, and the
- * page's TEST MODE fact from the shell's data store. Resolved per call, so
+ * through the background elsewhere — Firefox), the build worker, the
+ * page's TEST MODE fact from the shell's data store, and — Firefox only —
+ * the data consent before the request (`./data-consent`). Resolved per call, so
  * a run always targets the tab DevTools inspects now.
  */
 import { createLogger } from '../../../../lib/logger';
@@ -28,6 +29,7 @@ import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { devtoolsInspectedTabId } from '../../state/edges';
 import type { DataState } from '../../state/fdt-state-machine';
 import { pageIdOf, pageSettledOf } from '../../state/page-identity';
+import { realRucssConsentGate, watchRucssConsentAnswers } from './data-consent';
 import type { RucssTesterSessionDeps } from './session';
 
 const log = createLogger('rucss-tester');
@@ -81,6 +83,11 @@ export function realRucssTesterDeps(shell: {
         readConfig: getRucssTesterConfig,
         ...rucssTabSteps(target.asks, target.tabId),
         build: (input) => buildRucssInWorker(input),
+        // Build-time branch: Chromium makes no consent request (the shared
+        // consent branches and copy still ship there, inert).
+        ...(import.meta.env.BROWSER === 'firefox' && {
+          consent: realRucssConsentGate(target.tabId, log)
+        }),
         log
       });
     },
@@ -97,6 +104,10 @@ export function realRucssTesterDeps(shell: {
     pageId: () => pageIdOf(shell.state()),
     pageSettled: () => pageSettledOf(shell.state()),
     onApplied: shell.reload,
+    ...(import.meta.env.BROWSER === 'firefox' && {
+      watchConsentAnswers: (onAnswer: (granted: boolean) => void) =>
+        watchRucssConsentAnswers(onAnswer, log)
+    }),
     schedule: scheduleWithTimeout,
     saveDelayMs: SETTINGS_SAVE_DELAY_MS,
     log

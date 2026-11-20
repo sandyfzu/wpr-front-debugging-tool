@@ -25,11 +25,17 @@ describe('the direct transport (the Chromium path)', () => {
     await DIRECT_TAB_ASKS.processPageData(12);
     await DIRECT_TAB_ASKS.getFdtData(12);
     await DIRECT_TAB_ASKS.getScriptSourceChunk(12, CHUNK);
+    await DIRECT_TAB_ASKS.getServedScriptTag(12, { snapshotId: CHUNK.snapshotId, scriptIndex: 2 });
     expect(sendMessage.mock.calls).toEqual([
       ['processPageData', undefined, 12],
       ['getFdtData', undefined, 12],
       // Top frame only: the capture lives in the main frame's hub.
-      ['getScriptSourceChunk', CHUNK, { tabId: 12, frameId: 0 }]
+      ['getScriptSourceChunk', CHUNK, { tabId: 12, frameId: 0 }],
+      [
+        'getServedScriptTag',
+        { snapshotId: CHUNK.snapshotId, scriptIndex: 2 },
+        { tabId: 12, frameId: 0 }
+      ]
     ]);
   });
 
@@ -74,6 +80,14 @@ describe('the direct transport (the Chromium path)', () => {
     await DIRECT_TAB_ASKS.listPageStylesheets(12);
     expect(sendMessage.mock.calls).toEqual([
       ['listPageStylesheets', undefined, { tabId: 12, frameId: 0 }]
+    ]);
+  });
+
+  it('asks a style-source chunk of the top frame only, with its request', async () => {
+    const read = { snapshotId: '0123456789abcdef0123456789abcdef', styleIndex: 2, offset: 0 };
+    await DIRECT_TAB_ASKS.getStyleSourceChunk(12, read);
+    expect(sendMessage.mock.calls).toEqual([
+      ['getStyleSourceChunk', read, { tabId: 12, frameId: 0 }]
     ]);
   });
 

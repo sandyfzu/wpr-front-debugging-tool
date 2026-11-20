@@ -1,23 +1,26 @@
 /**
- * The shared filter/search pattern's tests: the three page definitions'
- * chips and predicates, the builders' content resolution, the composed
- * filter+query semantics (the chip stays applied while searching), the
- * one-pass counts, and the unknown-chip throw.
+ * The shared facet/search pattern's tests: the builders' content
+ * resolution, the three pages' searched fields and facet value predicates,
+ * the composed facet + query semantics (the facets stay applied while
+ * searching), the one-pass counts, and the unknown-value throw.
  */
 import { describe, expect, it } from 'vitest';
+import { applyFacets, facetCounts, type FacetSelection } from './resource-facets';
 import {
-  JS_PAGE_RESOURCES,
-  LAZYLOAD_PAGE_RESOURCES,
-  PRELOADED_PAGE_RESOURCES,
+  JS_PAGE_FACETS,
+  LAZYLOAD_PAGE_FACETS,
+  PRELOADED_PAGE_FACETS,
   buildLazyloadRows,
   buildPreloadedRows,
   buildScriptRows,
-  filterAndSearch,
-  filterCounts,
+  jsScriptSearchField,
+  lazyloadImageSearchField,
+  preloadedHintSearchField,
   reportHints,
   reportHintsTruncated,
-  type JsFilterId,
-  type PreloadedFilterId
+  type JsFacetId,
+  type JsScriptResource,
+  type PreloadedFacetId
 } from './resources-view-model';
 import { emptyDetections } from './support-report.fixtures';
 import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
@@ -68,6 +71,7 @@ describe('buildScriptRows', () => {
         fdtExcluded: null,
         minified: false,
         combined: false,
+        minifyAttribute: false,
         originalType: null
       },
       {
@@ -80,9 +84,18 @@ describe('buildScriptRows', () => {
         fdtExcluded: null,
         minified: false,
         combined: false,
+        minifyAttribute: false,
         originalType: null
       }
     ]);
+  });
+
+  it("carries the tag's minify stamp apart from the page-proven Minified state", () => {
+    const [row] = buildScriptRows(
+      scripts([{ inline: false, src: '/a.js', minifyAttribute: true }])
+    );
+    expect(row?.minifyAttribute).toBe(true);
+    expect(row?.minified).toBe(false);
   });
 
   it('a record without its content/src reads as an empty searched field', () => {
@@ -240,30 +253,16 @@ describe('buildPreloadedRows', () => {
   });
 });
 
-describe('the page definitions — chips and predicates', () => {
-  it('the JavaScript pattern carries the reference chip labels in order', () => {
-    expect(JS_PAGE_RESOURCES.filters.map((filter) => [filter.id, filter.label])).toEqual([
-      ['all', 'Show all'],
-      ['delayed', 'Delayed'],
-      ['non-delayed', 'Non-delayed'],
-      ['deferred', 'Deferred'],
-      ['non-deferred', 'Non-deferred'],
-      ['minified', 'Minified'],
-      ['combined', 'Combined'],
-      ['excluded', 'Excluded'],
-      ['inline', 'Inline'],
-      ['external', 'External']
-    ]);
-    expect(JS_PAGE_RESOURCES.searchField).toBeTypeOf('function');
+describe('the page facets — searched fields and value predicates', () => {
+  it("the JavaScript page searches an inline script's code and an external one's URL", () => {
+    const [external, inline] = buildScriptRows(
+      scripts([{ src: '/a.js' }, { inline: true, content: 'boot();' }])
+    );
+    expect(external === undefined ? null : jsScriptSearchField(external)).toBe('/a.js');
+    expect(inline === undefined ? null : jsScriptSearchField(inline)).toBe('boot();');
   });
 
-  it('the Lazyload pattern carries its four chips; the field is src', () => {
-    expect(LAZYLOAD_PAGE_RESOURCES.filters.map((filter) => [filter.id, filter.label])).toEqual([
-      ['all', 'Show all'],
-      ['lazyloaded', 'Lazyloaded'],
-      ['non-lazyloaded', 'Non-lazyloaded'],
-      ['excluded', 'Excluded']
-    ]);
+  it('the Lazyload values; the field is src', () => {
     const rows = buildLazyloadRows({
       present: true,
       images: [
@@ -272,28 +271,21 @@ describe('the page definitions — chips and predicates', () => {
         { src: '/c.jpg', lazyloadDetected: false, excludedReasonsFound: [FDT_EXCLUDED_RESOURCE] }
       ]
     });
-    expect(filterAndSearch(rows, LAZYLOAD_PAGE_RESOURCES, 'lazyloaded', '')).toEqual([rows[0]]);
-    expect(filterAndSearch(rows, LAZYLOAD_PAGE_RESOURCES, 'non-lazyloaded', '')).toEqual([
-      rows[1],
+    const search = (query: string) => ({ field: lazyloadImageSearchField, query });
+    expect(applyFacets(rows, LAZYLOAD_PAGE_FACETS, { lazyload: 'lazyloaded' }, search(''))).toEqual(
+      [rows[0]]
+    );
+    expect(
+      applyFacets(rows, LAZYLOAD_PAGE_FACETS, { lazyload: 'non-lazyloaded' }, search(''))
+    ).toEqual([rows[1], rows[2]]);
+    // The toggle selects exactly the rows whose chip reads Excluded.
+    expect(applyFacets(rows, LAZYLOAD_PAGE_FACETS, { excluded: 'yes' }, search(''))).toEqual([
       rows[2]
     ]);
-    // The filter selects exactly the rows whose chip reads Excluded.
-    expect(filterAndSearch(rows, LAZYLOAD_PAGE_RESOURCES, 'excluded', '')).toEqual([rows[2]]);
-    expect(filterAndSearch(rows, LAZYLOAD_PAGE_RESOURCES, 'all', '/b.jpg')).toEqual([rows[1]]);
+    expect(applyFacets(rows, LAZYLOAD_PAGE_FACETS, {}, search('/b.jpg'))).toEqual([rows[1]]);
   });
 
-  it('the Preloaded pattern: attribution, kinds, preload images/fonts (preload kind only)', () => {
-    expect(PRELOADED_PAGE_RESOURCES.filters.map((filter) => [filter.id, filter.label])).toEqual([
-      ['all', 'Show all'],
-      ['wp-rocket', 'WP Rocket'],
-      ['unattributed', 'Unattributed'],
-      ['preload', 'Preload'],
-      ['images', 'Images'],
-      ['fonts', 'Fonts'],
-      ['modulepreload', 'Module preload'],
-      ['preconnect', 'Preconnect'],
-      ['dns-prefetch', 'DNS prefetch']
-    ]);
+  it('the Preloaded values: attribution, kinds, preload images/fonts (preload kind only)', () => {
     const rows = buildPreloadedRows(
       {
         present: true,
@@ -311,22 +303,31 @@ describe('the page definitions — chips and predicates', () => {
       },
       emptyDetections()
     );
-    const hrefs = (id: PreloadedFilterId): string[] =>
-      filterAndSearch(rows, PRELOADED_PAGE_RESOURCES, id, '').map((row) => row.href);
-    expect(hrefs('images')).toEqual(['/a.webp', '/b.webp']);
-    expect(hrefs('fonts')).toEqual(['/c.woff2']);
-    expect(hrefs('preload')).toEqual(['/a.webp', '/b.webp', '/c.woff2', '/d.png']);
-    expect(hrefs('modulepreload')).toEqual(['/e.js']);
-    expect(hrefs('preconnect')).toEqual(['https://f/']);
-    expect(hrefs('dns-prefetch')).toEqual(['https://g/', 'https://h/']);
-    expect(hrefs('wp-rocket')).toEqual(['/a.webp', 'https://f/', 'https://g/']);
-    expect(hrefs('unattributed')).toEqual(['/b.webp', '/c.woff2', '/d.png', '/e.js', 'https://h/']);
-    expect(hrefs('all')).toHaveLength(8);
-    expect(filterAndSearch(rows, PRELOADED_PAGE_RESOURCES, 'all', 'WEBP')).toHaveLength(2);
+    const hrefs = (selection: FacetSelection<PreloadedFacetId>, query = ''): string[] =>
+      applyFacets(rows, PRELOADED_PAGE_FACETS, selection, {
+        field: preloadedHintSearchField,
+        query
+      }).map((row) => row.href);
+    expect(hrefs({ 'preload-type': 'images' })).toEqual(['/a.webp', '/b.webp']);
+    expect(hrefs({ 'preload-type': 'fonts' })).toEqual(['/c.woff2']);
+    expect(hrefs({ hint: 'preload' })).toEqual(['/a.webp', '/b.webp', '/c.woff2', '/d.png']);
+    expect(hrefs({ hint: 'modulepreload' })).toEqual(['/e.js']);
+    expect(hrefs({ hint: 'preconnect' })).toEqual(['https://f/']);
+    expect(hrefs({ hint: 'dns-prefetch' })).toEqual(['https://g/', 'https://h/']);
+    expect(hrefs({ source: 'wp-rocket' })).toEqual(['/a.webp', 'https://f/', 'https://g/']);
+    expect(hrefs({ source: 'unattributed' })).toEqual([
+      '/b.webp',
+      '/c.woff2',
+      '/d.png',
+      '/e.js',
+      'https://h/'
+    ]);
+    expect(hrefs({})).toHaveLength(8);
+    expect(hrefs({}, 'WEBP')).toHaveLength(2);
   });
 });
 
-describe('filterAndSearch — the composed chip + query semantics', () => {
+describe('the composed facet + query semantics', () => {
   const rows = buildScriptRows(
     scripts([
       { src: '/wp-rocket.js', delayed: true, deferredByWPR: true },
@@ -335,35 +336,38 @@ describe('filterAndSearch — the composed chip + query semantics', () => {
       { inline: true, content: 'const seoHelper = 1;', delayed: true }
     ])
   );
+  /** The rows a selection and a query keep. */
+  const kept = (selection: FacetSelection<JsFacetId>, query: string): JsScriptResource[] => [
+    ...applyFacets(rows, JS_PAGE_FACETS, selection, { field: jsScriptSearchField, query })
+  ];
 
-  it('an empty query is the chip alone; rows keep their order', () => {
-    expect(filterAndSearch(rows, JS_PAGE_RESOURCES, 'non-delayed', '')).toEqual([rows[1], rows[2]]);
+  it('an empty query is the facets alone; rows keep their order', () => {
+    expect(kept({ delay: 'non-delayed' }, '')).toEqual([rows[1], rows[2]]);
   });
 
-  it('the query narrows the chip subset, not the whole list', () => {
+  it('the query narrows the facet subset, not the whole list', () => {
     // 'js' matches wp-rocket.js (delayed) and overlay.js (non-delayed) —
     // only the delayed one survives the composition.
-    expect(filterAndSearch(rows, JS_PAGE_RESOURCES, 'delayed', 'js')).toEqual([rows[0]]);
-    // The inline row's code is the searched field for external matching.
-    expect(filterAndSearch(rows, JS_PAGE_RESOURCES, 'all', 'seoHelper')).toEqual([rows[3]]);
+    expect(kept({ delay: 'delayed' }, 'js')).toEqual([rows[0]]);
+    // The inline row's code is the searched field.
+    expect(kept({}, 'seoHelper')).toEqual([rows[3]]);
   });
 
   it('the query compare is case-insensitive on both sides', () => {
-    expect(filterAndSearch(rows, JS_PAGE_RESOURCES, 'external', 'WP-ROCKET')).toEqual([rows[0]]);
+    expect(kept({ type: 'external' }, 'wp-rocket')).toEqual([rows[0]]);
+    expect(kept({ type: 'external' }, 'WP-ROCKET')).toEqual([rows[0]]);
   });
 
-  it('no match under a chip yields the empty list for the shared empty state', () => {
-    expect(filterAndSearch(rows, JS_PAGE_RESOURCES, 'delayed', 'nothing-matches')).toEqual([]);
+  it('no match under a facet yields the empty list for the shared empty state', () => {
+    expect(kept({ delay: 'delayed' }, 'nothing-matches')).toEqual([]);
   });
 
-  it('an unknown chip id throws (a wiring bug, named)', () => {
-    expect(() => filterAndSearch(rows, JS_PAGE_RESOURCES, 'delayed-x', '')).toThrow(
-      /no id "delayed-x"/
-    );
+  it('an unknown value id throws (a wiring bug, named)', () => {
+    expect(() => kept({ delay: 'delayed-x' }, '')).toThrow(/delayed-x/);
   });
 });
 
-describe('filterCounts — one pass, every chip', () => {
+describe('facetCounts over the page facets — one pass, every value', () => {
   const rows = buildScriptRows(
     scripts([
       { src: '/a.js', delayed: true },
@@ -372,42 +376,46 @@ describe('filterCounts — one pass, every chip', () => {
       { inline: false, src: '/d.js', delayed: false }
     ])
   );
+  const none = { field: jsScriptSearchField, query: '' };
 
-  it('counts every chip from the same rows (Show All = the total)', () => {
-    const counts = filterCounts(rows, JS_PAGE_RESOURCES);
-    expect(counts).toEqual({
-      all: 4,
-      delayed: 2,
-      'non-delayed': 2,
-      deferred: 1,
-      'non-deferred': 3,
-      minified: 0,
-      combined: 0,
-      excluded: 0,
-      inline: 1,
-      external: 3
+  it('counts every value from the same rows (Any = the total)', () => {
+    const counts = facetCounts(rows, JS_PAGE_FACETS, {}, none);
+    expect(counts.matched).toBe(4);
+    expect(counts.byFacet).toEqual({
+      delay: { any: 4, delayed: 2, 'non-delayed': 2 },
+      defer: { any: 4, deferred: 1, 'non-deferred': 3 },
+      type: { any: 4, inline: 1, external: 3 },
+      file: { any: 4, minified: 0, combined: 0 },
+      excluded: { any: 4, yes: 0 }
     });
   });
 
-  it('the counts agree with filtering per chip (the memo contract)', () => {
-    const counts = filterCounts(rows, JS_PAGE_RESOURCES);
-    for (const filter of JS_PAGE_RESOURCES.filters) {
-      const chipRows = filterAndSearch(rows, JS_PAGE_RESOURCES, filter.id, '');
-      expect(chipRows).toHaveLength(counts[filter.id]);
+  it('the counts agree with filtering per value (the memo contract)', () => {
+    const counts = facetCounts(rows, JS_PAGE_FACETS, {}, none);
+    for (const facet of JS_PAGE_FACETS.facets) {
+      for (const value of facet.values) {
+        const selection: FacetSelection<JsFacetId> = { [facet.id]: value.id };
+        expect(applyFacets(rows, JS_PAGE_FACETS, selection, none)).toHaveLength(
+          counts.byFacet[facet.id][value.id] ?? -1
+        );
+      }
     }
   });
 
   it('an empty inventory counts zero everywhere', () => {
-    expect(filterCounts([], LAZYLOAD_PAGE_RESOURCES)).toEqual({
-      all: 0,
-      lazyloaded: 0,
-      'non-lazyloaded': 0,
-      excluded: 0
+    expect(
+      facetCounts([], LAZYLOAD_PAGE_FACETS, {}, { field: lazyloadImageSearchField, query: '' })
+    ).toEqual({
+      matched: 0,
+      byFacet: {
+        lazyload: { any: 0, lazyloaded: 0, 'non-lazyloaded': 0 },
+        excluded: { any: 0, yes: 0 }
+      }
     });
   });
 
-  it('the preloaded counts read every chip in one pass', () => {
-    const rows = buildPreloadedRows(
+  it('the preloaded counts read every value in one pass', () => {
+    const hints = buildPreloadedRows(
       {
         present: true,
         resources: [],
@@ -420,21 +428,18 @@ describe('filterCounts — one pass, every chip', () => {
       },
       emptyDetections()
     );
-    expect(filterCounts(rows, PRELOADED_PAGE_RESOURCES)).toEqual({
-      all: 4,
-      'wp-rocket': 1,
-      unattributed: 3,
-      preload: 3,
-      images: 1,
-      fonts: 1,
-      modulepreload: 0,
-      preconnect: 0,
-      'dns-prefetch': 1
+    expect(
+      facetCounts(hints, PRELOADED_PAGE_FACETS, {}, { field: preloadedHintSearchField, query: '' })
+        .byFacet
+    ).toEqual({
+      source: { any: 4, 'wp-rocket': 1, unattributed: 3 },
+      hint: { any: 4, preload: 3, modulepreload: 0, preconnect: 0, 'dns-prefetch': 1 },
+      'preload-type': { any: 4, images: 1, fonts: 1 }
     });
   });
 });
 
-describe('the JavaScript state filters — one predicate per chip', () => {
+describe('the JavaScript state values — one predicate per value', () => {
   const rows = buildScriptRows(
     scripts([
       { src: '/a.js', delayed: true, fdtExcluded: 'defer_all_js' },
@@ -446,27 +451,33 @@ describe('the JavaScript state filters — one predicate per chip', () => {
     ]),
     { minifyJs: true, wprProven: true, combineDeclared: true }
   );
-  /** The source paths a chip selects. */
-  const under = (id: JsFilterId): string[] =>
-    filterAndSearch(rows, JS_PAGE_RESOURCES, id, '').map((row) => row.content);
+  /** The source paths a selection keeps. */
+  const under = (selection: FacetSelection<JsFacetId>): string[] =>
+    applyFacets(rows, JS_PAGE_FACETS, selection, { field: jsScriptSearchField, query: '' }).map(
+      (row) => row.content
+    );
 
   it('selects exactly the rows each state holds on', () => {
-    expect(under('delayed')).toEqual(['/a.js']);
+    expect(under({ delay: 'delayed' })).toEqual(['/a.js']);
     // WP Rocket's stamp alone is Deferred; an inline `defer` is not.
-    expect(under('deferred')).toEqual(['/b.js', '/c.js']);
-    expect(under('excluded')).toEqual(['/a.js', '/c.js']);
-    expect(under('combined')).toEqual([
+    expect(under({ defer: 'deferred' })).toEqual(['/b.js', '/c.js']);
+    expect(under({ excluded: 'yes' })).toEqual(['/a.js', '/c.js']);
+    expect(under({ file: 'combined' })).toEqual([
       'https://s.test/wp-content/cache/min/1/0123456789abcdef0123456789abcdef.js'
     ]);
-    expect(under('minified')).toEqual([
+    expect(under({ file: 'minified' })).toEqual([
       'https://s.test/wp-content/cache/min/1/wp-includes/js/m.js'
     ]);
   });
 
-  it('the negative chips are the exact complements', () => {
-    const counts = filterCounts(rows, JS_PAGE_RESOURCES);
-    expect(counts['delayed'] + counts['non-delayed']).toBe(rows.length);
-    expect(counts['deferred'] + counts['non-deferred']).toBe(rows.length);
-    expect(under('non-deferred')).toContain('x;');
+  it('the negative values are the exact complements', () => {
+    const counts = facetCounts(rows, JS_PAGE_FACETS, {}, { field: jsScriptSearchField, query: '' });
+    expect((counts.byFacet.delay.delayed ?? 0) + (counts.byFacet.delay['non-delayed'] ?? 0)).toBe(
+      rows.length
+    );
+    expect((counts.byFacet.defer.deferred ?? 0) + (counts.byFacet.defer['non-deferred'] ?? 0)).toBe(
+      rows.length
+    );
+    expect(under({ defer: 'non-deferred' })).toContain('x;');
   });
 });

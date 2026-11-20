@@ -1,5 +1,5 @@
 /**
- * The LCP & Vitals page over a real page (P14C C2): the panel asks the
+ * The LCP & Vitals page over a real page: the panel asks the
  * fixture tab for its LCP facts and this visit's vitals and renders them —
  * the hero image as the LCP after the heading's text candidate, the four
  * parts summing to the total, the vitals read on open (LCP measured, INP

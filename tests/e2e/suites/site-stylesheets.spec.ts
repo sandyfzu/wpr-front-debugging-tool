@@ -3,9 +3,9 @@
  * (`/fdt/`: a block theme, inline styles only; no WP Rocket CSS feature runs
  * on the site). Ground truth is the live page's own DOM, read at the same
  * moment: every inline style is listed once, in document order, named by its
- * id; no state chip is claimed (nothing WP Rocket printed); the inline
- * filter covers them all and nothing reads Minified (Minify CSS is not
- * declared).
+ * id; no state chip is claimed (nothing WP Rocket printed); the Inline
+ * facet covers them all, nothing reads Minified (Minify CSS is not
+ * declared), and a style's detail shows its whole CSS as the element holds it.
  */
 import { expect, test } from '../helpers/extension';
 import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
@@ -47,22 +47,31 @@ test('lists the site’s inline styles as the page has them, claiming no WP Rock
 
     const rows = page.locator('[data-fdt="stylesheet-row"]');
     await expect(rows).toHaveCount(truth.ids.length);
+    // Each row is named by its id (a block theme's styles carry no class).
     const shownIds = await rows.evaluateAll((elements) =>
       elements.map(
         (row) =>
-          row.querySelector('[data-fdt="style-identity"]')?.textContent.match(/^#([^.]+)/)?.[1] ??
-          ''
+          row.querySelector('[data-fdt="list-row-name"]')?.textContent.match(/^#([^.]+)/)?.[1] ?? ''
       )
     );
     expect(shownIds).toEqual(truth.ids);
     await expect(page.locator('[data-fdt="state-chip"]')).toHaveCount(0);
     await expect(
-      page.locator('[data-fdt-filter-chip="inline"] [data-fdt-filter-count]')
+      page.locator('[data-fdt="choice"][data-fdt-choice-value="inline"] [data-fdt-choice-count]')
     ).toHaveText(String(truth.ids.length));
-    await expect(
-      page.locator('[data-fdt-filter-chip="minified"] [data-fdt-filter-count]')
-    ).toHaveText('0');
-    await expect(page.locator('[data-fdt-filter-chip="minified"]')).toBeDisabled();
+    const minified = page.locator('[data-fdt="toggle-chip"][data-fdt-toggle-chip="minified"]');
+    await expect(minified.locator('[data-fdt-toggle-count]')).toHaveText('0');
+    await expect(minified).toBeDisabled();
+
+    // The detail reads a style's whole CSS, exactly as the live element holds it.
+    const last = truth.ids.length - 1;
+    const css = await site.page.evaluate(
+      (index) => document.querySelectorAll('style')[index]?.textContent ?? '',
+      last
+    );
+    await rows.nth(last).locator('[data-fdt-row-open]').click();
+    const detail = panel.locator('[data-fdt="detail-pane"]');
+    await expect(detail.locator('[data-fdt="style-css"] [data-fdt-code-content]')).toHaveText(css);
   } finally {
     await panel.close();
     await site.page.close();

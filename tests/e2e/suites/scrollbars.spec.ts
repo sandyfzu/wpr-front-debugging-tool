@@ -6,7 +6,14 @@
 import type { Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { expect, openFixturePage, panelPageUrl, test } from '../helpers/extension';
+import {
+  closeScriptDetail,
+  openScriptDetail,
+  scriptDetail,
+  scriptRowNamed
+} from '../helpers/javascript-page';
 import { openPanelForFixture } from '../helpers/panel-data';
+import { settleFrames } from '../helpers/frames';
 import { resetStoredOptions } from '../helpers/options';
 
 // One profile serves every suite: the options this file writes go back to the
@@ -16,8 +23,13 @@ test.afterEach(async ({ extension }) => {
   await resetStoredOptions(extension);
 });
 
-/** Resolved foreground token values; literals pin both palette branches. */
-const THUMB = { light: 'rgb(93, 102, 117)', dark: 'rgb(139, 150, 169)' } as const;
+/**
+ * Resolved `--fg-muted` thumb values; literals pin both palette branches. The
+ * extension pages (panel, options) take the extension-page token block's
+ * light value; injected shadow trees keep the shared one.
+ */
+const PAGE_THUMB = { light: 'rgb(94, 103, 118)', dark: 'rgb(139, 150, 169)' } as const;
+const INJECTED_THUMB = { light: 'rgb(93, 102, 117)', dark: 'rgb(139, 150, 169)' } as const;
 
 /**
  * Exercise native keyboard and wheel scrolling on both axes, without scripted input substitutes.
@@ -307,21 +319,21 @@ test('all built page elements get fixed bars, live palettes and native scrolling
     });
     expect(await scrollbarState(page, selector)).toEqual({
       width: '8px',
-      color: THUMB.light,
+      color: PAGE_THUMB.light,
       overflowX: true,
       overflowY: true
     });
     await page.emulateMedia({ colorScheme: 'dark' });
-    expect((await scrollbarState(page, selector)).color).toContain(THUMB.dark);
+    expect((await scrollbarState(page, selector)).color).toContain(PAGE_THUMB.dark);
     await page.evaluate(() => {
       document.documentElement.setAttribute('data-theme', 'light');
     });
-    expect((await scrollbarState(page, selector)).color).toContain(THUMB.light);
+    expect((await scrollbarState(page, selector)).color).toContain(PAGE_THUMB.light);
     await assertPaintedStableBars(page);
     await page.evaluate(() => {
       document.documentElement.setAttribute('data-theme', 'dark');
     });
-    expect((await scrollbarState(page, selector)).color).toContain(THUMB.dark);
+    expect((await scrollbarState(page, selector)).color).toContain(PAGE_THUMB.dark);
     expect(await page.locator('html').evaluate((el) => getComputedStyle(el).scrollbarWidth)).toBe(
       'auto'
     );
@@ -366,6 +378,8 @@ test('JavaScript virtual lists and nested code keep fixed native bars at narrow 
     await panel.emulateMedia({ reducedMotion: 'reduce' });
     for (const width of [320, 480, 768, 1280]) {
       await panel.setViewportSize({ width, height: 800 });
+      // The nav form follows the shell width in the next frame (before it paints).
+      await settleFrames(panel);
       await expect.poll(() => list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
       expect(
         await list.evaluate((el: HTMLElement) => ({
@@ -377,7 +391,35 @@ test('JavaScript virtual lists and nested code keep fixed native bars at narrow 
           horizontal: el.scrollWidth > el.clientWidth
         }))
       ).toEqual({ gutter: 8, horizontal: false });
-      const code = panel.getByRole('group', { name: 'Inline script 2', exact: true });
+      // The list owns vertical overflow; its page ancestor must not become a
+      // second vertical scroller at normal height — neither with the list
+      // alone nor with a detail open (the detail owns its own scroller).
+      await expect
+        .poll(
+          () =>
+            list.evaluate((el) => {
+              const area = el.closest('[data-fdt="panel-content"]');
+              if (!area) throw new Error('Scripts list has no page scroll area');
+              return area.scrollHeight <= area.clientHeight;
+            }),
+          { message: `one vertical scroller at ${String(width)}px (list)` }
+        )
+        .toBe(true);
+      // The code pane lives in the row's detail (pane from the split width,
+      // drill-in below it), opened for this width; it owns horizontal overflow.
+      await openScriptDetail(panel, scriptRowNamed(panel, 'Inline script #2'));
+      const code = scriptDetail(panel).getByRole('group', { name: 'Inline script 2', exact: true });
+      // One-line JSON opens wrapped (a minified line): nothing scrolls
+      // sideways; unwrapped, the area owns the horizontal overflow.
+      const source = scriptDetail(panel).locator('[data-fdt="script-source"]');
+      const wrapToggle = source.locator('[data-fdt-code-block-wrap]');
+      await expect(wrapToggle).toHaveAttribute('aria-pressed', 'true');
+      expect(
+        await source
+          .locator('[data-fdt-code-area]')
+          .evaluate((el) => el.scrollWidth > el.clientWidth)
+      ).toBe(false);
+      await wrapToggle.click();
       await expect(code).toBeVisible();
       expect(
         await code.evaluate((el) => ({
@@ -391,21 +433,22 @@ test('JavaScript virtual lists and nested code keep fixed native bars at narrow 
           () => document.documentElement.scrollWidth === document.documentElement.clientWidth
         )
       ).toBe(true);
-      // The code pane owns horizontal overflow and the list owns vertical overflow;
-      // their page ancestor must not become a second vertical scroller at normal height.
       await expect
-        .poll(() =>
-          list.evaluate((el) => {
-            const area = el.closest('[data-fdt="panel-content"]');
-            if (!area) throw new Error('Scripts list has no page scroll area');
-            return area.scrollHeight <= area.clientHeight;
-          })
+        .poll(
+          () =>
+            list.evaluate((el) => {
+              const area = el.closest('[data-fdt="panel-content"]');
+              if (!area) throw new Error('Scripts list has no page scroll area');
+              return area.scrollHeight <= area.clientHeight;
+            }),
+          { message: `one vertical scroller at ${String(width)}px (detail open)` }
         )
         .toBe(true);
       await test.info().attach(`javascript-scrollbars-${String(width)}`, {
         body: await panel.screenshot(),
         contentType: 'image/png'
       });
+      await closeScriptDetail(panel);
     }
     await list.hover();
     await panel.mouse.wheel(0, 600);
@@ -442,19 +485,21 @@ test('injected bars follow the owned palette and leave host page bars untouched'
   await expect.poll(async () => (await scrollbarState(page, selector)).width).toBe('8px');
   expect(await scrollbarState(page, selector)).toEqual({
     width: '8px',
-    color: THUMB.dark,
+    color: INJECTED_THUMB.dark,
     overflowX: true,
     overflowY: true
   });
   await assertPaintedStableBars(page);
   await page.emulateMedia({ colorScheme: 'light' });
-  expect((await scrollbarState(page, selector)).color).toContain(THUMB.light);
+  expect((await scrollbarState(page, selector)).color).toContain(INJECTED_THUMB.light);
   await assertPaintedStableBars(page);
   await extension.evaluateInWorker(
     () => chrome.storage.sync.set({ options: { appearance: 'dark' } }),
     undefined
   );
-  await expect.poll(async () => (await scrollbarState(page, selector)).color).toContain(THUMB.dark);
+  await expect
+    .poll(async () => (await scrollbarState(page, selector)).color)
+    .toContain(INJECTED_THUMB.dark);
   expect(
     await page.locator('html').evaluate((el) => ({
       width: getComputedStyle(el).scrollbarWidth,

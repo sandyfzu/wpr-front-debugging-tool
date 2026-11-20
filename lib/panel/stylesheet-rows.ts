@@ -1,13 +1,20 @@
 /**
  * The Stylesheets page's rows: the classification of the page's stylesheet
  * inventory (with the one Critical placement rule) into the row shape
- * `./style-states` declares, and the page's filter pattern — the shared
- * resource-list pattern (`./resources-view-model`) over those rows. Imported
- * by the lazily loaded page only.
+ * `./style-states` declares, its searched field and its facets
+ * (`./resource-facets`, values shared with `./resources-view-model`).
+ * Imported by the lazily loaded page only.
  */
 import type { PageStylesheetsReply } from '../messaging/page-stylesheets';
 import { CRITICAL_CSS_STYLE_ID } from '../wp-rocket/constants';
-import { stateFilter, type ResourcePageDefinition } from './resources-view-model';
+import {
+  choiceFacet,
+  defineFacets,
+  toggleFacet,
+  type Facet,
+  type FacetSet
+} from './resource-facets';
+import { EXTERNAL_TYPE_VALUE, INLINE_TYPE_VALUE, stateValue } from './resources-view-model';
 import { styleIdentity } from './style-identity';
 import {
   NO_STYLESHEET_PAGE_FACTS,
@@ -19,24 +26,51 @@ import {
   type StylesheetPageFacts
 } from './style-states';
 
-/** The Stylesheets page's chip ids, in render order. */
-export type CssFilterId = 'all' | CssStateId | 'inline' | 'external';
+/**
+ * The Stylesheets page's searched field: an inline style's CSS start, a link's URL.
+ *
+ * @param row The row.
+ * @returns The searched text.
+ */
+export function cssStyleSearchField(row: CssStyleResource): string {
+  return row.content;
+}
 
-/** The Stylesheets page's pattern: every style state (chip order), then the type chips. */
-export const CSS_PAGE_RESOURCES: ResourcePageDefinition<CssStyleResource, CssFilterId> = {
-  filters: [
-    { id: 'all', label: 'Show all', predicate: () => true },
-    stateFilter(cssStyleState('critical')),
-    stateFilter(cssStyleState('rucss')),
-    stateFilter(cssStyleState('lazy-bg')),
-    stateFilter(cssStyleState('async')),
-    stateFilter(cssStyleState('minified')),
-    stateFilter(cssStyleState('font')),
-    { id: 'inline', label: 'Inline', predicate: (row) => row.type === 'inline' },
-    { id: 'external', label: 'External', predicate: (row) => row.type === 'external' }
-  ],
-  searchField: (row) => row.content
-};
+/** The Stylesheets page's facet ids, in render order. */
+export type CssFacetId = 'type' | 'rocket-css' | 'async' | 'minified' | 'font';
+
+/**
+ * A toggle facet over one style state (id, label and predicate the state's own).
+ *
+ * @param id The state id (also the facet id).
+ * @returns The toggle facet.
+ */
+function stateToggle(id: Extract<CssStateId, CssFacetId>): Facet<CssStyleResource, CssFacetId> {
+  const state = cssStyleState(id);
+  return toggleFacet(id, state.label, state.holds);
+}
+
+/**
+ * The Stylesheets page's facets (value ids = the style state ids): Type splits
+ * every style in two. The three styles WP Rocket prints itself (Critical,
+ * RUCSS, Lazy BG) are inline styles told apart by their reserved id — one
+ * row holds at most one — so they are one choice. The link states (Async,
+ * Minified, Font) can stack on one link, so each is a toggle.
+ */
+export const CSS_PAGE_FACETS: FacetSet<CssStyleResource, CssFacetId> = defineFacets<
+  CssStyleResource,
+  CssFacetId
+>([
+  choiceFacet('type', 'Type', [INLINE_TYPE_VALUE, EXTERNAL_TYPE_VALUE]),
+  choiceFacet('rocket-css', 'WP Rocket CSS', [
+    stateValue(cssStyleState('critical')),
+    stateValue(cssStyleState('rucss')),
+    stateValue(cssStyleState('lazy-bg'))
+  ]),
+  stateToggle('async'),
+  stateToggle('minified'),
+  stateToggle('font')
+]);
 
 /** The snapshot-only critical row's id (live rows count from 0). */
 export const CRITICAL_SNAPSHOT_ROW_ID = -1;
@@ -59,6 +93,7 @@ const CRITICAL_SNAPSHOT_ROW: CssStyleResource = {
   chars: 0,
   content: `#${CRITICAL_CSS_STYLE_ID}`,
   minified: false,
+  minifyAttribute: false,
   critical: true,
   rocketAsync: false,
   hostedFont: false
@@ -77,7 +112,7 @@ const CRITICAL_SNAPSHOT_ROW: CssStyleResource = {
  * @returns One row per listed style, in document order, after the snapshot row when there is one.
  */
 export function buildStylesheetRows(
-  reply: PageStylesheetsReply,
+  reply: Pick<PageStylesheetsReply, 'styles' | 'total'>,
   facts: StylesheetPageFacts = NO_STYLESHEET_PAGE_FACTS
 ): CssStyleResource[] {
   const rows = reply.styles.map((entry, index): CssStyleResource => {
@@ -94,6 +129,7 @@ export function buildStylesheetRows(
       chars: entry.chars,
       content: external ? entry.href : `${styleIdentity(entry)} ${entry.preview}`.trim(),
       minified: isStylesheetMinified(entry, facts),
+      minifyAttribute: entry.minifyAttribute,
       critical: isLiveCriticalStyle(entry, facts),
       rocketAsync: entry.rocketAsync,
       hostedFont: entry.hostedFont

@@ -3,7 +3,7 @@
  * builder changed carries its modifier badge (icon + short text) and the
  * full sentence as a visible line, spoken once, beside the unchanged served
  * verdict; a fact on a row WP Rocket did not serve shows the modifier alone;
- * the summary strip counts per O-N3; a page with no fact shows nothing.
+ * the overview counts per O-N3; a page with no fact shows nothing.
  */
 import { cleanup, render } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -110,12 +110,14 @@ describe('the modifier on the cards', () => {
     }
   });
 
-  it('adds no tab stop and nothing interactive inside a link card', () => {
+  it('adds no tab stop: the row keeps its page link as its one control', () => {
     render(() => <DetectionsView data={data(MARKED)} now={0} />);
     const badge = modifier('delay_js');
-    expect(card('delay_js').tagName).toBe('A');
+    expect(card('delay_js').tagName).toBe('DIV');
+    expect(card('delay_js').querySelectorAll('a, button, [tabindex]')).toHaveLength(1);
+    expect(card('delay_js').querySelector('a[data-fdt-card-link]')).not.toBeNull();
     expect(badge?.querySelector('a, button, [tabindex]')).toBeNull();
-    expect(badge?.closest('[tabindex]')).toBeNull();
+    expect(badge?.closest('a, [tabindex]')).toBeNull();
   });
 
   it('shows no modifier on a page with no builder fact', () => {
@@ -143,12 +145,15 @@ describe('the modifier on the cards', () => {
     expect(modifierLine('delay_js')?.textContent).toContain(
       'Disabled in this tab by the Exclusion Builder.'
     );
-    expect(delay.textContent).toContain('Not active');
+    // The row's state word for a feature WP Rocket did not serve.
+    const state = delay.querySelector<HTMLElement>('[data-fdt-card-state]');
+    expect(state?.dataset.fdtCardState).toBe('not-active');
+    expect(state?.textContent).toContain('Off');
     expect(delay.textContent).not.toMatch(/served/i);
   });
 });
 
-describe('the summary strip counts (O-N3)', () => {
+describe('the overview counts (O-N3)', () => {
   it('counts Delay off and Defer page-off as inactive, Lazyload excluded as active', () => {
     render(() => <DetectionsView data={data(null)} now={0} />);
     const plain = activeLine();

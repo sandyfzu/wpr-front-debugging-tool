@@ -8,14 +8,17 @@
  * root `<pre>` ships no inline style/tabindex (the component owns the chrome).
  * It also gates contrast: every token color the registered grammars can
  * produce, in both themes after the color swaps, clears AA on the code
- * block's surface token.
+ * block's surface token — and the on-demand grammar path (CSS/HTML: loaded
+ * once per language, a failed load degrades the block and is retried).
  */
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { LanguageRegistration, ThemeRegistration } from 'shiki/core';
+import cssGrammar from 'shiki/langs/css.mjs';
+import htmlGrammar from 'shiki/langs/html.mjs';
 import javascript from 'shiki/langs/javascript.mjs';
 import json from 'shiki/langs/json.mjs';
 import githubDark from 'shiki/themes/github-dark.mjs';
@@ -23,21 +26,25 @@ import githubLight from 'shiki/themes/github-light.mjs';
 import { contrastRatio } from '../../utils/contrast';
 import {
   COLOR_REPLACEMENTS,
+  GRAMMAR_SOURCES,
   MAX_TOKENIZED_LINE,
   THEME_PAIR,
+  createCodeHighlighter,
   getHighlighter,
   styleToClass,
   pendingHighlighter,
   resetHighlighter,
-  type CodeHighlighter
+  type CodeHighlighter,
+  type GrammarSource
 } from './code-block-highlighter';
+import { CODE_BLOCK_LANGS, type CodeLanguage } from './code-block-langs';
 import { answerHighlight } from './code-block-worker-protocol';
 import { isTokenStyle, tokenClassName } from './code-block-token-styles';
 import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 
 /** The hostile payloads that must survive highlighting as text only. */
-const HOSTILE_CASES: Array<{ lang: 'javascript' | 'json'; code: string; name: string }> = [
+const HOSTILE_CASES: Array<{ lang: CodeLanguage; code: string; name: string }> = [
   {
     name: 'span-closer + inline event handler',
     lang: 'javascript',
@@ -57,8 +64,26 @@ const HOSTILE_CASES: Array<{ lang: 'javascript' | 'json'; code: string; name: st
     name: 'JSON key injection',
     lang: 'json',
     code: '{"weird</span>": "</span><script>x</script>"}'
+  },
+  {
+    name: 'CSS breaking out of a style element',
+    lang: 'css',
+    code: 'a { color: red; } </style><img src=x onerror="alert(1)"><style>'
+  },
+  {
+    name: 'markup with an event handler and an embedded script',
+    lang: 'html',
+    code: '<img src=x onerror="alert(1)"><script>alert(1)</script><style>a{}</style>'
   }
 ];
+
+/** One realistic sample per language (stylesheet rules, a served script tag). */
+const SAMPLES: Readonly<Record<CodeLanguage, string>> = {
+  javascript: '/* c */ const a = `t${b}` + /re/g; // x\nfunction f(x) { return x?.y ?? 1; }',
+  json: '{"a": [1, true, null, "s"]}',
+  css: '@media (min-width: 40em) {\n  .nav > li:hover a, #main [data-x="y"]::before {\n    color: rgb(0 0 0 / 50%) !important;\n    background: url("img.png") no-repeat;\n  }\n}\n/* note */ :root { --gap: calc(1rem + 2px); }',
+  html: '<script type="rocketlazyloadscript" data-rocket-src="https://example.com/a.js?ver=1" defer data-minify="1" id="a-js"></script>'
+};
 
 /** The highlighter under test (the real loader, one shared instance). */
 let highlighter: CodeHighlighter;
@@ -76,8 +101,8 @@ function rootTagOf(output: string): string {
 }
 
 describe('real highlighter — safety contract (regression-pinned)', () => {
-  it.each(HOSTILE_CASES)('escapes hostile input ($name) to text only', ({ lang, code }) => {
-    const output = highlighter.highlight(code, { lang }).html;
+  it.each(HOSTILE_CASES)('escapes hostile input ($name) to text only', async ({ lang, code }) => {
+    const output = (await highlighter.highlight(code, { lang })).html;
     // No hostile tag survives as markup: `<img`/`<script` must never appear
     // un-escaped in the emitted HTML.
     expect(output).not.toMatch(/<img|<script/i);
@@ -87,48 +112,50 @@ describe('real highlighter — safety contract (regression-pinned)', () => {
     expect(output.startsWith('<pre')).toBe(true);
   });
 
-  it('tags tokens with classes whose rules carry the light-dark pair', () => {
-    const { html, styles } = highlighter.highlight('const a = 1;', { lang: 'javascript' });
-    // No per-span inline styles: tokens carry generated classes.
-    expect(html).not.toContain('style=');
-    expect(html).toMatch(/class="fdt-tk-[0-9a-z]+"/);
-    // The palette mechanism lives in the class rules: `color:light-dark(<light>, <dark>)`
-    // resolved by the browser's color-scheme — the same mechanism as tokens.
-    expect(styles.length).toBeGreaterThan(0);
-    for (const [className, declarations] of styles) {
-      expect(className).toBe(tokenClassName(declarations));
-      expect(html).toContain(className);
-      expect(declarations).toMatch(/^color:light-dark\(/);
-      expect(declarations).not.toContain('--shiki');
+  it.each(CODE_BLOCK_LANGS)(
+    'tags %s tokens with classes whose rules carry the light-dark pair',
+    async (lang) => {
+      const { html: markup, styles } = await highlighter.highlight(SAMPLES[lang], { lang });
+      // No per-span inline styles: tokens carry generated classes.
+      expect(markup).not.toContain('style=');
+      expect(markup).toMatch(/class="fdt-tk-[0-9a-z]+"/);
+      // The palette mechanism lives in the class rules: `color:light-dark(<light>, <dark>)`
+      // resolved by the browser's color-scheme — the same mechanism as tokens.
+      expect(styles.length).toBeGreaterThan(0);
+      for (const [className, declarations] of styles) {
+        expect(className).toBe(tokenClassName(declarations));
+        expect(markup).toContain(className);
+        expect(declarations).toMatch(/^color:light-dark\(/);
+        expect(declarations).not.toContain('--shiki');
+      }
     }
-  });
+  );
 
-  it('emits only token styles the main thread accepts (the allow-list), for both languages', () => {
-    const samples = [
-      [
-        'javascript',
-        '/* c */ const a = `t${b}` + /re/g; // x\nfunction f(x) { return x?.y ?? 1; }'
-      ],
-      ['json', '{"a": [1, true, null, "s"]}']
-    ] as const;
-    for (const [lang, code] of samples) {
-      for (const style of highlighter.highlight(code, { lang }).styles) {
+  it('emits only token styles the main thread accepts (the allow-list), for every language', async () => {
+    for (const lang of CODE_BLOCK_LANGS) {
+      for (const style of (await highlighter.highlight(SAMPLES[lang], { lang })).styles) {
         expect(isTokenStyle(style)).toBe(true);
       }
     }
   });
 
-  it('stays out of chrome: no inline style or tabindex on the root pre', () => {
-    for (const lang of ['javascript', 'json'] as const) {
-      const output = highlighter.highlight('const a = 1;', { lang }).html;
+  it('stays out of chrome: no inline style or tabindex on the root pre', async () => {
+    for (const lang of CODE_BLOCK_LANGS) {
+      const output = (await highlighter.highlight(SAMPLES[lang], { lang })).html;
       const root = rootTagOf(output);
       expect(root).not.toContain('style=');
       expect(root).not.toContain('tabindex');
     }
   });
 
-  it('guards a language outside the registered set with a throw (call-site bug)', () => {
-    expect(() => highlighter.highlight('x', { lang: 'perl' as never })).toThrow();
+  it('rejects a language outside the registered set (call-site bug)', async () => {
+    await expect(highlighter.highlight('x', { lang: 'perl' as never })).rejects.toThrow(
+      'unsupported language "perl"'
+    );
+    // An inherited key is not a language either (the check is own-key).
+    await expect(highlighter.highlight('x', { lang: 'toString' as never })).rejects.toThrow(
+      'unsupported language "toString"'
+    );
   });
 });
 
@@ -152,18 +179,24 @@ const AA_TEXT = 4.5;
 
 /**
  * The code block's surface (`bg-surface-1` on its container, pinned in
- * `code-block.test.tsx`) per palette, read from the real token file.
+ * `code-block.test.tsx`) per palette, read from the real token file: every
+ * `--surface-1` pair it declares (the shared block and the extension-page
+ * block the panel resolves), so the gate holds wherever the block renders.
  */
-const CODE_SURFACE = ((): { light: string; dark: string } => {
+const CODE_SURFACES = ((): { light: string[]; dark: string[] } => {
   const css = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), '../../assets/css/tokens.css'),
     'utf8'
   );
-  const match = /--surface-1:\s*light-dark\(\s*(#[0-9a-f]{6})\s*,\s*(#[0-9a-f]{6})\s*\)/.exec(css);
-  if (match?.[1] === undefined || match[2] === undefined) {
+  const pairs = [
+    ...css.matchAll(/--surface-1:\s*light-dark\(\s*(#[0-9a-f]{6})\s*,\s*(#[0-9a-f]{6})\s*\)/g)
+  ].flatMap(([, light, dark]) =>
+    light === undefined || dark === undefined ? [] : [{ light, dark }]
+  );
+  if (pairs.length === 0) {
     throw new Error('--surface-1 is not a light-dark(#hex, #hex) pair in tokens.css');
   }
-  return { light: match[1], dark: match[2] };
+  return { light: pairs.map(({ light }) => light), dark: pairs.map(({ dark }) => dark) };
 })();
 
 /**
@@ -246,24 +279,37 @@ function emittedColors(
 }
 
 describe('real highlighter — contrast on the code surface (WCAG AA)', () => {
-  const emitted = grammarScopes([...javascript, ...json]);
+  // `html` carries its embedded grammars (javascript + css) too.
+  const emitted = grammarScopes([...javascript, ...json, ...cssGrammar, ...htmlGrammar]);
   const cases = [
-    { palette: 'light', theme: githubLight, name: THEME_PAIR.light, surface: CODE_SURFACE.light },
-    { palette: 'dark', theme: githubDark, name: THEME_PAIR.dark, surface: CODE_SURFACE.dark }
+    { palette: 'light', theme: githubLight, name: THEME_PAIR.light, surfaces: CODE_SURFACES.light },
+    { palette: 'dark', theme: githubDark, name: THEME_PAIR.dark, surfaces: CODE_SURFACES.dark }
   ] as const;
 
   it('reads real grammar scopes and the themes the loader registers', () => {
     expect(emitted).toContain('source.js');
     expect(emitted).toContain('keyword.control.flow.js');
     expect(emitted).toContain('comment.line.double-slash.js');
+    expect(emitted).toContain('source.css');
+    expect(emitted).toContain('entity.other.attribute-name.class.css');
+    expect(emitted).toContain('entity.name.tag.html');
+    expect(emitted).toContain('entity.other.attribute-name.html');
     for (const { theme, name } of cases) expect(theme.name).toBe(name);
   });
 
   it.each(cases)('every emittable $palette token color is ≥ 4.5:1 on --surface-1', (entry) => {
     const colors = emittedColors(entry.theme, COLOR_REPLACEMENTS[entry.name], emitted);
     expect(colors.size).toBeGreaterThan(5);
+    expect(entry.surfaces.length, 'shared + extension-page surface-1').toBe(2);
     const failing = [...colors]
-      .map(([color, origin]) => ({ color, origin, ratio: contrastRatio(color, entry.surface) }))
+      .flatMap(([color, origin]) =>
+        entry.surfaces.map((surface) => ({
+          color,
+          origin,
+          surface,
+          ratio: contrastRatio(color, surface)
+        }))
+      )
       .filter(({ ratio }) => ratio < AA_TEXT);
     expect(failing).toEqual([]);
   });
@@ -281,10 +327,11 @@ describe('real highlighter — contrast on the code surface (WCAG AA)', () => {
     }
   );
 
-  it('emits the swapped colors in real output (keyword light, comment dark)', () => {
-    const output = highlighter
-      .highlight('// note\nconst a = 1;', { lang: 'javascript' })
-      .styles.map(([, declarations]) => declarations.toLowerCase())
+  it('emits the swapped colors in real output (keyword light, comment dark)', async () => {
+    const output = (
+      await highlighter.highlight('// note\nconst a = 1;', { lang: 'javascript' })
+    ).styles
+      .map(([, declarations]) => declarations.toLowerCase())
       .join('\n');
     // Swaps are theme-scoped: the light keyword and the dark comment move,
     // the light comment (AA already) keeps the theme's own color.
@@ -296,14 +343,14 @@ describe('real highlighter — contrast on the code surface (WCAG AA)', () => {
 });
 
 /** The reference: plain shiki over the whole block with the loader's options. */
-async function referenceHtml(code: string): Promise<string> {
+async function referenceHtml(code: string, lang: CodeLanguage = 'javascript'): Promise<string> {
   const reference = await createHighlighterCore({
-    langs: [javascript, json],
+    langs: [javascript, json, cssGrammar, htmlGrammar],
     themes: [githubLight, githubDark],
     engine: createJavaScriptRegexEngine({ forgiving: true })
   });
-  const html = reference.codeToHtml(code, {
-    lang: 'javascript',
+  const output = reference.codeToHtml(code, {
+    lang,
     themes: THEME_PAIR,
     defaultColor: 'light-dark()',
     colorReplacements: COLOR_REPLACEMENTS,
@@ -313,7 +360,7 @@ async function referenceHtml(code: string): Promise<string> {
     tabindex: false
   });
   reference.dispose();
-  return html;
+  return output;
 }
 
 /** The distinct inline colors of one output line. */
@@ -390,5 +437,114 @@ describe('worker handler — whole-block highlighting (regression pins)', () => 
       lang: 'javascript'
     });
     expect(response).toEqual({ id: 4, error: 'chunk gone' });
+  });
+});
+
+describe('worker handler — stylesheet and markup blocks', () => {
+  it.each(['css', 'html'] as const)(
+    'colors a %s block exactly as plain shiki with every grammar registered',
+    async (lang) => {
+      const response = await answerHighlight(getHighlighter, { id: 9, code: SAMPLES[lang], lang });
+      if (!('html' in response)) throw new Error(`no html: ${response.error}`);
+      expect(response.html).toBe(await referenceHtml(SAMPLES[lang], lang));
+      // Several token colors, not one plain run.
+      expect(new Set(response.html.match(/fdt-tk-[0-9a-z]+/g)).size).toBeGreaterThan(3);
+    }
+  );
+
+  it('colors the script and style embedded in markup with their own grammars', async () => {
+    const markup = '<style>\n.a { color: red; }\n</style>\n<script>\nconst a = 1;\n</script>';
+    const { html: output } = await highlighter.highlight(markup, { lang: 'html' });
+    const alone = async (code: string, lang: CodeLanguage): Promise<Set<string>> =>
+      new Set((await highlighter.highlight(code, { lang })).html.match(/fdt-tk-[0-9a-z]+/g));
+    const tokens = new Set(output.match(/fdt-tk-[0-9a-z]+/g));
+    // Every token of the embedded CSS and JavaScript colors as in its own language.
+    for (const token of await alone('.a { color: red; }', 'css')) expect(tokens).toContain(token);
+    for (const token of await alone('const a = 1;', 'javascript')) expect(tokens).toContain(token);
+  });
+});
+
+describe('grammar sources', () => {
+  it('declares one source per code-block language, the common ones bundled', () => {
+    expect(Object.keys(GRAMMAR_SOURCES).sort()).toEqual([...CODE_BLOCK_LANGS].sort());
+    expect(GRAMMAR_SOURCES.javascript.kind).toBe('bundled');
+    expect(GRAMMAR_SOURCES.json.kind).toBe('bundled');
+    expect(GRAMMAR_SOURCES.css.kind).toBe('on-demand');
+    expect(GRAMMAR_SOURCES.html.kind).toBe('on-demand');
+  });
+
+  it.each(['css', 'html'] as const)(
+    'loads the real %s grammar from its chunk module',
+    async (lang) => {
+      const source = GRAMMAR_SOURCES[lang];
+      if (source.kind !== 'on-demand') throw new Error(`${lang} is not on demand`);
+      const grammar = await source.load();
+      expect(grammar.map((entry) => entry.name)).toContain(lang);
+    }
+  );
+});
+
+/** Sources whose CSS grammar loads through a test-controlled loader. */
+function withCssLoader(
+  load: () => Promise<LanguageRegistration[]>
+): Record<CodeLanguage, GrammarSource> {
+  return { ...GRAMMAR_SOURCES, css: { kind: 'on-demand', load } };
+}
+
+describe('on-demand grammars', () => {
+  it('loads a grammar once, on its first block, shared by concurrent first blocks', async () => {
+    const load = vi.fn(() => Promise.resolve(cssGrammar));
+    const instance = await createCodeHighlighter(withCssLoader(load));
+    // Bundled languages never fetch.
+    await instance.highlight('const a = 1;', { lang: 'javascript' });
+    expect(load).not.toHaveBeenCalled();
+    const [first, second] = await Promise.all([
+      instance.highlight('a { color: red; }', { lang: 'css' }),
+      instance.highlight('b { color: blue; }', { lang: 'css' })
+    ]);
+    await instance.highlight('c {}', { lang: 'css' });
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(first.html).toMatch(/fdt-tk-/);
+    expect(second.html).toMatch(/fdt-tk-/);
+    instance.dispose();
+  });
+
+  it('fails the block when the grammar chunk fails to load, logs it, then retries', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const load = vi
+      .fn<() => Promise<LanguageRegistration[]>>()
+      .mockRejectedValueOnce(new Error('Failed to fetch dynamically imported module'))
+      .mockResolvedValue(cssGrammar);
+    const instance = await createCodeHighlighter(withCssLoader(load));
+    const failed = await answerHighlight(() => Promise.resolve(instance), {
+      id: 11,
+      code: 'a { color: red; }',
+      lang: 'css'
+    });
+    // The worker answers an error: the client renders the block plain.
+    expect(failed).toEqual({ id: 11, error: 'Failed to fetch dynamically imported module' });
+    expect(warn).toHaveBeenCalledWith(
+      '[WPR FDT] [code-highlighter] The css grammar failed to load; the block stays plain.',
+      expect.any(Error)
+    );
+    // Other languages are unaffected; the next CSS block retries and colors.
+    await expect(instance.highlight('const a = 1;', { lang: 'javascript' })).resolves.toMatchObject(
+      { html: expect.stringMatching(/fdt-tk-/) as unknown }
+    );
+    const retried = await instance.highlight('a { color: red; }', { lang: 'css' });
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(retried.html).toMatch(/fdt-tk-/);
+    warn.mockRestore();
+    instance.dispose();
+  });
+
+  it('fails the block when the chunk holds no usable grammar', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const instance = await createCodeHighlighter(withCssLoader(() => Promise.resolve([])));
+    // Nothing named `css` got registered: shiki refuses the language.
+    await expect(instance.highlight('a {}', { lang: 'css' })).rejects.toThrow();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+    instance.dispose();
   });
 });

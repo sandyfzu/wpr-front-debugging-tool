@@ -3,44 +3,60 @@
  * inspected page and see the result live (until the page reloads), with
  * the settings the run uses and the page's styles one tab away.
  *
+ * Layout (the Test tab): a settings column (340 px, scrolling on its own)
+ * beside the result column (the run bar on top, the run's state under it)
+ * from `@wide`; below it one column — run bar, result, then the settings.
+ *
  * State matrix (the shell owns loading, fetch errors and render crashes —
  * this body renders on `ready`/`refreshing`):
  * - settings loading → skeleton in the form's place, Run held;
  * - settings unreadable → the error state with Retry, Run held;
- * - ready → the run card (idle / running / repeat question / blocked by an
- *   unsaved form / finished outcome) above the form;
+ * - ready → the sections (each folded or open, summed up in its header),
+ *   the save state beside the settings heading, and the result side
+ *   (never run / running / repeat question / blocked by an unsaved form /
+ *   finished outcome — see `./run-panel`);
  * - a test from earlier on this page (no run of this session shows it) →
  *   the TEST MODE notice;
  * - Page styles tab → the inventory's own states (see `./styles-list`).
  *
  * The session outlives the page body (panel lifetime): leaving the route
  * mid-run keeps the run, and its answer is there on return. A data
- * refresh swaps only the payload — the form, the run and the tab stay.
+ * refresh swaps only the payload — the form, the open sections, the run
+ * and the tab stay.
  */
 import type { JSX } from 'solid-js';
+import ShieldAlert from 'lucide-solid/icons/shield-alert';
 import {
+  createComputed,
   createRoot,
   createSignal,
-  Match,
   onCleanup,
   Show,
-  Switch,
   type Accessor,
   type Setter
 } from 'solid-js';
-import { ErrorState } from '../../../../components/ui/error-state';
-import { Skeleton } from '../../../../components/ui/skeleton';
 import { TabPanel, Tabs } from '../../../../components/ui/tabs';
+import type { OverflowWatcher } from '../../../../components/ui/overflow-watch';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import { RUCSS_REQUEST_DISCLOSURE } from '../../../../lib/rucss-tester/endpoint';
 import type { RucssOutcomeView } from '../../../../lib/rucss-tester/outcome-view';
+import {
+  RUCSS_FIELD_SECTION,
+  RUCSS_SETTINGS_SECTIONS,
+  type RucssSettingsSection
+} from '../../../../lib/rucss-tester/settings-summary';
 import { formatCount } from '../../../../utils/format-count';
 import { useFdtData } from '../../state/use-fdt-data';
 import { PageFrame } from '../page-frame';
 import { inspectedReloadAction } from '../reload-inspected';
 import { TestModeNotice } from '../test-mode-notice';
+import { RunBar } from '../run-bar';
+import { createSectionsState, type SectionsState } from '../settings/sections';
+import { SettingsColumn } from '../settings/settings-column';
+import { TOOL_AREAS, TOOL_LAYOUT, ToolColumn } from '../tool-column';
 import { fieldId, pairSearchId, RucssForm } from './form';
 import { realRucssTesterDeps } from './real-deps';
-import { RunPanel } from './run-panel';
+import { RunResult } from './run-panel';
 import { createRucssTesterSession, type RucssTesterSession } from './session';
 import { StylesList } from './styles-list';
 
@@ -51,15 +67,13 @@ export const RUCSS_TESTER_SUBTITLE =
 /** The page's two views. */
 export type RucssTesterTab = 'test' | 'styles';
 
-/** The settings' load failure words. */
-export const LOAD_FAILED_COPY =
-  "The extension's storage did not answer. Retry; if it persists, reload the DevTools panel.";
-
 /** A session plus the view state that should survive the page body. */
 export interface RucssTesterHandle {
   readonly session: RucssTesterSession;
   readonly tab: Accessor<RucssTesterTab>;
   readonly setTab: Setter<RucssTesterTab>;
+  /** Which settings sections are open. */
+  readonly sections: SectionsState<RucssSettingsSection>;
 }
 
 /** The panel-lifetime handle (created on the page's first mount). */
@@ -74,21 +88,33 @@ let sharedHandle: RucssTesterHandle | null = null;
 export function createRucssTesterHandle(create: () => RucssTesterSession): RucssTesterHandle {
   return createRoot(() => {
     const [tab, setTab] = createSignal<RucssTesterTab>('test');
-    return { session: create(), tab, setTab };
+    return {
+      session: create(),
+      tab,
+      setTab,
+      sections: createSectionsState<RucssSettingsSection>((section) => section === 'request')
+    };
   });
 }
 
 /**
- * The element a `review-patterns` recovery focuses.
+ * The element a `review-patterns` recovery focuses, and the section holding it.
  *
  * @param view The outcome's view.
- * @returns The element id.
+ * @returns The element id and its section.
  */
-export function reviewTargetId(view: RucssOutcomeView): string {
+export function reviewTarget(view: RucssOutcomeView): {
+  readonly id: string;
+  readonly section: RucssSettingsSection;
+} {
   const focus = view.focus;
-  if (focus === null || focus.field === 'excludeFiles') return fieldId('excludeFiles');
-  if (focus.field === 'prepend') return fieldId('prepend');
-  return pairSearchId(focus.index);
+  if (focus === null || focus.field === 'excludeFiles') {
+    return { id: fieldId('excludeFiles'), section: RUCSS_FIELD_SECTION.excludeFiles };
+  }
+  if (focus.field === 'prepend') {
+    return { id: fieldId('prepend'), section: RUCSS_FIELD_SECTION.prepend };
+  }
+  return { id: pairSearchId(focus.index), section: RUCSS_FIELD_SECTION.replacements };
 }
 
 /** Props of {@link RucssTesterPage}. */
@@ -102,6 +128,8 @@ export interface RucssTesterPageProps {
   reloadInspectedPage?: (() => void) | null;
   /** The virtualizer seam (tests). */
   createVirtualizer?: VirtualizerFactory;
+  /** The columns' overflow seam (tests). */
+  watchOverflow?: OverflowWatcher;
 }
 
 /**
@@ -157,9 +185,12 @@ export function RucssTesterPage(props: RucssTesterPageProps = {}): JSX.Element {
 
   /** Go to the field a pattern failure names. */
   const reviewPatterns = (view: RucssOutcomeView): void => {
+    const target = reviewTarget(view);
     handle.setTab('test');
+    // A folded section shows its fields first.
+    handle.sections.setOpen(target.section, true);
     queueMicrotask(() => {
-      document.getElementById(reviewTargetId(view))?.focus();
+      document.getElementById(target.id)?.focus();
     });
   };
   /** Show the inventory, reading it now. */
@@ -168,7 +199,11 @@ export function RucssTesterPage(props: RucssTesterPageProps = {}): JSX.Element {
     void session.inspect();
   };
 
-  return (
+  // Leaving the page unmounts the tab triggers one by one, and the tabs then
+  // select the first one left — an unmount artefact, never the user's
+  // choice, so it must not stick to the panel-lifetime tab.
+  let unmounting = false;
+  const view = (
     <Show when={data()}>
       <PageFrame id="rucss-tester" title="RUCSS Tester" subtitle={RUCSS_TESTER_SUBTITLE} fill>
         <Show when={showNotice()}>
@@ -181,34 +216,45 @@ export function RucssTesterPage(props: RucssTesterPageProps = {}): JSX.Element {
           ]}
           value={handle.tab()}
           onChange={(value) => {
-            handle.setTab(value === 'styles' ? 'styles' : 'test');
+            if (!unmounting) handle.setTab(value === 'styles' ? 'styles' : 'test');
           }}
           label="RUCSS tester views"
           rootClass="flex min-h-0 flex-1 flex-col gap-3"
         >
-          <TabPanel value="test" class="flex min-w-0 flex-col gap-3">
-            <RunPanel session={session} actions={{ reloadPage, reviewPatterns, inspectStyles }} />
-            <Switch>
-              <Match when={session.load().status === 'loading'}>
-                <div class="grid grid-cols-1 gap-2" data-fdt-rucss-form-loading>
-                  <Skeleton class="h-4 w-32 max-w-full" />
-                  <Skeleton class="h-20 w-full" />
-                  <Skeleton class="h-20 w-full" />
-                </div>
-              </Match>
-              <Match when={session.load().status === 'failed'}>
-                <ErrorState
-                  title="Couldn't load the test settings"
-                  message={LOAD_FAILED_COPY}
-                  onRetry={() => {
-                    session.retryLoad();
-                  }}
-                />
-              </Match>
-              <Match when={session.load().status === 'ready'}>
-                <RucssForm session={session} />
-              </Match>
-            </Switch>
+          <TabPanel value="test" class={TOOL_LAYOUT}>
+            <ToolColumn
+              hook="rucss-result-column"
+              area={TOOL_AREAS.result}
+              label="Test result"
+              watchOverflow={props.watchOverflow}
+            >
+              <RunBar
+                page="rucss"
+                running={session.run().status === 'running'}
+                held={session.load().status !== 'ready'}
+                onRun={() => {
+                  void session.start();
+                }}
+                note={RUCSS_REQUEST_DISCLOSURE}
+                noteIcon={ShieldAlert}
+              />
+              <RunResult
+                session={session}
+                actions={{ reloadPage, reviewPatterns, inspectStyles }}
+              />
+            </ToolColumn>
+            <SettingsColumn
+              page="rucss"
+              load={session.load().status}
+              save={session.save()}
+              onRetry={() => {
+                session.retryLoad();
+              }}
+              sections={RUCSS_SETTINGS_SECTIONS.length}
+              watchOverflow={props.watchOverflow}
+            >
+              <RucssForm session={session} sections={handle.sections} />
+            </SettingsColumn>
           </TabPanel>
           <TabPanel value="styles" class="flex min-h-0 flex-1 flex-col">
             <StylesList
@@ -223,4 +269,12 @@ export function RucssTesterPage(props: RucssTesterPageProps = {}): JSX.Element {
       </PageFrame>
     </Show>
   );
+  // Created after the view, so disposed before it (an owner disposes its
+  // computations last-first): the flag is up before any trigger unmounts.
+  createComputed(() => {
+    onCleanup(() => {
+      unmounting = true;
+    });
+  });
+  return view;
 }

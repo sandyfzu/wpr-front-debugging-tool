@@ -1,5 +1,5 @@
 /**
- * Runtime states against WP Rocket's real Delay JS runtime (P14.1 box 3), on
+ * Runtime states against WP Rocket's real Delay JS runtime, on
  * the docker WordPress site (Delay JS on, the bootstrap baseline). The
  * suite's page carries a missing theme file, a plugin file that runs, an
  * inline script and JSON-LD; WordPress adds its own core module and inline
@@ -18,6 +18,7 @@
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test, type ExtensionDriver } from '../helpers/extension';
+import { facetCount, openScriptDetail, pickFacet, scriptDetail } from '../helpers/javascript-page';
 import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
 import { openSitePage, SITE_URL } from '../helpers/site';
 import { createSitePage, deleteSitePage } from '../helpers/site-wpcli';
@@ -104,23 +105,6 @@ async function expectPanelMatchesDom(panel: Page, page: Page): Promise<void> {
 }
 
 /**
- * A chip of one of the section's bars.
- *
- * @param panel The panel page.
- * @param bar The source bar or the state bar.
- * @param value The chip's value.
- */
-function chip(panel: Page, bar: 'source' | 'state', value: string): Locator {
-  const scope =
-    bar === 'source'
-      ? panel.locator('[data-fdt-runtime-sources]')
-      : panel.locator(
-          '[data-fdt="runtime-states"] [data-fdt="filter-bar"]:not([data-fdt-runtime-sources])'
-        );
-  return scope.locator(`[data-fdt-filter-chip="${value}"]`);
-}
-
-/**
  * The row whose URL or code contains a text.
  *
  * @param panel The panel page.
@@ -204,26 +188,26 @@ test('WP Rocket’s real Delay JS: pending → input → executed / failed, then
     expect(await site.page.evaluate(() => 'fdtRuntimeInlineRan' in window)).toBe(true);
 
     await expectPanelMatchesDom(panel, site.page);
-    await expect(chip(panel, 'state', 'pending')).toContainText('0');
-    await expect(chip(panel, 'state', 'failed')).toContainText('1');
-    await chip(panel, 'state', 'failed').click();
+    await expect(facetCount(panel, 'pending')).toHaveText('0');
+    await expect(facetCount(panel, 'failed')).toHaveText('1');
+    await pickFacet(panel, 'failed');
     await expect(panel.locator('[data-fdt="runtime-row"]')).toHaveCount(1);
-    await panel.locator('[data-fdt-runtime-toggle]').click();
-    await expect(panel.locator('[data-fdt-runtime-detail]')).toContainText('failed-network');
-    await chip(panel, 'state', 'all').click();
+    const failed = await openScriptDetail(panel, panel.locator('[data-fdt="runtime-row"]'));
+    await expect(failed.locator('[data-fdt-runtime-detail]')).toContainText('failed-network');
+    await pickFacet(panel, 'any', 'State');
 
     // Groups and the structured data stay listed after the run.
     for (const group of ['theme', 'plugin', 'inline', 'other'] as const) {
-      await chip(panel, 'source', group).click();
+      await pickFacet(panel, group);
       expect(
         await panel.locator('[data-fdt="runtime-row"]').count(),
         `rows in ${group}`
       ).toBeGreaterThan(0);
     }
-    await chip(panel, 'source', 'all').click();
+    await pickFacet(panel, 'any', 'Source');
     await expect(jsonLd).toHaveCount(1);
-    await jsonLd.locator('[data-fdt-runtime-toggle]').click();
-    await expect(jsonLd.locator('[data-fdt-runtime-detail]')).toContainText(
+    await openScriptDetail(panel, jsonLd);
+    await expect(scriptDetail(panel).locator('[data-fdt-runtime-detail]')).toContainText(
       'Structured data (JSON-LD): read as data, never run.'
     );
 

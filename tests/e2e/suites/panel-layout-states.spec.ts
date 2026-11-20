@@ -67,10 +67,14 @@ async function canvasGeometry(panel: Page, id: string): Promise<{ left: number; 
       right: regionRight - box.right,
       overflow: element.scrollWidth - element.clientWidth,
       bodyOverflow: body.scrollWidth - body.clientWidth,
-      barsContained: [...body.querySelectorAll('[data-fdt="skeleton"]')].every((bar) => {
-        const rect = bar.getBoundingClientRect();
-        return rect.left >= contentLeft && rect.right <= contentRight;
-      })
+      // Bars the layout does not render (a placeholder hidden at this width, e.g. the
+      // Detections overview's WP Rocket tile at compact) have no box to contain.
+      barsContained: [...body.querySelectorAll('[data-fdt="skeleton"]')]
+        .filter((bar) => bar.checkVisibility())
+        .every((bar) => {
+          const rect = bar.getBoundingClientRect();
+          return rect.left >= contentLeft && rect.right <= contentRight;
+        })
     };
   });
   const cap = id === 'undefined-references' ? 896 : 1280;
@@ -115,6 +119,52 @@ async function auditState(panel: Page): Promise<void> {
   expect(result).toEqual({ violations: [], incomplete: [] });
 }
 
+/**
+ * Init script: fake the devtools tab binding and hold every data reply until
+ * `window.releaseLayoutReply()` — the genuine replies, delivered late, so the
+ * loading page is measured as the real boot shows it (`layoutReplyHeld`
+ * flips once a reply waits).
+ *
+ * @param tabId The fixture tab the panel inspects.
+ */
+function holdDataReplies(tabId: number): void {
+  const win = window as unknown as {
+    chrome: typeof chrome;
+    browser?: typeof chrome;
+    releaseLayoutReply?: () => void;
+    layoutReplyHeld?: boolean;
+  };
+  let released = false;
+  const pending: (() => void)[] = [];
+  win.releaseLayoutReply = (): void => {
+    released = true;
+    for (const reply of pending.splice(0)) reply();
+  };
+  for (const ns of [win.chrome, win.browser]) {
+    if (!ns) continue;
+    Object.defineProperty(ns, 'devtools', {
+      configurable: true,
+      value: { inspectedWindow: { tabId } }
+    });
+    const send = ns.tabs.sendMessage.bind(ns.tabs);
+    ns.tabs.sendMessage = ((...args: unknown[]): unknown => {
+      const callback = args.pop() as (reply: unknown) => void;
+      return Reflect.apply(send, ns.tabs, [
+        ...args,
+        (reply: unknown) => {
+          if (released) callback(reply);
+          else {
+            pending.push(() => {
+              callback(reply);
+            });
+            win.layoutReplyHeld = true;
+          }
+        }
+      ]);
+    }) as typeof ns.tabs.sendMessage;
+  }
+}
+
 for (const theme of ['system', 'light', 'dark']) {
   test(`aligns genuine delayed loading, ready and error canvases in ${theme}`, async ({
     extension
@@ -126,43 +176,7 @@ for (const theme of ['system', 'light', 'dark']) {
     const panel = await extension.browserContext.newPage();
     try {
       await panel.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
-      await panel.addInitScript((tabId: number) => {
-        const win = window as unknown as {
-          chrome: typeof chrome;
-          browser?: typeof chrome;
-          releaseLayoutReply?: () => void;
-          layoutReplyHeld?: boolean;
-        };
-        let released = false;
-        const pending: (() => void)[] = [];
-        win.releaseLayoutReply = (): void => {
-          released = true;
-          for (const reply of pending.splice(0)) reply();
-        };
-        for (const ns of [win.chrome, win.browser]) {
-          if (!ns) continue;
-          Object.defineProperty(ns, 'devtools', {
-            configurable: true,
-            value: { inspectedWindow: { tabId } }
-          });
-          const send = ns.tabs.sendMessage.bind(ns.tabs);
-          ns.tabs.sendMessage = ((...args: unknown[]): unknown => {
-            const callback = args.pop() as (reply: unknown) => void;
-            return Reflect.apply(send, ns.tabs, [
-              ...args,
-              (reply: unknown) => {
-                if (released) callback(reply);
-                else {
-                  pending.push(() => {
-                    callback(reply);
-                  });
-                  win.layoutReplyHeld = true;
-                }
-              }
-            ]);
-          }) as typeof ns.tabs.sendMessage;
-        }
-      }, fixture.tabId);
+      await panel.addInitScript(holdDataReplies, fixture.tabId);
       await panel.goto(`${await panelPageUrl(extension)}#/undefined-references`);
       const loading = panel.locator('[data-fdt-page="fetching"]');
       await expect(loading).toBeVisible();
@@ -329,6 +343,77 @@ for (const theme of ['system', 'light', 'dark']) {
       } finally {
         await errorPanel.close();
       }
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+}
+
+/**
+ * The widths the Detections loading → landed alignment is pinned at: the
+ * compact tier (header wrapped: title / subtitle lines / actions) and the
+ * regular-and-up tiers (one-row header).
+ */
+const ALIGNMENT_WIDTHS = [320, 420, 760, 1100];
+
+/**
+ * Read where the Detections body starts: the overview's top (the loading
+ * tiles, or the landed summary) and the header's bottom, after layout commits.
+ *
+ * @param panel The panel page.
+ * @param selector The overview element of the current state.
+ * @returns Both tops in viewport pixels (the content region is at scroll 0).
+ */
+async function bodyTop(panel: Page, selector: string): Promise<{ tiles: number; header: number }> {
+  return await panel.locator(selector).evaluate(async (element) => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          resolve();
+        });
+      });
+    });
+    const header = document.querySelector('[data-fdt="page-header"]');
+    if (!header) throw new Error('Missing page header');
+    return {
+      tiles: element.getBoundingClientRect().top,
+      header: header.getBoundingClientRect().bottom
+    };
+  });
+}
+
+for (const width of ALIGNMENT_WIDTHS) {
+  test(`the Detections loading body starts where the landed page's does at ${String(width)}px`, async ({
+    extension
+  }) => {
+    const fixture = await openFixturePage(extension, '/pipeline/markers.html');
+    const panel = await extension.browserContext.newPage();
+    try {
+      await panel.emulateMedia({ reducedMotion: 'reduce' });
+      await panel.setViewportSize({ width, height: 800 });
+      await panel.addInitScript(holdDataReplies, fixture.tabId);
+      await panel.goto(`${await panelPageUrl(extension)}#/detections`);
+      await expect(panel.locator('[data-fdt-page="fetching"]')).toBeVisible();
+      await expect
+        .poll(() =>
+          panel.evaluate(() => (window as unknown as { layoutReplyHeld: boolean }).layoutReplyHeld)
+        )
+        .toBe(true);
+      const loading = await bodyTop(panel, '[data-fdt="detections-overview-skeleton"]');
+      await panel.evaluate(() => {
+        (window as unknown as { releaseLayoutReply: () => void }).releaseLayoutReply();
+      });
+      await expect(panel.locator('[data-fdt-page="detections"]')).toBeVisible();
+      // The fixture serves no test-mode notice: the summary is the body's first block.
+      await expect(panel.locator('[data-fdt="test-mode-notice"]')).toHaveCount(0);
+      const landed = await bodyTop(panel, '[data-fdt="detections-summary"]');
+      // The reserved subtitle + actions lines put the tiles where the page's land.
+      expect(
+        Math.abs(loading.tiles - landed.tiles),
+        JSON.stringify({ loading, landed })
+      ).toBeLessThanOrEqual(1);
+      expect(Math.abs(loading.header - landed.header)).toBeLessThanOrEqual(1);
     } finally {
       await panel.close();
       await fixture.page.close();

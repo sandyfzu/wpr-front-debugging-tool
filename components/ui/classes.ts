@@ -3,7 +3,7 @@
  *
  * Declared once here (never re-typed in a second primitive) so interactive
  * surfaces cannot drift apart on their focus treatment. Primitives are styled
- * exclusively through Tailwind utilities over the P0 tokens — no hardcoded
+ * exclusively through Tailwind utilities over the design tokens — no hardcoded
  * palette colors, so both palettes come free through the `light-dark()` tokens.
  */
 
@@ -12,10 +12,17 @@
  *
  * An accent outline ring that only appears for keyboard focus
  * (`:focus-visible`), never stealing pointer users' clicks visuals; the accent
- * token is the P0-verified 3:1 non-text indicator across all surfaces.
+ * token is the contrast-gated 3:1 non-text indicator across all surfaces.
  */
 export const FOCUS_RING =
   'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent';
+
+/**
+ * A tooltip-attributed button's frame (the tooltip's button and menu-trigger
+ * forms): the 24px hit floor, content centered. A stand-in for such a
+ * trigger takes the same frame, so swapping it in shows no shift.
+ */
+export const TOOLTIP_TRIGGER_FRAME = 'inline-grid min-h-6 min-w-6 place-items-center rounded';
 
 /**
  * The disabled treatment: dimmed but still hoverable.
@@ -29,8 +36,8 @@ export const DISABLED = 'disabled:opacity-50 disabled:cursor-not-allowed';
 /*
  * Motion — the three sanctioned Tailwind-surface moments beyond the page
  * entrance (the panel's `.fdt-page` keyframe). Token-driven only, so the
- * global `prefers-reduced-motion` collapse in `tokens.css` reaches them with
- * no per-surface code. Everything else (hover/press colors, data swaps,
+ * global `prefers-reduced-motion` rule reaches them with no per-surface code
+ * (`tokens.css` drops them outright, on every surface). Everything else (hover/press colors, data swaps,
  * counts, height changes) is instant by design.
  */
 
@@ -54,9 +61,11 @@ export const MOTION_TURN =
   'transition-transform duration-[var(--motion-fast)] ease-[var(--ease-standard)]';
 
 /**
- * Hover lift for a whole-card **link** (an element that navigates): shadow
- * and border only, no translate. Never on a non-interactive card — a lift
- * promises a click; never on virtual list rows.
+ * A key chip (`<kbd>`): a quiet hairline box in the sans stack at meta size.
+ * One look for every place the panel names a key — the top bar's palette
+ * hint, the palette's key footer, the shortcuts overlay — so keys read the
+ * same wherever they are taught. Callers add tone or font overrides through
+ * `cn` (the overlay's keys column reads `fg-primary`).
  */
-export const MOTION_LIFT =
-  'transition-[box-shadow,border-color] duration-[var(--motion-fast)] ease-[var(--ease-standard)] hover:shadow-elev-2 hover:border-line-3';
+export const KEY_CHIP =
+  'inline-flex items-center gap-0.5 rounded-sm border border-line-2 bg-surface-1 px-1 font-sans text-2xs text-fg-muted';

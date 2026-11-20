@@ -69,6 +69,22 @@ describe('createDismissTimer', () => {
     expect(onElapsed).toHaveBeenCalledTimes(1);
   });
 
+  it('reads a countdown source at every (re)start', () => {
+    vi.useFakeTimers();
+    const onElapsed = vi.fn();
+    let ms = 1000;
+    const timer = createDismissTimer(fakeTimers(), () => ms, onElapsed);
+    timer.restart();
+    ms = 3000;
+    vi.advanceTimersByTime(1000);
+    expect(onElapsed).toHaveBeenCalledTimes(1);
+    timer.restart();
+    vi.advanceTimersByTime(2999);
+    expect(onElapsed).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(onElapsed).toHaveBeenCalledTimes(2);
+  });
+
   it('stops for good on cancel', () => {
     vi.useFakeTimers();
     const onElapsed = vi.fn();
@@ -120,6 +136,23 @@ describe('NoticeView', () => {
     view.flushFrames();
     view.setCurrent({ title: 'Exclusion Builder', body: 'This page is not an HTML page.' });
     expect(screen.getByRole('status').textContent).toContain('This page is not an HTML page.');
+  });
+
+  it('renders no action button unless the notice carries one', () => {
+    renderNotice(NOTICE);
+    expect(document.querySelector('.pn-action')).toBeNull();
+  });
+
+  it('an action button dismisses the notice, then runs the action', () => {
+    const run = vi.fn();
+    const view = renderNotice({ ...NOTICE, action: { label: 'Try again', run } });
+    view.flushFrames();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(view.onDismiss).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(view.onDismiss.mock.invocationCallOrder[0]).toBeLessThan(
+      run.mock.invocationCallOrder[0] ?? 0
+    );
   });
 
   it('dismisses from its named close control', () => {
