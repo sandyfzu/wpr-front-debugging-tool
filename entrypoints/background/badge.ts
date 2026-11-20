@@ -1,6 +1,7 @@
 /**
  * The per-tab toolbar badge: at-a-glance WP Rocket presence and cache state
- * for the tab currently shown by the toolbar icon.
+ * for the tab currently shown by the toolbar icon — a colored dot, explained
+ * by the button's per-tab tooltip (each state's title names it in words).
  *
  * The state machine is pure: callers hand in already-validated summaries and
  * tab ids, and receive the display effects (set/dot by color, or clear) they
@@ -21,6 +22,12 @@
  *   model's memory, so after a wake a stranded badge can exist that this
  *   instance never heard of. A redundant clear write is free; a wrong badge
  *   is not.
+ * - The tooltip travels with the dot: a set writes the state's title, a
+ *   clear writes the manifest's default title back (no dot, no state words).
+ * - Effects land whole and in order per tab: every write (summary sets,
+ *   navigation and gate clears, the sweep) goes through one per-tab queue
+ *   (`createBadgeApplier`), so the write order inside an effect is what the
+ *   tab ends with — never an interleave of two effects.
  */
 
 import { createLogger } from '../../lib/logger';
@@ -28,7 +35,13 @@ import { onMessage } from '../../lib/messaging';
 import { resolveSenderTabId } from '../../lib/messaging/sender';
 import { parseDetectionSummary, type DetectionSummary } from '../../lib/messaging/validate';
 import { getOptions, optionsStore } from '../../lib/storage/options';
-import { TOOLBAR_NAMESPACE, toolbarBadgeApi, type ToolbarBadgeApi } from './toolbar-action';
+import {
+  TOOLBAR_NAMESPACE,
+  toolbarDisplayApi,
+  toolbarTitles,
+  type ToolbarDisplayApi,
+  type ToolbarTitles
+} from './toolbar-action';
 
 const log = createLogger('badge');
 
@@ -48,15 +61,39 @@ const ABSENT_STATE_COLOR = '#6e7781';
 /** The tile is transparent: the dot is the glyph in its state color (see `applyBadgeEffect`). */
 const TRANSPARENT_TILE: [number, number, number, number] = [0, 0, 0, 0];
 
+/** The three states a reported page can be in. */
+type BadgeState = 'cached' | 'uncached' | 'absent';
+
+/**
+ * Each state's dot color and the tooltip words that explain it (the color
+ * alone is explained nowhere else in the browser chrome).
+ */
+const BADGE_STATES: Readonly<Record<BadgeState, { color: string; caption: string }>> = {
+  cached: { color: CACHED_STATE_COLOR, caption: 'WP Rocket active, page served from cache' },
+  uncached: {
+    color: UNCACHED_PRESENT_COLOR,
+    caption: 'WP Rocket active, page not served from cache'
+  },
+  absent: { color: ABSENT_STATE_COLOR, caption: 'WP Rocket not detected' }
+};
+
+/** Between the extension name and a state's caption in the tooltip. */
+const TITLE_SEPARATOR = ' · ';
+
 /** What a tab's action badge must display: the dot glyph plus its color. */
 export interface BadgeDisplay {
   text: string;
   color: string;
 }
 
-/** One change to apply to the browser action (the pure core's only output). */
+/**
+ * One change to apply to the browser action (the pure core's only output):
+ * `title` is the tab's tooltip — the state's words on a set, the manifest's
+ * default tooltip on a clear.
+ */
 export type BadgeEffect =
-  { kind: 'set'; tabId: number; display: BadgeDisplay } | { kind: 'clear'; tabId: number };
+  | { kind: 'set'; tabId: number; display: BadgeDisplay; title: string }
+  | { kind: 'clear'; tabId: number; title: string };
 
 export interface BadgeRuntime {
   /**
@@ -71,8 +108,10 @@ export interface BadgeRuntime {
   /** Resolve or change the feature gate; may produce batched clear effects. */
   setFeatureEnabled(enabled: boolean): BadgeEffect[];
   /**
-   * Apply effects to the browser action; resolves unconditionally (every
-   * browser call is awaited and caught), so callers may `void` it.
+   * Apply an effect to the browser action, queued behind the tab's earlier
+   * effects (each lands whole, in call order); resolves unconditionally
+   * (every browser call is awaited and caught), so callers may `void` it.
+   * Every toolbar write for a tab must go through here.
    */
   apply(effect: BadgeEffect | null): Promise<void>;
 }
@@ -93,9 +132,30 @@ export type BadgeStateModel = Omit<BadgeRuntime, 'apply'>;
  */
 export function badgeFor(summary: DetectionSummary | null): BadgeDisplay | null {
   if (summary === null) return null;
-  if (!summary.wprPresent) return { text: BADGE_DOT, color: ABSENT_STATE_COLOR };
-  if (summary.cached) return { text: BADGE_DOT, color: CACHED_STATE_COLOR };
-  return { text: BADGE_DOT, color: UNCACHED_PRESENT_COLOR };
+  return { text: BADGE_DOT, color: BADGE_STATES[badgeStateOf(summary)].color };
+}
+
+/**
+ * Classify a summary: absence first (a page without WP Rocket is never
+ * "cached"), then the cache verdict.
+ *
+ * @param summary A validated summary.
+ */
+function badgeStateOf(summary: DetectionSummary): BadgeState {
+  if (!summary.wprPresent) return 'absent';
+  return summary.cached ? 'cached' : 'uncached';
+}
+
+/**
+ * Summary → the tab's tooltip: the extension name, then the state in words.
+ *
+ * @param summary The two booleans a content push reported, or null.
+ * @param name The extension's name (from the manifest — never re-typed).
+ * @returns The tooltip, or null when the tab shows no state (no badge).
+ */
+export function badgeTitleFor(summary: DetectionSummary | null, name: string): string | null {
+  if (summary === null) return null;
+  return `${name}${TITLE_SEPARATOR}${BADGE_STATES[badgeStateOf(summary)].caption}`;
 }
 
 /**
@@ -108,6 +168,8 @@ export function badgeFor(summary: DetectionSummary | null): BadgeDisplay | null 
  * what must be cleaned on the way out.
  */
 class BadgeStateModelImpl implements BadgeStateModel {
+  /** The tooltip texts: the name every set title starts with, the clears' default. */
+  readonly #titles: ToolbarTitles;
   /** Latest renderable summary per tab — kept even while the gate is off/unknown. */
   #summaries = new Map<number, DetectionSummary>();
   /** Tabs this state currently has a badge applied to (its own writes only). */
@@ -118,18 +180,17 @@ class BadgeStateModelImpl implements BadgeStateModel {
    */
   #gate: boolean | null = null;
 
+  /** @param titles The tooltip texts (the manifest's, resolved by the glue). */
+  constructor(titles: ToolbarTitles) {
+    this.#titles = titles;
+  }
+
   processSummary(tabId: number, summary: DetectionSummary): BadgeEffect | null {
     this.#summaries.set(tabId, summary);
-    const display = badgeFor(summary);
     if (this.#gate !== true) return null;
-    if (display === null) {
-      // Unreachable with a validated summary (`badgeFor` is total over
-      // summaries) — the shape stays for the type, producing no browser
-      // write on an impossible branch.
-      return null;
-    }
-    this.#applied.add(tabId);
-    return { kind: 'set', tabId, display };
+    // Null only on an impossible branch (`badgeFor` is total over validated
+    // summaries) — the shape stays for the type, producing no browser write.
+    return this.#setEffect(tabId, summary);
   }
 
   navigationStarted(tabId: number): BadgeEffect | null {
@@ -150,10 +211,9 @@ class BadgeStateModelImpl implements BadgeStateModel {
       // Re-resolve from the kept summaries: a toggle re-arms without a page
       // reprocessing, and navigation keeps every such value page-truthful.
       return [...this.#summaries.entries()].flatMap(([tabId, summary]): BadgeEffect[] => {
-        const display = badgeFor(summary);
-        if (display === null) return this.#applied.has(tabId) ? [this.#clearEffect(tabId)] : [];
-        this.#applied.add(tabId);
-        return [{ kind: 'set', tabId, display }];
+        const effect = this.#setEffect(tabId, summary);
+        if (effect !== null) return [effect];
+        return this.#applied.has(tabId) ? [this.#clearEffect(tabId)] : [];
       });
     }
     const effects = [...this.#applied].map((tabId) => this.#clearEffect(tabId));
@@ -163,22 +223,48 @@ class BadgeStateModelImpl implements BadgeStateModel {
     return effects;
   }
 
+  /**
+   * The set effect for a summary (recording the tab as applied), or null
+   * when the summary renders nothing.
+   */
+  #setEffect(tabId: number, summary: DetectionSummary): BadgeEffect | null {
+    const display = badgeFor(summary);
+    const title = badgeTitleFor(summary, this.#titles.name);
+    if (display === null || title === null) return null;
+    this.#applied.add(tabId);
+    return { kind: 'set', tabId, display, title };
+  }
+
   #clearEffect(tabId: number): BadgeEffect {
     this.#applied.delete(tabId);
-    return { kind: 'clear', tabId };
+    return clearBadgeEffect(tabId, this.#titles);
   }
 }
 
 /**
+ * The effect that returns a tab's button to its defaults: no dot, the
+ * manifest's tooltip. Shared by the state model and the stranded-badge sweep.
+ *
+ * @param tabId The tab to clear.
+ * @param titles The tooltip texts (only the default is used).
+ */
+export function clearBadgeEffect(tabId: number, titles: ToolbarTitles): BadgeEffect {
+  return { kind: 'clear', tabId, title: titles.defaultTitle };
+}
+
+/**
  * Apply one effect to the toolbar button — resolves (never rejects: every
- * call is awaited and caught) so callers can `void` it safely.
+ * call is awaited and caught) so callers can `void` it safely. A failed
+ * write skips the rest of the effect (logged); the next report or
+ * navigation re-runs it whole.
+ *
  * @param effect Effect to apply, or null (no-op).
- * @param api The toolbar badge API to write through (this build's by
+ * @param api The toolbar display API to write through (this build's by
  *   default); null — a browser without it — is logged, never thrown.
  */
 export async function applyBadgeEffect(
   effect: BadgeEffect | null,
-  api: ToolbarBadgeApi | null = toolbarBadgeApi()
+  api: ToolbarDisplayApi | null = toolbarDisplayApi()
 ): Promise<void> {
   if (effect === null) return;
   if (api === null) {
@@ -187,16 +273,21 @@ export async function applyBadgeEffect(
   }
   try {
     if (effect.kind === 'clear') {
-      // An empty text removes the badge; no color touch, the tab default stays.
+      // An empty text removes the badge; no color touch, the tab default
+      // stays. The dot goes first: a visible stale state dies before its
+      // (hover-only) words do.
       await api.setBadgeText({ tabId: effect.tabId, text: '' });
+      await api.setTitle({ tabId: effect.tabId, title: effect.title });
       return;
     }
-    // The dot is the glyph itself in its state color, over a transparent
-    // tile — Chrome's default (a colored tile with white text) renders the
-    // glyph off-center inside the square and reads as a defect. The
-    // transparent tile is a fixed browser-chrome value, outside theme
-    // resolution. The text lands last, so any earlier failure leaves nothing
-    // rendered rather than a half-applied badge; the next report re-runs all.
+    // The words land first and the dot last, so a dot that appears always
+    // carries its own state's tooltip. The dot is the glyph itself in its
+    // state color, over a transparent tile — Chrome's default (a colored
+    // tile with white text) renders the glyph off-center inside the square
+    // and reads as a defect. The transparent tile is a fixed browser-chrome
+    // value, outside theme resolution. The text lands last, so any earlier
+    // failure leaves no fresh dot rather than a half-applied badge.
+    await api.setTitle({ tabId: effect.tabId, title: effect.title });
     await api.setBadgeBackgroundColor({
       tabId: effect.tabId,
       color: TRANSPARENT_TILE
@@ -209,12 +300,65 @@ export async function applyBadgeEffect(
   }
 }
 
+/** Per-tab serialized writes over {@link applyBadgeEffect} (see {@link createBadgeApplier}). */
+export interface BadgeApplier {
+  /**
+   * Queue an effect behind its tab's earlier ones; resolves once its own
+   * writes are done (never rejects). Null resolves at once, queueing nothing.
+   */
+  apply(effect: BadgeEffect | null): Promise<void>;
+  /** Tabs with writes still queued or running — 0 once every effect settled. */
+  pendingTabs(): number;
+}
+
+/**
+ * Serialize toolbar writes per tab: each effect's writes all land before the
+ * tab's next effect starts, in arrival (call) order. Without it, a navigation
+ * clear (2 writes) and a summary set (4 writes) racing on one tab interleave
+ * their awaits and can end with the new dot under the default title. Tabs
+ * stay independent (one slow tab never delays another). A tab's entry is
+ * dropped as soon as its last queued effect settles, so closed tabs leak
+ * nothing; a rejecting write (or applier) never stalls the queue.
+ *
+ * @param api The toolbar display API every effect writes through.
+ * @param applyOne The single-effect writer (seam for tests).
+ */
+export function createBadgeApplier(
+  api: ToolbarDisplayApi | null,
+  applyOne: (effect: BadgeEffect, api: ToolbarDisplayApi | null) => Promise<void> = applyBadgeEffect
+): BadgeApplier {
+  /** Each tab's queue tail: the promise of its latest queued effect. */
+  const tails = new Map<number, Promise<void>>();
+  return {
+    apply(effect) {
+      if (effect === null) return Promise.resolve();
+      const { tabId } = effect;
+      // The catch covers a rejecting or throwing writer alike, so a tail
+      // never rejects and the next effect always runs.
+      const next = (tails.get(tabId) ?? Promise.resolve())
+        .then(() => applyOne(effect, api))
+        .catch((cause: unknown) => {
+          log.warn('Badge update ignored', effect.kind, tabId, cause);
+        });
+      tails.set(tabId, next);
+      return next.finally(() => {
+        // Only the latest tail may drop the entry: a newer effect queued in
+        // the meantime still owns it.
+        if (tails.get(tabId) === next) tails.delete(tabId);
+      });
+    },
+    pendingTabs: () => tails.size
+  };
+}
+
 /**
  * Build a fresh, unrendering-until-enabled badge state — the testable seam
  * over the pure core (the runtime wires one and binds its effect applier).
+ *
+ * @param titles The tooltip texts every effect's title is built from.
  */
-export function createBadgeState(): BadgeStateModel {
-  return new BadgeStateModelImpl();
+export function createBadgeState(titles: ToolbarTitles): BadgeStateModel {
+  return new BadgeStateModelImpl(titles);
 }
 
 /**
@@ -222,17 +366,25 @@ export function createBadgeState(): BadgeStateModel {
  * machine, binds its toolbar-button applier, and listens for content
  * pushes with sender (not payload-borne) tab resolution.
  *
- * @param api The toolbar badge API (this build's by default).
+ * @param api The toolbar display API (this build's by default).
+ * @param readTitles Reads the tooltip texts (the manifest's by default);
+ *   called once, after the API check.
  * @returns Runtime callbacks for the header capture (navigation clears) and
  *   the feature gate (options are resolved after this, see `watchBadgeGate`).
  * @throws {@link Error} When `api` is null: the browser exposes no toolbar
- *   button API for this build, so no badge could ever render.
+ *   button API for this build, so no badge could ever render — or when the
+ *   titles cannot be read (see {@link toolbarTitles}).
  */
-export function initBadge(api: ToolbarBadgeApi | null = toolbarBadgeApi()): BadgeRuntime {
+export function initBadge(
+  api: ToolbarDisplayApi | null = toolbarDisplayApi(),
+  readTitles: () => ToolbarTitles = toolbarTitles
+): BadgeRuntime {
   if (api === null) {
     throw new Error(`No toolbar button API (browser.${TOOLBAR_NAMESPACE}) in this browser`);
   }
-  const state = new BadgeStateModelImpl();
+  const state = new BadgeStateModelImpl(readTitles());
+  // The one writer for this session: every caller's effects queue per tab.
+  const applier = createBadgeApplier(api);
 
   onMessage('reportDetectionSummary', ({ data, sender }) => {
     const summary = parseDetectionSummary(data);
@@ -247,7 +399,7 @@ export function initBadge(api: ToolbarBadgeApi | null = toolbarBadgeApi()): Badg
       log.warn('Detection summary from a tabless sender ignored');
       return true;
     }
-    void applyBadgeEffect(state.processSummary(tabId, summary), api);
+    void applier.apply(state.processSummary(tabId, summary));
     return true;
   });
 
@@ -258,7 +410,7 @@ export function initBadge(api: ToolbarBadgeApi | null = toolbarBadgeApi()): Badg
       state.tabRemoved(tabId);
     },
     setFeatureEnabled: (enabled) => state.setFeatureEnabled(enabled),
-    apply: (effect) => applyBadgeEffect(effect, api)
+    apply: (effect) => applier.apply(effect)
   };
 }
 
@@ -281,23 +433,26 @@ export function createDisabledBadgeRuntime(): BadgeRuntime {
 }
 
 /**
- * Clear the feature's badge on every tab without consulting memory: Chrome
- * keeps rendering per-tab badges across the service-worker restarts that
- * empty the state model, so a gate turning off (or boot resolving off) must
- * reach badges it lost track of.
+ * Clear the feature's badge and tooltip on every tab without consulting
+ * memory: Chrome keeps rendering per-tab badges and titles across the
+ * service-worker restarts that empty the state model, so a gate turning off
+ * (or boot resolving off) must reach badges it lost track of.
  *
  * `tabs.query({})` needs no `tabs` permission: ids are always served — only
  * url/title-class fields are withheld without it, and this sweep reads
  * nothing else.
+ *
+ * @param badge The runtime whose per-tab queue the clears join (so a sweep
+ *   never interleaves with a tab's in-flight set).
  */
-async function sweepRenderedBadges(): Promise<void> {
-  const api = toolbarBadgeApi();
+async function sweepRenderedBadges(badge: BadgeRuntime): Promise<void> {
   // No toolbar button API: no badge can exist, and boot already reported why.
-  if (api === null) return;
+  if (toolbarDisplayApi() === null) return;
+  const titles = toolbarTitles();
   const ids = (await browser.tabs.query({}))
     .map((tab) => tab.id)
     .filter((id): id is number => typeof id === 'number');
-  await Promise.allSettled(ids.map((id) => applyBadgeEffect({ kind: 'clear', tabId: id }, api)));
+  await Promise.allSettled(ids.map((id) => badge.apply(clearBadgeEffect(id, titles))));
 }
 
 /**
@@ -312,9 +467,9 @@ export async function watchBadgeGate(badge: BadgeRuntime): Promise<void> {
     // A gate resolving off must also reach stranded badges: memory cannot
     // enumerate what Chrome still renders from before a restart — ids can.
     // The model's own clears cover exactly the membership it still knows.
-    if (!enabled) await sweepRenderedBadges();
+    if (!enabled) await sweepRenderedBadges(badge);
     for (const effect of badge.setFeatureEnabled(enabled)) {
-      void applyBadgeEffect(effect);
+      void badge.apply(effect);
     }
   };
   await applyGate();

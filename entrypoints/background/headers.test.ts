@@ -28,13 +28,16 @@ const NORMAL_ROWS = [
   { name: 'age', value: '19' }
 ];
 
+/** The default tooltip the stubbed navigation clear carries (any text: passed through). */
+const DEFAULT_TITLE = 'Extension';
+
 /** Badge half of the deps: records applied effects; overrides inject failures. */
 function badgeHalf(
   applied: Array<BadgeEffect | null>,
   overrides: Partial<HeaderCaptureDeps['badge']> = {}
 ): HeaderCaptureDeps['badge'] {
   const half: HeaderCaptureDeps['badge'] = {
-    navigationStarted: (tabId) => ({ kind: 'clear', tabId }),
+    navigationStarted: (tabId) => ({ kind: 'clear', tabId, title: DEFAULT_TITLE }),
     apply: (effect) => {
       applied.push(effect);
       return Promise.resolve();
@@ -242,7 +245,7 @@ describe('handleResponseStarted (the webRequest listener body)', () => {
       { capture: cache, badge: badgeHalf(applied), sim: broken }
     );
     expect(cache.take(87)).toEqual(NORMAL_ROWS);
-    expect(applied).toEqual([{ kind: 'clear', tabId: 87 }]);
+    expect(applied).toEqual([{ kind: 'clear', tabId: 87, title: DEFAULT_TITLE }]);
   });
 
   it('a wholesale-rejected capture still clears the stale badge (one half never blocks the other)', async () => {
@@ -257,7 +260,7 @@ describe('handleResponseStarted (the webRequest listener body)', () => {
     );
     expect(cache.take(9)).toBeNull();
     await vi.waitFor(() => {
-      expect(applied).toEqual([{ kind: 'clear', tabId: 9 }]);
+      expect(applied).toEqual([{ kind: 'clear', tabId: 9, title: DEFAULT_TITLE }]);
     });
   });
 
@@ -269,7 +272,7 @@ describe('handleResponseStarted (the webRequest listener body)', () => {
       { capture: brokenCapture(), badge: badgeHalf(applied), sim: simHalf(navigated) }
     );
     await vi.waitFor(() => {
-      expect(applied).toEqual([{ kind: 'clear', tabId: 4 }]);
+      expect(applied).toEqual([{ kind: 'clear', tabId: 4, title: DEFAULT_TITLE }]);
     });
     await vi.waitFor(() => {
       expect(navigated).toEqual([4]);

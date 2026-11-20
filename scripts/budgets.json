@@ -331,7 +331,7 @@
     "build": "firefox-mv2",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 344.4
+      "raw": 358
     }
   },
   {

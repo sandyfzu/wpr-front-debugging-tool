@@ -10,8 +10,10 @@
  *   availability, and the two protocol requests it serves,
  * - the context menus (`./context-menus`) — the entries and their one click
  *   router,
- * - the toolbar badge (`./badge`) — the per-tab action badge state machine
- *   and its option gate,
+ * - the toolbar badge (`./badge`) — the per-tab action badge + tooltip state
+ *   machine and its option gate,
+ * - the toolbar click (`./toolbar-click`) — the button opens the on-page
+ *   command palette, else the options page,
  * - the simulated-device sessions (`./device-simulation`) — the compare
  *   overlay's tab-scoped UA rules and their lifecycle,
  * - the exclusion-builder sessions (`./exclusion-sessions`) — the session
@@ -56,6 +58,7 @@ import { registerTabPushRelay } from './tab-push-relay';
 import { registerTabRelay } from './tab-relay';
 import { registerChordPlatform } from './chord-platform';
 import { registerCommandPalette } from './command-palette';
+import { registerToolbarClick } from './toolbar-click';
 import { registerLatestExclusionList } from './latest-exclusion-list';
 import { registerRucssFetch } from './rucss-fetch';
 import { registerBeaconRunnerLoad } from './beacon-runner-load';
@@ -194,6 +197,13 @@ async function main(): Promise<void> {
   } catch (cause) {
     // The palette module's asks then see no receiver and report the open failure.
     log.error('Command palette init failed — the on-page palette cannot open', cause);
+  }
+
+  try {
+    registerToolbarClick();
+  } catch (cause) {
+    // The button keeps its badge and menu; a left click then does nothing.
+    log.error('Toolbar click init failed — a toolbar click opens nothing', cause);
   }
 
   try {
