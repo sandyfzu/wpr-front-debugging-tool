@@ -1,7 +1,8 @@
 /**
  * Test-only harness for the resource-list pages: renders a page body inside
  * the shell's contexts with a signal-backed data store (so a test can push a
- * refresh), the real search store and a real detail-presence store, plus layout-free virtualizer
+ * refresh), the real search store, a real detail-presence store and a
+ * real detail-share store (its writes recorded, never stored), plus layout-free virtualizer
  * doubles (happy-dom has no layout engine) that render a bounded window, as
  * the real virtualizer does — so a list at its 5,000-row cap still mounts
  * only a viewport's worth of rows. No shipped module imports this file.
@@ -21,6 +22,11 @@ import {
   DetailPresenceContext,
   type DetailPresenceStore
 } from '../../state/detail-presence';
+import {
+  createDetailShare,
+  DetailShareContext,
+  type DetailShareStore
+} from '../../state/detail-share';
 import { createSearchStore, type SearchStore } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
 
@@ -71,6 +77,10 @@ export interface PageHarness {
   readonly search: SearchStore;
   /** The shell's detail presence the page publishes to (route fixed for the test). */
   readonly presence: DetailPresenceStore;
+  /** The shell's pane share the page's lists read and the splitter writes. */
+  readonly share: DetailShareStore;
+  /** The share writes the store persisted (`null` = reset). */
+  readonly shareWrites: ReturnType<typeof vi.fn<(share: number | null) => Promise<void>>>;
   /** Replace the store's data (a soft refresh: the page stays mounted). */
   refresh(data: FdtData): void;
   /** The page section element. */
@@ -100,25 +110,34 @@ export function renderPage(
   };
   const search = createSearchStore();
   let presence: DetailPresenceStore | undefined;
+  const shareWrites = vi.fn<(share: number | null) => Promise<void>>(() => Promise.resolve());
+  let share: DetailShareStore | undefined;
   const view = render((): JSX.Element => {
     // Built inside the render tree: the store's route effect needs an owner.
     presence = createDetailPresence(() => 'javascript');
+    share = createDetailShare(null, shareWrites);
     return (
       <FdtDataContext.Provider value={store}>
         <SearchContext.Provider value={search}>
           <DetailPresenceContext.Provider value={presence}>
-            <Page createVirtualizer={virtualizer} />
+            <DetailShareContext.Provider value={share}>
+              <Page createVirtualizer={virtualizer} />
+            </DetailShareContext.Provider>
           </DetailPresenceContext.Provider>
         </SearchContext.Provider>
       </FdtDataContext.Provider>
     );
   });
-  if (presence === undefined) throw new Error('renderPage: the presence store was not built');
+  if (presence === undefined || share === undefined) {
+    throw new Error('renderPage: the shell stores were not built');
+  }
   const root = view.container.querySelector<HTMLElement>('[data-fdt-page]');
   if (root === null) throw new Error('renderPage: the page rendered no [data-fdt-page] root');
   return {
     search,
     presence,
+    share,
+    shareWrites,
     root,
     refresh(next) {
       setState({ status: 'refreshing', data: next, requestedAt: 1 });

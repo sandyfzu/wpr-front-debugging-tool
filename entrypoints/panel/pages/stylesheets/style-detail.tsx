@@ -27,7 +27,13 @@ import { formatCount } from '../../../../utils/format-count';
 import { formatCss } from '../../../../utils/format-css';
 import type { CodeBlockSeams } from '../javascript/code-seams';
 import type { OpenResource } from '../open-resource';
-import { DetailSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
+import {
+  DETAIL_CODE_MAX_HEIGHT,
+  DetailSection,
+  DETAIL_STACK,
+  FactList
+} from '../resource-list/detail-section';
+import { opensWrapped } from '../../../../lib/panel/detail-code';
 import { createOnDemand } from '../resource-list/on-demand';
 import { SourceLink } from '../resource-list/source-link';
 import { READ_FAILURE_NOTES } from '../resource-list/top-frame-reader';
@@ -117,8 +123,8 @@ export function StyleDetail(props: StyleDetailProps): JSX.Element {
   const facts = createMemo(() => styleFacts(props.view()));
   const row = () => props.view().row;
   return (
-    <div data-fdt="style-detail" class="@container/detail min-w-0">
-      <div class={DETAIL_COLUMNS}>
+    <div data-fdt="style-detail" class="min-w-0">
+      <div class={DETAIL_STACK}>
         <div class="flex min-w-0 flex-col gap-3.5">
           <ChipLine view={props.view()} />
           <Show when={row().type === 'external'}>
@@ -254,6 +260,8 @@ function InlineCss(props: {
                   text={display().text}
                   lang="css"
                   label={INLINE_CSS_LABEL}
+                  defaultWrap={opensWrapped(display().text)}
+                  maxHeight={DETAIL_CODE_MAX_HEIGHT}
                   class="min-w-0"
                   loadHighlighter={props.codeBlock?.loadHighlighter}
                   createObserver={props.codeBlock?.createObserver}

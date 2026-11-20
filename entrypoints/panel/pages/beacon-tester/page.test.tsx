@@ -22,6 +22,7 @@ import {
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
 import { createDetailPresence, DetailPresenceContext } from '../../state/detail-presence';
+import { createDetailShare, DetailShareContext } from '../../state/detail-share';
 import { pageIdOf, pageSettledOf } from '../../state/page-identity';
 import { createSearchStore, SEARCH_DEBOUNCE_MS } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
@@ -147,11 +148,13 @@ function renderPage(
       <FdtDataContext.Provider value={store}>
         <SearchContext.Provider value={search}>
           <DetailPresenceContext.Provider value={createDetailPresence(() => 'beacon-tester')}>
-            <BeaconTesterPage
-              handle={handle}
-              reloadInspectedPage={reload}
-              createVirtualizer={everyRow}
-            />
+            <DetailShareContext.Provider value={createDetailShare(null, () => Promise.resolve())}>
+              <BeaconTesterPage
+                handle={handle}
+                reloadInspectedPage={reload}
+                createVirtualizer={everyRow}
+              />
+            </DetailShareContext.Provider>
           </DetailPresenceContext.Provider>
         </SearchContext.Provider>
       </FdtDataContext.Provider>

@@ -117,11 +117,21 @@ export interface NavCount {
  */
 export type NavCountSelector = (data: FdtData) => NavCount | null;
 
+/**
+ * A route's canvas (every data state of the route keeps it): `reading` — the
+ * shorter column of explanation-heavy routes; `split` — master–detail list
+ * routes: the standard canvas, the whole content width while a detail is
+ * open (the side pane takes the extra room, so list + pane fill the panel
+ * and, without one, controls, rows and summary stay one aligned block);
+ * absent — the standard centered canvas.
+ */
+export type PageCanvasWidth = 'reading' | 'split';
+
 /** One row of the nav registry. */
 export interface NavRoute {
   id: RouteId;
-  /** Explanation-heavy routes use the same shorter canvas in every data state. */
-  reading?: boolean;
+  /** The route's canvas width (absent: standard). */
+  canvas?: PageCanvasWidth;
   /** User-facing label (sentence case; the nav, palette and page titles read it). */
   label: string;
   /** The row's lucide icon (the nav renders it when it has room for it). */
@@ -157,6 +167,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     label: 'JavaScript',
     icon: FileCode,
     group: 'Inspect',
+    canvas: 'split',
     // Every page script, delayed or not (the page's rows), for when Delay JS
     // is not on the page and the live state stays silent.
     count: (data) => {
@@ -181,12 +192,13 @@ export const NAV_ROUTES: readonly NavRoute[] = [
   },
   // Read live from the page on open (the payload carries no style list), so
   // the row has no number to show before the page opens.
-  { id: 'stylesheets', label: 'Stylesheets', icon: Palette, group: 'Inspect' },
+  { id: 'stylesheets', label: 'Stylesheets', icon: Palette, group: 'Inspect', canvas: 'split' },
   {
     id: 'lazyload',
     label: 'Lazyload',
     icon: Images,
     group: 'Inspect',
+    canvas: 'split',
     liveState: (data) => {
       if (data === null || !data.wprDetections.lazyload.present) return null;
       // The feature is active either way; "no images" is the page's state.
@@ -207,6 +219,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     label: 'Preloaded Resources',
     icon: Zap,
     group: 'Inspect',
+    canvas: 'split',
     liveState: (data) => {
       // No data, no hint or no collected list (unknown): say nothing rather
       // than a number that is not known.
@@ -250,7 +263,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
   // actually implements — tracked for the copy sweep.
   {
     id: 'undefined-references',
-    reading: true,
+    canvas: 'reading',
     label: 'Undefined References',
     icon: SearchX,
     group: 'Diagnose',

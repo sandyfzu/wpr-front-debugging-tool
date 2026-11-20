@@ -37,6 +37,10 @@
  * (`overflow-y: clip`, so nothing can scroll it vertically), never on the
  * focusable scroller, whose focus ring a mask would cut off; the bottom
  * edge fades only while lines are actually cut off (`data-fdt-clipped`).
+ *
+ * Height cap: `maxHeight` instead bounds the code area itself (a CSS
+ * length — container units included), past which the area scrolls on both
+ * axes: the reading mode for a whole source inside a view of known height.
  */
 import type { ComponentProps, JSX } from 'solid-js';
 import {
@@ -165,6 +169,15 @@ export type CodeBlockProps = {
    * only when there is something to reveal.
    */
   onClipChange?: (clipped: boolean) => void;
+  /**
+   * Cap the code area's height (a non-empty CSS length, e.g.
+   * `max(10rem, 100cqh - 3.5rem)` in a size container): shorter code keeps its natural height,
+   * taller code scrolls inside the area (the area turns into the focusable
+   * scroll region like any overflowing block). `undefined` (default): the
+   * area grows with the code. Exclusive with {@link CodeBlockProps.maxLines}
+   * (a clamp hides lines, a cap scrolls them). Reactive.
+   */
+  maxHeight?: string;
   /**
    * Line indexes (0-based) the consumer cut short — e.g. a preview's long
    * lines. Each gets a muted `…` drawn **after** the line (`::after`), outside
@@ -341,12 +354,14 @@ function resolveChrome(
  *   pass a distinct one per block when a page shows several).
  * @param props.maxLines Clamp to N visible lines (collapsed preview).
  * @param props.onClipChange Told whether the clamp cuts lines off.
+ * @param props.maxHeight Cap the area's height; taller code scrolls inside.
  * @param props.watchOverflow Overflow seam (tests inject a manual watcher).
  * @param props.class Extra classes on the container.
  * @param props.* Native div props (`id`, `aria-*`, …) pass through.
  * @throws {@link Error} for a language outside {@link CODE_BLOCK_LANGS} — a
  *   call-site bug fails at analysis/injection time rather than shipping a
- *   mislabelled block — and for a `maxLines` that is not a positive integer.
+ *   mislabelled block — for a `maxLines` that is not a positive integer, and
+ *   for an empty `maxHeight` or one combined with `maxLines`.
  */
 export function CodeBlock(props: CodeBlockProps): JSX.Element {
   // Lang is a call-site constant — the guard must run synchronously with a
@@ -365,6 +380,7 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     'createObserver',
     'label',
     'maxLines',
+    'maxHeight',
     'onClipChange',
     'cutLines',
     'toolbar',
@@ -422,6 +438,17 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
       throw new Error(`CodeBlock: maxLines must be a positive integer, got ${String(lines)}.`);
     }
     return lines;
+  });
+
+  /** The validated height cap (`undefined`: the area grows with the code). */
+  const maxHeight = createMemo<string | undefined>(() => {
+    const cap = own.maxHeight;
+    if (cap === undefined) return undefined;
+    if (cap.trim() === '') throw new Error('CodeBlock: maxHeight must be a non-empty CSS length.');
+    if (own.maxLines !== undefined) {
+      throw new Error('CodeBlock: maxHeight and maxLines are exclusive — pick a cap or a clamp.');
+    }
+    return cap;
   });
 
   let container: HTMLDivElement | undefined;
@@ -596,6 +623,8 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
         data-fdt-scrollable={scrollable() ? '' : undefined}
         data-fdt-clamped={maxLines() !== undefined ? '' : undefined}
         data-fdt-clipped={maxLines() !== undefined && clipped() ? '' : undefined}
+        data-fdt-capped={maxHeight() !== undefined ? '' : undefined}
+        style={maxHeight() === undefined ? undefined : { 'max-height': maxHeight() }}
         // Focusable and named only while there is something to scroll (or
         // while focus is already here).
         tabindex={focusable() ? 0 : undefined}
@@ -610,6 +639,8 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
           // transparent one it sits past the block's box, and contrast
           // checks report it undeterminable.
           'overflow-x-auto rounded-b bg-inherit',
+          // A height cap scrolls the rest vertically, inside the area.
+          maxHeight() !== undefined && 'overflow-y-auto',
           FOCUS_RING,
           // Shared `pre` typography for the one `pre` either surface renders
           // (the fallback's own, or shiki's inside the highlighted wrapper);

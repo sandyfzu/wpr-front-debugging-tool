@@ -11,7 +11,9 @@ import { createSignal, Show } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ROUTE_HEADING_SELECTOR } from '../palette/focus';
 import type { RouteId } from '../routes';
+import { createDetailPresence, DetailPresenceContext } from '../state/detail-presence';
 import {
+  canvasSizeOf,
   NO_MATCHES_QUERY_MAX,
   NoMatches,
   type NoMatchesFocusTarget,
@@ -84,11 +86,57 @@ describe('PageFrame', () => {
   });
 
   it('centers and bounds the entire workspace, including its header', () => {
-    render(() => <PageFrame id="javascript" title="JavaScript" />);
+    render(() => <PageFrame id="lcp-vitals" title="LCP & Vitals" />);
     for (const token of ['mx-auto', 'w-full', 'min-w-0', 'max-w-7xl']) {
       expect(frameBody().classList).toContain(token);
     }
     expect(frameBody().classList).not.toContain('max-w-4xl');
+  });
+
+  it('keeps master–detail list routes on the standard canvas until a detail opens, then spans the content', () => {
+    for (const [id, title] of [
+      ['javascript', 'JavaScript'],
+      ['stylesheets', 'Stylesheets'],
+      ['lazyload', 'Lazyload'],
+      ['preloaded-resources', 'Preloaded Resources']
+    ] as const) {
+      let open: ((value: boolean) => void) | undefined;
+      render(() => {
+        const presence = createDetailPresence(() => id);
+        const claim = presence.claim();
+        open = (value) => {
+          claim.set(value);
+        };
+        return (
+          <DetailPresenceContext.Provider value={presence}>
+            <PageFrame id={id} title={title} fill />
+          </DetailPresenceContext.Provider>
+        );
+      });
+      expect(frameBody().classList, id).toContain('max-w-7xl');
+      expect(frameBody().dataset.fdtCanvas, id).toBe('standard');
+      open?.(true);
+      expect(frameBody().classList, id).toContain('max-w-none');
+      expect(frameBody().classList, id).not.toContain('max-w-7xl');
+      expect(frameBody().dataset.fdtCanvas, id).toBe('full');
+      open?.(false);
+      expect(frameBody().classList, id).toContain('max-w-7xl');
+      expect(frameRoot().classList, id).toContain('@container');
+      cleanup();
+    }
+  });
+
+  it('never widens a standard or reading route for an open detail', () => {
+    render(() => {
+      const presence = createDetailPresence(() => 'lcp-vitals');
+      presence.claim().set(true);
+      return (
+        <DetailPresenceContext.Provider value={presence}>
+          <PageFrame id="lcp-vitals" title="LCP & Vitals" />
+        </DetailPresenceContext.Provider>
+      );
+    });
+    expect(frameBody().classList).toContain('max-w-7xl');
   });
 
   it('uses a shorter reading canvas without changing the query container', () => {
@@ -491,5 +539,16 @@ describe('page layout tiers', () => {
       /@(min|max)-\[(480|768)px\]/.test(readFileSync(path, 'utf8'))
     );
     expect(strays).toEqual([]);
+  });
+});
+
+describe('canvasSizeOf', () => {
+  it('widens only a split route, only while a detail is open', () => {
+    expect(canvasSizeOf('split', true)).toBe('full');
+    expect(canvasSizeOf('split', false)).toBe('standard');
+    expect(canvasSizeOf(undefined, true)).toBe('standard');
+    expect(canvasSizeOf(undefined, false)).toBe('standard');
+    expect(canvasSizeOf('reading', true)).toBe('reading');
+    expect(canvasSizeOf('reading', false)).toBe('reading');
   });
 });

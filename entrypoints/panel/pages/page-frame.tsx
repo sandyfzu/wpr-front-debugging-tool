@@ -4,13 +4,14 @@
  * Declared once here so page folders never re-invent them.
  */
 import type { JSX } from 'solid-js';
-import { createMemo, onCleanup, Show } from 'solid-js';
+import { createMemo, onCleanup, Show, useContext } from 'solid-js';
 import SearchX from 'lucide-solid/icons/search-x';
 import { Button } from '../../../components/ui/button';
 import { EmptyState } from '../../../components/ui/empty-state';
 import { PageHeader } from '../../../components/ui/page-header';
 import { cn } from '../../../utils/cn';
-import { navRoute, type HeaderActionRoute, type RouteId } from '../routes';
+import { navRoute, type HeaderActionRoute, type PageCanvasWidth, type RouteId } from '../routes';
+import { DetailPresenceContext } from '../state/detail-presence';
 
 /**
  * Classes for the one scroller of a `fill` frame (usually the `VirtualList`):
@@ -106,6 +107,38 @@ export function PageFrame<R extends RouteId>(props: PageFrameProps<R>): JSX.Elem
   );
 }
 
+/**
+ * The canvas's max-width classes: the 56 rem reading column, the 80 rem
+ * standard canvas, or the whole content region.
+ */
+export const PAGE_CANVAS_MAX_WIDTH = {
+  reading: 'max-w-4xl',
+  standard: 'max-w-7xl',
+  full: 'max-w-none'
+} as const;
+
+/** A canvas width {@link PAGE_CANVAS_MAX_WIDTH} declares. */
+export type PageCanvasSize = keyof typeof PAGE_CANVAS_MAX_WIDTH;
+
+/**
+ * The width a route's canvas takes now: a `split` route (master–detail list)
+ * spans the content region only while a detail is open — its pane takes the
+ * room the rows leave — and keeps the standard canvas otherwise, so on a
+ * wide panel the search, summary, facets and rows end at one edge instead of
+ * the controls drifting a screen away from capped rows.
+ *
+ * @param canvas The route's canvas (`undefined`: standard).
+ * @param detailOpen Whether the page shows a list detail.
+ * @returns The canvas width.
+ */
+export function canvasSizeOf(
+  canvas: PageCanvasWidth | undefined,
+  detailOpen: boolean
+): PageCanvasSize {
+  if (canvas === 'reading') return 'reading';
+  return canvas === 'split' && detailOpen ? 'full' : 'standard';
+}
+
 /** Props of the shared canvas used by page bodies and their shell fallbacks. */
 interface PageCanvasProps {
   /** The destination route owns the width, even before its data arrives. */
@@ -120,15 +153,21 @@ interface PageCanvasProps {
  * Keep every state on the route's centered, padded canvas without inventing a heading.
  * The caller keeps the unpadded query container outside this wrapper.
  * @param props Destination route, optional fill mode, and body content.
- * @returns The shared body column; changing routes updates its width in place.
+ * @returns The shared body column; changing routes (or opening a list detail)
+ *   updates its width in place.
  */
 export function PageCanvas(props: PageCanvasProps): JSX.Element {
+  // Optional: shell fallbacks and standalone page renders have no presence (no detail).
+  const presence = useContext(DetailPresenceContext);
+  const size = (): PageCanvasSize =>
+    canvasSizeOf(navRoute(props.id)?.canvas, presence?.detailOpen() ?? false);
   return (
     <div
       data-fdt="page-body"
+      data-fdt-canvas={size()}
       class={cn(
         'mx-auto flex w-full min-w-0 flex-col gap-3 p-3',
-        navRoute(props.id)?.reading ? 'max-w-4xl' : 'max-w-7xl',
+        PAGE_CANVAS_MAX_WIDTH[size()],
         props.fill && 'flex-1'
       )}
     >

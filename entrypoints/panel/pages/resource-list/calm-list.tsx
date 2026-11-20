@@ -66,6 +66,17 @@ import {
 import { pressOpensRow } from './list-keys';
 import { createMasterDetail, DetailPane, DrillDetail, type ListDetail } from './master-detail';
 
+/**
+ * The rows region's floor while a side pane is open: 20 rem, or the panel's
+ * whole content view when that is shorter — on a short (bottom-docked) panel
+ * the content scrolls a little further and the list + pane then fill the
+ * view, instead of a pane squeezed into the 12 rem list floor under the
+ * page's controls. Panels with room already exceed it (unchanged). `100dvh`
+ * is the panel document's own height; 4.25 rem = the 44 px top bar + the
+ * page's 12 px padding + 12 px air; never under the plain 12 rem floor.
+ */
+export const PANE_REGION_FLOOR = 'min-h-[max(12rem,min(20rem,100dvh_-_4.25rem))]';
+
 /** A search-only list's facets: none (the search alone narrows). */
 const NO_FACETS: FacetSet<unknown, never> = defineFacets<unknown, never>([]);
 
@@ -323,7 +334,10 @@ export function CalmFilteredList<Row, Id extends string>(
                 </div>
               }
             >
-              <div class={cn(PAGE_FILL_SCROLLER, 'flex')}>
+              <div
+                data-fdt="calm-list-region"
+                class={cn(PAGE_FILL_SCROLLER, 'flex', md.paneOpen() && PANE_REGION_FLOOR)}
+              >
                 <div
                   data-fdt="calm-list-rows"
                   class="flex min-w-0 flex-1 flex-col"

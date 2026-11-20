@@ -186,6 +186,15 @@ export function calmRowClass(state: CalmRowState): string {
   );
 }
 
+/**
+ * The most a row's content (icon, columns, trailing controls) spans: past
+ * it — a wide panel with the pane dragged narrow — the name and its state
+ * chips would sit a screen apart (without a pane the page canvas already
+ * caps the list at this width). The row surface (hover, selection) still
+ * spans the list; the head carries the same cap so the columns line up.
+ */
+export const LIST_ROW_MAX_WIDTH = 'max-w-7xl';
+
 /** The states cell: chips (or the row's own state content) on one wrapping line. */
 const STATES_CELL = 'flex min-w-0 flex-wrap items-center gap-1 [grid-area:states]';
 
@@ -346,7 +355,10 @@ export function ListRow(props: ListRowProps): JSX.Element {
   );
 
   return (
-    <div data-fdt="list-row" class="flex min-w-0 flex-1 items-center gap-3.5">
+    <div
+      data-fdt="list-row"
+      class={cn('flex min-w-0 flex-1 items-center gap-3.5', LIST_ROW_MAX_WIDTH)}
+    >
       <Show
         when={interactive() ? row : undefined}
         fallback={<div class="flex min-w-0 flex-1 items-center gap-3.5">{content()}</div>}
@@ -426,37 +438,39 @@ export function ListRowHead(props: ListRowHeadProps): JSX.Element {
   return (
     <div
       data-fdt="list-head"
-      class="flex items-center gap-3.5 px-3.5 pb-1.5 text-2xs font-semibold tracking-wide text-fg-muted uppercase"
+      class="flex items-center px-3.5 pb-1.5 text-2xs font-semibold tracking-wide text-fg-muted uppercase"
     >
-      <Show when={lines() === 'two' && props.icon === true}>
-        <span aria-hidden="true" class="w-8 shrink-0" />
-      </Show>
-      <div
-        class={cn('grid min-w-0 flex-1 items-center gap-x-3.5', rowGrid(lines(), props.columns))}
-      >
-        <span class="truncate [grid-area:name]">{props.name}</span>
-        <Show when={lines() === 'one' && props.preview}>
-          <span class="hidden truncate [grid-area:preview] @regular:block">{props.preview}</span>
+      <div class={cn('flex min-w-0 flex-1 items-center gap-3.5', LIST_ROW_MAX_WIDTH)}>
+        <Show when={lines() === 'two' && props.icon === true}>
+          <span aria-hidden="true" class="w-8 shrink-0" />
         </Show>
-        {/* Size and states span both row lines at `@regular` (rows center
+        <div
+          class={cn('grid min-w-0 flex-1 items-center gap-x-3.5', rowGrid(lines(), props.columns))}
+        >
+          <span class="truncate [grid-area:name]">{props.name}</span>
+          <Show when={lines() === 'one' && props.preview}>
+            <span class="hidden truncate [grid-area:preview] @regular:block">{props.preview}</span>
+          </Show>
+          {/* Size and states span both row lines at `@regular` (rows center
             them between name and preview); the head has no preview line,
             so its captions sit on the name's line (start), never centered
             into the empty one below. */}
-        <Show when={props.columns.size && props.size}>
-          <span class="self-start justify-self-end [grid-area:size]">{props.size}</span>
+          <Show when={props.columns.size && props.size}>
+            <span class="self-start justify-self-end [grid-area:size]">{props.size}</span>
+          </Show>
+          <Show when={props.columns.states && props.states}>
+            <span class="hidden self-start truncate [grid-area:states] @regular:block">
+              {props.states}
+            </span>
+          </Show>
+        </div>
+        <Show when={props.actions === true}>
+          <span aria-hidden="true" class="w-6 shrink-0" />
         </Show>
-        <Show when={props.columns.states && props.states}>
-          <span class="hidden self-start truncate [grid-area:states] @regular:block">
-            {props.states}
-          </span>
+        <Show when={list?.interactive === true && list.drill()}>
+          <span aria-hidden="true" class="w-3.5 shrink-0" />
         </Show>
       </div>
-      <Show when={props.actions === true}>
-        <span aria-hidden="true" class="w-6 shrink-0" />
-      </Show>
-      <Show when={list?.interactive === true && list.drill()}>
-        <span aria-hidden="true" class="w-3.5 shrink-0" />
-      </Show>
     </div>
   );
 }

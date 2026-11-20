@@ -1,16 +1,17 @@
 /**
  * One script's detail body (the side pane or the drill-in view of the
- * JavaScript list): every state chip with its source, the facts its tag
- * carries, the source-link tile (external), the full inline code and the
- * served tag — each highlighted, the code as JavaScript or JSON by the
- * script's type, the tag as HTML.
+ * JavaScript list): every state chip with its source, the source-link tile
+ * (external), the facts its tag carries, the served tag, then the full
+ * inline code — each highlighted, the tag as HTML, the code as JavaScript or
+ * JSON by the script's type.
  *
  * Reads on open: the served tag (always, from the same snapshot the list
  * came from), and the complete source when the capture bounded an inline
  * text. Each read has its states: waiting (a skeleton line), answered, or
  * failed (one muted line saying why; the captured text stays when there is
- * some). The body is its own `@container`: from the regular width (a wide
- * drill-in) facts and code sit side by side; the 350 px pane stacks them.
+ * some). One column at every width (`DETAIL_STACK`); each code block opens
+ * wrapped when minified and caps its height to the detail view's
+ * (`DETAIL_CODE_MAX_HEIGHT`).
  */
 import type { Accessor, JSX } from 'solid-js';
 import { Match, Show, Switch, createMemo } from 'solid-js';
@@ -23,7 +24,13 @@ import type {
   ServedScriptTagError
 } from '../../../../lib/messaging/served-script-tag';
 import type { OpenResource } from '../open-resource';
-import { DetailSection, DETAIL_COLUMNS, FactList } from '../resource-list/detail-section';
+import {
+  DETAIL_CODE_MAX_HEIGHT,
+  DetailSection,
+  DETAIL_STACK,
+  FactList
+} from '../resource-list/detail-section';
+import { opensWrapped } from '../../../../lib/panel/detail-code';
 import { createOnDemand, type OnDemandState } from '../resource-list/on-demand';
 import { SourceLink } from '../resource-list/source-link';
 import { READ_FAILURE_NOTES } from '../resource-list/top-frame-reader';
@@ -97,8 +104,8 @@ export function ScriptDetail(props: ScriptDetailProps): JSX.Element {
   );
   const facts = createMemo(() => scriptFacts(props.view()));
   return (
-    <div data-fdt="script-detail" class="@container/detail min-w-0">
-      <div class={DETAIL_COLUMNS}>
+    <div data-fdt="script-detail" class="min-w-0">
+      <div class={DETAIL_STACK}>
         <div class="flex min-w-0 flex-col gap-3.5">
           <ChipLine view={props.view()} />
           <Show when={props.view().row.type === 'external'}>
@@ -115,7 +122,13 @@ export function ScriptDetail(props: ScriptDetailProps): JSX.Element {
           </Show>
           <FactList facts={facts()} hook="script-facts" />
         </div>
+        {/* The served tag before the source: the code comes last, so no
+            section waits below a tall block. The tag is the opening tag
+            only (≤ 2 048 chars, opened wrapped): short in practice, but long
+            attributes can wrap to many lines in a narrow pane, so it takes
+            the code's cap too. */}
         <div class="flex min-w-0 flex-col gap-3.5">
+          <ServedTag state={servedTag()} codeBlock={props.codeBlock} />
           <Show when={props.view().row.type === 'inline'}>
             <InlineSource
               view={props.view()}
@@ -125,7 +138,6 @@ export function ScriptDetail(props: ScriptDetailProps): JSX.Element {
               codeBlock={props.codeBlock}
             />
           </Show>
-          <ServedTag state={servedTag()} codeBlock={props.codeBlock} />
         </div>
       </div>
     </div>
@@ -216,6 +228,8 @@ function InlineSource(props: InlineSourceProps): JSX.Element {
                 text={shown().text}
                 lang={lang}
                 label={`Inline script ${String(props.ordinal)}`}
+                defaultWrap={opensWrapped(shown().text)}
+                maxHeight={DETAIL_CODE_MAX_HEIGHT}
                 class="min-w-0"
                 loadHighlighter={props.codeBlock?.loadHighlighter}
                 createObserver={props.codeBlock?.createObserver}
@@ -283,6 +297,7 @@ function ServedTag(props: {
               lang="html"
               label="Served tag"
               defaultWrap
+              maxHeight={DETAIL_CODE_MAX_HEIGHT}
               class="min-w-0"
               loadHighlighter={props.codeBlock?.loadHighlighter}
               createObserver={props.codeBlock?.createObserver}

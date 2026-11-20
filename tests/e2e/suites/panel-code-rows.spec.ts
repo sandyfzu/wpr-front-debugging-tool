@@ -27,7 +27,8 @@ test.afterEach(async ({ extension }) => {
 /**
  * A script inventory with every code shape: two external markers, a
  * one-wide-line row, then alternating five-line rows and wide rows (four
- * 220-char lines: real sideways scroll unwrapped, folded lines wrapped).
+ * 150-char lines: real sideways scroll unwrapped, folded lines wrapped —
+ * under the detail's minified-code mark, so they open unwrapped).
  * 33 scripts so the list scrolls deep enough for a real mount/unmount window.
  * @returns The fixture HTML.
  */
@@ -38,7 +39,7 @@ function codeRowsPage(): string {
       (_, line) => `const five${String(index)}_${String(line)} = ${String(line)};`
     ).join('\n');
   const wideLine = (index: number, line: number): string =>
-    `wide${String(index)}_${String(line)}(${'x'.repeat(220)})`;
+    `wide${String(index)}_${String(line)}(${'x'.repeat(140)})`;
   const wide = (index: number): string =>
     Array.from({ length: 4 }, (_, line) => wideLine(index, line)).join('\n');
   const rows: string[] = [
@@ -66,12 +67,15 @@ const WIDE_ROW = '[data-index]:has-text("wide1_")';
 /** The last five-line row — deep in the list, past a real unmount window. */
 const DEEP_ROW = '[data-index]:has-text("five28_")';
 
-/** One frame's geometry of the detail's source block and the section below it. */
+/** One frame's geometry of the detail's source block and the section holding it. */
 interface BlockGeometry {
   /** The block's own height (px). */
   height: number;
-  /** The next section's (the served tag's) viewport top: the block's layout consequence. */
-  followerTop: number;
+  /**
+   * The source section's viewport bottom: the block's layout consequence
+   * (the source is the detail's last section, so its own box carries it).
+   */
+  sectionBottom: number;
   /** The code area's sideways extent vs its box (horizontal-overflow check). */
   areaScrollWidth: number;
   areaClientWidth: number;
@@ -97,15 +101,13 @@ async function blockGeometry(detail: Locator): Promise<BlockGeometry> {
   return await sourceSection(detail).evaluate((section) => {
     const block = section.querySelector<HTMLElement>('[data-fdt="code-block"]');
     if (block === null) throw new Error('no code block in the source section');
-    const follower = section.nextElementSibling;
-    if (!(follower instanceof HTMLElement)) throw new Error('no section after the source');
     const area = block.querySelector<HTMLElement>('[data-fdt-code-area]');
     if (area === null) throw new Error('no code area in the block');
     const pre = area.querySelector('pre');
     if (pre === null) throw new Error('no pre in the code area');
     return {
       height: block.getBoundingClientRect().height,
-      followerTop: follower.getBoundingClientRect().top,
+      sectionBottom: section.getBoundingClientRect().bottom,
       areaScrollWidth: area.scrollWidth,
       areaClientWidth: area.clientWidth,
       preWhiteSpace: getComputedStyle(pre).whiteSpace
@@ -214,8 +216,8 @@ test('the detail owns the caption and the single Wrap; wrapping folds for real a
       expect(wrapped.areaScrollWidth).toBeLessThanOrEqual(wrapped.areaClientWidth);
       const growth = wrapped.height - unwrapped.height;
       expect(growth).toBeGreaterThanOrEqual(20);
-      expect(wrapped.followerTop - unwrapped.followerTop).toBeGreaterThanOrEqual(growth - 1);
-      expect(wrapped.followerTop - unwrapped.followerTop).toBeLessThanOrEqual(growth + 1);
+      expect(wrapped.sectionBottom - unwrapped.sectionBottom).toBeGreaterThanOrEqual(growth - 1);
+      expect(wrapped.sectionBottom - unwrapped.sectionBottom).toBeLessThanOrEqual(growth + 1);
       await wrapToggle(detail).click();
       await expect(wrapToggle(detail)).toHaveAttribute('aria-pressed', 'false');
       const rest = await settledBlock(detail);
