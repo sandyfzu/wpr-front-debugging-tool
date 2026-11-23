@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'wxt';
 import type { FirefoxDataCollectionPermissions } from 'wxt';
+import { toolbarIconMap } from './lib/branding/icons';
 import { DATA_CONSENT_TYPE } from './lib/data-consent/consent';
 import { URL_PATTERNS } from './lib/wp-rocket/constants';
 import {
@@ -124,8 +125,10 @@ export default defineConfig({
     // popup would silence it). Declared here because WXT only emits the key
     // for a popup entrypoint; the MV2 build gets it renamed to
     // `browser_action`. This tooltip names the extension: each badged tab gets
-    // its own, naming the dot's state, and clears write this one back.
-    action: { default_title: NAME },
+    // its own, naming the dot's state, and clears write this one back. Its
+    // icon is pinned to the full-bleed toolbar sizes: left to the manifest
+    // `icons`, a high-density toolbar could pick a padded (store-layout) one.
+    action: { default_title: NAME, default_icon: toolbarIconMap() },
     // Firefox only: the add-on id (see FIREFOX_ADDON_ID), the supported
     // floor — without it any old Firefox could install a build it was never
     // verified on — and the data-collection declaration (see

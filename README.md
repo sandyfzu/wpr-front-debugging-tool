@@ -16,6 +16,8 @@ pnpm compile && pnpm lint && pnpm format:check   # types, eslint, prettier
 pnpm build && pnpm check:budgets   # production build + size-budget gate
 ```
 
+Extension icons: `branding/icon.svg` is the master mark (never shipped). After editing it or the size table (`lib/branding/icons.ts`), run `pnpm icons` to re-render `public/icon/*.png` and commit them; `pnpm icons --check` fails naming any committed PNG that drifted.
+
 Design tokens (light/dark/system appearance, status vocabulary, motion) live in `assets/css/tokens.css` (definitions) and `assets/css/theme.css` (Tailwind layer; every page surface imports it, injected shadow UIs import the tokens file); a unit test pins WCAG AA contrast for the committed text/background pairs in both palettes.
 
 ## Scrollbar visibility

@@ -31,6 +31,7 @@
     "check:budgets": "node scripts/check-budgets.mjs",
     "screenshots": "node scripts/panel-screenshots.mjs",
     "parity:wp-rocket": "node scripts/wp-rocket-parity.ts",
+    "icons": "node scripts/generate-icons.mjs",
     "postinstall": "wxt prepare",
     "prepare": "husky"
   },
@@ -62,6 +63,7 @@
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@playwright/test": "^1.65.1",
+    "@resvg/resvg-js": "2.6.2",
     "@solidjs/testing-library": "^0.8.10",
     "@tailwindcss/vite": "^4.3.5",
     "@types/chrome": "^0.3.7",

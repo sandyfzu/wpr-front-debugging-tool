@@ -12,6 +12,7 @@
 
 import { selectTabAsks } from '../../lib/messaging/tab-asks';
 import { isNoReceiverError } from '../../lib/messaging/no-receiver';
+import { iconOfSize } from '../../lib/branding/icons';
 import { createLogger } from '../../lib/logger';
 import { onUncaughtError, onUnhandledRejection } from '../../lib/uncaught-errors';
 import { registerLazyloadSidebar } from './lazyload-sidebar';
@@ -22,8 +23,8 @@ const log = createLogger('devtools');
 
 /** The panel's title among the devtools tools (user-facing, parity string). */
 const PANEL_TITLE = 'WPR FDT';
-/** The panel's icon, relative to the extension root (copied public asset). */
-const PANEL_ICON = 'icon/32.png';
+/** The panel's icon, relative to the extension root (a full-bleed toolbar-size icon). */
+const PANEL_ICON = iconOfSize(32).path;
 /** The panel's page: the extension-root-relative HTML path. */
 const PANEL_PAGE = 'panel.html';
 
