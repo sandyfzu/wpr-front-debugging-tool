@@ -141,7 +141,11 @@ async function expectArm(page: Page, arm: Arm, at: string): Promise<void> {
 }
 
 /** A warn arm's banner (the alert glyph, Reload offered). */
-function warnBanner(title: string, body: string, glyph = 'lucide-triangle-alert'): BannerReading {
+function warnBanner(
+  title: string,
+  body: string,
+  glyph = 'lucide-triangle-exclamation-point'
+): BannerReading {
   return {
     tone: 'warn',
     glyph,
@@ -223,7 +227,11 @@ test.describe('exclusion builder session states', () => {
           'This page was not intercepted',
           'The session is on, but this load bypassed it. Reload to render it with your exclusions.'
         ),
-        indicator: { label: 'Not intercepted', tone: 'warn', glyph: 'lucide-triangle-alert' },
+        indicator: {
+          label: 'Not intercepted',
+          tone: 'warn',
+          glyph: 'lucide-triangle-exclamation-point'
+        },
         footer: ['Stop', 'Reset', 'Re-apply']
       },
       'not intercepted'
@@ -253,7 +261,7 @@ test.describe('exclusion builder session states', () => {
     const unmodified: IndicatorReading = {
       label: 'Served unmodified',
       tone: 'warn',
-      glyph: 'lucide-triangle-alert'
+      glyph: 'lucide-triangle-exclamation-point'
     };
     for (const [reason, body] of Object.entries(FAILED) as [ExclusionDocumentFailure, string][]) {
       await pushStatus(
@@ -422,7 +430,11 @@ test.describe('exclusion builder session states', () => {
           ...warnBanner('Served unmodified', FAILED['ineligible-response']),
           sessionNotes: '3 session notes'
         },
-        indicator: { label: 'Served unmodified', tone: 'warn', glyph: 'lucide-triangle-alert' },
+        indicator: {
+          label: 'Served unmodified',
+          tone: 'warn',
+          glyph: 'lucide-triangle-exclamation-point'
+        },
         // Reload on the banner; Stop and Re-apply in the footer.
         footer: ['Stop', 'Reset', 'Re-apply']
       },

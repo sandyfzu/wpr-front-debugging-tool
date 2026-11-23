@@ -137,7 +137,16 @@ export async function runPanelAxe(panel: Page): Promise<PanelAxeAudit> {
           const nodes = rule.nodes.map((node) => JSON.stringify(node.target)).join(' || ');
           return `${rule.id}: ${rule.nodes.map((node) => node.failureSummary ?? 'no summary').join(' | ')} @ ${nodes}`;
         }),
-        ...unresolved.map((rule) => `incomplete ${rule.id}`)
+        // Each unresolved node's target + axe's reason key, so a miss is named.
+        ...unresolved.map((rule) => {
+          const nodes = rule.nodes
+            .map(
+              (node) =>
+                `${JSON.stringify(node.target)} (${node.any.map((check) => check.data?.messageKey ?? 'no key').join(', ')})`
+            )
+            .join(' || ');
+          return `incomplete ${rule.id} @ ${nodes}`;
+        })
       ]
     };
   });

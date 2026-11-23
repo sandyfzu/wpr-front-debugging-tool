@@ -12,7 +12,6 @@
  */
 
 import { expect, test } from '../helpers/extension';
-import { runPanelAxe } from '../helpers/audit';
 import {
   expectToast,
   openOptionsPage,
@@ -22,7 +21,8 @@ import {
   resetInstantRows,
   resetStoredOptions,
   rowSwitchInput,
-  rowSwitchTrack
+  rowSwitchTrack,
+  runOptionsAxe
 } from '../helpers/options';
 
 const IS_MAC = process.platform === 'darwin';
@@ -86,7 +86,7 @@ test.describe('options instant rows', () => {
       await expect(field).toHaveAttribute('aria-pressed', 'true');
       await expect(status).toContainText('Press the new shortcut');
       // Strict axe while recording.
-      let audit = await runPanelAxe(page);
+      let audit = await runOptionsAxe(page);
       expect(audit.violations, audit.detail.join('\n')).toEqual([]);
       expect(audit.incomplete, audit.detail.join('\n')).toEqual([]);
 
@@ -127,7 +127,7 @@ test.describe('options instant rows', () => {
       await expect(page.locator('#option-palette-chord-caveat')).toContainText(
         IS_MAC ? 'On Windows this shortcut is Ctrl+Alt+O' : 'Ctrl+Alt shortcuts may never fire'
       );
-      audit = await runPanelAxe(page);
+      audit = await runOptionsAxe(page);
       expect(audit.violations, audit.detail.join('\n')).toEqual([]);
       expect(audit.incomplete, audit.detail.join('\n')).toEqual([]);
 

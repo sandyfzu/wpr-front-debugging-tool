@@ -17,6 +17,8 @@
  */
 import type { Page } from '@playwright/test';
 
+import { runPanelAxe } from './audit';
+import type { PanelAxeAudit } from './audit';
 import { expect } from './extension';
 import type { ExtensionDriver } from './extension';
 
@@ -269,4 +271,25 @@ export async function readInstantRows(
     const stored = await chrome.storage.sync.get(['page-ui-gate', 'palette-chord']);
     return { gate: stored['page-ui-gate'], chord: stored['palette-chord'] };
   }, undefined);
+}
+
+/**
+ * Strict-axe the options page from the document top.
+ *
+ * The app bar is sticky over the document scroller: a walk or a click that
+ * scrolled the page leaves text under it, whose background axe cannot
+ * determine (`color-contrast` incomplete, `bgOverlap`) — an audit of a
+ * covered pixel, not of the page. At the top nothing sits under the bar, so
+ * every text node is auditable; axe reads its own layout grid, so text below
+ * the fold is audited too.
+ *
+ * @param page The options page.
+ * @returns The shared runner's audited slice.
+ */
+export async function runOptionsAxe(page: Page): Promise<PanelAxeAudit> {
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
+  await expect.poll(() => page.evaluate(() => window.scrollY), 'the page is at its top').toBe(0);
+  return await runPanelAxe(page);
 }

@@ -165,13 +165,26 @@ for (const theme of ['light', 'dark'] as const) {
               expect(listBox?.width).toBeLessThanOrEqual(geometry.headerWidth + 8);
             }
             await expect(heading).toBeFocused();
+            // Whether the route renders a tab stop after its heading: a page in
+            // its empty state (e.g. no resource hints) deliberately has none.
+            const hasStop = await root.evaluate((element) =>
+              Array.from(element.querySelectorAll<HTMLElement>('*')).some(
+                (node) =>
+                  node.tabIndex >= 0 &&
+                  !node.matches(':disabled') &&
+                  node.checkVisibility({ visibilityProperty: true })
+              )
+            );
             await panel.keyboard.press('Tab');
-            const focus = await panel.evaluate(() => {
+            const focus = await root.evaluate((element) => {
               const active = document.activeElement;
               if (!(active instanceof HTMLElement)) throw new Error('No keyboard focus');
               const box = active.getBoundingClientRect();
               const css = getComputedStyle(active);
               return {
+                inRoute: element.contains(active),
+                // Names a miss: the focused element and its focus styles.
+                stop: `${active.tagName}[${active.getAttribute('data-fdt') ?? ''}].${active.className} outline=${css.outlineStyle}/${css.outlineWidth} shadow=${css.boxShadow}`,
                 left: box.left,
                 right: box.right,
                 top: box.top,
@@ -181,11 +194,15 @@ for (const theme of ['light', 'dark'] as const) {
                   (css.outlineStyle !== 'none' && css.outlineWidth !== '0px')
               };
             });
-            expect(focus.left).toBeGreaterThanOrEqual(0);
-            expect(focus.right).toBeLessThanOrEqual(width);
-            expect(focus.top).toBeGreaterThanOrEqual(0);
-            expect(focus.bottom).toBeLessThanOrEqual(height);
-            expect(focus.ring).toBe(true);
+            // Tab lands on the route's own first stop, or leaves it when it has none.
+            expect(focus.inRoute, `${route.id} Tab stop: ${focus.stop}`).toBe(hasStop);
+            if (hasStop) {
+              expect(focus.left).toBeGreaterThanOrEqual(0);
+              expect(focus.right).toBeLessThanOrEqual(width);
+              expect(focus.top).toBeGreaterThanOrEqual(0);
+              expect(focus.bottom).toBeLessThanOrEqual(height);
+              expect(focus.ring, `${route.id} ${focus.stop}`).toBe(true);
+            }
             if (height === 800 && [320, 1280, 1920].includes(width)) {
               await panel.evaluate(AXE_SOURCE);
               const audit = await panel.evaluate(async () => {

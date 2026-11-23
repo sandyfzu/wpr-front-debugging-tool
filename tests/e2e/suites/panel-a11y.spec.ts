@@ -139,12 +139,6 @@ async function runAxe(page: Page, include?: string): Promise<AxeResults> {
  *   focusable elements are not tabbable in the current state") for an
  *   ARIA-hidden — not `inert` — shadow. The dialog's own modal focus trap
  *   answers it in practice (the keyboard layers' pins exercise it).
- * - `aria-valid-attr-value` + the palette input (palette scope): the
- *   field's `aria-controls="fdt-command-palette-listbox"` — the referenced
- *   listbox EXISTS in the document (probed at check time), the engine's
- *   `controlsWithinPopup` review ("Unable to determine if aria-controls
- *   referenced ID exists on the page while using aria-haspopup…") is its
- *   4.14 needsReview shape for the haspopup+controls pair.
  * - `color-contrast` rows (each scope): "partially obscured" on the
  *   highlighted palette row's eliding name span (a token-transparent span,
  *   the row's highlight paints behind it) and "Element content contains
@@ -208,7 +202,6 @@ interface UnresolvedAllowance {
 /** The open palette's reviewed unresolved rows (derivation on {@link assertAxeClean}). */
 const PALETTE_ALLOWANCE: readonly UnresolvedAllowance[] = [
   { id: 'aria-hidden-focus', targets: ['#root'] },
-  { id: 'aria-valid-attr-value', targets: ['#fdt-command-palette-input'] },
   {
     id: 'color-contrast',
     // The highlighted row's eliding name span (generated per-registry row id → a shape).

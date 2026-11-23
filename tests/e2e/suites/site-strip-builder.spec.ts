@@ -750,10 +750,8 @@ test.describe('strip builder line + modifiers', () => {
         await page.mouse.move(0, 0);
         await settle(page);
         // Closed, the pill carries `aria-haspopup` with `aria-controls` → the
-        // card's id: axe's `aria-valid-attr-value` marks any such pair as
-        // needing review (`controlsWithinPopup` — it cannot tell whether the
-        // id should name the popup), on any page, hint or not. The reference
-        // itself is proven here: it resolves to the dialog.
+        // card's id; the reference must resolve to the dialog (proven here),
+        // so the strict audit resolves both axes empty.
         expect(
           await page.evaluate((host) => {
             const root = document.querySelector(host)?.shadowRoot;
@@ -763,7 +761,7 @@ test.describe('strip builder line + modifiers', () => {
         ).toBe('dialog');
         expect(await axeStrip(page)).toEqual({
           violations: [],
-          incomplete: ['aria-valid-attr-value']
+          incomplete: []
         });
       } finally {
         await page.close();

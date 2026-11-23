@@ -31,6 +31,12 @@ siteTest.afterEach(async ({ extension }) => {
   await resetStoredOptions(extension);
 });
 
+// Anonymous visitor: a site login from an earlier suite (the shared admin page)
+// gets neither the cache nor the WP Rocket footprint — every page would read gray.
+siteTest.beforeEach(async ({ extension }) => {
+  await extension.browserContext.clearCookies({ domain: new URL(SITE_URL).hostname });
+});
+
 /** A unique cacheable flagged URL per run (first-hit = live-optimized). */
 const flaggedUrl = (): string => `${SITE_URL}/?fdt-error=reference&fdt-delay=${String(Date.now())}`;
 

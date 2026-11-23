@@ -102,7 +102,7 @@ test.describe('exclusion builder editor', () => {
       .toEqual([
         {
           tone: 'warn',
-          glyph: 'lucide-triangle-alert',
+          glyph: 'lucide-triangle-exclamation-point',
           title: 'Fix 1 row before applying',
           body: 'Each marked row says what is wrong with it.',
           notes: [],
@@ -145,7 +145,7 @@ test.describe('exclusion builder editor', () => {
     expect(await readIndicator(page, 'header')).toEqual({
       label: 'Applied · no-match rows',
       tone: 'warn',
-      glyph: 'lucide-triangle-alert'
+      glyph: 'lucide-triangle-exclamation-point'
     });
 
     // Drop the no-match row and re-apply: clean.

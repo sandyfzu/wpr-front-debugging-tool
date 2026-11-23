@@ -28,14 +28,14 @@
 import type { Page } from '@playwright/test';
 
 import { expect, test, type ExtensionDriver } from '../helpers/extension';
-import { runPanelAxe } from '../helpers/audit';
 import {
   KC_NEVER_SYNCED,
   KC_REFRESH_FAILURE_TITLE,
   KC_REFRESH_SUCCESS_TITLE,
   KC_REFRESH_REFUSAL,
   openOptionsPage,
-  resetStoredOptions
+  resetStoredOptions,
+  runOptionsAxe
 } from '../helpers/options';
 
 /** The WXT meta item's key (`$` suffix) — the stamp lives here. */
@@ -158,7 +158,7 @@ test.describe('options known-conflicts freshness', () => {
       // The stable stamped state audits clean (the toast auto-dismisses
       // first — transient surfaces are the toast component's own tier).
       await expect(page.locator('[data-fdt="toast"]')).toHaveCount(0, { timeout: 10_000 });
-      const audit = await runPanelAxe(page);
+      const audit = await runOptionsAxe(page);
       expect(audit.violations, audit.detail.join('\n')).toEqual([]);
       expect(audit.incomplete, audit.detail.join('\n')).toEqual([]);
     } finally {
@@ -183,7 +183,7 @@ test.describe('options known-conflicts freshness', () => {
       expect(await stampText(page), 'no stamp span, so no fabricated age').toBeNull();
 
       // The never-synced state audits clean too (the round's second state).
-      const audit = await runPanelAxe(page);
+      const audit = await runOptionsAxe(page);
       expect(audit.violations, audit.detail.join('\n')).toEqual([]);
       expect(audit.incomplete, audit.detail.join('\n')).toEqual([]);
     } finally {
@@ -234,7 +234,7 @@ test.describe('options known-conflicts freshness', () => {
       ).toBeEnabled();
 
       // The refusal state (toast up) audits clean as well.
-      const audit = await runPanelAxe(page);
+      const audit = await runOptionsAxe(page);
       expect(audit.violations, audit.detail.join('\n')).toEqual([]);
       expect(audit.incomplete, audit.detail.join('\n')).toEqual([]);
     } finally {

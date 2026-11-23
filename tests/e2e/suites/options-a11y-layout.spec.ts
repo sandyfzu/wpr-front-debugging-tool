@@ -24,8 +24,7 @@
  */
 
 import { expect, test } from '../helpers/extension';
-import { runPanelAxe } from '../helpers/audit';
-import { choiceTile, openOptionsPage, resetStoredOptions } from '../helpers/options';
+import { choiceTile, openOptionsPage, resetStoredOptions, runOptionsAxe } from '../helpers/options';
 
 /** The badge row's storage id (the walk's dirty-making toggle). */
 const BADGE_ROW_ID = 'toolbarBadge';
@@ -209,7 +208,7 @@ test.describe('options layout & a11y', () => {
 
         // The narrow and wide ends audit clean (strict, both axes empty).
         if (width === 320 || width === 1280) {
-          const audit = await runPanelAxe(page);
+          const audit = await runOptionsAxe(page);
           expect(audit.violations, audit.detail.join('\n')).toEqual([]);
           expect(audit.incomplete, audit.detail.join('\n')).toEqual([]);
         }
