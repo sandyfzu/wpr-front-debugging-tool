@@ -115,8 +115,8 @@ export const SIMULATED_ICON: StripIconGlyph = {
 /** Simulation modifier glyph: marker not verified (lucide `shield-question-mark`). */
 export const UNVERIFIED_ICON: StripIconGlyph = {
   paths: [
-    'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z',
-    'M9.1 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3',
+    'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 01-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 011-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 011.52 0C14.51 3.81 17 5 19 5a1 1 0 011 1z',
+    'M9 9.5a3 2.5 0 016 0c0 2-2 2-3 3.5',
     'M12 17h.01'
   ]
 };
@@ -130,7 +130,7 @@ export const RUCSS_TEST_ICON: StripIconGlyph = {
   ]
 };
 
-/** Bypass warning glyph: applied despite the bypass request (lucide `triangle-alert`). */
+/** Bypass warning glyph: applied despite the bypass request (lucide `triangle-exclamation-point`). */
 export const BYPASS_APPLIED_ICON: StripIconGlyph = { paths: ALERT_ICON_PATHS };
 
 /**

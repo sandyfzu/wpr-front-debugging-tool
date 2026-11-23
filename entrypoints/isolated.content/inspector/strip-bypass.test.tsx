@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanup, render } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
-import TriangleAlert from 'lucide-solid/icons/triangle-alert';
+import TriangleExclamationPoint from 'lucide-solid/icons/triangle-exclamation-point';
 import { BYPASS_APPLIED_COPY } from '../../../lib/detection/bypass-applied';
 import { cacheStateForPage } from '../../../lib/detection/cache-context';
 import { FIXTURE_DIR } from '../../../lib/detection/fixtures/corpus';
@@ -215,7 +215,7 @@ describe('the rendered widget', () => {
 describe('the warning glyph', () => {
   it('is the panel badge’s lucide geometry, verbatim', () => {
     expect(MODIFIER_ICONS['bypass-applied']).toBe(BYPASS_APPLIED_ICON);
-    const alert = render(() => <TriangleAlert />).container;
+    const alert = render(() => <TriangleExclamationPoint />).container;
     expect(pathsOf(alert)).toEqual(BYPASS_APPLIED_ICON.paths);
   });
 });

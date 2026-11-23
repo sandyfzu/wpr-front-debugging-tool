@@ -14,15 +14,54 @@
  * animationend tracking cannot resolve in happy-dom (`animationName` reads
  * `""`), so tests assert the open state via `aria-describedby` rather than
  * content removal; in Chromium the content unmounts on close.
+ *
+ * One runtime per test: the reset also re-evaluates the inlined Solid
+ * runtime, so `render`, `createSignal` and the icon are re-imported with the
+ * wrapper (`importFresh`) and disposed by that same copy's `cleanup` — a
+ * component on a second runtime would outlive `cleanup()` and leak its portal
+ * into the next test. DOM-level helpers (`screen`, `fireEvent`, …) stay
+ * static: they carry no Solid state.
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@solidjs/testing-library';
-import { createSignal } from 'solid-js';
-import RefreshCw from 'lucide-solid/icons/refresh-cw';
+import { fireEvent, screen, waitFor, within } from '@solidjs/testing-library';
+import type { render as RenderFn } from '@solidjs/testing-library';
+import type { createSignal as CreateSignalFn } from 'solid-js';
+import type RefreshCwIcon from 'lucide-solid/icons/refresh-cw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Tooltip as TooltipComponent } from './tooltip';
+
+/** The modules one test renders with — all evaluated on one fresh Solid runtime. */
+interface FreshModules {
+  Tooltip: typeof TooltipComponent;
+  RefreshCw: typeof RefreshCwIcon;
+  render: typeof RenderFn;
+  createSignal: typeof CreateSignalFn;
+}
+
+/** `cleanup` of the testing-library copy the current test rendered with. */
+let cleanupFresh: (() => void) | undefined;
 
 afterEach(() => {
-  cleanup();
+  cleanupFresh?.();
+  cleanupFresh = undefined;
 });
+
+/**
+ * Resets the module registry and imports the wrapper with the Solid stack it
+ * renders on, so its owners and the renderer share one runtime.
+ *
+ * @returns The fresh modules; their `cleanup` runs after the test.
+ */
+async function importFresh(): Promise<FreshModules> {
+  vi.resetModules();
+  const [{ Tooltip }, { default: RefreshCw }, testing, { createSignal }] = await Promise.all([
+    import('./tooltip'),
+    import('lucide-solid/icons/refresh-cw'),
+    import('@solidjs/testing-library'),
+    import('solid-js')
+  ]);
+  cleanupFresh = testing.cleanup;
+  return { Tooltip, RefreshCw, render: testing.render, createSignal };
+}
 
 /**
  * Fresh-module render of one tooltip — returns the trigger element. The file
@@ -31,8 +70,7 @@ afterEach(() => {
  * from sharing state.
  */
 async function renderTooltip(): Promise<HTMLElement> {
-  vi.resetModules();
-  const { Tooltip } = await import('./tooltip');
+  const { Tooltip, RefreshCw, render } = await importFresh();
   render(() => (
     <Tooltip content="Re-fetched data" openDelay={300} skipDelayDuration={0}>
       <RefreshCw size={12} />
@@ -46,8 +84,7 @@ async function renderTooltip(): Promise<HTMLElement> {
  * disabled vector); returns the trigger element.
  */
 async function renderTooltipWith(props: { disabled?: boolean }): Promise<HTMLElement> {
-  vi.resetModules();
-  const { Tooltip } = await import('./tooltip');
+  const { Tooltip, RefreshCw, render } = await importFresh();
   render(() => (
     <Tooltip content="Re-fetched data" openDelay={300} skipDelayDuration={0} {...props}>
       <RefreshCw size={12} />
@@ -147,9 +184,8 @@ describe('Tooltip', () => {
   });
 
   it('renders a real anchor trigger (the nav-row form) with the same wiring', async () => {
+    const { Tooltip, render, createSignal } = await importFresh();
     const [active, setActive] = createSignal(true);
-    vi.resetModules();
-    const { Tooltip } = await import('./tooltip');
     render(() => (
       <Tooltip
         as="a"
@@ -181,8 +217,7 @@ describe('Tooltip', () => {
   });
 
   it('hands the trigger element to a callback ref in the button and anchor forms', async () => {
-    vi.resetModules();
-    const { Tooltip } = await import('./tooltip');
+    const { Tooltip, RefreshCw, render } = await importFresh();
     const refs: HTMLElement[] = [];
     render(() => (
       <>
@@ -205,8 +240,7 @@ describe('Tooltip', () => {
     // real control — aria-label names it, haspopup/expanded state the
     // opened dialog, and the click forwards. (Pinned here in the wrapper's
     // own suite, not only end-to-end at the shell.)
-    vi.resetModules();
-    const { Tooltip } = await import('./tooltip');
+    const { Tooltip, render, createSignal } = await importFresh();
     let clicks = 0;
     const [expanded, setExpanded] = createSignal(false);
     render(() => (
@@ -240,8 +274,8 @@ describe('Tooltip', () => {
      * around it so the open side is exercisable in the same tree.
      */
     async function renderMenuTrigger(options?: { expanded: boolean }): Promise<HTMLElement> {
-      vi.resetModules();
-      const { Tooltip } = await import('./tooltip');
+      const { Tooltip, render, createSignal } = await importFresh();
+      // Imported after the reset, so the menu shares the fresh runtime.
       const { Menu, MENU_CONTENT_CLASSES, MENU_ITEM_CLASSES } = await import('./menu');
       const [open, setOpen] = createSignal(options?.expanded ?? false);
       render(() => (

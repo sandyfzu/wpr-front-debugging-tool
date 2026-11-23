@@ -41,7 +41,7 @@ import Info from 'lucide-solid/icons/info';
 import MousePointerClick from 'lucide-solid/icons/mouse-pointer-click';
 import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import ScanSearch from 'lucide-solid/icons/scan-search';
-import TriangleAlert from 'lucide-solid/icons/triangle-alert';
+import TriangleExclamationPoint from 'lucide-solid/icons/triangle-exclamation-point';
 import Variable from 'lucide-solid/icons/variable';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
@@ -510,7 +510,7 @@ function FailureNotice(props: {
         class="flex flex-wrap items-start gap-x-2 gap-y-2"
       >
         <div class="flex min-w-0 flex-1 basis-56 items-start gap-2">
-          <TriangleAlert
+          <TriangleExclamationPoint
             size={14}
             class={cn('mt-px shrink-0', STATUS_TEXT_CLASSES.error)}
             aria-hidden="true"

@@ -25,7 +25,7 @@
  * and the tab stay.
  */
 import type { JSX } from 'solid-js';
-import ShieldAlert from 'lucide-solid/icons/shield-alert';
+import ShieldExclamationPoint from 'lucide-solid/icons/shield-exclamation-point';
 import {
   createComputed,
   createRoot,
@@ -236,7 +236,7 @@ export function RucssTesterPage(props: RucssTesterPageProps = {}): JSX.Element {
                   void session.start();
                 }}
                 note={RUCSS_REQUEST_DISCLOSURE}
-                noteIcon={ShieldAlert}
+                noteIcon={ShieldExclamationPoint}
               />
               <RunResult
                 session={session}

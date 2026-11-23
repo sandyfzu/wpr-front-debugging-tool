@@ -41,7 +41,7 @@ export interface IconEllipse {
 export const CLOSE_ICON_PATHS = ['M18 6 6 18', 'm6 6 12 12'] as const;
 
 /**
- * Shared: the alert triangle (lucide `triangle-alert`) — the Known Conflicts
+ * Shared: the alert triangle (lucide `triangle-exclamation-point`) — the Known Conflicts
  * marker and the detection strip's "applied despite the bypass" warning.
  */
 export const ALERT_ICON_PATHS = [

@@ -10,7 +10,7 @@ import { For, Match, Show, Switch, createMemo, createSignal, createUniqueId } fr
 import { Dynamic } from 'solid-js/web';
 import ChevronDown from 'lucide-solid/icons/chevron-down';
 import Code from 'lucide-solid/icons/code';
-import TriangleAlert from 'lucide-solid/icons/triangle-alert';
+import TriangleExclamationPoint from 'lucide-solid/icons/triangle-exclamation-point';
 import { Button } from '../../../../components/ui/button';
 import { MOTION_TURN } from '../../../../components/ui/classes';
 import {
@@ -165,7 +165,7 @@ export function WordDetail(props: WordDetailProps): JSX.Element {
             data-fdt="word-single-letter"
             class={cn('flex items-start gap-1.5', BODY_NOTE, STATUS_TEXT_CLASSES.warn)}
           >
-            <TriangleAlert size={12} class="mt-px shrink-0" aria-hidden="true" />
+            <TriangleExclamationPoint size={12} class="mt-px shrink-0" aria-hidden="true" />
             {text()}
           </p>
         )}

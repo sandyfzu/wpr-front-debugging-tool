@@ -11,7 +11,7 @@ import CircleDashed from 'lucide-solid/icons/circle-dashed';
 import Clock from 'lucide-solid/icons/clock';
 import CircleHelp from 'lucide-solid/icons/circle-question-mark';
 import LoaderCircle from 'lucide-solid/icons/loader-circle';
-import TriangleAlert from 'lucide-solid/icons/triangle-alert';
+import TriangleExclamationPoint from 'lucide-solid/icons/triangle-exclamation-point';
 import FlaskConical from 'lucide-solid/icons/flask-conical';
 import { SIMULATED_INDICATOR, type Indicator } from './copy';
 
@@ -20,7 +20,7 @@ const GLYPHS = {
   idle: CircleDashed,
   waiting: Clock,
   check: Check,
-  alert: TriangleAlert,
+  alert: TriangleExclamationPoint,
   blocked: Ban,
   spinner: LoaderCircle,
   question: CircleHelp,

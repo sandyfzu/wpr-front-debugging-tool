@@ -25,9 +25,9 @@ import {
 } from 'solid-js';
 import Plus from 'lucide-solid/icons/plus';
 import Trash from 'lucide-solid/icons/trash';
-import CircleAlert from 'lucide-solid/icons/circle-alert';
+import CircleExclamationPoint from 'lucide-solid/icons/circle-exclamation-point';
 import Info from 'lucide-solid/icons/info';
-import TriangleAlert from 'lucide-solid/icons/triangle-alert';
+import TriangleExclamationPoint from 'lucide-solid/icons/triangle-exclamation-point';
 import {
   VirtualList,
   type VirtualizerFactory,
@@ -664,7 +664,7 @@ export function Lane(props: LaneProps): JSX.Element {
             <p class={`${message().tone === 'info' ? 'xo-row-note' : 'xo-row-error'} xo-copy-line`}>
               <Show
                 when={message().tone === 'info'}
-                fallback={<CircleAlert size={12} aria-hidden="true" />}
+                fallback={<CircleExclamationPoint size={12} aria-hidden="true" />}
               >
                 <Info size={12} aria-hidden="true" />
               </Show>
@@ -779,7 +779,7 @@ function PageOffMessage(props: PageOffMessageProps): JSX.Element {
   return (
     <div class="xo-page-off" role="group" aria-labelledby={`${props.id}-lead`} data-page-off>
       <p class="xo-page-off-lead" id={`${props.id}-lead`}>
-        <TriangleAlert size={12} aria-hidden="true" />
+        <TriangleExclamationPoint size={12} aria-hidden="true" />
         <span>{props.words.offLead(props.rows.length)}</span>
       </p>
       <ul class="xo-page-off-rows">
@@ -968,7 +968,7 @@ function LaneRow(props: LaneRowProps): JSX.Element {
       <Show when={problem()}>
         {(reason) => (
           <p class="xo-row-error" id={errorId()}>
-            <CircleAlert size={12} aria-hidden="true" />
+            <CircleExclamationPoint size={12} aria-hidden="true" />
             <span>{withCode(reason())}</span>
           </p>
         )}
@@ -976,7 +976,7 @@ function LaneRow(props: LaneRowProps): JSX.Element {
       <Show when={hasNote()}>
         <div class="xo-row-note" data-tone={warning() === null ? undefined : 'warn'}>
           <Show when={warning() !== null} fallback={<Info size={12} aria-hidden="true" />}>
-            <TriangleAlert size={12} aria-hidden="true" />
+            <TriangleExclamationPoint size={12} aria-hidden="true" />
           </Show>
           <span class="xo-note-text" id={noteId()}>
             <Show when={note()}>

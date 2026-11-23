@@ -16,7 +16,7 @@ import CircleCheck from 'lucide-solid/icons/circle-check';
 import CircleMinus from 'lucide-solid/icons/circle-minus';
 import CircleX from 'lucide-solid/icons/circle-x';
 import Info from 'lucide-solid/icons/info';
-import TriangleAlert from 'lucide-solid/icons/triangle-alert';
+import TriangleExclamationPoint from 'lucide-solid/icons/triangle-exclamation-point';
 import { cn } from '../../utils/cn';
 
 /** The exact vocabulary kinds, in registry order. */
@@ -49,7 +49,7 @@ export const STATUS_SOFT_CLASSES: Record<StatusKind, string> = {
 /** The vocabulary's icon per kind — declared beside the colors it recolors. */
 export const STATUS_ICONS: Record<StatusKind, LucideIcon> = {
   ok: CircleCheck,
-  warn: TriangleAlert,
+  warn: TriangleExclamationPoint,
   error: CircleX,
   info: Info,
   neutral: CircleMinus

@@ -11,7 +11,7 @@
  */
 import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';
-import TriangleAlert from 'lucide-solid/icons/triangle-alert';
+import TriangleExclamationPoint from 'lucide-solid/icons/triangle-exclamation-point';
 import { cn } from '../../utils/cn';
 import { Button } from './button';
 import { PageHeader } from './page-header';
@@ -65,7 +65,7 @@ export function ErrorState(props: ErrorStateProps): JSX.Element {
     >
       {/* The page-level view leads with the larger tile, as a tool's empty result does. */}
       <StateIcon tone="error" size={props.pageHeading ? 'lg' : 'md'} class="mb-1">
-        <TriangleAlert size={props.pageHeading ? 22 : 16} aria-hidden="true" />
+        <TriangleExclamationPoint size={props.pageHeading ? 22 : 16} aria-hidden="true" />
       </StateIcon>
       <Show
         when={props.pageHeading}

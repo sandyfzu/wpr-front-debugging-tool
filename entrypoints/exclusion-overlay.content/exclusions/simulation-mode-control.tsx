@@ -8,7 +8,7 @@
  * never blocking; under the first mode control only — it concerns the page).
  */
 import { Show, createMemo, type JSX } from 'solid-js';
-import TriangleAlert from 'lucide-solid/icons/triangle-alert';
+import TriangleExclamationPoint from 'lucide-solid/icons/triangle-exclamation-point';
 import { ChoiceGroup, type ChoiceOption } from '../../../components/ui/choice-group';
 import { MODE_LANE_COPY, type LaneModeCopy } from '../copy';
 import type { OverlayController } from '../controller';
@@ -114,7 +114,7 @@ export function SimulationModeNotes(props: SimulationModeProps): JSX.Element {
     <div id={modeNotesId(props.lane)} class="xo-mode-notes">
       <Show when={props.lane === ADMIN_WARNING_LANE && props.controller.adminScreen()}>
         <p class="xo-mode-warning" data-tone="warn">
-          <TriangleAlert size={12} aria-hidden="true" />
+          <TriangleExclamationPoint size={12} aria-hidden="true" />
           <span>{copy().adminScreen}</span>
         </p>
       </Show>

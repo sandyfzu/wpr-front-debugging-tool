@@ -17,7 +17,7 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from 'solid-js';
 import Check from 'lucide-solid/icons/check';
 import Copy from 'lucide-solid/icons/copy';
-import CircleAlert from 'lucide-solid/icons/circle-alert';
+import CircleExclamationPoint from 'lucide-solid/icons/circle-exclamation-point';
 import Info from 'lucide-solid/icons/info';
 import { COPIED_FLASH_MS } from '../../../components/ui/copy-flash';
 import { exclusionCopyText } from '../../../lib/exclusion-builder/copy-form';
@@ -149,7 +149,7 @@ export function CopyAll(props: CopyAllProps): JSX.Element {
       </span>
       <Show when={state() === 'failed'}>
         <p class="xo-row-error xo-copy-line">
-          <CircleAlert size={12} aria-hidden="true" />
+          <CircleExclamationPoint size={12} aria-hidden="true" />
           <span>{COPY_ALL_COPY.failed}</span>
         </p>
       </Show>

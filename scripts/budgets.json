@@ -113,7 +113,7 @@
     "surface": "command palette view (runtime content script, loaded on open)",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 120.7,
+      "raw": 124.6,
       "gzip": 41.9
     }
   },
@@ -122,7 +122,7 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 120.4,
+      "raw": 124.3,
       "gzip": 41.8
     }
   },

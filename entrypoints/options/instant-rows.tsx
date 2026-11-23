@@ -7,7 +7,7 @@
  */
 import type { JSX } from 'solid-js';
 import { Match, Show, Switch as Branch } from 'solid-js';
-import TriangleAlert from 'lucide-solid/icons/triangle-alert';
+import TriangleExclamationPoint from 'lucide-solid/icons/triangle-exclamation-point';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
 import { Skeleton } from '../../components/ui/skeleton';
@@ -288,7 +288,7 @@ export function ChordRow(props: {
             data-fdt="chord-caveat"
             class="flex items-start gap-1 rounded-sm bg-status-warn-soft px-1.5 py-1 text-2xs leading-snug text-status-warn"
           >
-            <TriangleAlert size={12} class="mt-px shrink-0" aria-hidden="true" />
+            <TriangleExclamationPoint size={12} class="mt-px shrink-0" aria-hidden="true" />
             <span>
               <span class="font-medium">Heads-up: </span>
               {text()}

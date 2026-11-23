@@ -30,7 +30,7 @@ import Clock from 'lucide-solid/icons/clock';
 import FlaskConical from 'lucide-solid/icons/flask-conical';
 import ListX from 'lucide-solid/icons/list-x';
 import ShieldQuestionMark from 'lucide-solid/icons/shield-question-mark';
-import TriangleAlert from 'lucide-solid/icons/triangle-alert';
+import TriangleExclamationPoint from 'lucide-solid/icons/triangle-exclamation-point';
 import type { LucideIcon } from 'lucide-solid';
 import { Badge } from '../../../../components/ui/badge';
 import { FOCUS_RING } from '../../../../components/ui/classes';
@@ -285,7 +285,7 @@ function BypassWarning(props: { item: StatusItem }): JSX.Element {
               aria-hidden="true"
               class="inline-flex items-center gap-1"
             >
-              <TriangleAlert size={11} class="shrink-0" />
+              <TriangleExclamationPoint size={11} class="shrink-0" />
               {copy().chip}
             </span>
           </Badge>
