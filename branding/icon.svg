@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <title>WPR Front Debugging Tool</title>
+  <defs>
+    <linearGradient id="corners" x1="28" y1="100" x2="100" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#DD5F29"/>
+      <stop offset=".5" stop-color="#F26B32"/>
+      <stop offset="1" stop-color="#FAC932"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F26B32"/>
+      <stop offset="1" stop-color="#DD5F29"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#282828"/>
+  <path d="M28 52 V36 Q28 28 36 28 H52 M76 28 H92 Q100 28 100 36 V52 M28 76 V92 Q28 100 36 100 H52" fill="none" stroke="url(#corners)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(64 64) rotate(45) scale(0.72)">
+    <path d="M0 -40 C14 -28 16 -8 14 14 L-14 14 C-16 -8 -14 -28 0 -40 Z" fill="url(#body)"/>
+    <path d="M-14 0 L-26 18 L-26 26 L-14 18 Z M14 0 L26 18 L26 26 L14 18 Z" fill="#F26B32"/>
+    <circle cx="0" cy="-12" r="6" fill="#282828"/>
+    <path d="M-9 14 L0 36 L9 14 Z" fill="#FAC932"/>
+  </g>
+</svg>

@@ -55,7 +55,9 @@ describe('manifest toolbar button', () => {
       // config's raw `action`; WXT renames it `browser_action` in the MV2
       // manifest it writes, which only a build shows.
       expect((await manifestFor(browser)).action).toEqual({
-        default_title: 'WPR Front Debugging Tool'
+        default_title: 'WPR Front Debugging Tool',
+        // The full-bleed toolbar icons only, never a padded (store-layout) size.
+        default_icon: { '16': 'icon/16.png', '32': 'icon/32.png' }
       });
     }
   });
