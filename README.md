@@ -38,11 +38,11 @@ pnpm install --frozen-lockfile
 pnpm dev                 # dev build + watch → load .output/chrome-mv3 unpacked (pnpm dev:firefox)
 pnpm compile && pnpm lint && pnpm format:check && pnpm test   # types, eslint, prettier, unit tests + coverage
 pnpm build && pnpm build:firefox && pnpm check:budgets && pnpm check:html   # builds + size/HTML gates
-pnpm zip                 # store zip → .output/ (pnpm zip:firefox also writes the AMO sources zip)
+pnpm zip                 # store zip → .output/ (pnpm zip:firefox also writes the AMO sources zip; rebuild steps: store/listing.md reviewer notes)
 pnpm test:e2e            # browser tier, local only (tests/e2e/README.md); local WP site: docs/local-site-runbook.md
 ```
 
-Every script, the stack and the repository rules: [`AGENTS.md`](AGENTS.md). Store copy, permission justifications and assets: [`store/`](store/). Icons: edit `branding/icon.svg` (size table `lib/branding/icons.ts`), then `pnpm icons` and `pnpm store:assets`.
+Every script, the stack and the repository rules: [`AGENTS.md`](AGENTS.md). Store copy, permission justifications and assets: [`store/`](store/). Release changes: [`CHANGELOG.md`](CHANGELOG.md). Icons: edit `branding/icon.svg` (size table `lib/branding/icons.ts`), then `pnpm icons` and `pnpm store:assets`.
 
 ## Architecture
 

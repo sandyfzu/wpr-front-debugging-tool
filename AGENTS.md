@@ -113,7 +113,7 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   │                          #   siblings: `lcp-analysis/`, `script-runtime/`, `web-vitals/` (current visit)
 │   └── <domain>/              # one folder per feature; its data files colocated
 ├── utils/                     # generic, feature-agnostic pure helpers
-├── scripts/                   # repo tooling (budget gate etc.); `scripts/budgets.json` is the committed budget table
+├── scripts/                   # repo tooling (budget gate, licence notices etc.); `scripts/budgets.json` is the committed budget table
 ├── docker/                    # local WP site: compose stack (WP+MariaDB+wp-cli bootstrap, `apache/` conf), lifecycle + smoke
 │   │                          #   + conflict-derivation scripts, mu-plugin + edge-layer fixtures, KC conflict list —
 │   │                          #   machine state (`.env`, the `apvm`-built zip, `docker/certs/`, `docker/state/`) is git-ignored
@@ -142,7 +142,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 pnpm dev             # dev build + watch → load .output/chrome-mv3 unpacked
 pnpm dev:firefox
 pnpm build           # production build + the e2e build stamp (scripts/build-stamp.ts; this script only)   (pnpm build:firefox: build only)
-pnpm zip             # production build + store zip (pnpm zip:firefox for Firefox)
+pnpm zip             # production build + store zip (pnpm zip:firefox for Firefox: + the AMO sources zip — zip from a
+                     #   clean checkout: it refuses, naming them, while git shows untracked non-ignored files)
 pnpm compile         # tsc --noEmit — type check
 pnpm lint            # eslint — strict typescript-eslint + Solid rules + dependency direction
 pnpm lint:fix        # eslint --fix
@@ -290,7 +291,7 @@ Requirements, not suggestions:
 ## Git & releases
 
 - **Conventional Commits** — enforced by the `commit-msg` hook (`commitlint`); non-conforming messages are rejected. The `pre-commit` hook runs `lint-staged` (eslint --fix + prettier) on staged files with `--no-stash`: worktrees share one `refs/stash` and lint-staged drops its backup by stash index, so a concurrent commit elsewhere could drop the wrong entry; partially staged files stay protected by its patch in the per-worktree git dir (trade-off: a failing task no longer auto-reverts the tree). Hooks are husky v9 — activated by `pnpm install` (`prepare` script).
-- **Semantic Versioning** — bump `package.json` version for every store upload, adding its row to `lib/release-notes/releases.ts` + its copy in `notes.ts` (test-enforced; `announce: true` only for majors/notable minors — those open the What's new page once after the update).
+- **Semantic Versioning** — bump `package.json` version for every store upload, adding its row to `lib/release-notes/releases.ts` + its copy in `notes.ts` (test-enforced; `announce: true` only for majors/notable minors — those open the What's new page once after the update), and its section in `CHANGELOG.md`. Every build writes `THIRD_PARTY_NOTICES.txt` (each bundled npm package's licence, from the build's own module graph, `scripts/third-party-notices.ts`, + the CSS-pipeline packages `CSS_PIPELINE_PACKAGES` (`wxt.config.ts`; the build fails when they and the built CSS's licence banners disagree) + the packaged LazyLoad runtime); a bundled package without a licence file fails the build until it gets a row in `MISSING_LICENSE_TEXTS` (`wxt.config.ts`). The Firefox sources zip leaves out `SOURCES_ZIP_EXCLUDES` (`wxt.config.ts`; unit test: a superset of `.gitignore`) and refuses untracked non-ignored files (`scripts/sources-zip-guard.ts`).
 - **Known Conflicts DB snapshot MUST be re-synced with the server before every release.** `lib/known-conflicts/known-conflicts-db.json` is the offline/first-run fallback seed, and a stale seed ships a blind spot on offline installs; it must mirror the live endpoint (`DB_ENDPOINT` in `entrypoints/background/known-conflicts.ts`) at release time. Refresh it verbatim from that URL, format it with Prettier, then re-pin the row count (the comment in `lib/storage/known-conflicts-seed.ts` + the exact-count assertion in `lib/storage/storage.test.ts`) and re-derive the ceiling of both `known-conflicts DB seed asset (background-owned)` rows (Chromium, and the `required` `firefox-mv2` twin) in `scripts/budgets.json` from the new byte size — the payload is server-owned data that grows over time, so raising those rows is expected, never a code regression to hide.
 - Never commit secrets or build output (`.output/`, `.wxt/`).
 

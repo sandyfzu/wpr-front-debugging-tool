@@ -1,4 +1,14 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,8 +17,16 @@ import config, {
   messagingPrelude,
   missingMessagingEntryError,
   FIREFOX_ADDON_ID,
-  FIREFOX_MIN_VERSION
+  FIREFOX_MIN_VERSION,
+  SOURCES_ZIP_EXCLUDES,
+  CSS_PIPELINE_PACKAGES,
+  lazyloadRuntimeNotices,
+  noticesHooks,
+  sourcesZipHooks
 } from './wxt.config';
+import type { Plugin } from 'vite';
+import type { ResolvedPublicFile, Wxt } from 'wxt';
+import { NOTICES_FILE } from './scripts/third-party-notices';
 
 /** The manifest the config emits for one target browser. */
 async function manifestFor(browser: string): Promise<Record<string, unknown>> {
@@ -62,8 +80,202 @@ describe('store summary', () => {
 });
 
 describe('zip', () => {
-  it('keeps the store listing folder out of the Firefox sources zip', () => {
-    expect(config.zip?.excludeSources).toEqual(['store/**']);
+  it('keeps the store listing folder and machine state out of the Firefox sources zip', () => {
+    expect(config.zip?.excludeSources).toEqual([
+      'store/**',
+      'coverage/**',
+      '**/test-results/**',
+      '**/playwright-report/**',
+      'logs/**',
+      '**/*.log',
+      '**/*-debug.log*',
+      '**/yarn-error.log*',
+      'stats.html',
+      'stats-*.json',
+      'docker/wpr/**',
+      'docker/certs/**',
+      'docker/state/**',
+      '**/*.suo',
+      '**/*.ntvs*',
+      '**/*.njsproj',
+      '**/*.sln',
+      '**/*.sw?'
+    ]);
+  });
+
+  /**
+   * A path a `.gitignore` entry ignores, as the sources zip's glob would see
+   * it from the repo root (directory entries get a file inside).
+   */
+  function samplePath(entry: string): string {
+    const plain = entry.replace(/^\//, '').replace(/[*?]/g, 'x');
+    const isDir = entry.endsWith('/') || !path.posix.basename(plain).includes('.');
+    return isDir ? `${plain.replace(/\/$/, '')}/x.bin` : plain;
+  }
+
+  // WXT's own sources-zip defaults (dot files, `node_modules`, `.output`,
+  // `web-ext.config.ts`) cover these; every other git-ignored path is local
+  // machine state that must never reach AMO reviewers.
+  const COVERED_BY_WXT = new Set(['node_modules', '.output', 'web-ext.config.ts']);
+
+  it('excludes every git-ignored path that is not a dot path or a WXT default', () => {
+    const entries = readFileSync(path.join(import.meta.dirname, '.gitignore'), 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('#') && !line.startsWith('!'))
+      .filter(
+        (line) => !line.split('/').some((part) => part.startsWith('.')) && !COVERED_BY_WXT.has(line)
+      );
+    expect(entries.length).toBeGreaterThan(5);
+    for (const entry of entries) {
+      const sample = samplePath(entry);
+      const hit = SOURCES_ZIP_EXCLUDES.some((glob) => path.matchesGlob(sample, glob));
+      expect(hit, `.gitignore entry ${entry} (sample ${sample})`).toBe(true);
+    }
+  });
+
+  it('never excludes a tracked build input', () => {
+    for (const input of [
+      'package.json',
+      'pnpm-lock.yaml',
+      'wxt.config.ts',
+      'lib/x.ts',
+      'docker/docker-compose.yml'
+    ]) {
+      expect(
+        SOURCES_ZIP_EXCLUDES.some((glob) => path.matchesGlob(input, glob)),
+        input
+      ).toBe(false);
+    }
+  });
+});
+
+describe('sources zip guard', () => {
+  it('runs the clean-checkout check on the sources root before any zip is written', () => {
+    expect(config.hooks).toMatchObject(sourcesZipHooks);
+    // `zip:start` is WXT's one zip hook that fires before the extension zip.
+    expect(Object.keys(sourcesZipHooks)).toEqual(['zip:start']);
+    const dir = mkdtempSync(path.join(tmpdir(), 'wpr-fdt-zip-'));
+    const wxtFor = (zipSources: boolean): Wxt =>
+      ({ config: { zip: { sourcesRoot: dir, zipSources } } }) as Wxt;
+    try {
+      // Not a git checkout (a reviewer's unpacked sources): nothing to refuse.
+      expect(() => {
+        sourcesZipHooks['zip:start'](wxtFor(true));
+      }).not.toThrow();
+      execFileSync('git', ['init', '-q'], { cwd: dir });
+      writeFileSync(path.join(dir, 'stray.md'), '');
+      expect(() => {
+        sourcesZipHooks['zip:start'](wxtFor(true));
+      }).toThrow(/sources zip refused[\s\S]*stray\.md/);
+      // A run without a sources zip (Chromium) is never refused.
+      expect(() => {
+        sourcesZipHooks['zip:start'](wxtFor(false));
+      }).not.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('third-party notices', () => {
+  it('writes the notices file once, after every pass of a production build', async () => {
+    expect(config.hooks).toMatchObject(noticesHooks);
+    const wxt = (command: string) =>
+      ({
+        config: {
+          command,
+          root: import.meta.dirname,
+          publicDir: path.join(import.meta.dirname, 'public')
+        }
+      }) as Wxt;
+    // Dev serving: passes are partial, nothing is written.
+    const devFiles: ResolvedPublicFile[] = [];
+    noticesHooks['build:publicAssets'](wxt('serve'), devFiles);
+    expect(devFiles).toEqual([]);
+    // A build that recorded no package fails instead of shipping an empty file.
+    noticesHooks['build:before']();
+    expect(() => {
+      noticesHooks['build:publicAssets'](wxt('build'), []);
+    }).toThrow(/no bundled package recorded/);
+    // Once a pass recorded a package, the file is added with its notice.
+    const vite = config.vite;
+    if (typeof vite !== 'function') throw new Error('vite is not the function form');
+    const { plugins, worker } = await vite({
+      browser: 'chrome',
+      manifestVersion: 3,
+      command: 'build',
+      mode: 'production'
+    });
+    const named = (list: unknown): Plugin | undefined =>
+      (list as Plugin[]).find((plugin) => plugin.name === 'wpr-fdt:third-party-notices');
+    // Worker sub-builds record too (the highlighter's worker bundles shiki).
+    expect(named(worker?.plugins?.())).toBeDefined();
+    const generate = named(plugins)?.generateBundle as (o: unknown, bundle: unknown) => void;
+    const solid = createRequire(import.meta.url).resolve('solid-js');
+    generate.call({}, {}, { 'a.js': { type: 'chunk', moduleIds: [solid] } });
+    // The declared CSS package must match a banner in the built CSS.
+    expect(() => {
+      noticesHooks['build:publicAssets'](wxt('build'), []);
+    }).toThrow(/declared CSS package not in the built CSS: tailwindcss@/);
+    const tailwind = JSON.parse(
+      readFileSync(path.join(import.meta.dirname, 'node_modules/tailwindcss/package.json'), 'utf8')
+    ) as { version: string };
+    const banner = `/*! tailwindcss v${tailwind.version} | MIT License | https://tailwindcss.com */`;
+    generate.call({}, {}, { 'a.css': { type: 'asset', fileName: 'a.css', source: banner } });
+    const files: ResolvedPublicFile[] = [];
+    noticesHooks['build:publicAssets'](wxt('build'), files);
+    expect(files.map((file) => file.relativeDest)).toEqual([NOTICES_FILE]);
+    const contents = files[0] && 'contents' in files[0] ? files[0].contents : '';
+    expect(contents).toMatch(/^solid-js \d+\.\d+\.\d+ \(MIT\)$/m);
+    expect(contents).toContain(`tailwindcss ${tailwind.version} (MIT)`);
+    expect(contents).toContain('Copyright (c) Tailwind Labs, Inc.');
+    expect(contents).toMatch(/^vanilla-lazyload \d+\.\d+\.\d+ \(MIT\)$/m);
+    noticesHooks['build:before']();
+  });
+
+  it('lists one vanilla-lazyload notice per packaged runtime version', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'wpr-fdt-notices-'));
+    try {
+      for (const version of ['17.8.3', '19.1.0']) {
+        mkdirSync(path.join(dir, 'wp-rocket-simulation/lazyload', version), { recursive: true });
+        writeFileSync(
+          path.join(dir, 'wp-rocket-simulation/lazyload', version, 'lazyload.min.js'),
+          ''
+        );
+      }
+      writeFileSync(path.join(dir, 'wp-rocket-simulation/simulation-data.json'), '{}');
+      const notices = lazyloadRuntimeNotices(dir);
+      expect(notices.map((n) => [n.name, n.version, n.license, n.files])).toEqual([
+        [
+          'vanilla-lazyload',
+          '17.8.3',
+          'MIT',
+          'wp-rocket-simulation/lazyload/17.8.3/lazyload.min.js'
+        ],
+        [
+          'vanilla-lazyload',
+          '19.1.0',
+          'MIT',
+          'wp-rocket-simulation/lazyload/19.1.0/lazyload.min.js'
+        ]
+      ]);
+      expect(notices[0]?.text).toMatch(/^MIT License\n\nCopyright \(c\) 2015 Andrea Verlicchi\n/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('declares tailwindcss, whose preflight and utilities ship as built CSS', () => {
+    expect(CSS_PIPELINE_PACKAGES).toEqual(['tailwindcss']);
+  });
+
+  it('covers the runtimes the repo really packages', () => {
+    const versions = lazyloadRuntimeNotices(path.join(import.meta.dirname, 'public')).map(
+      (n) => n.version
+    );
+    expect(versions.length).toBeGreaterThan(0);
+    expect(NOTICES_FILE).toBe('THIRD_PARTY_NOTICES.txt');
   });
 });
 
