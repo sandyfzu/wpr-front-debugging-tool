@@ -180,6 +180,9 @@ test.describe('panel palette: the chosen chord', () => {
     try {
       await page.setViewportSize({ width: 700, height: 900 });
       await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      // `load` precedes the shell (it mounts after the boot's storage reads):
+      // a key pressed before it reaches no listener.
+      await expect(page.getByRole('link', { name: 'Detections' })).toBeVisible();
       await page.keyboard.press('/');
       await expect(paletteRowKeys(page)).toHaveText(`Ctrl / ⌘ K or ${MAC ? '⌥K' : 'Alt+K'}`);
       await page.keyboard.press('Escape');
@@ -333,6 +336,9 @@ test.describe('panel shortcuts (the re-owned overlay chord)', () => {
     try {
       await page.setViewportSize({ width: 700, height: 900 });
       await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      // `load` precedes the shell (it mounts after the boot's storage reads):
+      // a key pressed before it reaches no listener.
+      await expect(page.getByRole('link', { name: 'Detections' })).toBeVisible();
       await page.keyboard.press('ControlOrMeta+k');
       const field = page.getByRole('combobox');
       await expect(field).toBeVisible();
