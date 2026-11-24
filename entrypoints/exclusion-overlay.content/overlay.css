@@ -39,8 +39,8 @@
   pointer-events: none;
   /* Only matters where the top layer is unavailable (the fixed fallback). */
   z-index: 2147483647;
-  /* The tool never mirrors on RTL hosts, never inherits page typography. */
-  direction: ltr;
+  /* Never inherits page typography; the reading order is the shared
+   * injected-root rule's (tokens), so an RTL host never mirrors the tool. */
   text-align: left;
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 12px;

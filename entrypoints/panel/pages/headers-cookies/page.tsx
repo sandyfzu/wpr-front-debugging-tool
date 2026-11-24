@@ -91,7 +91,7 @@ import {
 } from './inventory';
 
 /** The page's one-line "what am I looking at". */
-export const PAGE_SUBTITLE = 'Main-frame response headers and readable cookie names';
+export const PAGE_SUBTITLE = 'Main-frame response headers and readable cookie names.';
 
 /** The SPA limitation, stated where the fetched time is. */
 export const SPA_NOTE =

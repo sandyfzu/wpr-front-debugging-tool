@@ -1,12 +1,16 @@
 /**
- * Hostile host CSS against the injected surfaces the detection-widget suite
- * does not cover (that suite pins the strip): the on-page command palette,
- * the Exclusion Builder overlay and the Side-by-Side overlay. Each surface is
+ * Hostile host CSS against the injected surfaces: the on-page command
+ * palette, the Exclusion Builder overlay, the Side-by-Side overlay, the Known
+ * Conflicts card and the detection widget's open card (the detection-widget
+ * suite also pins the strip under its own hostile sheet). Each surface is
  * opened, its shadow host and every shadow part snapshotted (all computed
  * properties plus box sizes), then a reset-plus-high-specificity sheet is
  * added to the page — the universal `all: unset`, host-tag targets, a root
  * font-size change (rem sizes would follow it) and token-name overrides —
- * and the snapshot must be identical. The palette leg also pins that a
+ * and the snapshot must be identical. The page also turns right-to-left
+ * (`<html dir="rtl">`): `direction` is inherited into shadow trees and the
+ * `all: initial` host reset does not cover it, so a surface that does not pin
+ * its own reading order mirrors. The palette leg also pins that a
  * page's declaration-less `style` attribute on `<body>` survives open/close
  * (the dialog library's close removes such an attribute; the dialog wrapper
  * puts it back).
@@ -24,12 +28,22 @@
 import type { Page } from '@playwright/test';
 
 import { injectOverlay, OVERLAY_HOST, clearDrafts } from '../helpers/exclusion-overlay';
-import { expect, openFixturePage, test, type ExtensionDriver } from '../helpers/extension';
+import {
+  expect,
+  openFixturePage,
+  ORIGIN_A,
+  test,
+  type ExtensionDriver
+} from '../helpers/extension';
 
 /** The palette view's shadow host and its field. */
 const PALETTE_HOST = 'wpr-fdt-command-palette';
 /** The Side-by-Side overlay's shadow host. */
 const SBS_HOST = 'wpr-fdt-side-by-side';
+/** The Known Conflicts badge + card's shadow host. */
+const KC_HOST = 'wpr-fdt-known-conflicts';
+/** The detection widget's shadow host. */
+const WIDGET_HOST = 'wpr-fdt-detection-widget';
 /** Generous mount wait (views are injected on demand). */
 const MOUNT = { timeout: 15_000 };
 
@@ -41,7 +55,7 @@ const HOSTILE_CSS = `
     margin: 11px !important; letter-spacing: 3px !important;
     cursor: crosshair !important; transition: all 9s !important;
     box-sizing: content-box !important; }
-  ${PALETTE_HOST}, ${OVERLAY_HOST}, ${SBS_HOST},
+  ${PALETTE_HOST}, ${OVERLAY_HOST}, ${SBS_HOST}, ${KC_HOST}, ${WIDGET_HOST},
   html body ${PALETTE_HOST}, html > ${PALETTE_HOST}[style], html > ${OVERLAY_HOST}[style] {
     display: block !important; position: static !important; opacity: 0.1 !important;
     z-index: -1 !important; width: 10px !important; height: 10px !important;
@@ -141,8 +155,8 @@ async function surfaceSnapshot(page: Page, host: string): Promise<Record<string,
 }
 
 /**
- * Snapshot the open surface, add the hostile sheet, snapshot again and
- * compare; the sheet is removed afterwards.
+ * Snapshot the open surface, add the hostile sheet and turn the page
+ * right-to-left, snapshot again and compare; both are undone afterwards.
  *
  * @param page The page holding the open surface.
  * @param host The surface's shadow host tag.
@@ -151,18 +165,35 @@ async function surfaceSnapshot(page: Page, host: string): Promise<Record<string,
 async function expectImmune(page: Page, host: string, label: string): Promise<void> {
   const before = await surfaceSnapshot(page, host);
   const sheet = await page.addStyleTag({ content: HOSTILE_CSS });
+  const pageDir = await page.evaluate(() => {
+    const previous = document.documentElement.getAttribute('dir');
+    document.documentElement.setAttribute('dir', 'rtl');
+    return previous;
+  });
   try {
     const after = await surfaceSnapshot(page, host);
     const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])]
       .filter((key) => before[key] !== after[key])
       .map((key) => `${key}: ${before[key] ?? '(none)'} → ${after[key] ?? '(none)'}`);
-    expect(changed, `${label} is identical under hostile CSS`).toEqual([]);
+    expect(changed, `${label} is identical under hostile CSS and a right-to-left page`).toEqual([]);
   } finally {
     await sheet.evaluate((element) => {
       (element as Element).remove();
     });
+    await page.evaluate((previous) => {
+      if (previous === null) document.documentElement.removeAttribute('dir');
+      else document.documentElement.setAttribute('dir', previous);
+    }, pageDir);
   }
 }
+
+/**
+ * A stand-in WordPress plugins screen (the scan runs on that URL only): one
+ * plugin-title cell naming a row of the committed DB seed, so the badge
+ * counts a finding and its card has a row to render.
+ */
+const PLUGINS_SCREEN_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Plugins</title></head>
+<body><table><tbody><tr><td class="plugin-title column-primary">Query Monitor</td></tr></tbody></table></body></html>`;
 
 /** Open the palette through the background's menu row and wait for its armed field. */
 async function openPalette(extension: ExtensionDriver, page: Page, tabId: number): Promise<void> {
@@ -217,6 +248,32 @@ test.describe('injected surfaces under hostile host CSS', () => {
         MOUNT
       );
       await expectImmune(page, SBS_HOST, 'the open Side-by-Side overlay');
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('the Known Conflicts card is immune', async ({ extension }) => {
+    const page = await extension.browserContext.newPage();
+    try {
+      await page.route('**/wp-admin/plugins.php*', async (route) => {
+        await route.fulfill({ contentType: 'text/html', body: PLUGINS_SCREEN_HTML });
+      });
+      await page.goto(`${ORIGIN_A}/wp-admin/plugins.php`, { waitUntil: 'load' });
+      await page.locator(`${KC_HOST} .kc-badge`).click(MOUNT);
+      await expect(page.locator(`${KC_HOST} .kc-item`)).toHaveCount(1, MOUNT);
+      await expectImmune(page, KC_HOST, 'the open Known Conflicts card');
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('the detection widget is immune', async ({ extension }) => {
+    const { page } = await openFixturePage(extension, '/pipeline/plain.html');
+    try {
+      await page.locator(`${WIDGET_HOST} .dw-pill`).click(MOUNT);
+      await expect(page.locator(`${WIDGET_HOST} .dw-card`)).toBeVisible(MOUNT);
+      await expectImmune(page, WIDGET_HOST, 'the open detection widget');
     } finally {
       await page.close();
     }

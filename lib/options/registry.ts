@@ -154,17 +154,17 @@ export const OPTION_SECTIONS: readonly OptionSection[] = freezeRows<OptionSectio
   {
     id: 'improvements',
     title: 'Improvements',
-    description: 'Small additions to the WordPress admin that speed up everyday support work'
+    description: 'Small additions to the WordPress admin that speed up everyday support work.'
   },
   {
     id: 'appearance',
     title: 'Appearance',
-    description: 'How the tool looks — follow your system or pin one palette for every surface'
+    description: 'How the tool looks — follow your system or pin one palette for every surface.'
   },
   {
     id: 'features',
     title: 'Features',
-    description: 'Tool-wide behaviors you can switch on or off'
+    description: 'Tool-wide behaviors you can switch on or off.'
   }
 ]);
 
@@ -175,7 +175,7 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
     id: WP_DASHBOARD_DBUGGER_ENTRY,
     section: 'improvements',
     label: "Add a D-bugger link to WP Rocket's admin bar menu",
-    description: `Adds a “${DBUGGER_ENTRY_LABEL}” entry to WP Rocket's admin bar menu for one-click access to the D-bugger tool`
+    description: `Adds a “${DBUGGER_ENTRY_LABEL}” entry to WP Rocket's admin bar menu for one-click access to the D-bugger tool.`
   },
   {
     kind: 'appearance',
@@ -183,14 +183,14 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
     section: 'appearance',
     label: 'Color theme',
     description:
-      "Follows your system's dark or light preference, or pins one palette — every open surface updates immediately"
+      "Follows your system's dark or light preference, or pins one palette — every open surface updates immediately."
   },
   {
     kind: 'page-ui-gate',
     id: 'page-ui-gate',
     section: 'features',
     label: PAGE_UI_GATE_OPTION_LABEL,
-    description: `${capitalize(PAGE_UI_SURFACES_PROSE)} on inspected pages — off closes them on every open page at once; turn them back on here or from ${PAGE_UI_MENU_RESCUE}`
+    description: `${capitalize(PAGE_UI_SURFACES_PROSE)} on inspected pages — off closes them on every open page at once; turn them back on here or from ${PAGE_UI_MENU_RESCUE}.`
   },
   {
     kind: 'chord',
@@ -198,7 +198,7 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
     section: 'features',
     onPage: true,
     label: `${capitalize(PAGE_SURFACE_NAMES.commandPalette)} shortcut`,
-    description: `Opens the ${PAGE_SURFACE_NAMES.commandPalette} on inspected pages — select the field, then press the new combination; applies immediately. Browser-owned shortcuts (Ctrl/⌘ + W, T, N, Q…) can't be recorded: the browser acts on them before the page sees them`
+    description: `Opens the ${PAGE_SURFACE_NAMES.commandPalette} on inspected pages. Select the field, then press the new combination — it applies immediately. Browser-owned shortcuts (Ctrl/⌘ + W, T, N, Q…) can't be recorded: the browser acts on them before the page sees them.`
   },
   {
     kind: 'boolean',
@@ -206,7 +206,7 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
     section: 'features',
     onPage: true,
     label: `Show the ${PAGE_SURFACE_NAMES.detectionWidget} on pages by default`,
-    description: `Shows the WP Rocket ${PAGE_SURFACE_NAMES.detectionWidget} on every inspected page. A site you switched with “${pageCommandLabel('toggle-detection-widget')}” (right-click menu or ${PAGE_SURFACE_NAMES.commandPalette}) keeps its own choice — applies to open pages as soon as it is saved`
+    description: `Shows the WP Rocket ${PAGE_SURFACE_NAMES.detectionWidget} on every inspected page. A site you switched with “${pageCommandLabel('toggle-detection-widget')}” (right-click menu or ${PAGE_SURFACE_NAMES.commandPalette}) keeps its own choice — applies to open pages as soon as it is saved.`
   },
   {
     kind: 'boolean',
@@ -214,14 +214,14 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
     section: 'features',
     label: 'Show the toolbar badge',
     description:
-      "Shows a colored dot on the toolbar icon for the page's WP Rocket state, named in the icon's tooltip — applies as soon as it is saved"
+      "Shows a colored dot on the toolbar icon for the page's WP Rocket state, named in the icon's tooltip — applies as soon as it is saved."
   },
   {
     kind: 'whats-new',
     id: 'whats-new-on-update',
     section: 'features',
     label: WHATS_NEW_ON_UPDATE_LABEL,
-    description: `Opens the ${WHATS_NEW_NAME} page once after an update that brings something new — applies immediately`
+    description: `Opens the ${WHATS_NEW_NAME} page once after an update that brings something new — applies immediately.`
   }
 ]);
 

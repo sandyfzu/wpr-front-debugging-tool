@@ -26,10 +26,10 @@
  */
 
 .dw-chrome {
-  /* Feature motion constants (the KC trio, declared feature-locally so the
-   * injected chain is self-contained): the entrance's gentle spring and the
-   * two durations every choreography leg derives from. */
-  --dw-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
+  /* Feature aliases of the shared motion tokens (the KC trio): the
+   * entrance's spring and the two durations every choreography leg derives
+   * from. */
+  --dw-spring: var(--ease-spring);
   --dw-enter: var(--motion-slow);
   --dw-exit: var(--motion-base);
   /* How far the two shapes travel between absent and present. */
@@ -179,7 +179,7 @@
   color: var(--status-error);
 }
 .dw-pulse .dw-cache {
-  animation: dw-pulse 1.6s ease-in-out infinite;
+  animation: dw-pulse calc(var(--motion-slow) * 5) var(--ease-standard) infinite;
 }
 
 /* The presence mark rides the mood; the identity text is the pill's body. */
@@ -312,7 +312,7 @@
   transform: translateY(0) scale(1);
   visibility: visible;
   transition:
-    opacity 180ms var(--ease-standard),
+    opacity var(--dw-exit) var(--ease-standard),
     transform var(--dw-enter) var(--dw-spring),
     visibility 0s linear 0s;
 }

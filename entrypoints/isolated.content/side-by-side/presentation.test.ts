@@ -16,6 +16,7 @@ import {
   measureColumnFit,
   measureColumnScale,
   frameStylesFor,
+  sideLabelStyleFor,
   type FrameFit,
   type FrameFitRecord
 } from './presentation';
@@ -126,6 +127,30 @@ describe('frameStylesFor', () => {
     expect(styles.viewport['width']).toBe('1600px');
     expect(styles.frame['transform']).toBe('scale(1)');
     expect(styles.frame['width']).toBe('1600px');
+  });
+});
+
+describe('sideLabelStyleFor', () => {
+  it('sizes the label to the phone device so it centres over it', () => {
+    // A width-limited column: the device (and so the label) is the column's width.
+    const fit = phoneFitFor(300, 900);
+    expect(fit.kind === 'phone' && fit.boxWidth).toBe(300);
+    expect(sideLabelStyleFor('phone', fit)).toEqual({ width: '300px' });
+    // The label follows the device's own (height-limited) box, never the column.
+    const squeezed = phoneFitFor(300, 446);
+    expect(sideLabelStyleFor('phone', squeezed)).toEqual({ width: `${String(VW / 2)}px` });
+  });
+
+  it('leaves the label to its column in the fluid and desktop dresses', () => {
+    expect(sideLabelStyleFor('auto', null)).toEqual({});
+    expect(sideLabelStyleFor('desktop', desktopFitFor(600, 400))).toEqual({});
+  });
+
+  it('renders nothing inline while the phone fit is missing or of a foreign flavor', () => {
+    expect(sideLabelStyleFor('phone', null)).toEqual({});
+    expect(sideLabelStyleFor('phone', desktopFitFor(600, 400))).toEqual({});
+    expect(sideLabelStyleFor('desktop', phoneFitFor(300, 600))).toEqual({});
+    expect(sideLabelStyleFor('auto', phoneFitFor(300, 600))).toEqual({});
   });
 });
 

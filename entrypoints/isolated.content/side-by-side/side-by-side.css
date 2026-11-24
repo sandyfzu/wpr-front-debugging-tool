@@ -10,11 +10,25 @@
 
 /* Full-viewport layer that holds both frames; hidden until opened via the
  * open class (visibility + opacity), so a closed overlay never intercepts
- * events. State changes are the class alone — no transition bookkeeping. */
+ * events. State changes are the class alone — no transition bookkeeping.
+ * Each open shows it in the top layer (a manual popover, the shared
+ * injected z-order rule), so it covers every other injected surface: the
+ * box below overrides the UA popover box (centred, bordered, fit-content). */
 .sbs-overlay {
   position: fixed;
   inset: 0;
-  z-index: 999999999;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  /* Clip, never hidden: a clipped box never scrolls, so a focus move cannot
+   * carry the overlay's content off screen. */
+  overflow: clip;
+  /* Only matters where the top layer is unavailable (the fixed fallback). */
+  z-index: 2147483647;
   display: flex;
   flex-direction: column;
   background: var(--surface-0);
@@ -34,30 +48,70 @@
 
 /* ---- Header bar ------------------------------------------------------------- */
 
-/* The bar wraps gracefully in narrow windows instead of trapping the labels:
- * the frames area takes whatever height is left (never a fixed offset). */
+/* Two rows: the controls (centred, wrapping in narrow windows), then one
+ * label per side, each in the grid column over its own frame. The frames
+ * span the whole overlay width with no gap, so a column centre lands on its
+ * frame centre exactly when the column gap is twice the inline padding
+ * (centre = pad + (W − 2·pad − gap) / 4 = W / 4). The frames area takes
+ * whatever height is left (never a fixed offset). */
 .sbs-bar {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 8px 32px;
-  padding: 8px;
+  display: grid;
+  /* Zero floors: a label's inline (device) width must never widen its
+   * column past the half (that would push the bar wider than the window). */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 4px;
+  padding: 8px 4px;
   font-family: var(--font-mono);
   font-size: 13px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line-2);
 }
 
-.sbs-side-label {
-  flex: 1;
-  min-width: 0;
+.sbs-controls {
+  grid-column: 1 / -1;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 24px;
+  gap: 8px 32px;
+}
+
+/* A label stays inside its column: a tight column wraps its parts (tag,
+ * note, refresh) under the name, never the name itself ("Not / cached"). */
+.sbs-side-label {
+  justify-self: center;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 6px;
+  min-height: 24px;
+}
+
+.sbs-side-name {
+  white-space: nowrap;
+}
+
+/* Phone dress: each device packs against the shared edge, 4px off centre
+ * (its column's facing border), the same distance as the label column's
+ * inner edge (half the column gap); the label takes the device's width
+ * inline and packs the same way, so it centres over the device. No inline
+ * padding here: the label columns then equal the halves' content boxes, so
+ * a width-limited device (as wide as its half) still has its label centred. */
+.sbs-bar--phone {
+  padding-inline: 0;
+}
+
+.sbs-bar--phone .sbs-side-label[data-side='cached'] {
+  justify-self: end;
+}
+
+.sbs-bar--phone .sbs-side-label[data-side='bypassed'] {
+  justify-self: start;
 }
 
 .sbs-button {
@@ -150,11 +204,13 @@
 }
 
 /* Header notes: a half's sync degrade and the mobile switch's failure branch
- * (the retry affordance is the switch itself, which stays interactive). */
+ * (the retry affordance is the switch itself, which stays interactive).
+ * Sentences, so they wrap (centred) inside a narrow column instead of
+ * pushing the bar wider than the window. */
 .sbs-note {
   font-size: 11px;
   color: var(--status-warn);
-  white-space: nowrap;
+  text-align: center;
 }
 
 /* The active mobile session and the engaged device it simulates: both side
@@ -196,8 +252,8 @@
 }
 
 /* Phone presentation: the wrapper's inline size is the fitted box; the
- * letterbox is whatever the column adds around it. The frame border makes
- * the device edge readable on both palettes. The two devices gather at the
+ * letterbox is whatever the column adds around it. The device outline makes
+ * its edge readable on both palettes. The two devices gather at the
  * overlay's center instead of each floating centered in its own half (the
  * letterboxing spread them apart on wide windows): the cached half packs
  * its device against the shared edge, the bypassed half mirrors it, and
@@ -222,7 +278,10 @@
 .sbs-viewport--phone {
   flex: 0 0 auto;
   overflow: hidden;
-  border: 1px solid var(--line-3);
+  /* The device edge as an outline: it takes no layout space, so the box is
+   * exactly the fitted size (a border would push a width-limited device 1px
+   * past its half on each side); it paints into the facing 4px step. */
+  outline: 1px solid var(--line-3);
 }
 
 .sbs-frame {

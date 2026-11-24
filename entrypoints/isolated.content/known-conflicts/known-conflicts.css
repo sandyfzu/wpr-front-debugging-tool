@@ -26,10 +26,9 @@
  */
 
 .kc-chrome {
-  /* Feature motion constants (declared here so the injected chain is
-   * self-contained): the entrance's gentle spring and the two durations
-   * every choreography leg derives from. */
-  --kc-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
+  /* Feature aliases of the shared motion tokens: the entrance's spring and
+   * the two durations every choreography leg derives from. */
+  --kc-spring: var(--ease-spring);
   --kc-enter: var(--motion-slow);
   --kc-exit: var(--motion-base);
   /* How far the two shapes travel between absent and present. */
@@ -183,7 +182,7 @@
 .kc-pending .kc-count {
   background: var(--status-neutral-soft);
   color: var(--fg-muted);
-  animation: kc-pulse 1.6s ease-in-out infinite;
+  animation: kc-pulse calc(var(--motion-slow) * 5) var(--ease-standard) infinite;
 }
 
 /* Collapse: the pill compresses into its corner-side edge and fades — read
@@ -259,7 +258,7 @@
   border-radius: 999px;
   background: var(--status-error);
   box-shadow: 0 0 0 2px var(--surface-2);
-  animation: kc-dot-in 240ms var(--ease-entrance);
+  animation: kc-dot-in var(--motion-base) var(--ease-entrance);
 }
 
 /* Textually present, never painted (the pill's accessible copy rides with
@@ -307,7 +306,7 @@
   transform: translateY(0) scale(1);
   visibility: visible;
   transition:
-    opacity 180ms var(--ease-standard),
+    opacity var(--kc-exit) var(--ease-standard),
     transform var(--kc-enter) var(--kc-spring),
     visibility 0s linear 0s;
 }
@@ -408,30 +407,9 @@
   cursor: pointer;
   transition: background-color var(--motion-fast) linear;
 }
-.kc-open .kc-item {
-  animation: kc-rise 320ms var(--ease-entrance) backwards;
-}
 .kc-item:hover {
   background: var(--surface-4);
 }
-.kc-open .kc-item:nth-child(2) {
-  animation-delay: 40ms;
-}
-.kc-open .kc-item:nth-child(3) {
-  animation-delay: 80ms;
-}
-.kc-open .kc-item:nth-child(4) {
-  animation-delay: 120ms;
-}
-.kc-open .kc-item:nth-child(5) {
-  animation-delay: 160ms;
-}
-.kc-open .kc-item:nth-child(6),
-.kc-open .kc-item:nth-child(7),
-.kc-open .kc-item:nth-child(n + 8) {
-  animation-delay: 200ms;
-}
-
 .kc-item-mark {
   display: inline-flex;
   align-items: center;
@@ -504,7 +482,7 @@
   border: 2px solid var(--line-2);
   border-top-color: var(--accent);
   border-radius: 999px;
-  animation: kc-spin 700ms linear infinite;
+  animation: kc-spin calc(var(--motion-base) * 5) linear infinite;
 }
 
 .kc-none-empty {
@@ -578,12 +556,6 @@
     transform: rotate(360deg);
   }
 }
-@keyframes kc-rise {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-}
 @keyframes kc-dot-in {
   from {
     scale: 0;
@@ -602,13 +574,9 @@
  * rule becomes — a visibility leg still running would report its from-value
  * on the first frame, and the focus choreography's attempts inside that
  * window are rejected on a computed-visible card (measured: focus landed on
- * the pill, was ejected when the row departed and Escape then died). The
- * rows' stagger delay is zeroed with it. */
+ * the pill, was ejected when the row departed and Escape then died). */
 @media (prefers-reduced-motion: reduce) {
   .kc-list {
     transition: none !important;
-  }
-  .kc-open .kc-item {
-    animation-delay: 0s !important;
   }
 }

@@ -226,7 +226,7 @@ describe('UndefinedReferencesPage — states', () => {
     expect(document.querySelectorAll('h1')).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Undefined References');
     expect(
-      screen.getByText('Missing names from page errors, and where they may be defined')
+      screen.getByText('Missing names from page errors, and where they may be defined.')
     ).toBeTruthy();
     expect(statusLine().getAttribute('role')).toBe('status');
   });

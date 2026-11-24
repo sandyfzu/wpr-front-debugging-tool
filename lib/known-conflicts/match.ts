@@ -28,13 +28,15 @@ const MAX_TEXT_LENGTH = 2_000_000;
  * exactly like the surfaces' own comparisons, as in the reference behavior);
  * rows without a usable name and url are skipped everywhere, as are rows of
  * the wrong shape entirely (corrupt storage never crashes the scan).
- * Uniqueness: an entry can match once per call.
+ * Uniqueness: an entry can match once per call. Returned rows carry their
+ * name trimmed: server rows can start with a no-break space (a real row
+ * does), which would otherwise indent the name on screen.
  *
  * @param allText Combined scan text (already concatenated by the caller).
  * @param db The conflict rows as read from storage — untyped deliberately:
  *   corrupt rows are a runtime reality, not a compile-time one.
  * @param mode Which surface's matching semantics to apply.
- * @returns Matching rows in DB order.
+ * @returns Matching rows in DB order (copies, name trimmed).
  */
 export function findKnownConflicts(
   allText: string,
@@ -51,14 +53,14 @@ export function findKnownConflicts(
     if (typeof conflict !== 'object' || conflict === null) continue;
     const { name: rawName, url: rawUrl } = conflict as { name: unknown; url: unknown };
     if (typeof rawName !== 'string' || typeof rawUrl !== 'string') continue;
-    const name = rawName.trim().toLocaleLowerCase();
+    const shownName = rawName.trim();
+    const name = shownName.toLocaleLowerCase();
     if (name === '' || rawUrl === '') continue;
-    if (mode === 'helpscout') {
-      const pattern = new RegExp(`(^|- )(${escapeRegex(name)})($| -)`);
-      if (haystack.match(pattern) !== null) results.push(conflict as KnownConflict);
-    } else if (haystack.includes(name)) {
-      results.push(conflict as KnownConflict);
-    }
+    const matched =
+      mode === 'helpscout'
+        ? new RegExp(`(^|- )(${escapeRegex(name)})($| -)`).test(haystack)
+        : haystack.includes(name);
+    if (matched) results.push({ ...(conflict as KnownConflict), name: shownName });
   }
   return results;
 }

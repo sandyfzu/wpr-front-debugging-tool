@@ -35,6 +35,22 @@ describe('wp-admin mode', () => {
   it('honors surrounding whitespace trimming on the scan text', () => {
     expect(findKnownConflicts('  \n ACME CACHER \n ', [ACME], 'wp-admin')).toEqual([ACME]);
   });
+
+  it('returns a padded row (a no-break space, as a real server row has) with its name trimmed', () => {
+    const padded = conflict({ name: ' ACME Cacher ' });
+    const found = findKnownConflicts('acme cacher', [padded], 'wp-admin');
+    expect(found).toEqual([{ ...padded, name: 'ACME Cacher' }]);
+    expect(padded.name, 'the stored row is never mutated').toBe(' ACME Cacher ');
+  });
+});
+
+describe('helpscout mode, padded names', () => {
+  it('matches and returns the trimmed name', () => {
+    const padded = conflict({ name: ' ACME Cacher' });
+    expect(findKnownConflicts('dlv - acme cacher', [padded], 'helpscout')).toEqual([
+      { ...padded, name: 'ACME Cacher' }
+    ]);
+  });
 });
 
 describe('helpscout mode', () => {
