@@ -401,10 +401,10 @@ describe('knownConflictsStore', () => {
     expect(await getKnownConflicts()).toBeNull();
   });
 
-  it('the committed snapshot stays valid and is pinned at exactly 176 rows', () => {
+  it('the committed snapshot stays valid and is pinned at exactly 178 rows', () => {
     // Exact-count pin: silently losing rows (a truncated data file, a bad
     // import) would pass shape checks but ship a blind spot in conflict UIs.
-    expect(KNOWN_CONFLICTS_SEED_LENGTH).toBe(176);
+    expect(KNOWN_CONFLICTS_SEED_LENGTH).toBe(178);
     expect(seedJson).toHaveLength(KNOWN_CONFLICTS_SEED_LENGTH);
     // A mutating consumer must not be able to corrupt the shared seed.
     expect(Object.isFrozen(getKnownConflictsSeed())).toBe(true);

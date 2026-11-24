@@ -1,5 +1,23 @@
 [
   {
+    "id": "407ed22a-22f0-80ed-8882-fa3c166d5a66",
+    "type": "Plugin",
+    "name": "VPNDeals Country Block",
+    "detection_pattern": "\/vpndeals-country-block\/",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin sets the DONOTCACHEPAGE constant to TRUE",
+    "url": "https:\/\/app.notion.com\/p\/VPNDeals-Country-Block-407ed22a22f080ed8882fa3c166d5a66"
+  },
+  {
+    "id": "402ed22a-22f0-8072-b82e-f5a487c0a399",
+    "type": "Plugin",
+    "name": "SecuPress Pro",
+    "detection_pattern": "secupress-pro",
+    "summary": "Cache Clearing",
+    "issue_description": "SecuPress log entries created as posts trigger constant homepage cache clearing when using Divi.",
+    "url": "https:\/\/app.notion.com\/p\/SecuPress-Pro-402ed22a22f08072b82ef5a487c0a399"
+  },
+  {
     "id": "3faed22a-22f0-800c-9917-efd20c7331d1",
     "type": "Theme",
     "name": "Pro theme",
