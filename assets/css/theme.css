@@ -120,4 +120,13 @@
    * width. Twin of `DETAIL_PANE_MIN_CONTENT_WIDTH` (lib/panel/detail-layout),
    * which decides the same rule in script; a test keeps the two equal. */
   --container-split: 830px;
+  /* `@feature:` — the What's new page sets a highlight's screenshot beside
+   * its text only once both fit whole: card chrome 22 (each side: 1 px
+   * border + the card's 10 px padding) + the 800 px shot + 24 gap + a
+   * 320 px (20 rem) text column = 1166 px of list width. Below it the card
+   * stacks, where the shot is already 1:1 from an 822 px list; the page's
+   * gutters widen at this tier too (never earlier), so no width shrinks the
+   * shot by widening the window. A test re-derives the value from the
+   * screenshot registry, the card and the row's classes. */
+  --container-feature: 1166px;
 }
