@@ -59,7 +59,7 @@ import { draftTooLarge, footerLine as footerLineFor } from './footer-line';
 import type { OverlayController } from './controller';
 import { LANE_ORDER } from './exclusions/draft';
 import { Glyph, SimulatedIndicator } from './glyph';
-import { retryFocus } from './focus-retry';
+import { lostFocusAction, retryFocus } from './focus-retry';
 import { createAnnouncer } from './announcer';
 import {
   OVERLAY_MODES,
@@ -430,7 +430,8 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   // A state change can unmount the focused control (Stop once stopped, the
   // footer while reloading, a notice's button): focus then falls out of the
   // overlay to the page. Land it on the heading instead — only when the
-  // last focused control is gone, never when the user moved elsewhere.
+  // last focused control is gone and nothing else holds focus, never when
+  // the user moved elsewhere (another injected UI included).
   let lastFocused: Element | null = null;
   const onFocusIn = (event: FocusEvent): void => {
     lastFocused = event.target instanceof Element ? event.target : null;
@@ -440,12 +441,16 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
       () => [state(), c.view(), notice()],
       () => {
         props.requestFrame(() => {
-          if (lastFocused === null || lastFocused.isConnected || layer === undefined) return;
-          const root = layer.getRootNode();
-          const active =
-            'activeElement' in root ? (root as Document | ShadowRoot).activeElement : null;
-          if (active === null || active === layer.ownerDocument.body)
-            heading?.focus({ preventScroll: true });
+          if (lastFocused === null || layer === undefined) return;
+          const doc = layer.ownerDocument;
+          const action = lostFocusAction(
+            !lastFocused.isConnected,
+            doc.activeElement,
+            doc.body,
+            doc.documentElement
+          );
+          if (action === 'forget') lastFocused = null;
+          else if (action === 'reclaim') heading?.focus({ preventScroll: true });
         });
       },
       { defer: true }

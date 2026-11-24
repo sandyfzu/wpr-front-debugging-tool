@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { expect, test } from '../helpers/extension';
 import { settleFrames } from '../helpers/frames';
-import { openPanelForFixture } from '../helpers/panel-data';
+import { loadedPageRoot, openPanelForFixture } from '../helpers/panel-data';
 import { resetStoredOptions } from '../helpers/options';
 
 // One profile serves every suite: the options this file writes go back to the
@@ -49,7 +49,7 @@ test('page entrances do not add transient scrollbars or suppress real overflow',
           await panel.evaluate((id) => {
             location.hash = `#/${id}`;
           }, route.id);
-          const root = panel.locator(`[data-fdt-page="${route.id}"]`);
+          const root = loadedPageRoot(panel, route.id);
           await expect(root).toBeVisible();
           const geometry = await root.evaluate((element) => {
             const region = element.closest<HTMLElement>('[data-fdt="panel-content"]');
@@ -120,7 +120,7 @@ for (const theme of ['light', 'dark'] as const) {
             await panel.evaluate((id) => {
               location.hash = `#/${id}`;
             }, route.id);
-            const root = panel.locator(`[data-fdt-page="${route.id}"]`);
+            const root = loadedPageRoot(panel, route.id);
             await expect(root).toBeVisible();
             const heading = root.getByRole('heading', { level: 1 });
             await expect(heading).toHaveText(route.label);

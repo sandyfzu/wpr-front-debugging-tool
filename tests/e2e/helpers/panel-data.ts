@@ -28,7 +28,7 @@
  *
  * Everything below is harness-only: no shipped module imports this file.
  */
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { openFixturePage, panelPageUrl, type DriverPage, type ExtensionDriver } from './extension';
 
@@ -288,4 +288,18 @@ export async function relaySearchAction(
       timestamp: Date.now()
     }
   );
+}
+
+/**
+ * A route's page root once its body is the page itself. A lazy route first
+ * renders its titled loading frame under the same `data-fdt-page`, then swaps
+ * it for the loaded body: a root read off that frame detaches mid-read (a
+ * late chunk — a busy run — leaves it on screen long enough to be matched).
+ *
+ * @param panel The panel page.
+ * @param route The route id (`data-fdt-page`).
+ * @returns The loaded page's root locator.
+ */
+export function loadedPageRoot(panel: Page, route: string): Locator {
+  return panel.locator(`[data-fdt-page="${route}"]:not(:has([data-fdt-page-chunk-loading]))`);
 }

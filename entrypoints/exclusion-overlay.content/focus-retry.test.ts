@@ -3,7 +3,7 @@
  * and that it never takes focus from someone who claimed it.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { retryFocus, type FocusRetryDeps } from './focus-retry';
+import { lostFocusAction, retryFocus, type FocusRetryDeps } from './focus-retry';
 
 /** A manual frame queue plus a scripted focus world. */
 function harness(outcomes: (boolean | undefined)[], startActive = 'body') {
@@ -122,5 +122,30 @@ describe('retryFocus', () => {
     expect(() => {
       retryFocus(h.deps, tries);
     }).toThrow(RangeError);
+  });
+});
+
+describe('lostFocusAction', () => {
+  it('keeps waiting while the last focused control is still mounted', () => {
+    expect(lostFocusAction(false, null, 'body', 'html')).toBe('keep');
+    expect(lostFocusAction(false, 'strip-host', 'body', 'html')).toBe('keep');
+    expect(lostFocusAction(false, 'body', 'body', 'html')).toBe('keep');
+  });
+
+  it('reclaims when the control is gone and focus fell to the page', () => {
+    expect(lostFocusAction(true, 'body', 'body', 'html')).toBe('reclaim');
+    expect(lostFocusAction(true, null, 'body', 'html')).toBe('reclaim');
+    expect(lostFocusAction(true, 'html', 'body', 'html')).toBe('reclaim');
+  });
+
+  it('forgets the loss when another UI holds focus (an injected strip reads as its host)', () => {
+    expect(lostFocusAction(true, 'strip-host', 'body', 'html')).toBe('forget');
+    expect(lostFocusAction(true, 'page-input', 'body', 'html')).toBe('forget');
+  });
+
+  it('reads a body-less document (XHTML, SVG) focused on its root element as nothing focused', () => {
+    expect(lostFocusAction(true, null, null, 'svg')).toBe('reclaim');
+    expect(lostFocusAction(true, 'svg', null, 'svg')).toBe('reclaim');
+    expect(lostFocusAction(true, 'page-input', null, 'svg')).toBe('forget');
   });
 });
