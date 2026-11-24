@@ -11,7 +11,8 @@
  * the host page (`./event-isolation` — built in, so no UI can forget it),
  * and the container carries the appearance —
  * `data-theme="system"|"dark"|"light"` (the container contract is
- * `live-theme.ts`'s).
+ * `live-theme.ts`'s) — and the design tokens (`data-fdt-tokens`), so page
+ * rules that reach the shadow host cannot restyle the UI through them.
  */
 
 import { render } from 'solid-js/web';
@@ -21,6 +22,9 @@ import { isolateUiEvents } from './event-isolation';
 import { followStoredAppearance } from './live-theme';
 
 const log = createLogger('injected-ui');
+
+/** The attribute the token stylesheet re-declares every design token on. */
+const TOKENS_ATTRIBUTE = 'data-fdt-tokens';
 
 /**
  * Stop an appearance follow without letting a dead-context throw escape:
@@ -68,6 +72,9 @@ export async function mountShadowUi(
 ): Promise<() => void> {
   // The page never sees the UI's input (a delay runtime would replay it).
   isolateUiEvents(shadow);
+  // The tokens re-declared inside the shadow tree: a page rule matching the
+  // host (`* { --fg-primary: … }`, its tag) beats `:host`, never this node.
+  container.setAttribute(TOKENS_ATTRIBUTE, '');
   // A call, re-read per check: the await below is exactly where it flips.
   const removed = (): boolean => signal?.aborted === true;
   if (removed()) return noRender;

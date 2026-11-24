@@ -648,3 +648,98 @@ describe('ModalDialog controlled mode (`open`)', () => {
     expect(onClose).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('ModalDialog mounted mode leaves the host body’s inline style as found', () => {
+  afterEach(() => {
+    // The test DOM keeps a removed attribute's declarations readable through
+    // `style`; clearing the text first resets both, as a browser's removal does.
+    document.body.style.cssText = '';
+    document.body.removeAttribute('style');
+  });
+
+  /**
+   * Open a mounted dialog the way the injected palette does (a `<Show>` per
+   * open, inside a shadow root), then close it by unmounting.
+   *
+   * @returns Toggles the open state.
+   */
+  function mountToggle(): (open: boolean) => void {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+    const container = document.createElement('div');
+    shadow.append(container);
+    isolateUiEvents(shadow);
+    const [open, setOpen] = createSignal(false);
+    render(() => (
+      <Show when={open()}>
+        <ModalDialog title="Command palette" mount={container} onClose={() => setOpen(false)}>
+          <Button>First control</Button>
+        </ModalDialog>
+      </Show>
+    ));
+    return setOpen;
+  }
+
+  /** Open, let the library finish its mount work, close, then drain its close work. */
+  async function openClose(setOpen: (open: boolean) => void): Promise<void> {
+    setOpen(true);
+    await armLibrary();
+    setOpen(false);
+    await armLibrary();
+  }
+
+  it.each([
+    ['an empty attribute', ''],
+    ['a whitespace-only attribute', ' '],
+    ['an invalid-only declaration', 'foo:bar'],
+    ['several invalid declarations', 'foo: bar; ; baz:1']
+  ])('keeps %s (no declarations the CSSOM counts)', async (_label, value) => {
+    document.body.setAttribute('style', value);
+    const setOpen = mountToggle();
+    await openClose(setOpen);
+    expect(document.body.getAttribute('style')).toBe(value);
+    await openClose(setOpen);
+    expect(document.body.getAttribute('style')).toBe(value);
+  });
+
+  it.each(['auto', 'none', 'visible'])(
+    'keeps a page’s inline pointer-events: %s across open/close',
+    async (value) => {
+      document.body.style.pointerEvents = value;
+      const setOpen = mountToggle();
+      await openClose(setOpen);
+      expect(document.body.style.pointerEvents).toBe(value);
+      expect(document.body.getAttribute('style')).toBe(`pointer-events: ${value};`);
+    }
+  );
+
+  it('adds no style attribute to a body that had none', async () => {
+    const setOpen = mountToggle();
+    await openClose(setOpen);
+    expect(document.body.getAttribute('style')).toBe(null);
+  });
+
+  it('keeps the attribute when the library closes itself (Escape) before the caller unmounts', async () => {
+    document.body.setAttribute('style', ' ');
+    const setOpen = mountToggle();
+    setOpen(true);
+    await armLibrary();
+    const panel = document.querySelector('div')?.shadowRoot?.querySelector('[role="dialog"]');
+    panel?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await armLibrary();
+    expect(document.querySelector('div')?.shadowRoot?.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.getAttribute('style')).toBe(' ');
+  });
+
+  it('keeps a page’s own style edits made while the dialog is open', async () => {
+    document.body.setAttribute('style', ' ');
+    const setOpen = mountToggle();
+    setOpen(true);
+    await armLibrary();
+    document.body.style.color = 'red';
+    setOpen(false);
+    await armLibrary();
+    expect(document.body.getAttribute('style')).toBe('color: red;');
+  });
+});

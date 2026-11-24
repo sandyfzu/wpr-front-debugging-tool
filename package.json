@@ -29,6 +29,7 @@
     "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
     "bench:detection": "vitest run --config lib/detection/bench/vitest.bench.config.ts --silent=false",
     "check:budgets": "node scripts/check-budgets.mjs",
+    "check:html": "node scripts/check-html-refs.mjs",
     "screenshots": "node scripts/panel-screenshots.mjs",
     "parity:wp-rocket": "node scripts/wp-rocket-parity.ts",
     "icons": "node scripts/generate-icons.mjs",

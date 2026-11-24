@@ -87,3 +87,11 @@ export function isHttpOrigin(raw: string): boolean {
  * http(s) URL — a protocol-relative one keeps its own host and path.
  */
 export const PLACEHOLDER_BASE_URL = 'https://document.invalid/';
+
+/**
+ * The `window.open` features for every link a content script opens in a new
+ * tab: no `opener` handle back into the page being debugged, and no
+ * `Referer` — the page's address (a support inbox's conversation, a private
+ * staging site) stays off the destination's logs.
+ */
+export const NEW_TAB_FEATURES = 'noopener,noreferrer';

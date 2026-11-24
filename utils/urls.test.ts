@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  NEW_TAB_FEATURES,
   PLACEHOLDER_BASE_URL,
   isHttpOrigin,
   isHttpUrl,
@@ -124,5 +125,11 @@ describe('PLACEHOLDER_BASE_URL', () => {
     expect(parseHttpUrl(PLACEHOLDER_BASE_URL)?.hostname).toBe('document.invalid');
     expect(new URL('/a/b.js', PLACEHOLDER_BASE_URL).href).toBe('https://document.invalid/a/b.js');
     expect(new URL('//cdn.test/a.js', PLACEHOLDER_BASE_URL).href).toBe('https://cdn.test/a.js');
+  });
+});
+
+describe('NEW_TAB_FEATURES', () => {
+  it('cuts both the opener handle and the referrer', () => {
+    expect(NEW_TAB_FEATURES.split(',').sort()).toEqual(['noopener', 'noreferrer']);
   });
 });

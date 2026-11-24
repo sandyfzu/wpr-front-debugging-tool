@@ -71,7 +71,6 @@ export function HighlightView(props: HighlightViewProps): JSX.Element {
   return (
     <div
       class="lh-layer"
-      data-fdt-tokens
       ref={(layer) => {
         props.registerLayer(layer);
       }}

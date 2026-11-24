@@ -95,6 +95,10 @@ jobs:
       - name: Size budgets
         run: pnpm check:budgets
 
+      # Both builds' pages load real emitted CSS/assets (no dropped links).
+      - name: Built HTML references
+        run: pnpm check:html
+
   tests:
     name: tests (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
