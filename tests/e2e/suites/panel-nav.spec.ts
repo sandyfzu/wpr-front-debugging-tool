@@ -408,11 +408,15 @@ test.describe('panel nav (vertical forms + rail tooltips)', () => {
     try {
       await page.setViewportSize({ width: 700, height: 900 });
       await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      // `load` precedes the shell (it mounts after the boot's storage reads):
+      // a key pressed before it reaches no listener.
+      await expect(page.getByRole('link', { name: 'Detections' })).toBeVisible();
 
       // Tab through the shell until a nav row is focused; keyboard-triggered
       // focus matches :focus-visible, so the accent outline must be real
-      // ink. DOM order puts the nav rows before any other focusable, so the
-      // reach is immediate (the loop is a guard, not the path).
+      // ink. Once the shell is mounted, DOM order puts the nav rows before
+      // any other focusable, so the first Tabs reach one (the loop is a
+      // guard, not the path).
       let focused = '(initial)';
       for (let step = 0; step < 6; step += 1) {
         await page.keyboard.press('Tab');
@@ -539,6 +543,9 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
     try {
       await page.setViewportSize({ width: 700, height: 200 });
       await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      // `load` precedes the shell (it mounts after the boot's storage reads):
+      // a key pressed before it reaches no listener.
+      await expect(page.getByRole('button', { name: 'More pages' })).toBeVisible();
 
       // Tab reaches the trigger (it follows the rail rows in DOM order) and
       // keyboard focus rings it — the affordance is keyboard-complete.
