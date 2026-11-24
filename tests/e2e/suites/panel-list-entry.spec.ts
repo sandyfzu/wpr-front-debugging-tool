@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type { Page } from '@playwright/test';
 import { expect, test, type ExtensionDriver } from '../helpers/extension';
-import { openPanelForFixture } from '../helpers/panel-data';
+import { openPanelForFixture, showPanelRoute } from '../helpers/panel-data';
 
 /** Debugger injection keeps the accessibility engine outside extension CSP. */
 const AXE_SOURCE = readFileSync(
@@ -128,6 +128,8 @@ async function readEntry(page: Page, pageSel: string): Promise<EntryReading> {
  * @returns The settled band-top row's index.
  */
 async function alignDeepScroll(page: Page, pageSel: string, minIndex: number): Promise<string> {
+  // The one-shot read below needs the list itself, not just its page frame.
+  await expect(page.locator(`${pageSel} [data-fdt="virtual-list"]`)).toBeAttached();
   await page.evaluate(
     ({ sel, min }: { sel: string; min: number }) => {
       const scroller = document.querySelector(`${sel} [data-fdt="virtual-list"]`);
@@ -494,10 +496,7 @@ test('a flooded captured headers list still enters and walks out cleanly', async
   try {
     await panel.emulateMedia({ reducedMotion: 'reduce' });
     await panel.setViewportSize({ width: 1280, height: 800 });
-    await panel.evaluate(() => {
-      location.hash = '#/headers-cookies';
-    });
-    await expect(panel.locator(ROUTES.headers)).toBeVisible();
+    await showPanelRoute(panel, 'headers-cookies');
     const alignedIndex = await alignDeepScroll(panel, ROUTES.headers, 60);
     const all = panel.locator(ROUTES.headers).getByRole('button', { name: 'All headers' });
     await all.focus();

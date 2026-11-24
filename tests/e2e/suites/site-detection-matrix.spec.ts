@@ -32,7 +32,7 @@ import {
   isCacheBypassUrl
 } from '../../../lib/wp-rocket/constants';
 import { expect, test, type ExtensionDriver } from '../helpers/extension';
-import { devtoolsShim, loadedPageRoot, panelPageUrl } from '../helpers/panel-data';
+import { devtoolsShim, panelPageUrl, showPanelRoute } from '../helpers/panel-data';
 import { openSitePage, SITE_ORIGIN, SITE_URL } from '../helpers/site';
 import { readWprSettings, writeWprSettings, type WprSettings } from '../helpers/site-wpcli';
 import {
@@ -541,11 +541,7 @@ async function assertHeaderListed(
   panel: Page,
   header: readonly [name: string, value: string]
 ): Promise<void> {
-  await panel.evaluate(() => {
-    location.hash = '#/headers-cookies';
-  });
-  // The page loads from its own chunk: its titled frame shows first, rows once it lands.
-  await expect(loadedPageRoot(panel, 'headers-cookies')).toBeVisible();
+  await showPanelRoute(panel, 'headers-cookies');
   const rows = await panel.evaluate(() =>
     [...document.querySelectorAll('[data-fdt-inventory-row="header"]')].map((row) => ({
       term: row.querySelector('[data-fdt-key-value-term]')?.textContent ?? null,

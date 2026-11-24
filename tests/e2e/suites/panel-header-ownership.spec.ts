@@ -9,9 +9,9 @@ import { hostLayerHint } from '../../../lib/detection/host-layer-hints';
 import { expect, test } from '../helpers/extension';
 import {
   devtoolsShim,
-  loadedPageRoot,
   openPanelForFixture,
-  panelPageUrl
+  panelPageUrl,
+  showPanelRoute
 } from '../helpers/panel-data';
 import { openSitePage, SITE_ORIGIN, SITE_URL } from '../helpers/site';
 
@@ -123,11 +123,7 @@ for (const round of EDGE_ROUNDS) {
       await expect(panel.locator('[data-fdt-summary-fact="cache"]')).toHaveText(round.chip);
       const detectionsText = await panel.evaluate(() => document.body.textContent);
 
-      await panel.evaluate(() => {
-        location.hash = '#/headers-cookies';
-      });
-      // The page loads from its own chunk: its titled frame shows first, rows once it lands.
-      await expect(loadedPageRoot(panel, 'headers-cookies')).toBeVisible();
+      await showPanelRoute(panel, 'headers-cookies');
       // Each header row with the section heading it renders under.
       const rows = await panel.evaluate(() => {
         let section = '';

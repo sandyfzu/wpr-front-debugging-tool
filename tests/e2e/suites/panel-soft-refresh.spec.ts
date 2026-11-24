@@ -25,7 +25,7 @@
  */
 import type { Page } from '@playwright/test';
 import { expect, test, ORIGIN_A } from '../helpers/extension';
-import { openPanelForFixture, type InspectedPanel } from '../helpers/panel-data';
+import { openPanelForFixture, showPanelRoute, type InspectedPanel } from '../helpers/panel-data';
 
 /** The route body's single heading (the ready body's first observable). */
 function h1(page: Page): Promise<string | null> {
@@ -72,9 +72,7 @@ test.describe('panel soft refresh (the real push)', () => {
 
       // Route: a real deep link (the router reads the hashchange) — the same
       // surface a bookmarked panel link rides; the top bar belongs to the shell.
-      await panel.evaluate(() => {
-        location.hash = '#/lazyload';
-      });
+      await showPanelRoute(panel, 'lazyload');
       await expect.poll(async () => await h1(panel)).toBe('LazyLoad');
       expect(await barText(panel)).toContain('WP Rocket 3.20.1');
 

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { expect, test } from '../helpers/extension';
 import { settleFrames } from '../helpers/frames';
-import { loadedPageRoot, openPanelForFixture } from '../helpers/panel-data';
+import { openPanelForFixture, showPanelRoute } from '../helpers/panel-data';
 import { resetStoredOptions } from '../helpers/options';
 
 // One profile serves every suite: the options this file writes go back to the
@@ -46,11 +46,7 @@ test('page entrances do not add transient scrollbars or suppress real overflow',
         // read the layout that frame paints, never the one before it.
         await settleFrames(panel);
         for (const route of ROUTES) {
-          await panel.evaluate((id) => {
-            location.hash = `#/${id}`;
-          }, route.id);
-          const root = loadedPageRoot(panel, route.id);
-          await expect(root).toBeVisible();
+          const root = await showPanelRoute(panel, route.id);
           const geometry = await root.evaluate((element) => {
             const region = element.closest<HTMLElement>('[data-fdt="panel-content"]');
             if (!region) throw new Error('Panel content missing');
@@ -117,11 +113,7 @@ for (const theme of ['light', 'dark'] as const) {
           // never-painted labeled sidebar squeezing the page (overflow).
           await settleFrames(panel);
           for (const route of ROUTES) {
-            await panel.evaluate((id) => {
-              location.hash = `#/${id}`;
-            }, route.id);
-            const root = loadedPageRoot(panel, route.id);
-            await expect(root).toBeVisible();
+            const root = await showPanelRoute(panel, route.id);
             const heading = root.getByRole('heading', { level: 1 });
             await expect(heading).toHaveText(route.label);
             // Fill-mode entrances retain a finished Animation object, not running motion.

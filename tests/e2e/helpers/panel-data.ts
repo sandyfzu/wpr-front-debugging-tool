@@ -28,7 +28,7 @@
  *
  * Everything below is harness-only: no shipped module imports this file.
  */
-import type { Locator, Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 import { openFixturePage, panelPageUrl, type DriverPage, type ExtensionDriver } from './extension';
 
@@ -149,7 +149,10 @@ export interface InspectedResourceStub {
 export interface OpenPanelOptions {
   /** Which local origin to load the fixture from (default ORIGIN_A). */
   readonly origin?: string;
-  /** The panel document's boot hash (e.g. `#/lazyload`) for deep-link boots. */
+  /**
+   * The panel document's boot hash (`#/<route>`, e.g. `#/lazyload`) for
+   * deep-link boots; the open resolves once that route's body is mounted.
+   */
   readonly bootHash?: string;
   /**
    * Media emulation applied to the panel page BEFORE it navigates. The
@@ -213,6 +216,7 @@ export interface OpenPanelOptions {
  * @param urlPath The fixture path below the server root (e.g. `/pipeline/markers.html`).
  * @param options The opening options: fixture origin, panel boot hash.
  * @returns The open panel page plus the fixture page bindings.
+ * @throws {Error} When `bootHash` is not `#/<route>`.
  */
 export async function openPanelForFixture(
   extension: ExtensionDriver,
@@ -236,6 +240,11 @@ export async function openPanelForFixture(
   await panel.goto(`${await panelPageUrl(extension)}${options.bootHash ?? ''}`, {
     waitUntil: 'load'
   });
+  // A deep-link boot returns only once its page body is mounted: a lazy
+  // route shows its loading frame first, and a caller's one-shot DOM read
+  // would otherwise land on that frame.
+  const route = options.bootHash === undefined ? null : bootRoute(options.bootHash);
+  if (route !== null) await expect(loadedPageRoot(panel, route)).toBeVisible();
   return { panel, fixture };
 }
 
@@ -302,4 +311,36 @@ export async function relaySearchAction(
  */
 export function loadedPageRoot(panel: Page, route: string): Locator {
   return panel.locator(`[data-fdt-page="${route}"]:not(:has([data-fdt-page-chunk-loading]))`);
+}
+
+/**
+ * The route a panel boot hash names (`#/<route>`).
+ *
+ * @param hash The boot hash.
+ * @returns The route id.
+ * @throws {Error} When the hash is not `#/<route>`: a boot hash the router
+ *   cannot read is a broken suite, not a page to wait for.
+ */
+function bootRoute(hash: string): string {
+  const route = /^#\/([a-z-]+)$/.exec(hash)?.[1];
+  if (route === undefined) throw new Error(`Boot hash ${JSON.stringify(hash)} is not #/<route>`);
+  return route;
+}
+
+/**
+ * Show a panel route the way a deep link does (a hash change) and wait for
+ * its page body, so one-shot DOM reads that follow never meet a lazy
+ * route's loading frame. The one way suites switch routes by hash.
+ *
+ * @param panel The panel page.
+ * @param route The route id (`data-fdt-page`).
+ * @returns The loaded page's root locator.
+ */
+export async function showPanelRoute(panel: Page, route: string): Promise<Locator> {
+  await panel.evaluate((hash) => {
+    location.hash = hash;
+  }, `#/${route}`);
+  const root = loadedPageRoot(panel, route);
+  await expect(root).toBeVisible();
+  return root;
 }

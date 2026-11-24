@@ -39,7 +39,8 @@ import {
   devtoolsShim,
   openFixturePage,
   openPanelForFixture,
-  panelPageUrl
+  panelPageUrl,
+  showPanelRoute
 } from '../helpers/panel-data';
 import { showDetectionsList } from '../helpers/detections-page';
 import { runPanelAxe } from '../helpers/audit';
@@ -257,10 +258,7 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
 
       // --- Headers page: the whole model order rendered, verdicts toned,
       // names-only cookies, and the row/all-headers clipboards exact.
-      await panel.evaluate(() => {
-        location.hash = '#/headers-cookies';
-      });
-      const headersPage = panel.locator('[data-fdt-page="headers-cookies"]');
+      const headersPage = await showPanelRoute(panel, 'headers-cookies');
       await expect(
         headersPage.getByRole('heading', { level: 1, name: 'Headers & Cookies' })
       ).toBeVisible();
@@ -464,10 +462,7 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
 
       // Headers & Cookies on a null capture: the empty state, plus NO
       // cookie section (the older-payload form) and no filter field.
-      await panel.evaluate(() => {
-        location.hash = '#/headers-cookies';
-      });
-      const headersPage = panel.locator('[data-fdt-page="headers-cookies"]');
+      const headersPage = await showPanelRoute(panel, 'headers-cookies');
       await expect(
         headersPage.getByRole('heading', { level: 1, name: 'Headers & Cookies' })
       ).toBeVisible();
