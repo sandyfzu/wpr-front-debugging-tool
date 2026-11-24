@@ -646,9 +646,10 @@ export function createMenuRows(
  * Create all registered entries in the gate's state, after clearing whatever
  * exists.
  *
- * Recreating from scratch (instead of upserting) is what keeps extension
- * reloads from failing on duplicate ids: entries persist across the update
- * cycle while the creation id is the same.
+ * Recreating from scratch (instead of upserting) keeps a re-run from failing
+ * on duplicate ids. Chromium itself drops every entry on an install, update
+ * or reload, so the clear is for runs where entries can still exist: a second
+ * recreate in one worker life (the gate follower's) or a browser start.
  *
  * @param uiEnabled The on-page UI gate the rows are created for.
  */

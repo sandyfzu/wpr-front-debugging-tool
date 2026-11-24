@@ -27,6 +27,13 @@
  * throw out or claim-without-reporting — a failing report degrades to one
  * plain line about the report itself.
  *
+ * Why a dead-context error is claimed but not an error line: after an
+ * extension reload the old world's teardown can still touch `browser.*` and
+ * throw "Extension context invalidated" (see `dead-context`). That is the
+ * expected end of the world, not a failure, and an error line would be red
+ * noise on the site being debugged — so it is cancelled and logged at debug
+ * (silent in production). Backstop only: teardown itself is guarded.
+ *
  * Why the resize-observer loop notice is not an error: browsers fire it as a
  * script-less `error` event (no `error` object, no source) whenever an
  * observer's callback changes an observed size within the same frame; the
@@ -34,6 +41,7 @@
  * consoles with "Uncaught error" lines for nothing that failed.
  */
 
+import { isDeadContextError } from './dead-context';
 import type { Logger } from './logger';
 
 /** Options for the two listener factories below. */
@@ -106,7 +114,8 @@ function readErrorStack(error: unknown): string | undefined {
  * cancelled (the native record would double ours). Foreign-source events
  * are skipped untouched: the host page reports its own errors natively. The
  * resize-observer loop notice ({@link isResizeObserverLoopNotice}) is never
- * claimed: one debug line per listener, then silence.
+ * claimed: one debug line per listener, then silence. A dead-context error
+ * ({@link isDeadContextError}) is claimed and logged at debug only.
  *
  * @param options The surface logger plus the optional own-source prefix.
  * @returns The listener; register it where cleanup is owned — through the
@@ -129,6 +138,10 @@ export function onUncaughtError(
       }
       event.preventDefault();
       const cause: unknown = event.error;
+      if (isDeadContextError(cause)) {
+        log.debug('Uncaught dead-context error after an extension reload (expected)', cause);
+        return;
+      }
       const summary =
         cause instanceof Error
           ? cause.message || String(cause)
@@ -161,7 +174,7 @@ export function onUncaughtError(
  * error listener's: our-source rejections log the reason's own string form
  * plus its stack (the frames the cancelled native record carried); foreign
  * ones are skipped untouched — the page's console reports its rejections
- * natively.
+ * natively. Dead-context reasons are claimed and logged at debug only.
  *
  * @param options The surface logger plus the optional own-source prefix.
  * @returns The listener; register it where cleanup is owned, like
@@ -177,6 +190,10 @@ export function onUnhandledRejection(
       const stack = readErrorStack(reason);
       if (ownPrefix !== undefined && (stack === undefined || !stack.includes(ownPrefix))) return;
       event.preventDefault();
+      if (isDeadContextError(reason)) {
+        log.debug('Unhandled dead-context rejection after an extension reload (expected)', reason);
+        return;
+      }
       const details: unknown[] = [reason];
       if (stack !== undefined) details.push(stack);
       // Same summary form as the error listener: an own-name fallback for

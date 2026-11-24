@@ -16,6 +16,7 @@ import {
   onUnhandledRejection,
   type UncaughtErrorListenerOptions
 } from './uncaught-errors';
+import { DEAD_CONTEXT_MESSAGE } from './dead-context';
 import type { Logger } from './logger';
 
 const PREFIX = 'chrome-extension://test-id/';
@@ -357,5 +358,57 @@ describe('onUncaughtError — resize-observer loop notice', () => {
     onUncaughtError({ log, ownPrefix: PREFIX })(notice());
     expect(error).not.toHaveBeenCalled();
     expect(debug).not.toHaveBeenCalled();
+  });
+});
+
+describe('dead-context errors after an extension reload', () => {
+  /** The error Chromium throws from a dead context, raised in our bundle. */
+  function deadContextError(): Error {
+    const dead = new Error(`${DEAD_CONTEXT_MESSAGE}.`);
+    dead.stack = `Error: ${DEAD_CONTEXT_MESSAGE}.\n    at ${OWN_SOURCE}:6:866`;
+    return dead;
+  }
+
+  it('an own uncaught one is claimed (no native record) and logged at debug, never as an error', () => {
+    const debug = vi.fn();
+    const error = vi.fn();
+    const log: Logger = { debug, info: vi.fn(), warn: vi.fn(), error };
+    const event = new ErrorEvent('error', {
+      filename: OWN_SOURCE,
+      message: `Uncaught Error: ${DEAD_CONTEXT_MESSAGE}.`,
+      error: deadContextError(),
+      cancelable: true
+    });
+    onUncaughtError({ log, ownPrefix: PREFIX })(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(error).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledOnce();
+  });
+
+  it('an own rejection is claimed and logged at debug only', () => {
+    const debug = vi.fn();
+    const error = vi.fn();
+    const log: Logger = { debug, info: vi.fn(), warn: vi.fn(), error };
+    const preventDefault = vi.fn();
+    onUnhandledRejection({ log, ownPrefix: PREFIX })({
+      reason: deadContextError(),
+      preventDefault
+    } as unknown as PromiseRejectionEvent);
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(error).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledOnce();
+  });
+
+  it('a host-page error with the same text stays the page’s (not claimed)', () => {
+    const { log, error } = fakeLogger();
+    const event = new ErrorEvent('error', {
+      filename: 'https://site.test/app.js',
+      message: DEAD_CONTEXT_MESSAGE,
+      error: new Error(DEAD_CONTEXT_MESSAGE),
+      cancelable: true
+    });
+    onUncaughtError({ log, ownPrefix: PREFIX })(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(error).not.toHaveBeenCalled();
   });
 });

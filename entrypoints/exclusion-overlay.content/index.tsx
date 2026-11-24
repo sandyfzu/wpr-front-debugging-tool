@@ -22,6 +22,7 @@ import { onCleanup, onMount } from 'solid-js';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
+import { guardInvalidationTeardown } from '../../lib/dead-context';
 import { createLogger } from '../../lib/logger';
 import { onMessage, sendMessage } from '../../lib/messaging';
 import { mountShadowUi } from '../../components/injected-ui/mount';
@@ -205,6 +206,9 @@ export default defineContentScript({
   matches: [...URL_PATTERNS],
   cssInjectionMode: 'ui',
   main(ctx: ContentScriptContext) {
+    // First: every teardown registered below runs dead-context safe (an
+    // extension reload must never put an error on the host page).
+    guardInvalidationTeardown(ctx, log);
     // The builder edits the page's own document: never inside a frame.
     if (window.top !== window) return;
     // How the open that claimed the page's slot wants it to start.

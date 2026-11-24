@@ -1,0 +1,44 @@
+{
+  "sync": {
+    "options": {
+      "improvements": {
+        "wp-dashboard-dbugger-entry": false
+      }
+    }
+  },
+  "local": {
+    "known-conflicts-db": [
+      {
+        "detection_pattern": "/vpndeals-country-block/",
+        "id": "407ed22a-22f0-80ed-8882-fa3c166d5a66",
+        "issue_description": "This plugin sets the DONOTCACHEPAGE constant to TRUE",
+        "name": "VPNDeals Country Block",
+        "summary": "Prevent Caching and/or Optimizations",
+        "type": "Plugin",
+        "url": "https://app.notion.com/p/VPNDeals-Country-Block-407ed22a22f080ed8882fa3c166d5a66"
+      },
+      {
+        "detection_pattern": "secupress-pro",
+        "id": "402ed22a-22f0-8072-b82e-f5a487c0a399",
+        "issue_description": "SecuPress log entries created as posts trigger constant homepage cache clearing when using Divi.",
+        "name": "SecuPress Pro",
+        "summary": "Cache Clearing",
+        "type": "Plugin",
+        "url": "https://app.notion.com/p/SecuPress-Pro-402ed22a22f08072b82ef5a487c0a399"
+      },
+      {
+        "detection_pattern": null,
+        "id": "3faed22a-22f0-800c-9917-efd20c7331d1",
+        "issue_description": "The Pro theme from Themeco, which uses Cornerstone, includes an Output Buffer Mode setting. When this setting is enabled, WP Rocket\u2019s caching and optimization features are not applied.",
+        "name": "Pro theme",
+        "summary": "Prevent Caching and/or Optimizations",
+        "type": "Theme",
+        "url": "https://app.notion.com/p/Pro-theme-3faed22a22f0800c9917efd20c7331d1"
+      }
+    ],
+    "known-conflicts-db$": {
+      "lastUpdate": 1795487643268
+    }
+  },
+  "session": {}
+}

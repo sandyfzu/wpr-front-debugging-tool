@@ -14,6 +14,7 @@
  * watch and silences every late delivery.
  */
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
+import { reportTeardownFailure } from '../dead-context';
 import type { Logger } from '../logger';
 import { readPageUiEnabled, watchPageUiGate } from '../storage/page-ui-gate';
 
@@ -38,7 +39,7 @@ export interface PageUiGateFollowerDeps {
   isInvalid(): boolean;
   /** Run cleanup once the host's context dies. */
   onInvalidated(cleanup: () => void): void;
-  readonly log: Pick<Logger, 'warn' | 'error'>;
+  readonly log: Pick<Logger, 'debug' | 'warn' | 'error'>;
 }
 
 /** A running follower. */
@@ -88,7 +89,13 @@ export function followPageUiGate(
     try {
       unwatch?.();
     } catch (cause) {
-      log.warn('Stopping the on-page UI gate watch failed during teardown', cause);
+      // After an extension reload the remover meets a dead context: debug only.
+      reportTeardownFailure(
+        log,
+        cause,
+        'Stopping the on-page UI gate watch failed during teardown',
+        'warn'
+      );
     }
     unwatch = null;
   });
@@ -128,7 +135,7 @@ export function followPageUiGate(
  */
 export function pageUiGateDeps(
   ctx: Pick<ContentScriptContext, 'isInvalid' | 'onInvalidated'>,
-  log: Pick<Logger, 'warn' | 'error'>
+  log: Pick<Logger, 'debug' | 'warn' | 'error'>
 ): PageUiGateFollowerDeps {
   return {
     source: PAGE_UI_GATE_SOURCE,
