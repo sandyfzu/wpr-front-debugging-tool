@@ -10,6 +10,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
 import type * as DeadContext from '../../lib/dead-context';
+import commandPalette from '../command-palette.content/index';
+import exclusionOverlay from '../exclusion-overlay.content/index';
+import uaRelay from '../ua-relay.content';
+import isolated from './index';
 
 /** Thrown by the spy to end `main` at the guard. */
 const STOP = new Error('stopped at the teardown guard');
@@ -20,12 +24,17 @@ vi.mock('../../lib/dead-context', async (importOriginal) => ({
   guardInvalidationTeardown: guard
 }));
 
-/** The content-script definitions whose teardown can meet a dead context. */
-const SCRIPTS: readonly [string, () => Promise<{ default: { main: unknown } }>][] = [
-  ['isolated', () => import('./index')],
-  ['ua-relay', () => import('../ua-relay.content')],
-  ['command-palette', () => import('../command-palette.content/index')],
-  ['exclusion-overlay', () => import('../exclusion-overlay.content/index')]
+/**
+ * The content-script definitions whose teardown can meet a dead context.
+ * Imported statically (the mock above is hoisted over them): each entry's
+ * module graph loads once while the file is collected, outside any test's
+ * timeout, instead of cold inside the first case that needs it.
+ */
+const SCRIPTS: readonly [string, { readonly main: unknown }][] = [
+  ['isolated', isolated],
+  ['ua-relay', uaRelay],
+  ['command-palette', commandPalette],
+  ['exclusion-overlay', exclusionOverlay]
 ];
 
 describe('content scripts install the teardown guard first', () => {
@@ -36,8 +45,7 @@ describe('content scripts install the teardown guard first', () => {
     });
   });
 
-  it.each(SCRIPTS)('%s: guards its own context before anything else runs', async (name, load) => {
-    const definition = (await load()).default;
+  it.each(SCRIPTS)('%s: guards its own context before anything else runs', (name, definition) => {
     const ctx = new ContentScriptContext(`teardown-${name}`);
     const register = vi.spyOn(ctx, 'onInvalidated');
     const listen = vi.spyOn(ctx, 'addEventListener');

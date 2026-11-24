@@ -9,6 +9,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
 import type * as DeadContext from '../../lib/dead-context';
 import type * as Restart from '../../lib/content-script-restart';
+import commandPalette from '../command-palette.content/index';
+import exclusionOverlay from '../exclusion-overlay.content/index';
+import uaRelay from '../ua-relay.content';
+import isolated from './index';
 
 /** Thrown by the spy to end `main` at the restart guard. */
 const STOP = new Error('stopped at the restart guard');
@@ -33,12 +37,17 @@ interface Definition {
   readonly noScriptStartedPostMessage?: boolean;
 }
 
-/** Every isolated-world content-script definition (main-world ones get no WXT context). */
-const SCRIPTS: readonly [string, () => Promise<{ default: Definition }>][] = [
-  ['isolated', () => import('./index')],
-  ['ua-relay', () => import('../ua-relay.content')],
-  ['command-palette', () => import('../command-palette.content/index')],
-  ['exclusion-overlay', () => import('../exclusion-overlay.content/index')]
+/**
+ * Every isolated-world content-script definition (main-world ones get no WXT
+ * context). Imported statically (the mocks above are hoisted over them): each
+ * entry's module graph loads once while the file is collected, outside any
+ * test's timeout, instead of cold inside the first case that needs it.
+ */
+const SCRIPTS: readonly [string, Definition][] = [
+  ['isolated', isolated],
+  ['ua-relay', uaRelay],
+  ['command-palette', commandPalette],
+  ['exclusion-overlay', exclusionOverlay]
 ];
 
 describe('isolated-world content scripts guard their restart signal', () => {
@@ -53,8 +62,7 @@ describe('isolated-world content scripts guard their restart signal', () => {
     });
   });
 
-  it.each(SCRIPTS)('%s: installs it right after the teardown guard', async (name, load) => {
-    const definition = (await load()).default;
+  it.each(SCRIPTS)('%s: installs it right after the teardown guard', (name, definition) => {
     const ctx = new ContentScriptContext(`restart-${name}`);
     const register = vi.spyOn(ctx, 'onInvalidated');
     const listen = vi.spyOn(ctx, 'addEventListener');
@@ -66,7 +74,7 @@ describe('isolated-world content scripts guard their restart signal', () => {
     ctx.abort('test over');
   });
 
-  it.each(SCRIPTS)('%s: opts out of the start broadcast', async (_name, load) => {
-    expect((await load()).default.noScriptStartedPostMessage).toBe(true);
+  it.each(SCRIPTS)('%s: opts out of the start broadcast', (_name, definition) => {
+    expect(definition.noScriptStartedPostMessage).toBe(true);
   });
 });
