@@ -157,6 +157,15 @@ describe('RELEASE_NOTES', () => {
     expect(noticeAppliesTo(notice, 'chromium')).toBe(true);
     expect(noticeAppliesTo(notice, 'firefox')).toBe(false);
   });
+
+  it('names the one retired-tool feature that did not move, and what covers it', () => {
+    const notice = RELEASE_NOTES.find((note) => note.version === '3.0.0')?.notices.find(
+      (n) => n.id === 'predecessor-tool-retired'
+    );
+    expect(notice?.body).toBe(
+      'Everything it did now lives here except its Alt+H strip toggle: turn the detection widget on or off from the right-click menu or the command palette ({paletteShortcut}). You can uninstall WPR Inspector.'
+    );
+  });
 });
 
 describe('noticeAppliesTo', () => {

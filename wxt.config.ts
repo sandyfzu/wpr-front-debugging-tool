@@ -1,9 +1,10 @@
+import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'wxt';
-import type { FirefoxDataCollectionPermissions } from 'wxt';
+import type { FirefoxDataCollectionPermissions, WxtHooks } from 'wxt';
 import { toolbarIconMap } from './lib/branding/icons';
 import { DATA_CONSENT_TYPE } from './lib/data-consent/consent';
 import { URL_PATTERNS } from './lib/wp-rocket/constants';
@@ -11,6 +12,13 @@ import {
   LAZYLOAD_RUNTIME_FILE,
   SIMULATION_DATA_PATH
 } from './lib/wp-rocket-simulation/simulation-data';
+import {
+  NOTICES_FILE,
+  createNoticeCollector,
+  mitLicenseText,
+  type PackageNotice
+} from './scripts/third-party-notices';
+import { assertCleanSources } from './scripts/sources-zip-guard';
 
 // Extension name rendered in the browser UI.
 const NAME = 'WPR Front Debugging Tool';
@@ -168,19 +176,139 @@ export function extensionApiBeforeMessaging(browser: string): Plugin {
 /** The packaged simulation folder (the data file's), where each LazyLoad runtime ships. */
 const SIMULATION_PACKAGE_DIR = SIMULATION_DATA_PATH.slice(0, SIMULATION_DATA_PATH.lastIndexOf('/'));
 
+/**
+ * The notices of the packaged LazyLoad runtimes: each is vanilla-lazyload's
+ * release build as WP Rocket packages it (MIT, verlok/vanilla-lazyload),
+ * copied from `public/` rather than bundled from npm, so the build's
+ * collector cannot see it. One entry per packaged version, read from the
+ * folder that ships it (`<package dir>/…/<version>/<runtime file>`).
+ *
+ * @param publicDir - The `public/` folder.
+ * @returns One notice per packaged runtime version.
+ */
+export function lazyloadRuntimeNotices(publicDir: string): PackageNotice[] {
+  const packageDir = path.join(publicDir, SIMULATION_PACKAGE_DIR);
+  const runtimes = readdirSync(packageDir, { recursive: true, encoding: 'utf8' })
+    .map((entry) => entry.split(path.sep).join('/'))
+    .filter((entry) => path.posix.basename(entry) === LAZYLOAD_RUNTIME_FILE)
+    .sort();
+  return runtimes.map((entry) => ({
+    name: 'vanilla-lazyload',
+    version: path.posix.basename(path.posix.dirname(entry)),
+    license: 'MIT',
+    text: mitLicenseText('Copyright (c) 2015 Andrea Verlicchi'),
+    files: `${SIMULATION_PACKAGE_DIR}/${entry}`
+  }));
+}
+
+/**
+ * Licence texts of bundled packages whose npm tarball carries no licence
+ * file, copied from the package repository at the shipped version
+ * (`wxt-dev/wxt` tag `wxt-v0.21.5`, `LICENSE`); the notices build fails for
+ * any other such package until it gets a row here.
+ */
+const MISSING_LICENSE_TEXTS: Readonly<Record<string, string>> = {
+  wxt: mitLicenseText('Copyright (c) 2023 Aaron')
+};
+
+/**
+ * Packages whose CSS ships through the CSS pipeline (Tailwind's preflight and
+ * generated utilities), which no chunk lists as a module: declared here and
+ * cross-checked against the licence banners in the built CSS, so the build
+ * fails when the two disagree.
+ */
+export const CSS_PIPELINE_PACKAGES = ['tailwindcss'] as const;
+
+/**
+ * Records the npm packages every build pass emits, for the notices file
+ * written into the output once all passes are done (`build:publicAssets`).
+ */
+const notices = createNoticeCollector();
+
+/**
+ * The build hooks that write the notices file: the collector starts empty on
+ * each build, and the file is added once every entrypoint pass (and its
+ * worker sub-builds) is done — `build:publicAssets` runs after the last
+ * one. Production builds only: a dev session's passes are partial. A build
+ * that recorded no package fails rather than shipping an empty notice.
+ */
+export const noticesHooks = {
+  'build:before': () => {
+    notices.reset();
+  },
+  'build:publicAssets': (wxt, files) => {
+    if (wxt.config.command !== 'build') return;
+    if (notices.empty) throw new Error(`[WPR FDT] ${NOTICES_FILE}: no bundled package recorded`);
+    files.push({
+      relativeDest: NOTICES_FILE,
+      contents: notices.render(
+        lazyloadRuntimeNotices(wxt.config.publicDir),
+        MISSING_LICENSE_TEXTS,
+        CSS_PIPELINE_PACKAGES.map((name) => path.join(wxt.config.root, 'node_modules', name))
+      )
+    });
+  }
+} satisfies Partial<WxtHooks>;
+
+/**
+ * The sources-zip hook: refuses the Firefox sources zip while the checkout
+ * holds untracked, non-ignored files, which the excludes below (a mirror of
+ * `.gitignore`) cannot know about and would ship to reviewers. It runs on
+ * `zip:start` (after the build, before WXT writes any zip) and only when
+ * the run zips sources, so a refused run never leaves a new extension zip
+ * beside an older sources zip in the output folder.
+ */
+export const sourcesZipHooks = {
+  'zip:start': (wxt) => {
+    if (wxt.config.zip.zipSources) assertCleanSources(wxt.config.zip.sourcesRoot);
+  }
+} satisfies Partial<WxtHooks>;
+
+/**
+ * Paths the Firefox sources zip (what AMO reviewers rebuild from) leaves out,
+ * on top of WXT's defaults (`node_modules`, `.output`, test files, dot
+ * files): the store listing folder (listing copy and images, never build
+ * input) and every git-ignored machine-state path a dot-free glob would
+ * otherwise pick up from a working checkout — coverage and e2e reports,
+ * logs, bundle stats, the docker site's state, certificates and WP Rocket
+ * plugin zips, and editor files (the unit test keeps this list a superset
+ * of `.gitignore`). The store zips never hold any of it (they pack the
+ * build output only).
+ */
+export const SOURCES_ZIP_EXCLUDES = [
+  'store/**',
+  'coverage/**',
+  '**/test-results/**',
+  '**/playwright-report/**',
+  'logs/**',
+  '**/*.log',
+  '**/*-debug.log*',
+  '**/yarn-error.log*',
+  'stats.html',
+  'stats-*.json',
+  'docker/wpr/**',
+  'docker/certs/**',
+  'docker/state/**',
+  '**/*.suo',
+  '**/*.ntvs*',
+  '**/*.njsproj',
+  '**/*.sln',
+  '**/*.sw?'
+] as const;
+
 export default defineConfig({
   modules: ['@wxt-dev/module-solid'],
-  // The Firefox sources zip (what AMO reviewers rebuild from) leaves out the
-  // store listing folder: listing copy and images, never build input. The
-  // store zips never hold it (they pack the build output only).
-  zip: { excludeSources: ['store/**'] },
+  zip: { excludeSources: [...SOURCES_ZIP_EXCLUDES] },
+  hooks: { ...noticesHooks, ...sourcesZipHooks },
   vite: (env) => ({
-    plugins: [tailwindcss(), extensionApiBeforeMessaging(env.browser)],
+    plugins: [tailwindcss(), extensionApiBeforeMessaging(env.browser), notices.plugin()],
     // Workers build as ES modules (Vite's default `iife` cannot split code):
     // the code highlighter's worker fetches its CSS/HTML grammar chunk on the
     // first block that needs it. Every worker is spawned `type: 'module'`
     // (module workers and `import()` in them: Chromium 80+, Firefox 114+).
-    worker: { format: 'es' },
+    // The notices plugin runs in worker sub-builds too: the highlighter's
+    // worker bundles shiki and its grammars.
+    worker: { format: 'es', plugins: () => [notices.plugin()] },
     resolve: {
       // Every runtime `browser` (ours, WXT's, its storage's) comes from
       // `@wxt-dev/browser`, whose lookup a page's DOM can forge in a content

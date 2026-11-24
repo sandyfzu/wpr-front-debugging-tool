@@ -166,7 +166,7 @@ const RELEASE_3_0_0: ReleaseCopy = {
     {
       id: 'predecessor-tool-retired',
       title: 'WPR Inspector is retired',
-      body: 'Everything it did now lives here, so you can uninstall WPR Inspector.',
+      body: `Everything it did now lives here except its Alt+H strip toggle: turn the ${PAGE_SURFACE_NAMES.detectionWidget} on or off from the right-click menu or the ${PAGE_SURFACE_NAMES.commandPalette} ({paletteShortcut}). You can uninstall WPR Inspector.`,
       items: [
         {
           label: 'WP Rocket feature detection',

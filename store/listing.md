@@ -32,10 +32,10 @@ What you can try live
 • Command palette: every on-page action in one searchable list (keyboard shortcut, toolbar click or right-click menu).
 
 Where to find it
-The main tool is a panel in the browser's DevTools ("WPR FDT"). The on-page tools open from the toolbar icon, the right-click menu or the command palette. Light, dark or system appearance everywhere.
+The main tool is a panel in the browser's DevTools ("WPR FDT"). The on-page tools open from the toolbar icon, the right-click menu or the command palette. Light, dark or system appearance everywhere. After an update that brings new features, the extension opens a tab listing what's new, once (switch it off on that page or in the options).
 
 Privacy
-Page data is processed in your browser. The page address leaves the browser only when you start a RUCSS test (sent to WP Rocket's RUCSS service) or open PageSpeed Insights; nothing else about you or the pages you visit is sent, and there are no analytics. The extension downloads two public data files, the Known Conflicts list (apps.wpr-support.com) and WP Rocket's latest exclusion list (b.rucss.wp-rocket.me), with no information about you.
+Page data is processed in your browser. Data leaves the browser only when you ask: starting a RUCSS test sends the page's address, the Mobile and Home choices and your safelist to WP Rocket's RUCSS service (no page content), and opening PageSpeed Insights sends the page's address to Google; nothing else about you or the pages you visit is sent, and there are no analytics. The extension downloads two public data files, the Known Conflicts list (apps.wpr-support.com) and WP Rocket's latest exclusion list (b.rucss.wp-rocket.me), with no information about you.
 
 About the debugger permission (Chrome, Edge)
 The Exclusion Builder rewrites the page before the browser reads it, which needs the "debugger" permission. It is attached only to a tab while you run a builder session there; the browser shows its debugging bar meanwhile.
@@ -44,6 +44,10 @@ This is an independent support tool; WP Rocket is a trademark of its owner.
 ```
 
 Firefox build: drop the "About the debugger permission" paragraph (its manifest has no `debugger`; it uses `webRequestBlocking`, see below).
+
+Edge build: title the paragraph "About the debugger permission" (Edge policy 1.1.2: a listing "must not reference other browsers"); same for the privacy policy, which Edge wants to "primarily refer to the Microsoft Edge browser" — host an Edge variant without the Chrome Web Store sentence if Edge is listed.
+
+Last line ("independent support tool"): **owner check** — true only if the publisher account is not WP Rocket's owner (WP Media). If WP Media publishes it, replace it with who makes it (CWS Impersonation & Intellectual Property: no implied endorsement or affiliation that is not real — nor a denied one that is).
 
 ## Category
 
@@ -117,10 +121,13 @@ Contact: <owner to fill>
 
 - Testing: open any WordPress site running WP Rocket, then DevTools → "WPR FDT" panel; Exclusion Builder: right-click the toolbar icon → Exclusion Builder → Apply (Chromium shows its debugging bar while the session runs).
 - `debugger` (Chromium): used only by the Exclusion Builder session the user starts; see the permission table.
-- AMO sources: the sources zip (`pnpm zip:firefox`) holds the full source; build with Node 24 (`engines.node` in `package.json`) and the pnpm version pinned in its `packageManager` field: `pnpm install --frozen-lockfile && pnpm zip:firefox` → `.output/*-firefox.zip`. Packaged third-party code: `wp-rocket-scripts` 1.2.2 (npm, unmodified) and WP Rocket's LazyLoad runtime (`public/wp-rocket-simulation/`, byte for byte).
+- AMO sources (paste as is): "Build environment differs from your default: Node.js 24.22.3 (`package.json` `engines.node` >= 24.20.0) and pnpm 12.9.1 (`packageManager`; `corepack enable` installs it). Unzip the sources, then run `pnpm install --frozen-lockfile && pnpm zip:firefox`; the add-on is `.output/firefox-mv2` (zipped as `.output/wpr-front-debugging-tool-<version>-firefox.zip`). Verified byte-identical to the submitted zip on macOS arm64 and on Linux arm64 (Debian bookworm, `node:24-bookworm`). Third-party code: npm packages from the lockfile, unmodified; `wp-rocket-simulation/lazyload/17.8.3/lazyload.min.js` is vanilla-lazyload 17.8.3's release build (https://github.com/verlok/vanilla-lazyload/blob/17.8.3/dist/lazyload.min.js) as WP Rocket packages it — identical but for the missing final newline; `wp-rocket-simulation/simulation-data.json` holds WP Rocket's own inline snippets as data, inserted into the page only when the user runs a simulation, never run in the extension's own pages. Licence notices: `THIRD_PARTY_NOTICES.txt`."
+- Build the sources zip from a clean checkout: `pnpm zip:firefox` refuses while git shows untracked, non-ignored files (they would ship to reviewers), before any zip is written; it checks only when the project folder is a git checkout's top level, so the reviewer's unpacked sources (even inside another repository) are never refused.
+- Verified 2026-11-24 (P15D): the sources zip rebuilt in a scratch folder (macOS, Node 24.22.3) and in `node:24-bookworm` (Linux arm64, corepack pnpm 12.9.1) gives a Firefox zip with the same SHA-256 as the one built from the repo.
 
 ## Pending cross-checks
 
-- **What's new page (P15F, not on develop yet):** if it ships, add to the description: "After an update, the extension opens a page listing what's new, once per release." Keep the description's feature list consistent with `lib/release-notes/` 3.0.0 highlights (checked 2026-11-23 against the in-flight copy: Exclusion Builder, RUCSS Tester, Beacon Tester + LCP & Vitals, detection widget, toolbar status dot, command palette — all present above).
-- WP Rocket name/trademark use in name and copy: owner OK (P15D store-policy row).
+- **What's new page:** shipped (P15F), disclosed in the description ("Where to find it", 2026-11-24 — CWS "Misleading or Unexpected Behavior", AMO "No Surprises"). Feature list = `lib/release-notes/` 3.0.0 highlights (Exclusion Builder, RUCSS Tester, Beacon Tester + LCP & Vitals, detection widget, toolbar status dot, command palette) and `CHANGELOG.md`.
+- WP Rocket name/trademark use in name and copy: owner OK (P15D store-policy row), together with the "independent support tool" line above.
+- Packaged WP Rocket bytes (the simulation data's inline snippets; WP Rocket is "GPLv2 or later", © WP Rocket/WP Media) inside a package marked `UNLICENSED`: fine when the publisher holds those rights (WP Media); otherwise the owner must clear it before upload.
 - Support email/homepage (optional on every store; AMO recommends an email): owner open.
