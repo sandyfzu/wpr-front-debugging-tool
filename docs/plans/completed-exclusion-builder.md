@@ -137,7 +137,7 @@ Passed 2026-10-27; re-run after P15A's Firefox engine split and in doc 17 F5. St
 - **2.5–4.3 MiB retained after the overlay closes** (empty draft) → P15B reload/memory row: profile retainers before claiming a leak.
 - **Chromium DevTools panel `sender.url` shape** → P15B sender inventory: verify before any Chromium relay lands (irrelevant while Chromium never relays).
 - **Manual** → P15B: [policy block and stable-Chrome rows above](#manual-and-open-verification).
-- **LazyLoad toggle** → [master §3](./00-master-port-plan.md#3-dependencies-and-order) pre-release gate.
+- **LazyLoad toggle** → [master §3](./00-master-port-plan.md#3-dependencies-and-order) decision, deferred post-release (owner 2026-11-24).
 - **P15C:** `line-*` boundary tokens; optional visual look at the pill limit.
 - **Doc 17:** F2, F2.1, F3, F5, F6, F7, F8.
 

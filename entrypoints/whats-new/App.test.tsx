@@ -4,8 +4,8 @@
  * screenshot and with the palette's file when one is bundled (System
  * following the OS live, Dark/Light pinned), history collapsed, the empty
  * registry, several featured releases (an update across announced
- * releases) each under its version heading, Open options, and the footer
- * switch's state matrix writing the synced setting.
+ * releases) each under its version heading, Open options, the footer's
+ * support link, and the footer switch's state matrix writing the synced setting.
  */
 import { fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
@@ -19,6 +19,7 @@ import { RELEASE_NOTES, type ReleaseNote } from '../../lib/release-notes/notes';
 import { whatsNewView } from '../../lib/release-notes/page-view';
 import type * as Screenshots from '../../lib/release-notes/screenshots';
 import { WHATS_NEW_ON_UPDATE_LABEL } from '../../lib/release-notes/words';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../../lib/support/contact';
 import { readWhatsNewOnUpdate } from '../../lib/storage/whats-new';
 import type { Appearance } from '../../utils/theme';
 import App, { PAGE_WORDS } from './App';
@@ -192,6 +193,21 @@ describe('the What’s new page', () => {
     const { openOptions } = renderPage();
     fireEvent.click(screen.getByText(PAGE_WORDS.openOptions));
     expect(openOptions).toHaveBeenCalledOnce();
+  });
+
+  it('names the support address in the footer as a mail link', () => {
+    renderPage();
+    const line = document.querySelector('footer [data-fdt="whats-new-support"]');
+    expect(line?.textContent).toBe(`${PAGE_WORDS.support} ${SUPPORT_EMAIL}`);
+    const link = screen.getByRole('link', { name: SUPPORT_EMAIL });
+    expect(link.getAttribute('href')).toBe(SUPPORT_MAILTO);
+    // A mail link opens the mail client, never a tab of its own.
+    expect(link.hasAttribute('target')).toBe(false);
+  });
+
+  it('keeps the support address when no release notes ship', () => {
+    renderPage({ view: { featured: [], history: [] } });
+    expect(screen.getByRole('link', { name: SUPPORT_EMAIL })).toBeTruthy();
   });
 });
 

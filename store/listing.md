@@ -1,6 +1,6 @@
 # Store listing copy — WPR Front Debugging Tool 3.0.0
 
-Single source for every store's listing text and dashboard fields (Chrome Web Store, Firefox AMO, Edge Add-ons if listed). Specs, limits and asset status: [README.md](README.md). Every claim was checked against the code on 2026-11-23; re-check after any feature change. Status: **draft — owner approval pending** (copy, WP Rocket name use).
+Single source for every store's listing text and dashboard fields (Chrome Web Store, Firefox AMO; Edge Add-ons post-release). Specs, limits and asset status: [README.md](README.md). Every claim was checked against the code on 2026-11-23; re-check after any feature change. Status: **draft — owner approval pending** (copy). Publisher: WP Media, WP Rocket's maker (owner 2026-11-24). Edge listing **deferred to post-release** (owner 2026-11-24); the Edge notes below apply then.
 
 ## Name
 
@@ -40,20 +40,20 @@ Page data is processed in your browser. Data leaves the browser only when you as
 About the debugger permission (Chrome, Edge)
 The Exclusion Builder rewrites the page before the browser reads it, which needs the "debugger" permission. It is attached only to a tab while you run a builder session there; the browser shows its debugging bar meanwhile.
 
-This is an independent support tool; WP Rocket is a trademark of its owner.
+Made by WP Media, the makers of WP Rocket. Support: support@wp-rocket.me
 ```
 
 Firefox build: drop the "About the debugger permission" paragraph (its manifest has no `debugger`; it uses `webRequestBlocking`, see below).
 
-Edge build: title the paragraph "About the debugger permission" (Edge policy 1.1.2: a listing "must not reference other browsers"); same for the privacy policy, which Edge wants to "primarily refer to the Microsoft Edge browser" — host an Edge variant without the Chrome Web Store sentence if Edge is listed.
+Edge build (**deferred to post-release**): title the paragraph "About the debugger permission" (Edge policy 1.1.2: a listing "must not reference other browsers"); same for the privacy policy, which Edge wants to "primarily refer to the Microsoft Edge browser" — host an Edge variant without the Chrome Web Store sentence.
 
-Last line ("independent support tool"): **owner check** — true only if the publisher account is not WP Rocket's owner (WP Media). If WP Media publishes it, replace it with who makes it (CWS Impersonation & Intellectual Property: no implied endorsement or affiliation that is not real — nor a denied one that is).
+Last line: WP Media publishes it (owner 2026-11-24), so it names the maker and claims nothing more (CWS Impersonation & Intellectual Property: no implied endorsement or affiliation that is not real — nor a denied one that is). The address is `SUPPORT_EMAIL` (`lib/support/contact.ts`, also the What's new footer link).
 
 ## Category
 
 - CWS: **Developer Tools** (dashboard list, [best practices](https://developer.chrome.com/docs/webstore/best-practices), fetched 2026-11-23).
 - AMO: **Web Development** (`web-development`; up to two allowed — one is enough), [AMO categories API](https://addons.mozilla.org/api/v5/addons/categories/) 2026-11-23.
-- Edge: pick the developer-tools category in Partner Center (list not published in the docs read; verify there).
+- Edge (post-release): pick the developer-tools category in Partner Center (list not published in the docs read; verify there).
 
 ## Single purpose (CWS, Edge)
 
@@ -114,7 +114,7 @@ Stored in your browser, never sent by the extension:
 
 The use of information received by this extension adheres to the Chrome Web Store User Data Policy, including the Limited Use requirements. Data is never sold, used for advertising, or used for purposes unrelated to debugging WP Rocket.
 
-Contact: <owner to fill>
+Contact: support@wp-rocket.me
 ```
 
 ## Reviewer notes (CWS/Edge certification notes, AMO "notes to reviewer")
@@ -128,6 +128,6 @@ Contact: <owner to fill>
 ## Pending cross-checks
 
 - **What's new page:** shipped (P15F), disclosed in the description ("Where to find it", 2026-11-24 — CWS "Misleading or Unexpected Behavior", AMO "No Surprises"). Feature list = `lib/release-notes/` 3.0.0 highlights (Exclusion Builder, RUCSS Tester, Beacon Tester + LCP & Vitals, detection widget, toolbar status dot, command palette) and `CHANGELOG.md`.
-- WP Rocket name/trademark use in name and copy: owner OK (P15D store-policy row), together with the "independent support tool" line above.
-- Packaged WP Rocket bytes (the simulation data's inline snippets; WP Rocket is "GPLv2 or later", © WP Rocket/WP Media) inside a package marked `UNLICENSED`: fine when the publisher holds those rights (WP Media); otherwise the owner must clear it before upload.
-- Support email/homepage (optional on every store; AMO recommends an email): owner open.
+- WP Rocket name/trademark use in name and copy: WP Media, WP Rocket's maker, publishes it (owner 2026-11-24) — no third-party mark; the description's last line says who makes it.
+- Packaged WP Rocket bytes (the simulation data's inline snippets; WP Rocket is "GPLv2 or later", © WP Rocket/WP Media) inside a package marked `UNLICENSED`: resolved — the publisher (WP Media) holds those rights.
+- Support: `support@wp-rocket.me` (owner 2026-11-24) — AMO "Support email" field, the description's last line (every store) and the privacy policy's Contact. CWS "Support URL" left empty (no support site given; a `mailto:` there is unverified). Homepage URL: owner open (optional).

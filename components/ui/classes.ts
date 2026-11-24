@@ -18,6 +18,13 @@ export const FOCUS_RING =
   'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent';
 
 /**
+ * An inline text link's look (a link inside a line of copy): accent text,
+ * underline on hover only. Callers add {@link FOCUS_RING}; one declaring
+ * site so every page's prose links read alike.
+ */
+export const TEXT_LINK = 'font-medium text-accent underline-offset-2 hover:underline';
+
+/**
  * A tooltip-attributed button's frame (the tooltip's button and menu-trigger
  * forms): the 24px hit floor, content centered. A stand-in for such a
  * trigger takes the same frame, so swapping it in shows no shift.

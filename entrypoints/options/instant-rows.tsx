@@ -28,7 +28,7 @@ import type {
 } from '../../lib/options/registry';
 import { WHATS_NEW_PAGE_PATH } from '../../lib/release-notes/page-path';
 import { WHATS_NEW_NAME } from '../../lib/release-notes/words';
-import { FOCUS_RING } from '../../components/ui/classes';
+import { FOCUS_RING, TEXT_LINK } from '../../components/ui/classes';
 import { ChordField } from './chord-field';
 import {
   OPTION_ROW,
@@ -232,7 +232,7 @@ export function WhatsNewRow(props: {
           data-fdt="options-whats-new-link"
           href={WHATS_NEW_PAGE_PATH}
           target="_blank"
-          class={cn('font-medium text-accent underline-offset-2 hover:underline', FOCUS_RING)}
+          class={cn(TEXT_LINK, FOCUS_RING)}
         >
           {WHATS_NEW_LINK_TEXT}
         </a>
