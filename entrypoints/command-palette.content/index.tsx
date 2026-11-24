@@ -25,6 +25,7 @@ import { createSignal } from 'solid-js';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
+import { guardInvalidationTeardown } from '../../lib/dead-context';
 import { createLogger } from '../../lib/logger';
 import {
   readChordHint,
@@ -143,6 +144,9 @@ export default defineContentScript({
   matches: [...URL_PATTERNS],
   cssInjectionMode: 'ui',
   main(ctx: ContentScriptContext) {
+    // First: every teardown registered below runs dead-context safe (an
+    // extension reload must never put an error on the host page).
+    guardInvalidationTeardown(ctx, log);
     // The palette acts on the page as a whole: never inside a frame.
     if (window.top !== window) return;
     const bridge = readPaletteBridge(ISOLATED_WORLD);

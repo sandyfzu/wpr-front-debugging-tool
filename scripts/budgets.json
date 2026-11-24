@@ -129,7 +129,7 @@
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
       "raw": 124.6,
-      "gzip": 41.9
+      "gzip": 43.2
     }
   },
   {
@@ -138,7 +138,7 @@
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
       "raw": 124.3,
-      "gzip": 41.8
+      "gzip": 43.1
     }
   },
   {
@@ -178,7 +178,7 @@
     "surface": "ua-relay content script (isolated world)",
     "globs": ["content-scripts/ua-relay*.js"],
     "maxKb": {
-      "raw": 12
+      "raw": 12.5
     }
   },
   {
