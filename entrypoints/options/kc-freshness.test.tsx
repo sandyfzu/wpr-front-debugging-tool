@@ -97,6 +97,8 @@ describe('KnownConflictsFreshness', () => {
     render(() => <KnownConflictsFreshness io={world.io} />);
     expect(screen.getByText(KC_CARD_TITLE)).toBeTruthy();
     expect(screen.getByText(KC_CARD_DESCRIPTION)).toBeTruthy();
+    // A finished sentence, like every options card and row description.
+    expect(KC_CARD_DESCRIPTION).toMatch(/\S\.$/);
     await waitFor(() => {
       expect(stampText()).toContain('Updated');
     });

@@ -143,6 +143,10 @@
   --motion-slow: 280ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-entrance: cubic-bezier(0, 0, 0.2, 1);
+  /* A gentle overshoot for floating chrome entering the host page (the
+   * detection widget and Known Conflicts card open): one declaring site, the
+   * features alias it. */
+  --ease-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
 
   /* Overlay scrim behind modal dialog surfaces: the panel dimmed a step more
    * than `--surface-0` reads, so the floating layer separates on both palettes
@@ -258,6 +262,16 @@
     --scrollbar-track: Canvas;
     --scrollbar-thumb: CanvasText;
   }
+}
+
+/* ---- Injected reading order ----------------------------------------------- */
+/* Injected UIs read left to right whatever the host page's `dir`: `direction`
+ * is inherited into a shadow tree and the host's `all: initial` reset does
+ * not cover it, so an RTL page would mirror every surface (rows, icons, the
+ * Side-by-Side bar). The container carrying the tokens is each surface's
+ * root, so one rule pins them all. */
+[data-fdt-tokens] {
+  direction: ltr;
 }
 
 /* ---- Reduced motion --------------------------------------------------------- */

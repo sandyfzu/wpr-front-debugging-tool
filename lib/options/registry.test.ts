@@ -193,7 +193,7 @@ describe('the on-page UI cascade', () => {
     const gate = anyRow('page-ui-gate');
     expect(gate.label).toBe(PAGE_UI_GATE_OPTION_LABEL);
     expect(gate.description).toBe(
-      'The detection widget, the Known Conflicts card, Side By Side, the Exclusion Builder and the command palette on inspected pages — off closes them on every open page at once; turn them back on here or from the page’s right-click menu (“Turn on all on-page UI”)'
+      'The detection widget, the Known Conflicts card, Side By Side, the Exclusion Builder and the command palette on inspected pages — off closes them on every open page at once; turn them back on here or from the page’s right-click menu (“Turn on all on-page UI”).'
     );
     expect(gate.description).toContain(PAGE_UI_MENU_RESCUE);
     expect(ON_PAGE_UI_OFF_NOTE).toBe(
@@ -203,6 +203,12 @@ describe('the on-page UI cascade', () => {
     expect(anyRow('palette-chord').description).toMatch(
       /^Opens the command palette on inspected pages/
     );
+  });
+
+  it('every section and row description is a finished sentence (final period, no trailing space)', () => {
+    for (const { id, description } of [...OPTION_SECTIONS, ...OPTION_ROWS]) {
+      expect(description, id).toMatch(/\S\.$/);
+    }
   });
 
   it('the shortcut row warns that browser-owned shortcuts never reach the field', () => {

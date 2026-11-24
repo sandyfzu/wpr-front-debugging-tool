@@ -101,7 +101,7 @@ import {
 const TITLE = 'Undefined References';
 
 /** The one-line "what am I looking at". */
-const SUBTITLE = 'Missing names from page errors, and where they may be defined';
+const SUBTITLE = 'Missing names from page errors, and where they may be defined.';
 
 /** The waiting state's sentence: why nothing can be reported yet, and what unblocks it. */
 export const WAITING_DESCRIPTION = `${LABEL_DELAY_JAVASCRIPT_EXECUTION} holds the page's scripts until the first interaction — click or scroll the inspected page.`;

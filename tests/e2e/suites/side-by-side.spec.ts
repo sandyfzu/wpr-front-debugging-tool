@@ -16,7 +16,7 @@
  */
 
 import type { Page } from '@playwright/test';
-import { expect, openFixturePage, test } from '../helpers/extension';
+import { expect, openFixturePage, ORIGIN_A, test } from '../helpers/extension';
 import { resetStoredOptions } from '../helpers/options';
 
 // One profile serves every suite: the options this file writes go back to the
@@ -196,6 +196,88 @@ function pairIsGathered(pair: PairGeometry): boolean {
   );
 }
 
+/** One side label's anchoring facts, in page coordinates. */
+interface LabelAnchor {
+  /** The label's horizontal centre. */
+  labelCenter: number;
+  /** Its frame's (the half's wrapper: column or device box) horizontal centre. */
+  frameCenter: number;
+  /** The label's own edges. */
+  labelLeft: number;
+  labelRight: number;
+  /** Its half column's edges (the label must stay inside them). */
+  halfLeft: number;
+  halfRight: number;
+}
+
+/**
+ * Each side label's anchoring facts through the open shadow root, in frame
+ * order (cached, bypassed). The wrappers are never transformed, so their
+ * rects are the visual boxes.
+ *
+ * @param page The fixture page with the overlay open.
+ * @returns The two anchors, or null while the bar or the halves are not rendered.
+ */
+async function readLabelAnchors(page: Page): Promise<LabelAnchor[] | null> {
+  return await page.evaluate((): LabelAnchor[] | null => {
+    const shadow = document.querySelector('wpr-fdt-side-by-side')?.shadowRoot ?? null;
+    if (shadow === null) return null;
+    const labels = [...shadow.querySelectorAll('.sbs-side-label')];
+    const halves = [...shadow.querySelectorAll('.sbs-half')];
+    const frames = [...shadow.querySelectorAll('.sbs-viewport')];
+    if (labels.length !== 2 || halves.length !== 2 || frames.length !== 2) return null;
+    return labels.map((label, index): LabelAnchor => {
+      const box = label.getBoundingClientRect();
+      const half = halves[index]?.getBoundingClientRect();
+      const frame = frames[index]?.getBoundingClientRect();
+      if (half === undefined || frame === undefined) throw new Error('a half left the DOM');
+      return {
+        labelCenter: (box.left + box.right) / 2,
+        frameCenter: (frame.left + frame.right) / 2,
+        labelLeft: box.left,
+        labelRight: box.right,
+        halfLeft: half.left,
+        halfRight: half.right
+      };
+    });
+  });
+}
+
+/** How far a label's centre may sit from its frame's: subpixel rounding only (labels measure exact). */
+const LABEL_CENTER_TOLERANCE = 1;
+
+/**
+ * Whether both labels sit centred over their own frame and inside their own half.
+ *
+ * @param anchors The anchors as probed.
+ */
+function labelsAnchored(anchors: LabelAnchor[] | null): boolean {
+  return (
+    anchors !== null &&
+    anchors.every(
+      (anchor) =>
+        Math.abs(anchor.labelCenter - anchor.frameCenter) <= LABEL_CENTER_TOLERANCE &&
+        anchor.labelLeft >= anchor.halfLeft - 0.5 &&
+        anchor.labelRight <= anchor.halfRight + 0.5
+    )
+  );
+}
+
+/**
+ * Assert, on a settled read, that each side label is centred over its own
+ * frame and stays inside its half at the page's current size.
+ *
+ * @param page The fixture page with the overlay open.
+ * @param context What the read is about (named in the failure).
+ */
+async function assertLabelsAnchored(page: Page, context: string): Promise<void> {
+  await expect
+    .poll(async () => labelsAnchored(await readLabelAnchors(page)), {
+      message: `${context}: each side label sits centred over its own frame`
+    })
+    .toBe(true);
+}
+
 test.describe('side-by-side mechanics', () => {
   test('message-driven open mounts the shadow overlay with the two cache states', async ({
     extension
@@ -220,6 +302,153 @@ test.describe('side-by-side mechanics', () => {
     expect(await fixture.page.getAttribute('iframe[title="Not cached"]', 'src')).toBe(
       `${pageUrl}&nowprocket=1`
     );
+  });
+
+  test('each side label sits centred over its own frame at every window width', async ({
+    extension
+  }) => {
+    const fixture = await openFixturePage(extension, '/side-by-side.html');
+    await extension.sendToTab<boolean>(fixture.tabId, 'openSideBySide');
+    await expect(
+      fixture.page.locator(`${OVERLAY_HOST_NAME} .sbs-overlay.sbs-overlay--open`)
+    ).toHaveCount(1);
+    const viewportBefore = fixture.page.viewportSize();
+    for (const width of [320, 480, 768, 1280, 1600]) {
+      await fixture.page.setViewportSize({ width, height: 700 });
+      await assertLabelsAnchored(fixture.page, `${String(width)} px`);
+      const bar = await fixture.page.evaluate(() => {
+        const element = document
+          .querySelector('wpr-fdt-side-by-side')
+          ?.shadowRoot?.querySelector('.sbs-bar');
+        return element ? { scroll: element.scrollWidth, client: element.clientWidth } : null;
+      });
+      expect(bar, `${String(width)} px: the bar renders`).not.toBeNull();
+      expect(bar?.scroll, `${String(width)} px: the bar never scrolls sideways`).toBe(bar?.client);
+    }
+    if (viewportBefore) await fixture.page.setViewportSize(viewportBefore);
+    await fixture.page.close();
+  });
+
+  test('a cross-origin half\'s "not synced" note wraps inside its half at narrow widths', async ({
+    extension
+  }) => {
+    // The bypassed half lands on the distinct-origin partner (a redirect),
+    // so its document refuses access and the half renders the sync note.
+    const crossOrigin = ORIGIN_A.replace('//localhost:', '//127.0.0.1:');
+    // The note is the sync engine's degrade marker: sync on (its default, pinned).
+    await extension.evaluateInWorker(
+      async (seed: Record<string, unknown>) => {
+        await chrome.storage.sync.set({ options: seed });
+      },
+      { improvements: {}, features: { sbsScrollSync: true } }
+    );
+    /** Our uncaught-error lines, from any world on the page (a throwing listener logs one). */
+    const uncaught: string[] = [];
+    const fixture = await openFixturePage(extension, '/side-by-side.html', ORIGIN_A, (page) => {
+      page.on('console', (message) => {
+        const text = message.text();
+        if (text.includes('[WPR FDT]') && text.includes('Uncaught error')) uncaught.push(text);
+      });
+      void page.route(
+        (url) => url.origin === ORIGIN_A && url.searchParams.get('nowprocket') === '1',
+        (route) =>
+          route.fulfill({
+            status: 302,
+            headers: { location: `${crossOrigin}/side-by-side.html` }
+          })
+      );
+    });
+    await extension.sendToTab<boolean>(fixture.tabId, 'openSideBySide');
+    const note = fixture.page.locator(
+      `${OVERLAY_HOST_NAME} .sbs-side-label[data-side="bypassed"] .sbs-note`
+    );
+    // The half's load re-adopt flags it: no scroll, no other interaction.
+    await expect(note, 'the cross-origin half shows its sync note at load').toBeVisible();
+    expect(uncaught, 'the re-adopt over a cross-origin half throws nothing').toEqual([]);
+    const viewportBefore = fixture.page.viewportSize();
+    for (const width of [320, 768]) {
+      await fixture.page.setViewportSize({ width, height: 700 });
+      await assertLabelsAnchored(fixture.page, `${String(width)} px with the note`);
+      const facts = await fixture.page.evaluate(() => {
+        const shadow = document.querySelector('wpr-fdt-side-by-side')?.shadowRoot ?? null;
+        const bar = shadow?.querySelector('.sbs-bar');
+        const noteBox = shadow?.querySelector('.sbs-side-label[data-side="bypassed"] .sbs-note');
+        const half = shadow?.querySelectorAll('.sbs-half')[1];
+        if (!bar || !noteBox || !half) return null;
+        const box = noteBox.getBoundingClientRect();
+        const halfBox = half.getBoundingClientRect();
+        return {
+          scroll: bar.scrollWidth,
+          client: bar.clientWidth,
+          inside: box.left >= halfBox.left - 0.5 && box.right <= halfBox.right + 0.5
+        };
+      });
+      expect(facts, `${String(width)} px: the bar renders`).not.toBeNull();
+      expect(facts?.scroll, `${String(width)} px: the bar never scrolls sideways`).toBe(
+        facts?.client
+      );
+      expect(facts?.inside, `${String(width)} px: the note stays inside its half`).toBe(true);
+    }
+    if (viewportBefore) await fixture.page.setViewportSize(viewportBefore);
+    await fixture.page.close();
+  });
+
+  test('the open overlay covers the detection widget pill (top layer)', async ({ extension }) => {
+    const sitesKey = 'detection-widget-sites';
+    // An explicit per-origin entry shows the widget whatever the default.
+    await extension.evaluateInWorker(
+      async (payload: { key: string; origin: string }) => {
+        await chrome.storage.sync.set({ [payload.key]: { [payload.origin]: { enabled: true } } });
+      },
+      { key: sitesKey, origin: ORIGIN_A }
+    );
+    try {
+      const fixture = await openFixturePage(extension, '/side-by-side.html');
+      const pill = fixture.page.locator('wpr-fdt-detection-widget .dw-pill');
+      await expect(pill, 'the widget pill is on the page').toBeVisible({ timeout: 15_000 });
+      const box = await pill.boundingBox();
+      if (box === null) throw new Error('the widget pill has no box');
+      const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      /** The top-level element painted at the pill's centre (a shadow host). */
+      const hitAtPill = (): Promise<string | null> =>
+        fixture.page.evaluate(
+          ({ x, y }) => document.elementFromPoint(x, y)?.localName ?? null,
+          point
+        );
+      expect(await hitAtPill(), 'closed overlay: the pill is on top').toBe(
+        'wpr-fdt-detection-widget'
+      );
+      await extension.sendToTab<boolean>(fixture.tabId, 'openSideBySide');
+      await expect(
+        fixture.page.locator(`${OVERLAY_HOST_NAME} .sbs-overlay.sbs-overlay--open`)
+      ).toHaveCount(1);
+      const inTopLayer = (): Promise<boolean> =>
+        fixture.page.evaluate(
+          () =>
+            document
+              .querySelector('wpr-fdt-side-by-side')
+              ?.shadowRoot?.querySelector('.sbs-overlay')
+              ?.matches(':popover-open') ?? false
+        );
+      await expect
+        .poll(inTopLayer, { message: 'open overlay: it is a shown popover (top layer)' })
+        .toBe(true);
+      await expect
+        .poll(hitAtPill, { message: 'open overlay: it paints over the pill' })
+        .toBe(OVERLAY_HOST_NAME);
+      await fixture.page.getByRole('button', { name: 'Close the side-by-side comparison' }).click();
+      await expect(
+        fixture.page.locator(`${OVERLAY_HOST_NAME} .sbs-overlay.sbs-overlay--open`)
+      ).toHaveCount(0);
+      await expect
+        .poll(hitAtPill, { message: 'closed again: the pill is back on top' })
+        .toBe('wpr-fdt-detection-widget');
+      await fixture.page.close();
+    } finally {
+      await extension.evaluateInWorker(async (key: string) => {
+        await chrome.storage.sync.remove([key]);
+      }, sitesKey);
+    }
   });
 
   test('each side refreshes independently; the other side keeps its body', async ({
@@ -559,7 +788,8 @@ test.describe('side-by-side mechanics', () => {
      * Wait out the pair's rescale at the current window size, then assert
      * the gathered contract on a settled read: a small fixed step between
      * the devices (the facing borders' 8px), the pair centered over the
-     * frames row on both axes, and neither device leaving it. The poll
+     * frames row on both axes, neither device leaving it, and each side
+     * label centred over its own device (not the letterboxed half). The poll
      * rides the rescale: a measurement lands a frame after each class or
      * window change, and the transient can read one frame wide.
      */
@@ -595,6 +825,7 @@ test.describe('side-by-side mechanics', () => {
         pair.bypassed.right,
         'the bypassed device stays inside the frames row (no overflow at the squeeze)'
       ).toBeLessThanOrEqual(pair.frames.right + 0.5);
+      await assertLabelsAnchored(fixture.page, 'phone dress');
     };
 
     await assertGatheredPair();

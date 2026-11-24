@@ -48,6 +48,7 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { onMessage, sendMessage } from '../../../lib/messaging/index';
 import { createLogger } from '../../../lib/logger';
+import { showInTopLayer } from '../../../components/injected-ui/top-layer';
 import {
   getOptions,
   optionsStore,
@@ -596,6 +597,9 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
         <SideBySideOverlay
           urls={() => pair}
           open={isOpen}
+          raiseLayer={(layer) => {
+            showInTopLayer(layer, log);
+          }}
           psiMode={isAutoFlowPage}
           registerFrame={(side, frame) => {
             // A null settles a re-render; an undefined slot means "no

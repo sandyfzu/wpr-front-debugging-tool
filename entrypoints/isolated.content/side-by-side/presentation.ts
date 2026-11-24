@@ -100,6 +100,26 @@ export function frameStylesFor(presentation: FramePresentation, fit: FrameFit | 
 }
 
 /**
+ * The inline style a side label needs to stay over its own frame. The fluid
+ * and desktop dresses fill the half, so the label's grid column already
+ * centres it there (no inline style). The phone dress packs each device
+ * against the shared edge, so the label takes the device's width and the
+ * stylesheet packs it the same way: centred over the device, not the
+ * letterboxed half.
+ *
+ * @param presentation The presentation the overlay is in right now.
+ * @param fit The half's live fit; null or a mismatched flavor yields no inline style.
+ * @returns The label's inline record, empty unless a phone fit is in place.
+ */
+export function sideLabelStyleFor(
+  presentation: FramePresentation,
+  fit: FrameFit | null
+): FrameStyleRecord {
+  if (fit === null || fit.kind !== presentation || fit.kind !== 'phone') return {};
+  return { width: `${String(fit.boxWidth)}px` };
+}
+
+/**
  * Whether the halves may carry their URLs: the fluid dress needs no fit at
  * all (boxes navigate immediately); the phone and desktop dresses hold the
  * first navigation until both fits exist, computed by that dress's own

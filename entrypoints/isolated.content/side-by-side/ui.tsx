@@ -25,11 +25,17 @@
  */
 
 import type { JSX } from 'solid-js';
-import { createMemo, Show } from 'solid-js';
-import type { CompareSide } from '../../../lib/side-by-side/scroll-sync';
+import { createEffect, createMemo, For, on, Show } from 'solid-js';
+import { COMPARE_SIDES, type CompareSide } from '../../../lib/side-by-side/scroll-sync';
 import type { PresentationSnapshot } from '../../../lib/side-by-side/presentation-state';
 import { DEVICE_SIMULATION_PROFILE } from '../../../lib/device-simulation/profiles';
-import { frameStylesFor, type FrameFitRecord, type FrameStyles } from './presentation';
+import {
+  frameStylesFor,
+  sideLabelStyleFor,
+  type FrameFitRecord,
+  type FrameStyleRecord,
+  type FrameStyles
+} from './presentation';
 import { createSizeGateLatch } from './gate-latch';
 import { CLOSE_ICON_PATHS, REFRESH_ICON_PATHS, StrokeIcon } from './icons';
 
@@ -39,6 +45,11 @@ export interface SideBySideOverlayProps {
   urls: () => { cached: string; bypassed: string };
   /** The overlay is visible (open). */
   open: () => boolean;
+  /**
+   * Lift the overlay's root above every other injected surface (the shared
+   * top-layer rule); called on each open, once the root is rendered.
+   */
+  raiseLayer(layer: HTMLElement): void;
   /** PageSpeed Insights mode: analyses drive themselves; no close/refresh/sync/sim controls. */
   psiMode: () => boolean;
   /** Register which element carries which side (module-side refresh uses it). */
@@ -67,9 +78,74 @@ export interface SideBySideOverlayProps {
   onToggleDesktop(next: boolean): void;
 }
 
+/** One side's words: the name over its frame (also the frame's title) and its refresh button's. */
+interface SideCopy {
+  /** The visible name, shared by the label and the frame's title. */
+  name: string;
+  /** The refresh button's tooltip and accessible name. */
+  refreshLabel: string;
+}
+
+/** Each side's words; the sides differ only in this copy (rendered in {@link COMPARE_SIDES} order). */
+const SIDE_COPY: Readonly<Record<CompareSide, SideCopy>> = {
+  cached: { name: 'Cached', refreshLabel: 'Refresh the cached version' },
+  bypassed: { name: 'Not cached', refreshLabel: 'Refresh the not-cached version' }
+};
+
+/** A side label's input: its copy plus the overlay facts it renders. */
+interface SideLabelProps {
+  /** Which side the label names (its column: `data-side`). */
+  side: CompareSide;
+  /** The side's words. */
+  copy: SideCopy;
+  /** The phone dress is on: the label tags the session. */
+  phone: boolean;
+  /** PageSpeed Insights mode: no sync marker, no refresh. */
+  psiMode: boolean;
+  /** The half's document refuses access (sync cannot reach it). */
+  syncBlocked: boolean;
+  /** Inline style keeping the label over its frame (see {@link sideLabelStyleFor}). */
+  style: FrameStyleRecord;
+  /** Refresh this side's frame. */
+  refresh(): void;
+}
+
 /**
- * One half of the compare: the label, its controls and the frame's
- * presentations. The two sides differ only in copy — data, not branching.
+ * One side's label in the bar's second row, its grid column sitting over
+ * its own frame: the name, the mobile tag, the sync marker and the refresh.
+ *
+ * @param props The label's copy and facts.
+ */
+function SideLabel(props: SideLabelProps): JSX.Element {
+  return (
+    <span class="sbs-side-label" data-side={props.side} style={props.style}>
+      <span class="sbs-side-name">{props.copy.name}</span>
+      <Show when={props.phone}>
+        <span class="sbs-mobile-tag">· mobile</span>
+      </Show>
+      <Show when={!props.psiMode && props.syncBlocked}>
+        <span class="sbs-note">not synced (different origin)</span>
+      </Show>
+      <Show when={!props.psiMode}>
+        <button
+          type="button"
+          class="sbs-button"
+          title={props.copy.refreshLabel}
+          aria-label={props.copy.refreshLabel}
+          onClick={() => {
+            props.refresh();
+          }}
+        >
+          <StrokeIcon paths={REFRESH_ICON_PATHS} strokeWidth={1.5} />
+        </button>
+      </Show>
+    </span>
+  );
+}
+
+/**
+ * The compare overlay: the bar (the controls row, then one label per side
+ * over its own frame) and the two halves' presentations.
  */
 export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
   const phone = (): boolean => props.sim().presentation === 'phone';
@@ -79,6 +155,9 @@ export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
   const bypassedStyles = createMemo<FrameStyles>(() =>
     frameStylesFor(props.sim().presentation, props.simFits()['bypassed'] ?? null)
   );
+  /** A side label's inline style: the phone dress sizes it to its device (pure helper). */
+  const labelStyle = (side: CompareSide): FrameStyleRecord =>
+    sideLabelStyleFor(props.sim().presentation, props.simFits()[side] ?? null);
   /**
    * The size gate, latched: the live gate weighs the first load, the latch
    * never re-locks afterwards (see {@link createSizeGateLatch} for the
@@ -96,125 +175,110 @@ export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
       : 'Mobile comparison could not be applied — flip it again to retry';
   });
 
+  let layer: HTMLDivElement | undefined;
+  // Every open re-enters the top layer, so the overlay paints above any
+  // surface shown since (a closed overlay stays there, hidden and inert).
+  createEffect(
+    on(
+      () => props.open(),
+      (open) => {
+        if (open && layer !== undefined) props.raiseLayer(layer);
+      }
+    )
+  );
+
   return (
-    <div class="sbs-overlay" classList={{ 'sbs-overlay--open': props.open() }}>
-      <div class="sbs-bar">
-        <span class="sbs-side-label">
-          Cached
-          <Show when={phone()}>
-            <span class="sbs-mobile-tag">· mobile</span>
-          </Show>
-          <Show when={!props.psiMode() && props.syncBlocked('cached')}>
-            <span class="sbs-note">not synced (different origin)</span>
-          </Show>
-          <Show when={!props.psiMode()}>
+    <div ref={layer} class="sbs-overlay" classList={{ 'sbs-overlay--open': props.open() }}>
+      <div class="sbs-bar" classList={{ 'sbs-bar--phone': phone() }}>
+        <Show when={!props.psiMode()}>
+          <div class="sbs-controls">
+            <label class="sbs-switch" title="Scroll both versions together">
+              <input
+                type="checkbox"
+                role="switch"
+                class="sbs-switch-input"
+                checked={props.syncEnabled()}
+                aria-checked={props.syncEnabled()}
+                onChange={(event) => {
+                  props.onToggleSync(event.currentTarget.checked);
+                }}
+              />
+              <span class="sbs-switch-text">Sync scroll</span>
+            </label>
+            <Show when={props.sim().available === true}>
+              <label
+                class="sbs-switch"
+                title="Reload both halves as a 412×892 phone: viewport and document requests together; off restores the real requests"
+              >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="sbs-switch-input"
+                  checked={phone()}
+                  disabled={props.sim().busy}
+                  aria-checked={phone()}
+                  aria-busy={props.sim().busy}
+                  onChange={(event) => {
+                    props.onToggleSim(event.currentTarget.checked);
+                  }}
+                />
+                <span class="sbs-switch-text">Mobile comparison</span>
+                <Show when={phone()}>
+                  <span class="sbs-mobile-tag">{DEVICE_SIMULATION_PROFILE.displayName}</span>
+                </Show>
+              </label>
+            </Show>
+            <Show when={!phone()}>
+              <label
+                class="sbs-switch"
+                title="Render both halves at a desktop-width viewport (1280px floor, scaled to fit below it) — pages resolve their desktop media queries; the real requests never change."
+              >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="sbs-switch-input"
+                  checked={props.sim().desktop}
+                  aria-checked={props.sim().desktop}
+                  onChange={(event) => {
+                    props.onToggleDesktop(event.currentTarget.checked);
+                  }}
+                />
+                <span class="sbs-switch-text">Desktop width</span>
+              </label>
+            </Show>
+            <Show when={simFailure().length > 0}>
+              <span class="sbs-note" role="status">
+                {simFailure()}
+              </span>
+            </Show>
             <button
               type="button"
               class="sbs-button"
-              title="Refresh the cached version"
-              aria-label="Refresh the cached version"
+              title="Close"
+              aria-label="Close the side-by-side comparison"
               onClick={() => {
-                props.refresh('cached');
+                props.close();
               }}
             >
-              <StrokeIcon paths={REFRESH_ICON_PATHS} strokeWidth={1.5} />
+              <StrokeIcon paths={CLOSE_ICON_PATHS} strokeWidth={1.5} />
             </button>
-          </Show>
-        </span>
-        <Show when={!props.psiMode()}>
-          <label class="sbs-switch" title="Scroll both versions together">
-            <input
-              type="checkbox"
-              role="switch"
-              class="sbs-switch-input"
-              checked={props.syncEnabled()}
-              aria-checked={props.syncEnabled()}
-              onChange={(event) => {
-                props.onToggleSync(event.currentTarget.checked);
+          </div>
+        </Show>
+        <For each={COMPARE_SIDES}>
+          {(side) => (
+            <SideLabel
+              side={side}
+              copy={SIDE_COPY[side]}
+              phone={phone()}
+              psiMode={props.psiMode()}
+              syncBlocked={props.syncBlocked(side)}
+              style={labelStyle(side)}
+              refresh={() => {
+                props.refresh(side);
               }}
             />
-            <span class="sbs-switch-text">Sync scroll</span>
-          </label>
-          <Show when={props.sim().available === true}>
-            <label
-              class="sbs-switch"
-              title="Reload both halves as a 412×892 phone: viewport and document requests together; off restores the real requests"
-            >
-              <input
-                type="checkbox"
-                role="switch"
-                class="sbs-switch-input"
-                checked={phone()}
-                disabled={props.sim().busy}
-                aria-checked={phone()}
-                aria-busy={props.sim().busy}
-                onChange={(event) => {
-                  props.onToggleSim(event.currentTarget.checked);
-                }}
-              />
-              <span class="sbs-switch-text">Mobile comparison</span>
-              <Show when={phone()}>
-                <span class="sbs-mobile-tag">{DEVICE_SIMULATION_PROFILE.displayName}</span>
-              </Show>
-            </label>
-          </Show>
-          <Show when={!phone()}>
-            <label
-              class="sbs-switch"
-              title="Render both halves at a desktop-width viewport (1280px floor, scaled to fit below it) — pages resolve their desktop media queries; the real requests never change."
-            >
-              <input
-                type="checkbox"
-                role="switch"
-                class="sbs-switch-input"
-                checked={props.sim().desktop}
-                aria-checked={props.sim().desktop}
-                onChange={(event) => {
-                  props.onToggleDesktop(event.currentTarget.checked);
-                }}
-              />
-              <span class="sbs-switch-text">Desktop width</span>
-            </label>
-          </Show>
-          <Show when={simFailure().length > 0}>
-            <span class="sbs-note" role="status">
-              {simFailure()}
-            </span>
-          </Show>
-          <button
-            type="button"
-            class="sbs-button"
-            title="Close"
-            aria-label="Close the side-by-side comparison"
-            onClick={() => {
-              props.close();
-            }}
-          >
-            <StrokeIcon paths={CLOSE_ICON_PATHS} strokeWidth={1.5} />
-          </button>
-        </Show>
-        <span class="sbs-side-label">
-          Not cached
-          <Show when={phone()}>
-            <span class="sbs-mobile-tag">· mobile</span>
-          </Show>
-          <Show when={!props.psiMode() && props.syncBlocked('bypassed')}>
-            <span class="sbs-note">not synced (different origin)</span>
-          </Show>
-          <Show when={!props.psiMode()}>
-            <button
-              type="button"
-              class="sbs-button"
-              title="Refresh the not-cached version"
-              aria-label="Refresh the not-cached version"
-              onClick={() => {
-                props.refresh('bypassed');
-              }}
-            >
-              <StrokeIcon paths={REFRESH_ICON_PATHS} strokeWidth={1.5} />
-            </button>
-          </Show>
-        </span>
+          )}
+        </For>
       </div>
       <div class="sbs-frames">
         <div
@@ -231,7 +295,7 @@ export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
           >
             <iframe
               class="sbs-frame"
-              title="Cached"
+              title={SIDE_COPY.cached.name}
               src={gateSatisfied() ? props.urls().cached : undefined}
               style={cachedStyles().frame}
               ref={(frame) => {
@@ -254,7 +318,7 @@ export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
           >
             <iframe
               class="sbs-frame"
-              title="Not cached"
+              title={SIDE_COPY.bypassed.name}
               src={gateSatisfied() ? props.urls().bypassed : undefined}
               style={bypassedStyles().frame}
               ref={(frame) => {

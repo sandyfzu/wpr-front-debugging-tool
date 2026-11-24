@@ -36,7 +36,7 @@
   pointer-events: none;
   /* Only matters where the top layer is unavailable (the fixed fallback). */
   z-index: 2147483647;
-  direction: ltr;
+  /* Reading order: the shared injected-root rule (tokens) pins it LTR. */
   text-align: left;
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 12px;

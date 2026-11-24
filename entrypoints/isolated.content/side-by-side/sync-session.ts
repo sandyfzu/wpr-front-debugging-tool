@@ -12,7 +12,9 @@
  * Listener hygiene: a frame's inner window is replaced by every navigation,
  * so each half re-adopts its window on the iframe element's own `load`
  * event (which fires in the host document and survives reloads), and
- * everything this session attaches is removed on stop.
+ * everything this session attaches is removed on stop. A teardown never
+ * throws: a half that went cross-origin refuses `removeEventListener`, so
+ * the re-adopt reaches the blocked check at load, not at the first scroll.
  */
 
 import {
@@ -163,8 +165,18 @@ export function createScrollSyncSession(deps: ScrollSyncSessionDeps): ScrollSync
       };
       win.addEventListener('scroll', onScroll, { capture: true, passive: true });
       detachHalf[side] = () => {
-        win.removeEventListener('scroll', onScroll, { capture: true });
+        // The load re-adopt goes first: it is the one listener that must
+        // never outlive a teardown, whatever the window does next.
         frame.removeEventListener('load', onFrameLoad);
+        try {
+          win.removeEventListener('scroll', onScroll, { capture: true });
+        } catch {
+          // The frame navigated cross-origin: its WindowProxy refuses the
+          // call, and the listener died with the document it was bound to.
+          deps.log.debug(
+            `The ${side} half went cross-origin; its scroll listener left with its document`
+          );
+        }
       };
     } catch {
       reportBlocked(side);
@@ -180,6 +192,7 @@ export function createScrollSyncSession(deps: ScrollSyncSessionDeps): ScrollSync
     },
     stop(): void {
       if (driver === null) return;
+      driver.dispose(); // queued bursts become no-ops
       driver = null;
       for (const side of COMPARE_SIDES) {
         detachHalf[side]?.();

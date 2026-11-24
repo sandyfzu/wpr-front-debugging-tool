@@ -31,7 +31,7 @@ const log = createLogger('options');
 /** The card's static copy. */
 export const KC_CARD_TITLE = 'Known Conflicts database';
 export const KC_CARD_DESCRIPTION =
-  "The conflict list the tool matches against, synced from WP Rocket's server and checked hourly";
+  "The conflict list the tool matches against, synced from WP Rocket's server and checked hourly.";
 /** The stamp line for the never-stamped reading (a seeded, unstamped snapshot). */
 export const KC_NEVER_SYNCED_TEXT = 'Not synced yet — the tool checks hourly.';
 
