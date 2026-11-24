@@ -38,7 +38,7 @@ import { SITE_ORIGIN, SITE_URL, openSitePage, siteTest } from '../helpers/site';
 import { WIDGET_ORIGINS_KEY } from '../helpers/strip-pill';
 
 /** The gated surfaces' shadow hosts. */
-const STRIP_HOST = 'wpr-fdt-inspector';
+const STRIP_HOST = 'wpr-fdt-detection-widget';
 const KC_HOST = 'wpr-fdt-known-conflicts';
 const SBS_HOST = 'wpr-fdt-side-by-side';
 const PALETTE_HOST = 'wpr-fdt-command-palette';

@@ -329,15 +329,15 @@ const card = (panel: Page, row: string): Locator =>
 
 /** A strip row by its chip label. */
 const stripRow = (page: Page, label: string): Locator =>
-  page.locator(`${STRIP_HOST} .ins-row`, {
-    has: page.locator('.ins-chip', { hasText: new RegExp(`^${label}$`) })
+  page.locator(`${STRIP_HOST} .dw-row`, {
+    has: page.locator('.dw-chip', { hasText: new RegExp(`^${label}$`) })
   });
 
 /** Open the strip card from its pill with the keyboard (left as is when already open). */
 async function openStripCard(page: Page): Promise<void> {
-  const cardLocator = page.locator(`${STRIP_HOST} .ins-card`);
+  const cardLocator = page.locator(`${STRIP_HOST} .dw-card`);
   if (await cardLocator.isVisible()) return;
-  const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+  const pill = page.locator(`${STRIP_HOST} .dw-pill`);
   // The pass has answered once the identity carries a version.
   await expect(pill).toContainText(/WPR \d/, MOUNT);
   await pill.focus();
@@ -385,7 +385,7 @@ async function expectPanelModifier(
 async function expectStripModifier(page: Page, changed: ChangedRow): Promise<void> {
   await openStripCard(page);
   const line = page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`);
-  await expect(line.locator('.ins-builder-title')).toHaveText(LINE_TITLE);
+  await expect(line.locator('.dw-builder-title')).toHaveText(LINE_TITLE);
   await expect(line.locator('[data-fdt-strip-builder-hint]')).toHaveText([changed.hint]);
   await expect(page.locator(`${STRIP_HOST} [role="dialog"]`)).toHaveAccessibleDescription(
     `${LINE_TITLE} — ${changed.hint}`
@@ -396,8 +396,8 @@ async function expectStripModifier(page: Page, changed: ChangedRow): Promise<voi
   await expect(badge).toHaveText(changed.badge);
   await expect(row.locator('[data-fdt-strip-modifier-line]')).toHaveText(`, ${changed.sentence}`);
   // The served chip stays; a turned-off row drops the rewritten page's count.
-  await expect(row.locator('.ins-chip')).toHaveClass(/ins-chip-ok/);
-  await expect(row.locator('.ins-value')).toHaveCount(changed.kind === 'off' ? 0 : 1);
+  await expect(row.locator('.dw-chip')).toHaveClass(/dw-chip-ok/);
+  await expect(row.locator('.dw-value')).toHaveCount(changed.kind === 'off' ? 0 : 1);
   await expect(page.locator(`${STRIP_HOST} [data-fdt-strip-modifier]`)).toHaveCount(1);
 }
 
@@ -456,7 +456,7 @@ async function expectServed(
   await expect(opened.page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`)).toHaveCount(0);
   await expect(opened.page.locator(`${STRIP_HOST} [data-fdt-strip-modifier]`)).toHaveCount(0);
   // The served count is back on a row the builder had turned off.
-  await expect(stripRow(opened.page, changed.chipLabel).locator('.ins-value')).toHaveCount(1);
+  await expect(stripRow(opened.page, changed.chipLabel).locator('.dw-value')).toHaveCount(1);
   // The report: the served summary, and no builder line anywhere.
   const lines = await reportLines(panel);
   expect(lines).toContain(optimizationsLine(served.active, served.total, 0));

@@ -11,6 +11,6 @@
 
 @import './known-conflicts/known-conflicts.css';
 @import './side-by-side/side-by-side.css';
-@import './inspector/inspector.css';
+@import './detection-widget/detection-widget.css';
 @import './palette/notice.css';
 @import './lcp-analysis/highlight.css';

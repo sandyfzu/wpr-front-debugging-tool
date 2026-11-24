@@ -16,12 +16,12 @@ import {
 import { BUILDER_MARKER_META_NAME } from '../../../lib/wp-rocket/constants';
 import {
   buildStripCardModel,
-  INSPECTOR_BUILDER_LINE_ID,
-  INSPECTOR_RUCSS_LINE_ID,
+  WIDGET_BUILDER_LINE_ID,
+  WIDGET_RUCSS_LINE_ID,
   type StripCardModel,
   type StripDataSnapshot
 } from './strip-state';
-import { cardDescriptionIds, InspectorView, pillSpokenIdentity } from './ui';
+import { cardDescriptionIds, DetectionWidgetView, pillSpokenIdentity } from './ui';
 
 afterEach(cleanup);
 
@@ -58,7 +58,7 @@ function model(snapshot: StripDataSnapshot, rucssTestRuns?: number): StripCardMo
 function renderCard(card: StripCardModel): HTMLElement {
   const noop = (): void => undefined;
   const { container } = render(() => (
-    <InspectorView
+    <DetectionWidgetView
       model={() => card}
       mood={() => 'green'}
       cardOpen={() => true}
@@ -96,17 +96,15 @@ describe('the rendered widget — RUCSS test', () => {
     const root = renderCard(model(ready(), 1));
     const line = root.querySelector<HTMLElement>('[data-fdt-strip-rucss]');
     expect(line?.textContent).toBe(RUCSS_TEST_MODE_LINE);
-    expect(line?.querySelector('.ins-rucss-glyph')?.getAttribute('aria-hidden')).toBe('true');
-    expect(root.querySelector(`#${INSPECTOR_RUCSS_LINE_ID}`)?.textContent).toBe(
-      RUCSS_TEST_MODE_LINE
-    );
+    expect(line?.querySelector('.dw-rucss-glyph')?.getAttribute('aria-hidden')).toBe('true');
+    expect(root.querySelector(`#${WIDGET_RUCSS_LINE_ID}`)?.textContent).toBe(RUCSS_TEST_MODE_LINE);
     expect(root.querySelector('[role="dialog"]')?.getAttribute('aria-describedby')).toBe(
-      INSPECTOR_RUCSS_LINE_ID
+      WIDGET_RUCSS_LINE_ID
     );
   });
 
   it('draws the pill glyph and speaks the hint once, after the identity', () => {
-    const pill = renderCard(model(ready(), 1)).querySelector<HTMLElement>('.ins-pill');
+    const pill = renderCard(model(ready(), 1)).querySelector<HTMLElement>('.dw-pill');
     const glyph = pill?.querySelector<HTMLElement>('[data-fdt-strip-pill-rucss]');
     expect(glyph?.getAttribute('aria-hidden')).toBe('true');
     expect(glyph?.querySelectorAll('svg')).toHaveLength(1);
@@ -118,7 +116,7 @@ describe('the rendered widget — RUCSS test', () => {
   it('sits beside the builder’s glyph and line when both apply', () => {
     const card = model(ready('v1 delay_js=off'), 1);
     const root = renderCard(card);
-    const pill = root.querySelector<HTMLElement>('.ins-pill');
+    const pill = root.querySelector<HTMLElement>('.dw-pill');
     const builderGlyph = pill?.querySelector('[data-fdt-strip-pill-builder]');
     const rucssGlyph = pill?.querySelector('[data-fdt-strip-pill-rucss]');
     expect(builderGlyph).not.toBeNull();
@@ -128,9 +126,7 @@ describe('the rendered widget — RUCSS test', () => {
     );
     expect(root.querySelector('[data-fdt-strip-builder]')).not.toBeNull();
     expect(root.querySelector('[data-fdt-strip-rucss]')).not.toBeNull();
-    expect(cardDescriptionIds(card)).toBe(
-      `${INSPECTOR_BUILDER_LINE_ID} ${INSPECTOR_RUCSS_LINE_ID}`
-    );
+    expect(cardDescriptionIds(card)).toBe(`${WIDGET_BUILDER_LINE_ID} ${WIDGET_RUCSS_LINE_ID}`);
   });
 
   it('an untested page: no glyph, no line, no hint', () => {

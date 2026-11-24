@@ -20,7 +20,7 @@ import {
   CARD_ERROR_TITLE,
   CARD_LOADING_TITLE,
   chipStateForFeature,
-  insMood,
+  widgetMood,
   identityText,
   footerStamp,
   type StripDataSnapshot
@@ -84,10 +84,10 @@ const ready = (
   cacheState
 });
 
-describe('insMood', () => {
+describe('widgetMood', () => {
   it('the pass running pulses; the pass failing is red', () => {
-    expect(insMood(running())).toBe('pulse');
-    expect(insMood(failed())).toBe('red');
+    expect(widgetMood(running())).toBe('pulse');
+    expect(widgetMood(failed())).toBe('red');
   });
 
   it('present + cached is green, present + uncached amber, absent gray', () => {
@@ -99,7 +99,7 @@ describe('insMood', () => {
       version: '3.20.0.2',
       timeStamp: 1_730_000_000
     };
-    expect(insMood(ready(cached))).toBe('green');
+    expect(widgetMood(ready(cached))).toBe('green');
 
     const uncached = zeroDetections();
     uncached.wpr = {
@@ -109,10 +109,10 @@ describe('insMood', () => {
       version: null,
       timeStamp: null
     };
-    expect(insMood(ready(uncached))).toBe('amber');
+    expect(widgetMood(ready(uncached))).toBe('amber');
 
     const absent = zeroDetections();
-    expect(insMood(ready(absent))).toBe('gray');
+    expect(widgetMood(ready(absent))).toBe('gray');
   });
 });
 

@@ -19,8 +19,8 @@ import {
   resetRenders,
   settle
 } from '../../../components/injected-ui/deferred-mount.testing';
-import { INSPECTOR_UI_NAME } from './strip-state';
-import { setupInspectorWidget } from './index';
+import { WIDGET_UI_NAME } from './strip-state';
+import { setupDetectionWidget } from './index';
 
 vi.mock(
   '../../../components/injected-ui/mount',
@@ -33,7 +33,7 @@ vi.mock('wxt/utils/content-script-ui/shadow-root', async (importOriginal) => {
   return { createShadowRootUi: vi.fn(real.createShadowRootUi) };
 });
 
-const hosts = (): number => document.querySelectorAll(INSPECTOR_UI_NAME).length;
+const hosts = (): number => document.querySelectorAll(WIDGET_UI_NAME).length;
 
 let ctx: ContentScriptContext;
 let seq = 0;
@@ -50,7 +50,7 @@ beforeEach(() => {
   // No page-data hub runs here: the widget logs its documented failure copy.
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
   seq += 1;
-  ctx = new ContentScriptContext(`inspector-lifecycle-${String(seq)}`);
+  ctx = new ContentScriptContext(`widget-lifecycle-${String(seq)}`);
 });
 
 afterEach(() => {
@@ -61,7 +61,7 @@ afterEach(() => {
 
 /** Boot the widget and wait for its first mount. */
 async function bootShown(): Promise<void> {
-  setupInspectorWidget(ctx);
+  setupDetectionWidget(ctx);
   await vi.waitFor(() => {
     expect(hosts()).toBe(1);
   });
@@ -133,7 +133,7 @@ describe('detection widget mount lifecycle', () => {
       });
       return real(...args);
     });
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await vi.waitFor(() => {
       expect(factory).toHaveBeenCalledTimes(1);
     });

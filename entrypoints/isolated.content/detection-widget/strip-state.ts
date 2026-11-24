@@ -3,7 +3,7 @@
  * widget shows, pure over the hub's single-pass data so no render path can
  * contradict it.
  *
- * - `insMood` maps the pass's outcome to the chrome's mood (`ins-*` classes):
+ * - `widgetMood` maps the pass's outcome to the chrome's mood (`dw-*` classes):
  *   green = present + cached, amber = present + uncached, gray = presence
  *   not established, pulse = the pass is still running, red = the pass
  *   failed.
@@ -63,18 +63,18 @@ import type { FeatureMetaRow, WprDetections } from '../../../lib/wp-rocket/types
 import type { PageDataSnapshot } from '../data-hub';
 import { GROUP_ICONS, type StripIconGlyph, type StripModifierKind } from './icons';
 
-/** The widget's five chrome moods (`ins-*`; the KC vocabulary generalized). */
-export type InspectorMood = 'green' | 'amber' | 'gray' | 'pulse' | 'red';
+/** The widget's five chrome moods (`dw-*`; the KC vocabulary generalized). */
+export type WidgetMood = 'green' | 'amber' | 'gray' | 'pulse' | 'red';
 
 /** How far the single pass has gone, per the hub's answer. */
-export type InspectorPhase = 'running' | 'ready' | 'failed';
+export type WidgetPhase = 'running' | 'ready' | 'failed';
 
 /**
  * The hub read the widget renders: the phase plus the cooled result (ready
  * only). A single object per update keeps the store writes atomic.
  */
 export interface StripDataSnapshot {
-  phase: InspectorPhase;
+  phase: WidgetPhase;
   detections: WprDetections | null;
   /** The hub's explicit cache answer (null while running/failed). */
   cacheState: CacheState | null;
@@ -162,7 +162,7 @@ export interface StripCardGroup {
 /** What the card renders per phase (the view's whole body contract). */
 export interface StripCardModel {
   /** The pass's phase (the header chip and body state lines follow it). */
-  phase: InspectorPhase;
+  phase: WidgetPhase;
   /** The identity text (the card's title and the pill's identity). */
   identity: string;
   /** The header's cache chip (null only while a body copy states the phase). */
@@ -209,7 +209,7 @@ export const CARD_ERROR_HINT = 'Reload the page and re-open the report to scan a
  *
  * @param snapshot The hub read to render.
  */
-export function insMood(snapshot: StripDataSnapshot): InspectorMood {
+export function widgetMood(snapshot: StripDataSnapshot): WidgetMood {
   if (snapshot.phase === 'running') return 'pulse';
   if (snapshot.phase === 'failed' || snapshot.detections === null) return 'red';
   const { present } = snapshot.detections.wpr;
@@ -463,19 +463,19 @@ export function buildStripCardModel(input: {
 export const PILL_LABEL_STEM = 'WP Rocket page analysis: ';
 
 /** The widget's shadow-root host element name (D-6). */
-export const INSPECTOR_UI_NAME = 'wpr-fdt-inspector';
+export const WIDGET_UI_NAME = 'wpr-fdt-detection-widget';
 
 /** The report card's in-shadow-root element id (the pill's aria-controls). */
-export const INSPECTOR_CARD_ID = `${INSPECTOR_UI_NAME}-card`;
+export const WIDGET_CARD_ID = `${WIDGET_UI_NAME}-card`;
 
 /**
  * The tab-level builder line's in-shadow-root element id: the card dialog's
  * description, so opening the card (pointer or keyboard) announces it.
  */
-export const INSPECTOR_BUILDER_LINE_ID = `${INSPECTOR_UI_NAME}-builder`;
+export const WIDGET_BUILDER_LINE_ID = `${WIDGET_UI_NAME}-builder`;
 
 /** The tab-level RUCSS test line's element id (also part of the card dialog's description). */
-export const INSPECTOR_RUCSS_LINE_ID = `${INSPECTOR_UI_NAME}-rucss`;
+export const WIDGET_RUCSS_LINE_ID = `${WIDGET_UI_NAME}-rucss`;
 
 /** The card's accessible name. */
 export const CARD_ARIA_LABEL = 'WP Rocket page analysis';

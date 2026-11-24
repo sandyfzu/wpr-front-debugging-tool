@@ -12,7 +12,7 @@ A **second behavioral baseline** is also being integrated: the features of [wpr-
 >
 > **Never port structures as-is.** A source repo's type shapes, file layout, registries, and the names of types, properties, variables, constants, and functions are a starting point to reshape, never a spec to copy: rework them into the port's clearer shape and intent-revealing names (only behavior and user-facing strings stay identical). When a ported surface looks "the same, just renamed", the port didn't happen.
 >
-> **No legacy in code — ever.** Code and comments in this project must never mention either source project or their code: no `legacy`/`inspector`-origin identifiers, strings, comments, TSDoc, or error messages referencing legacy files, functions, or behavior. Name things by what they do; provenance, mappings, parity proofs, and bug references live in `docs/plans/` — and only there.
+> **No legacy in code — ever.** Code and comments in this project must never mention either source project or their code: no `legacy`/`inspector`-origin identifiers, strings, comments, TSDoc, or error messages referencing legacy files, functions, or behavior. Name things by what they do; provenance, mappings, parity proofs, and bug references live in `docs/plans/` — and only there. Sole exception: user-facing words naming the retired WPR Inspector tool for users who knew it — the What's new retirement notice (`lib/release-notes/notes.ts`) and the palette search keyword `inspector` (`lib/page-commands/palette-rows.ts`); identifiers, comments and code structure still never mention either source.
 
 ## Key technologies
 

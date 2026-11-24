@@ -9,7 +9,7 @@
  *
  * happy-dom has no layout, so a small layout model stands in for the
  * stylesheet contract the drag seams read: a fixed zero-size chrome at the
- * bottom-right 16/16 anchor carrying the `--ins-drag-x/y` translate, and the
+ * bottom-right 16/16 anchor carrying the `--dw-drag-x/y` translate, and the
  * pill/card hanging off its corner (offsetParent = the chrome).
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -19,8 +19,8 @@ import {
   DETECTION_WIDGET_POSITIONS_KEY,
   detectionWidgetPositionsStore
 } from '../../../lib/storage/detection-widget-positions';
-import { INSPECTOR_UI_NAME } from './strip-state';
-import { setupInspectorWidget } from './index';
+import { WIDGET_UI_NAME } from './strip-state';
+import { setupDetectionWidget } from './index';
 
 /** The positions item's key in the local area (no `local:` prefix). */
 const POSITIONS = DETECTION_WIDGET_POSITIONS_KEY.slice('local:'.length);
@@ -39,21 +39,21 @@ const layout = {
 function translateOf(chrome: Element): { x: number; y: number } {
   const style = (chrome as HTMLElement).style;
   return {
-    x: Number.parseFloat(style.getPropertyValue('--ins-drag-x')) || 0,
-    y: Number.parseFloat(style.getPropertyValue('--ins-drag-y')) || 0
+    x: Number.parseFloat(style.getPropertyValue('--dw-drag-x')) || 0,
+    y: Number.parseFloat(style.getPropertyValue('--dw-drag-y')) || 0
   };
 }
 
 /** The modelled size of a widget shape (pill or card), null for anything else. */
 function shapeSize(element: Element): { width: number; height: number } | null {
-  if (element.classList.contains('ins-pill')) return layout.pill;
-  if (element.classList.contains('ins-card')) return layout.card;
+  if (element.classList.contains('dw-pill')) return layout.pill;
+  if (element.classList.contains('dw-card')) return layout.card;
   return null;
 }
 
 /** The modelled viewport rect of the chrome or one of its shapes. */
 function modelRect(element: Element): DOMRect {
-  const chrome = element.closest('.ins-chrome');
+  const chrome = element.closest('.dw-chrome');
   if (chrome === null) return new DOMRect(0, 0, 0, 0);
   const { x, y } = translateOf(chrome);
   const corner = {
@@ -85,7 +85,7 @@ function installLayout(): void {
   Object.defineProperty(HTMLElement.prototype, 'offsetParent', {
     configurable: true,
     get(this: HTMLElement): Element | null {
-      return shapeSize(this) === null ? null : this.closest('.ins-chrome');
+      return shapeSize(this) === null ? null : this.closest('.dw-chrome');
     }
   });
   Object.defineProperty(document.documentElement, 'clientWidth', {
@@ -124,7 +124,7 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
   warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   seq += 1;
-  ctx = new ContentScriptContext(`inspector-position-${String(seq)}`);
+  ctx = new ContentScriptContext(`widget-position-${String(seq)}`);
 });
 
 afterEach(() => {
@@ -137,15 +137,15 @@ afterEach(() => {
 /** The mounted widget's shadow root, once its chrome rendered. */
 async function shadow(): Promise<ShadowRoot> {
   return vi.waitFor(() => {
-    const root = document.querySelector(INSPECTOR_UI_NAME)?.shadowRoot ?? null;
-    if (root?.querySelector('.ins-chrome') == null) throw new Error('not rendered yet');
+    const root = document.querySelector(WIDGET_UI_NAME)?.shadowRoot ?? null;
+    if (root?.querySelector('.dw-chrome') == null) throw new Error('not rendered yet');
     return root;
   });
 }
 
 /** Boot the widget on this page and wait for its first render. */
 async function boot(): Promise<ShadowRoot> {
-  setupInspectorWidget(ctx);
+  setupDetectionWidget(ctx);
   return shadow();
 }
 
@@ -241,7 +241,7 @@ const CANCEL_PATHS: [string, (root: ShadowRoot, pill: Element) => void][] = [
 describe('persisting the drop', () => {
   it('a moved drop stores the translate once (release, then its capture loss)', async () => {
     const root = await boot();
-    const pill = part(root, '.ins-pill');
+    const pill = part(root, '.dw-pill');
     const writes = vi.spyOn(fakeBrowser.storage.local, 'set');
     pressAndMove(pill, { x: -200, y: -100 });
     pointer(pill, 'pointerup', { x: 0, y: 0 });
@@ -253,7 +253,7 @@ describe('persisting the drop', () => {
 
   it('a capture loss mid-drag stores the clamped commit', async () => {
     const root = await boot();
-    const pill = part(root, '.ins-pill');
+    const pill = part(root, '.dw-pill');
     pressAndMove(pill, { x: -5000, y: 0 });
     pointer(pill, 'lostpointercapture', { x: 0, y: 0 });
     await flush();
@@ -265,7 +265,7 @@ describe('persisting the drop', () => {
 
   it('a press under the 5 px slop is a click: nothing stored', async () => {
     const root = await boot();
-    const pill = part(root, '.ins-pill');
+    const pill = part(root, '.dw-pill');
     pressAndMove(pill, { x: 2, y: 2 });
     pointer(pill, 'pointerup', { x: 0, y: 0 });
     await flush();
@@ -276,8 +276,8 @@ describe('persisting the drop', () => {
     '%s restores the pre-drag position and never writes',
     async (_name, cancel) => {
       const root = await boot();
-      const pill = part(root, '.ins-pill');
-      const chrome = part(root, '.ins-chrome');
+      const pill = part(root, '.dw-pill');
+      const chrome = part(root, '.dw-chrome');
       pressAndMove(pill, { x: -300, y: -200 });
       expect(translateOf(chrome)).toEqual({ x: -300, y: -200 });
       cancel(root, pill);
@@ -292,36 +292,38 @@ describe('persisting the drop', () => {
 
   it('a failed save is logged and leaves the dropped widget where it stands', async () => {
     const root = await boot();
-    const pill = part(root, '.ins-pill');
-    const chrome = part(root, '.ins-chrome');
+    const pill = part(root, '.dw-pill');
+    const chrome = part(root, '.dw-chrome');
     vi.spyOn(fakeBrowser.storage.local, 'set').mockRejectedValueOnce(new Error('quota'));
     pressAndMove(pill, { x: -120, y: -60 });
     pointer(pill, 'pointerup', { x: 0, y: 0 });
     await vi.waitFor(() => {
       expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('[WPR FDT] [inspector] Saving the widget\u2019s dragged position'),
+        expect.stringContaining(
+          '[WPR FDT] [detection-widget] Saving the widget\u2019s dragged position'
+        ),
         expect.objectContaining({ position: { x: -120, y: -60 } })
       );
     });
     expect(translateOf(chrome)).toEqual({ x: -120, y: -60 });
-    expect(chrome.classList.contains('ins-dragging')).toBe(false);
+    expect(chrome.classList.contains('dw-dragging')).toBe(false);
   });
 
   it('after a card-handle drag (persisted), the first keyboard Enter still opens the card', async () => {
     const root = await boot();
-    const pill = part(root, '.ins-pill');
+    const pill = part(root, '.dw-pill');
     pill.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true, detail: 1 })));
     await vi.waitFor(() => {
-      expect(part(root, '.ins-chrome').classList.contains('ins-open')).toBe(true);
+      expect(part(root, '.dw-chrome').classList.contains('dw-open')).toBe(true);
     });
-    const head = part(root, '.ins-card-head');
-    const start = center(part(root, '.ins-card'));
+    const head = part(root, '.dw-card-head');
+    const start = center(part(root, '.dw-card'));
     pointer(head, 'pointerdown', start);
     pointer(head, 'pointermove', { x: start.x - 40, y: start.y - 30 });
     pointer(head, 'pointerup', { x: 0, y: 0 });
     // The captured release click lands on the card (consumer-less): the
     // suppression stays armed for the pointer path only.
-    part(root, '.ins-card').dispatchEvent(
+    part(root, '.dw-card').dispatchEvent(
       trusted(new MouseEvent('click', { bubbles: true, detail: 1 }))
     );
     await flush();
@@ -329,10 +331,10 @@ describe('persisting the drop', () => {
     head.dispatchEvent(
       trusted(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }))
     );
-    expect(part(root, '.ins-chrome').classList.contains('ins-open')).toBe(false);
+    expect(part(root, '.dw-chrome').classList.contains('dw-open')).toBe(false);
     // Enter on the focused pill dispatches a detail-0 click.
     pill.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true, detail: 0 })));
-    expect(part(root, '.ins-chrome').classList.contains('ins-open')).toBe(true);
+    expect(part(root, '.dw-chrome').classList.contains('dw-open')).toBe(true);
   });
 });
 
@@ -358,31 +360,31 @@ function holdPositionRead(): { release: () => void } {
 describe('restoring on mount', () => {
   it('a stored translate is applied with the first render, without a re-settle leg', async () => {
     await fakeBrowser.storage.local.set({ [POSITIONS]: { [ORIGIN()]: { x: -300, y: -200 } } });
-    setupInspectorWidget(ctx);
-    const chrome = part(await shadow(), '.ins-chrome');
+    setupDetectionWidget(ctx);
+    const chrome = part(await shadow(), '.dw-chrome');
     await vi.waitFor(() => {
       expect(translateOf(chrome)).toEqual({ x: -300, y: -200 });
     });
-    expect(chrome.classList.contains('ins-resettle')).toBe(false);
+    expect(chrome.classList.contains('dw-resettle')).toBe(false);
   });
 
   it('a smaller viewport re-clamps the restored translate fully inside, instantly', async () => {
     layout.viewport = { width: 640, height: 480 };
     await fakeBrowser.storage.local.set({ [POSITIONS]: { [ORIGIN()]: { x: -1200, y: -700 } } });
     const writes = vi.spyOn(fakeBrowser.storage.local, 'set');
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     const root = await shadow();
-    const chrome = part(root, '.ins-chrome');
+    const chrome = part(root, '.dw-chrome');
     await vi.waitFor(() => {
       expect(translateOf(chrome)).toEqual({
         x: MARGIN - (640 - ANCHOR - 200),
         y: MARGIN - (480 - ANCHOR - 22)
       });
     });
-    const pill = modelRect(part(root, '.ins-pill'));
+    const pill = modelRect(part(root, '.dw-pill'));
     expect(pill.left).toBe(MARGIN);
     expect(pill.top).toBe(MARGIN);
-    expect(chrome.classList.contains('ins-resettle')).toBe(false);
+    expect(chrome.classList.contains('dw-resettle')).toBe(false);
     // A restore is a read: the stored hint is not rewritten by the clamp.
     expect(writes).not.toHaveBeenCalled();
   });
@@ -390,17 +392,17 @@ describe('restoring on mount', () => {
   it('opening the card re-clamps a restored top-edge position for the grown shape', async () => {
     const topY = MARGIN - (800 - ANCHOR - 22);
     await fakeBrowser.storage.local.set({ [POSITIONS]: { [ORIGIN()]: { x: -400, y: topY } } });
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     const root = await shadow();
-    const chrome = part(root, '.ins-chrome');
+    const chrome = part(root, '.dw-chrome');
     await vi.waitFor(() => {
       expect(translateOf(chrome)).toEqual({ x: -400, y: topY });
     });
-    part(root, '.ins-pill').dispatchEvent(
+    part(root, '.dw-pill').dispatchEvent(
       trusted(new MouseEvent('click', { bubbles: true, detail: 1 }))
     );
     await vi.waitFor(() => {
-      expect(modelRect(part(root, '.ins-card')).top).toBe(MARGIN);
+      expect(modelRect(part(root, '.dw-card')).top).toBe(MARGIN);
     });
   });
 
@@ -408,19 +410,19 @@ describe('restoring on mount', () => {
     await fakeBrowser.storage.local.set({
       [POSITIONS]: { [ORIGIN()]: { x: 'left', y: Number.NaN } }
     });
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     const root = await shadow();
     await flush();
-    const chrome = part(root, '.ins-chrome');
-    expect(chrome.style.getPropertyValue('--ins-drag-x')).toBe('');
-    expect(chrome.style.getPropertyValue('--ins-drag-y')).toBe('');
+    const chrome = part(root, '.dw-chrome');
+    expect(chrome.style.getPropertyValue('--dw-drag-x')).toBe('');
+    expect(chrome.style.getPropertyValue('--dw-drag-y')).toBe('');
   });
 
   it('a failed read is logged and rests at the anchor; the widget still mounts and drags', async () => {
     vi.spyOn(detectionWidgetPositionsStore, 'getValue').mockRejectedValue(
       new Error('storage down')
     );
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     const root = await shadow();
     await vi.waitFor(() => {
       expect(warn).toHaveBeenCalledWith(
@@ -428,9 +430,9 @@ describe('restoring on mount', () => {
         expect.any(Error)
       );
     });
-    const chrome = part(root, '.ins-chrome');
-    expect(chrome.style.getPropertyValue('--ins-drag-x')).toBe('');
-    pressAndMove(part(root, '.ins-pill'), { x: -50, y: -50 });
+    const chrome = part(root, '.dw-chrome');
+    expect(chrome.style.getPropertyValue('--dw-drag-x')).toBe('');
+    pressAndMove(part(root, '.dw-pill'), { x: -50, y: -50 });
     expect(translateOf(chrome)).toEqual({ x: -50, y: -50 });
   });
 
@@ -449,8 +451,8 @@ describe('restoring on mount', () => {
       })
       .mockImplementation(realRead);
     const root = await boot();
-    const pill = part(root, '.ins-pill');
-    const chrome = part(root, '.ins-chrome');
+    const pill = part(root, '.dw-pill');
+    const chrome = part(root, '.dw-chrome');
     pressAndMove(pill, { x: -100, y: -40 });
     pointer(pill, 'pointerup', { x: 0, y: 0 });
     release();
@@ -464,8 +466,8 @@ describe('restoring on mount', () => {
       await fakeBrowser.storage.local.set({ [POSITIONS]: { [ORIGIN()]: { x: -300, y: -200 } } });
       const read = holdPositionRead();
       const root = await boot();
-      const pill = part(root, '.ins-pill');
-      const chrome = part(root, '.ins-chrome');
+      const pill = part(root, '.dw-pill');
+      const chrome = part(root, '.dw-chrome');
       pressAndMove(pill, { x: -100, y: -40 });
       cancel(root, pill);
       pointer(pill, 'pointerup', { x: 0, y: 0 });
@@ -481,8 +483,8 @@ describe('restoring on mount', () => {
     await fakeBrowser.storage.local.set({ [POSITIONS]: { [ORIGIN()]: { x: -300, y: -200 } } });
     const read = holdPositionRead();
     const root = await boot();
-    const pill = part(root, '.ins-pill');
-    const chrome = part(root, '.ins-chrome');
+    const pill = part(root, '.dw-pill');
+    const chrome = part(root, '.dw-chrome');
     pressAndMove(pill, { x: -100, y: -40 });
     read.release();
     await flush();
@@ -495,19 +497,19 @@ describe('restoring on mount', () => {
 
   it('a hide → show re-mounts where this page last dropped it', async () => {
     const root = await boot();
-    const pill = part(root, '.ins-pill');
+    const pill = part(root, '.dw-pill');
     pressAndMove(pill, { x: -250, y: -150 });
     pointer(pill, 'pointerup', { x: 0, y: 0 });
     await flush();
     const sites = 'detection-widget-sites';
     await fakeBrowser.storage.sync.set({ [sites]: { [ORIGIN()]: { enabled: false } } });
     await vi.waitFor(() => {
-      expect(document.querySelector(INSPECTOR_UI_NAME)).toBeNull();
+      expect(document.querySelector(WIDGET_UI_NAME)).toBeNull();
     });
     await fakeBrowser.storage.sync.set({ [sites]: { [ORIGIN()]: { enabled: true } } });
     const again = await shadow();
     await vi.waitFor(() => {
-      expect(translateOf(part(again, '.ins-chrome'))).toEqual({ x: -250, y: -150 });
+      expect(translateOf(part(again, '.dw-chrome'))).toEqual({ x: -250, y: -150 });
     });
   });
 });
@@ -520,7 +522,7 @@ function stubChromeTransition(transitionProperty: string, transitionDuration: st
   const real = window.getComputedStyle.bind(window);
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
     const style = real(element, pseudo);
-    if (!element.classList.contains('ins-chrome')) return style;
+    if (!element.classList.contains('dw-chrome')) return style;
     const timing: Record<string, string> = {
       transitionProperty,
       transitionDuration,
@@ -538,7 +540,7 @@ describe('re-settling after a resize', () => {
   async function resizeIntoReclamp(): Promise<HTMLElement> {
     await fakeBrowser.storage.local.set({ [POSITIONS]: { [ORIGIN()]: { x: -900, y: -500 } } });
     const root = await boot();
-    const chrome = part(root, '.ins-chrome');
+    const chrome = part(root, '.dw-chrome');
     await vi.waitFor(() => {
       expect(translateOf(chrome)).toEqual({ x: -900, y: -500 });
     });
@@ -553,12 +555,12 @@ describe('re-settling after a resize', () => {
   it('keeps the re-settle class while a `transform` leg runs (its `transitionend` clears it)', async () => {
     stubChromeTransition('transform', '0.18s');
     const chrome = await resizeIntoReclamp();
-    expect(chrome.classList.contains('ins-resettle')).toBe(true);
+    expect(chrome.classList.contains('dw-resettle')).toBe(true);
   });
 
   it('drops the class at once when no leg runs (reduced motion: no `transitionend` will come)', async () => {
     stubChromeTransition('none', '1e-05s');
     const chrome = await resizeIntoReclamp();
-    expect(chrome.classList.contains('ins-resettle')).toBe(false);
+    expect(chrome.classList.contains('dw-resettle')).toBe(false);
   });
 });

@@ -167,7 +167,7 @@ test.describe('on-page command palette', () => {
     // subtrees (children, attributes, text), <html>'s attributes and its
     // direct children. Sanctioned:
     // our own `wpr-fdt-*` hosts inserted/removed as direct <html> children
-    // (palette, notice), and the detection widget's host `wpr-fdt-inspector`
+    // (palette, notice), and the detection widget's host `wpr-fdt-detection-widget`
     // (a sibling surface, mounted on its own schedule) as a body child.
     const bodyChildrenBefore = await page.evaluate(() => {
       const scope = window as unknown as { __hostWrites: string[] };
@@ -176,7 +176,7 @@ test.describe('on-page command palette', () => {
       const isHtmlHost = (node: Node): boolean =>
         node instanceof Element && node.localName.startsWith('wpr-fdt-');
       const isBodyHost = (node: Node): boolean =>
-        node instanceof Element && node.localName === 'wpr-fdt-inspector';
+        node instanceof Element && node.localName === 'wpr-fdt-detection-widget';
       /** Whether a record only adds/removes our sanctioned hosts at its level. */
       const sanctioned = (record: MutationRecord): boolean => {
         if (record.type !== 'childList') return false;
@@ -237,7 +237,7 @@ test.describe('on-page command palette', () => {
       await page.evaluate(() => ({
         writes: (window as unknown as { __hostWrites: string[] }).__hostWrites,
         children: [...document.body.children].filter(
-          (child) => child.localName !== 'wpr-fdt-inspector'
+          (child) => child.localName !== 'wpr-fdt-detection-widget'
         ).length,
         announcers: document.querySelectorAll('[data-live-announcer]').length
       }))

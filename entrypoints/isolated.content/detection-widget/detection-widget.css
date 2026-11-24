@@ -17,27 +17,27 @@
  * - the chrome is the fixed anchor (bottom-right inset, `direction: ltr`),
  *   its children anchor to the same point: the pill and the card overlap in
  *   place;
- * - open/close is class-driven on the chrome (`.ins-open`), the scan mood on
- *   the chrome (`.ins-green` / `.ins-amber` / `.ins-gray` / `.ins-pulse` /
- *   `.ins-red`);
+ * - open/close is class-driven on the chrome (`.dw-open`), the scan mood on
+ *   the chrome (`.dw-green` / `.dw-amber` / `.dw-gray` / `.dw-pulse` /
+ *   `.dw-red`);
  * - state changes are immediate, motion is decoration and declaratively
  *   delayed (no `transitionend` bookkeeping), and reduced motion drops all
  *   of it (the token stylesheet).
  */
 
-.ins-chrome {
+.dw-chrome {
   /* Feature motion constants (the KC trio, declared feature-locally so the
    * injected chain is self-contained): the entrance's gentle spring and the
    * two durations every choreography leg derives from. */
-  --ins-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
-  --ins-enter: var(--motion-slow);
-  --ins-exit: var(--motion-base);
+  --dw-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
+  --dw-enter: var(--motion-slow);
+  --dw-exit: var(--motion-base);
   /* How far the two shapes travel between absent and present. */
-  --ins-travel: 14px;
+  --dw-travel: 14px;
   /* The drag translate: declared at 0 so the injected chain defines
    * every property it consumes; the wiring's inline writes override these. */
-  --ins-drag-x: 0px;
-  --ins-drag-y: 0px;
+  --dw-drag-x: 0px;
+  --dw-drag-y: 0px;
 
   /* The single anchor: bottom-right 16/16 (KC's left mirror is owned by
    * construction; the two fixed widgets cannot collide), over every host
@@ -51,7 +51,7 @@
   position: fixed;
   bottom: 16px;
   right: 16px;
-  transform: translate(var(--ins-drag-x), var(--ins-drag-y));
+  transform: translate(var(--dw-drag-x), var(--dw-drag-y));
   /* RTL hosts must not mirror the tool (a fixed-direction chrome). */
   direction: ltr;
   text-align: left;
@@ -71,7 +71,7 @@
  * pointer (the card toggle is its primary affordance), and touch-action none
  * keeps a touch drag from becoming a page pan. */
 
-.ins-pill {
+.dw-pill {
   position: absolute;
   bottom: 0;
   right: 0;
@@ -93,47 +93,47 @@
   font: 600 12px/1 var(--font-mono);
   cursor: pointer;
   touch-action: none;
-  animation: ins-tool-in var(--ins-enter) var(--ins-spring) backwards;
+  animation: dw-tool-in var(--dw-enter) var(--dw-spring) backwards;
   transition:
-    opacity var(--ins-exit) var(--ease-standard),
-    transform var(--ins-exit) var(--ease-standard),
+    opacity var(--dw-exit) var(--ease-standard),
+    transform var(--dw-exit) var(--ease-standard),
     visibility 0s linear 0s;
 }
-.ins-open .ins-pill {
+.dw-open .dw-pill {
   visibility: hidden;
   pointer-events: none;
   /* Held-visible departing leg: visibility hides at the END, so the pill
    * paints through its whole fade while the card rises (the audited fix). */
-  transform: translateY(var(--ins-travel)) scale(0.96);
+  transform: translateY(var(--dw-travel)) scale(0.96);
   opacity: 0;
   animation: none;
   transition:
-    opacity var(--ins-exit) var(--ease-standard),
-    transform var(--ins-exit) var(--ease-standard),
-    visibility 0s linear var(--ins-exit);
+    opacity var(--dw-exit) var(--ease-standard),
+    transform var(--dw-exit) var(--ease-standard),
+    visibility 0s linear var(--dw-exit);
 }
-.ins-pill:hover {
+.dw-pill:hover {
   background: var(--surface-3);
   box-shadow: var(--shadow-elev-3);
   transform: translateY(-1px);
 }
-.ins-pill:active {
+.dw-pill:active {
   transform: translateY(0) scale(0.97);
   background: var(--surface-3);
 }
-.ins-pill:focus-visible,
-.ins-close:focus-visible {
+.dw-pill:focus-visible,
+.dw-close:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 /* The scroll region's ring sits inside it (the card clips its overflow). */
-.ins-card-body:focus-visible {
+.dw-card-body:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
 /* The status chip: mono, tabular, mood-tinted; pending pulses. */
-.ins-cache {
+.dw-cache {
   flex: none;
   display: inline-flex;
   align-items: baseline;
@@ -149,41 +149,41 @@
     background-color var(--motion-fast) linear,
     color var(--motion-fast) linear;
 }
-.ins-cache-text {
+.dw-cache-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ins-cache-stamp {
+.dw-cache-stamp {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font: 400 10px/1 var(--font-mono);
   color: var(--fg-muted);
 }
-.ins-green .ins-cache {
+.dw-green .dw-cache {
   background: var(--status-ok-soft);
   color: var(--status-ok);
 }
-.ins-amber .ins-cache {
+.dw-amber .dw-cache {
   background: var(--status-warn-soft);
   color: var(--status-warn);
 }
-.ins-gray .ins-cache,
-.ins-pulse .ins-cache {
+.dw-gray .dw-cache,
+.dw-pulse .dw-cache {
   background: var(--status-neutral-soft);
   color: var(--status-neutral);
 }
-.ins-red .ins-cache {
+.dw-red .dw-cache {
   background: var(--status-error-soft);
   color: var(--status-error);
 }
-.ins-pulse .ins-cache {
-  animation: ins-pulse 1.6s ease-in-out infinite;
+.dw-pulse .dw-cache {
+  animation: dw-pulse 1.6s ease-in-out infinite;
 }
 
 /* The presence mark rides the mood; the identity text is the pill's body. */
-.ins-mark {
+.dw-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -193,27 +193,27 @@
   color: var(--status-neutral);
   transition: color var(--motion-fast) linear;
 }
-.ins-mark svg,
-.ins-close svg,
-.ins-group-icon svg {
+.dw-mark svg,
+.dw-close svg,
+.dw-group-icon svg {
   display: block;
   width: 100%;
   height: 100%;
 }
-.ins-green .ins-mark {
+.dw-green .dw-mark {
   color: var(--status-ok);
 }
-.ins-amber .ins-mark {
+.dw-amber .dw-mark {
   color: var(--status-warn);
 }
-.ins-gray .ins-mark,
-.ins-pulse .ins-mark {
+.dw-gray .dw-mark,
+.dw-pulse .dw-mark {
   color: var(--fg-muted);
 }
-.ins-red .ins-mark {
+.dw-red .dw-mark {
   color: var(--status-error);
 }
-.ins-identity {
+.dw-identity {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -227,11 +227,11 @@
  * layout unit (a 100x weight still cut a fraction of a pixel off the version)
  * until the stamp is spent and the chip freezes at the word. No cap at rest:
  * a wide host shows the stamp whole. */
-.ins-pill .ins-identity {
+.dw-pill .dw-identity {
   flex: 0 1 auto;
   min-width: 0;
 }
-.ins-pill .ins-cache {
+.dw-pill .dw-cache {
   display: inline-grid;
   grid-template-columns: auto;
   grid-auto-columns: minmax(0, auto);
@@ -240,20 +240,20 @@
   max-width: none;
 }
 /* The word's clip box would otherwise zero its grid minimum. */
-.ins-pill .ins-cache-text {
+.dw-pill .dw-cache-text {
   min-width: max-content;
 }
 /* The Exclusion Builder hint after the version: the page shown is the
  * builder's rewrite. A shape (the card badges' glyph), never colour alone;
  * fixed size, so a narrow pill ellipsizes the identity, never the glyph. */
-.ins-pill-builder {
+.dw-pill-builder {
   display: inline-flex;
   flex: none;
   width: 13px;
   height: 13px;
   color: var(--status-info);
 }
-.ins-pill-builder svg {
+.dw-pill-builder svg {
   display: block;
   width: 100%;
   height: 100%;
@@ -261,7 +261,7 @@
 
 /* Textually present, never painted (the pill's accessible name rides with
  * the probe-visible text; the chip follows it in text order). */
-.ins-sr {
+.dw-sr {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -284,7 +284,7 @@
  * than the need wins the bound, honestly narrower, never unbounded. One
  * internal scroll region inside min(70vh, 520px). */
 
-.ins-card {
+.dw-card {
   position: absolute;
   bottom: 0;
   right: 0;
@@ -299,57 +299,57 @@
   background: var(--surface-2);
   box-shadow: var(--shadow-elev-3);
   opacity: 0;
-  transform: translateY(var(--ins-travel)) scale(0.96);
+  transform: translateY(var(--dw-travel)) scale(0.96);
   transform-origin: 100% 100%;
   visibility: hidden;
   transition:
-    opacity var(--ins-exit) var(--ease-standard),
-    transform var(--ins-exit) var(--ease-standard),
-    visibility 0s linear var(--ins-exit);
+    opacity var(--dw-exit) var(--ease-standard),
+    transform var(--dw-exit) var(--ease-standard),
+    visibility 0s linear var(--dw-exit);
 }
-.ins-open .ins-card {
+.dw-open .dw-card {
   opacity: 1;
   transform: translateY(0) scale(1);
   visibility: visible;
   transition:
     opacity 180ms var(--ease-standard),
-    transform var(--ins-enter) var(--ins-spring),
+    transform var(--dw-enter) var(--dw-spring),
     visibility 0s linear 0s;
 }
 /* Programmatic focus on open must not ring the whole card. */
-.ins-card:focus {
+.dw-card:focus {
   outline: none;
 }
 
 /* Header: the tool's eyebrow, the identity title, the cache chip with its
  * formatted-stamp suffix, and the close control. The chip rides its own row
  * so the full stamp never truncates the identity beside the close control. */
-.ins-card-head {
+.dw-card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   padding: 10px 10px 8px 12px;
 }
-.ins-titles {
+.dw-titles {
   display: flex;
   flex-direction: column;
   gap: 5px;
   min-width: 0;
 }
-.ins-eyebrow {
+.dw-eyebrow {
   font: 600 9.5px/1 var(--font-mono);
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--fg-muted);
   user-select: none;
 }
-.ins-titlerow {
+.dw-titlerow {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.ins-title {
+.dw-title {
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -357,11 +357,11 @@
   font: 600 13px/1.2 var(--font-mono);
   color: var(--fg-primary);
 }
-.ins-chiprow {
+.dw-chiprow {
   display: flex;
   min-width: 0;
 }
-.ins-card-head .ins-cache {
+.dw-card-head .dw-cache {
   max-width: 100%;
   display: inline-flex;
   align-items: baseline;
@@ -370,7 +370,7 @@
   border-radius: 999px;
 }
 
-.ins-close {
+.dw-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -387,11 +387,11 @@
     background-color var(--motion-fast) linear,
     color var(--motion-fast) linear;
 }
-.ins-close:hover {
+.dw-close:hover {
   background: var(--surface-4);
   color: var(--fg-primary);
 }
-.ins-close svg {
+.dw-close svg {
   width: 15px;
   height: 15px;
 }
@@ -399,7 +399,7 @@
 /* Body: groups stack with hairline spacing; the scroll is contained (no
  * host-page chaining) and themed through the standard scrollbar properties.
  * It is the card's single scroll region (nothing else in the card scrolls). */
-.ins-card-body {
+.dw-card-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -412,18 +412,18 @@
 
 /* One group: the header is scent (never focusable), the rows wrap as static
  * evidence chips. */
-.ins-group {
+.dw-group {
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
-.ins-group-head {
+.dw-group-head {
   display: flex;
   align-items: center;
   gap: 5px;
   user-select: none;
 }
-.ins-group-icon {
+.dw-group-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -432,11 +432,11 @@
   height: 12px;
   color: var(--fg-muted);
 }
-.ins-group-label {
+.dw-group-label {
   font: 600 11px/1 var(--font-mono);
   color: var(--fg-secondary);
 }
-.ins-group-rows {
+.dw-group-rows {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -449,14 +449,14 @@
  * the chip's own ellipsis is the safety valve (a name itself may elide).
  * Static chips have no hover or press response at all
  * (motion-budget discipline) — the tooltip is the row's whole interactivity. */
-.ins-row {
+.dw-row {
   display: flex;
   width: 100%;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
 }
-.ins-chip {
+.dw-chip {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -471,23 +471,23 @@
   background: var(--status-neutral-soft);
   color: var(--status-neutral);
 }
-.ins-chip-ok {
+.dw-chip-ok {
   background: var(--status-ok-soft);
   color: var(--status-ok);
 }
-.ins-chip-attention {
+.dw-chip-attention {
   background: var(--status-attention-soft);
   color: var(--status-attention);
 }
-.ins-chip-warn {
+.dw-chip-warn {
   background: var(--status-warn-soft);
   color: var(--status-warn);
 }
-.ins-chip-error {
+.dw-chip-error {
   background: var(--status-error-soft);
   color: var(--status-error);
 }
-.ins-chip-neutral {
+.dw-chip-neutral {
   background: var(--status-neutral-soft);
   color: var(--status-neutral);
 }
@@ -496,7 +496,7 @@
  * separate on every row state, applied or not (the owner feedback that replace
  * the bare muted count-text abutting the chip). Informational: no state
  * claim, just the evidence number. */
-.ins-value {
+.dw-value {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -513,7 +513,7 @@
  * the informational pair — never colour alone) beside the chips, and the
  * full sentence on its own line below them, wrapping inside the card. The
  * sentence is neutral secondary text: a statement, not a link. */
-.ins-mod {
+.dw-mod {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -528,21 +528,21 @@
 }
 /* An unverified simulation marker and a feature applied despite the bypass
  * request are cautions, not information. */
-.ins-mod[data-fdt-strip-modifier='unverified'],
-.ins-mod[data-fdt-strip-modifier='bypass-applied'] {
+.dw-mod[data-fdt-strip-modifier='unverified'],
+.dw-mod[data-fdt-strip-modifier='bypass-applied'] {
   background: var(--status-warn-soft);
   color: var(--status-warn);
 }
-.ins-mod-icon {
+.dw-mod-icon {
   display: inline-flex;
   width: 10px;
   height: 10px;
 }
-.ins-mod-icon svg {
+.dw-mod-icon svg {
   width: 10px;
   height: 10px;
 }
-.ins-mod-line {
+.dw-mod-line {
   flex: 1 1 100%;
   min-width: 0;
   padding: 0 2px 2px;
@@ -556,61 +556,61 @@
  * in the inline-start gutter the hints' box clips, so it shows between
  * hints on a line and never at a line start (drawn with empty alt text:
  * never spoken). */
-.ins-builder {
+.dw-builder {
   /* The joiner glyph: the view sets the shared one inline; declared here so
    * the injected chain defines every property it consumes (none: no dot). */
-  --ins-joiner: none;
+  --dw-joiner: none;
   position: relative;
   margin-top: 4px;
   padding: 7px 9px;
   border-radius: 6px;
   background: var(--surface-3);
 }
-.ins-builder-shown {
+.dw-builder-shown {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-.ins-builder p {
+.dw-builder p {
   margin: 0;
 }
-.ins-builder-title {
+.dw-builder-title {
   font: 600 11px/1.4 var(--font-mono);
   color: var(--fg-primary);
 }
-.ins-builder-hints {
+.dw-builder-hints {
   overflow: hidden;
   font: 400 11px/1.4 var(--font-mono);
   color: var(--fg-secondary);
 }
-.ins-builder-list {
+.dw-builder-list {
   display: flex;
   flex-wrap: wrap;
   margin-left: -14px;
 }
-.ins-builder-hint {
+.dw-builder-hint {
   position: relative;
   min-width: 0;
   max-width: 100%;
   margin-left: 14px;
   overflow-wrap: anywhere;
 }
-.ins-builder-hint::before {
+.dw-builder-hint::before {
   position: absolute;
   left: -10px;
-  content: var(--ins-joiner);
+  content: var(--dw-joiner);
   color: var(--fg-muted);
 }
 
 /* The RUCSS test line: the builder note's shape, its glyph leading the
  * words (a shape, never colour alone). */
-.ins-rucss-title {
+.dw-rucss-title {
   display: flex;
   align-items: flex-start;
   gap: 6px;
   margin: 0;
 }
-.ins-rucss-glyph {
+.dw-rucss-glyph {
   display: inline-flex;
   flex: none;
   width: 13px;
@@ -618,35 +618,35 @@
   margin-top: 1px;
   color: var(--status-warn);
 }
-.ins-rucss-glyph svg {
+.dw-rucss-glyph svg {
   display: block;
   width: 100%;
   height: 100%;
 }
 /* On the pill: the test's tone, beside the builder glyph. */
-.ins-pill-rucss {
+.dw-pill-rucss {
   color: var(--status-warn);
 }
 
 /* The pending/failed body copies (the KC state-lines pattern). */
-.ins-state {
+.dw-state {
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 10px 4px 4px;
 }
-.ins-state-title {
+.dw-state-title {
   font: 500 12px/1.4 var(--font-mono);
   color: var(--fg-secondary);
 }
-.ins-state-hint {
+.dw-state-hint {
   font: 400 11px/1.5 var(--font-mono);
   color: var(--fg-muted);
 }
 
 /* ---- Footer ------------------------------------------------------------------ */
 
-.ins-card-foot {
+.dw-card-foot {
   padding: 7px 12px 9px;
   border-top: 1px solid var(--line-1);
   overflow: hidden;
@@ -673,28 +673,28 @@
  * motion drops the leg: the re-clamp is an instant snap, which is correct
  * (the wiring reads that no transition runs and drops the class at once). */
 
-.ins-resettle {
+.dw-resettle {
   transition: transform var(--motion-base) var(--ease-standard);
 }
 
-.ins-card-head,
-.ins-card-foot {
+.dw-card-head,
+.dw-card-foot {
   touch-action: none;
   cursor: grab;
 }
 
-.ins-dragging .ins-pill {
+.dw-dragging .dw-pill {
   /* A held press would otherwise keep the :active shrink through the drag. */
   transform: none;
 }
-.ins-chrome.ins-dragging,
-.ins-chrome.ins-dragging * {
+.dw-chrome.dw-dragging,
+.dw-chrome.dw-dragging * {
   cursor: grabbing;
 }
 
 /* ---- Motion ------------------------------------------------------------------ */
 
-@keyframes ins-pulse {
+@keyframes dw-pulse {
   0%,
   100% {
     opacity: 1;
@@ -703,10 +703,10 @@
     opacity: 0.55;
   }
 }
-@keyframes ins-tool-in {
+@keyframes dw-tool-in {
   from {
     opacity: 0;
-    transform: translateY(var(--ins-travel)) scale(0.96);
+    transform: translateY(var(--dw-travel)) scale(0.96);
   }
 }
 
@@ -717,7 +717,7 @@
  * on the first frame, and the focus choreography's attempts inside that
  * window are rejected on a computed-visible card (the audited KC finding). */
 @media (prefers-reduced-motion: reduce) {
-  .ins-card {
+  .dw-card {
     transition: none !important;
   }
 }

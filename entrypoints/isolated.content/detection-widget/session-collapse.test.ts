@@ -8,8 +8,8 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { mutateOptions, DETECTION_WIDGET } from '../../../lib/storage/options';
-import { INSPECTOR_UI_NAME } from './strip-state';
-import { setupInspectorWidget } from './index';
+import { WIDGET_UI_NAME } from './strip-state';
+import { setupDetectionWidget } from './index';
 
 let ctx: ContentScriptContext;
 let seq = 0;
@@ -24,7 +24,7 @@ beforeEach(() => {
   // No page-data hub runs here: the widget logs its documented failure copy.
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
   seq += 1;
-  ctx = new ContentScriptContext(`inspector-collapse-${String(seq)}`);
+  ctx = new ContentScriptContext(`widget-collapse-${String(seq)}`);
 });
 
 afterEach(() => {
@@ -37,8 +37,8 @@ afterEach(() => {
 async function chrome(): Promise<HTMLElement> {
   return vi.waitFor(() => {
     const element = document
-      .querySelector(INSPECTOR_UI_NAME)
-      ?.shadowRoot?.querySelector<HTMLElement>('.ins-chrome');
+      .querySelector(WIDGET_UI_NAME)
+      ?.shadowRoot?.querySelector<HTMLElement>('.dw-chrome');
     if (element == null) throw new Error('the widget chrome has not rendered yet');
     return element;
   });
@@ -46,7 +46,7 @@ async function chrome(): Promise<HTMLElement> {
 
 /** A user's pointer click on the pill (the view acts on trusted input only). */
 function clickPill(element: HTMLElement): void {
-  const pill = element.querySelector<HTMLElement>('.ins-pill');
+  const pill = element.querySelector<HTMLElement>('.dw-pill');
   if (pill === null) throw new Error('the widget pill is missing');
   const event = new MouseEvent('click', { bubbles: true, composed: true, detail: 1 });
   // A test stands in for the user: the view's trust gate reads this flag.
@@ -64,33 +64,33 @@ async function setDefault(enabled: boolean): Promise<void> {
 
 describe('collapse is session-local', () => {
   it('opens without a storage write and comes back collapsed after a hide → show', async () => {
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     const first = await chrome();
     const before = JSON.stringify(await fakeBrowser.storage.sync.get(null));
     clickPill(first);
     await vi.waitFor(() => {
-      expect(first.classList.contains('ins-open')).toBe(true);
+      expect(first.classList.contains('dw-open')).toBe(true);
     });
     expect(JSON.stringify(await fakeBrowser.storage.sync.get(null))).toBe(before);
     expect(await fakeBrowser.storage.local.get(null)).toEqual({});
 
     await setDefault(false);
     await vi.waitFor(() => {
-      expect(document.querySelector(INSPECTOR_UI_NAME)).toBeNull();
+      expect(document.querySelector(WIDGET_UI_NAME)).toBeNull();
     });
     await setDefault(true);
     const again = await chrome();
-    expect(again.classList.contains('ins-open')).toBe(false);
+    expect(again.classList.contains('dw-open')).toBe(false);
   });
 
   it('a fresh boot (reload) starts collapsed', async () => {
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     clickPill(await chrome());
     ctx.notifyInvalidated();
     document.body.replaceChildren();
     seq += 1;
-    ctx = new ContentScriptContext(`inspector-collapse-${String(seq)}`);
-    setupInspectorWidget(ctx);
-    expect((await chrome()).classList.contains('ins-open')).toBe(false);
+    ctx = new ContentScriptContext(`widget-collapse-${String(seq)}`);
+    setupDetectionWidget(ctx);
+    expect((await chrome()).classList.contains('dw-open')).toBe(false);
   });
 });

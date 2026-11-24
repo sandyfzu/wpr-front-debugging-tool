@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { onMessage, sendMessage } from '../../../lib/messaging/index';
 import { setupRucssTest } from '../rucss-test';
-import { INSPECTOR_UI_NAME } from './strip-state';
-import { setupInspectorWidget } from './index';
+import { WIDGET_UI_NAME } from './strip-state';
+import { setupDetectionWidget } from './index';
 
 let ctx: ContentScriptContext;
 let seq = 0;
@@ -26,7 +26,7 @@ beforeEach(() => {
   // No page-data hub runs here: the widget logs its documented failure copy.
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
   seq += 1;
-  ctx = new ContentScriptContext(`inspector-rucss-${String(seq)}`);
+  ctx = new ContentScriptContext(`widget-rucss-${String(seq)}`);
 });
 
 afterEach(() => {
@@ -39,8 +39,8 @@ afterEach(() => {
 /** The widget's shadow root, once rendered. */
 async function widget(): Promise<ShadowRoot> {
   return vi.waitFor(() => {
-    const root = document.querySelector(INSPECTOR_UI_NAME)?.shadowRoot;
-    if (root?.querySelector('.ins-pill') == null) throw new Error('not rendered yet');
+    const root = document.querySelector(WIDGET_UI_NAME)?.shadowRoot;
+    if (root?.querySelector('.dw-pill') == null) throw new Error('not rendered yet');
     return root;
   });
 }
@@ -52,7 +52,7 @@ describe('the widget follows an applied RUCSS test', () => {
       requestUrl: 'u',
       outcome: { ok: true, shakenCss: 'a{}' }
     }));
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     setupRucssTest(ctx);
     const root = await widget();
     expect(root.querySelector('[data-fdt-strip-pill-rucss]')).toBeNull();

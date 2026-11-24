@@ -433,7 +433,7 @@ describe('OverlayApp', () => {
 
   it('an explicit open takes focus from another extension surface that keeps no dialog open', async () => {
     // The detection strip's host held focus (e.g. the palette returned it there).
-    const strip = document.createElement('wpr-fdt-inspector');
+    const strip = document.createElement('wpr-fdt-detection-widget');
     strip.tabIndex = 0;
     document.body.append(strip);
     strip.focus();

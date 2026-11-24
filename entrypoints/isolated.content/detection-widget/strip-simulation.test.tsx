@@ -18,7 +18,7 @@ import { applyPresencePropagation, runChecks } from '../../../lib/detection/run-
 import { withSimulationMarker } from '../../../lib/detection/simulated-pages.fixtures';
 import { buildStripCardModel, type StripCardModel, type StripCardRow } from './strip-state';
 import { SIMULATED_ICON, UNVERIFIED_ICON } from './icons';
-import { InspectorView } from './ui';
+import { DetectionWidgetView } from './ui';
 
 afterEach(cleanup);
 
@@ -56,7 +56,7 @@ function delayRow(card: StripCardModel): StripCardRow {
 function renderCard(card: StripCardModel): HTMLElement {
   const noop = (): void => undefined;
   const { container } = render(() => (
-    <InspectorView
+    <DetectionWidgetView
       model={() => card}
       mood={() => 'green'}
       cardOpen={() => true}
@@ -128,7 +128,7 @@ describe('the rendered widget', () => {
       const badge = root.querySelector(`[data-fdt-strip-modifier="${kind}"]`);
       expect(badge?.getAttribute('aria-hidden')).toBe('true');
       expect(pathsOf(badge)).toEqual(icon.paths);
-      const row = badge?.closest('.ins-row');
+      const row = badge?.closest('.dw-row');
       expect(row?.querySelector('[data-fdt-strip-modifier-line]')?.textContent).toContain(
         verified ? "not the site's configuration" : 'read as served'
       );
@@ -139,7 +139,7 @@ describe('the rendered widget', () => {
 
   it('verified: the pill draws the flask after the version; the tab line names the simulation', () => {
     const root = renderCard(model(true, true));
-    const glyph = root.querySelector('.ins-pill [data-fdt-strip-pill-builder]');
+    const glyph = root.querySelector('.dw-pill [data-fdt-strip-pill-builder]');
     expect(glyph?.getAttribute('data-fdt-strip-pill-builder')).toBe('simulated');
     expect(pathsOf(glyph)).toEqual(SIMULATED_ICON.paths);
     expect(root.querySelector('[data-fdt-strip-builder]')?.textContent).toContain(

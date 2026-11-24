@@ -11,7 +11,7 @@ import type { Page } from '@playwright/test';
 import { expect, type ExtensionDriver } from './extension';
 
 /** The widget's shadow-root host. */
-export const STRIP_HOST = 'wpr-fdt-inspector';
+export const STRIP_HOST = 'wpr-fdt-detection-widget';
 
 /** `chrome.storage.sync` key of the per-origin widget map. */
 export const WIDGET_ORIGINS_KEY = 'detection-widget-sites';
@@ -124,7 +124,7 @@ export async function announcedNamesWith(page: Page, needle: string): Promise<st
  * @param timeout How long the pass may take to answer.
  */
 export async function answeredPillName(page: Page, timeout = 15_000): Promise<string> {
-  await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toContainText(/WPR \d/, { timeout });
+  await expect(page.locator(`${STRIP_HOST} .dw-pill`)).toContainText(/WPR \d/, { timeout });
   let name = '';
   await expect
     .poll(
@@ -148,11 +148,11 @@ export async function answeredPillName(page: Page, timeout = 15_000): Promise<st
  * @param kind The expected glyph kind, or null for an untouched page.
  */
 export async function expectPillHint(page: Page, kind: 'off' | 'excluded' | null): Promise<void> {
-  const close = page.locator(`${STRIP_HOST} .ins-close`);
-  if (await page.locator(`${STRIP_HOST} .ins-card`).isVisible()) {
+  const close = page.locator(`${STRIP_HOST} .dw-close`);
+  if (await page.locator(`${STRIP_HOST} .dw-card`).isVisible()) {
     await close.focus();
     await page.keyboard.press('Enter');
-    await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toBeVisible();
+    await expect(page.locator(`${STRIP_HOST} .dw-pill`)).toBeVisible();
   }
   const glyph = page.locator(PILL_GLYPH);
   if (kind === null) {

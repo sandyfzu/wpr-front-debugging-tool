@@ -87,15 +87,15 @@ import type { DragBox, DragController, DragMachineDeps } from './drag';
 import { createDragController, isPointerInitiatedClick } from './drag';
 import { createContainmentWatch, type ContainmentWatch } from './containment';
 import type { StripDataSnapshot } from './strip-state';
-import { buildStripCardModel, INSPECTOR_UI_NAME, insMood, readySnapshot } from './strip-state';
-import { InspectorView, type InspectorUiActions } from './ui';
+import { buildStripCardModel, WIDGET_UI_NAME, widgetMood, readySnapshot } from './strip-state';
+import { DetectionWidgetView, type WidgetUiActions } from './ui';
 import { widgetVisible } from './visibility';
-import './inspector.css';
+import './detection-widget.css';
 
-const log = createLogger('inspector');
+const log = createLogger('detection-widget');
 
 /** The widget's reactive state (the store the view's accessors read). */
-interface InspectorUiState {
+interface WidgetUiState {
   /** The report card is open (the pill is away). */
   cardOpen: boolean;
   /** The hub read's phase + detections. */
@@ -113,13 +113,13 @@ interface InspectorUiState {
  *
  * @param ctx The content script's context; everything registers through it.
  */
-export function setupInspectorWidget(ctx: ContentScriptContext): void {
+export function setupDetectionWidget(ctx: ContentScriptContext): void {
   // Frames and timers that let go of their callbacks (see utils/context-timers).
   const nextFrame = contextFrames(ctx, WINDOW_FRAMES);
   const pageOrigin = window.location.origin;
   const fdtVersion = browser.runtime.getManifest().version;
 
-  const [state, setState] = createStore<InspectorUiState>({
+  const [state, setState] = createStore<WidgetUiState>({
     cardOpen: false,
     snapshot: { phase: 'running', detections: null, cacheState: null },
     wordpressVersion: null,
@@ -143,7 +143,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       rucssTestRuns: state.rucssTestRuns
     })
   );
-  const mood = createMemo(() => insMood(state.snapshot));
+  const mood = createMemo(() => widgetMood(state.snapshot));
 
   /** The hub's same-context reader (null when the hub's setup failed). */
   const reader = pageDataFor(ctx);
@@ -260,7 +260,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     log
   };
 
-  const actions: InspectorUiActions = {
+  const actions: WidgetUiActions = {
     registerCard: (element: HTMLElement | null) => {
       cardElement = element;
     },
@@ -303,7 +303,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
 
   /**
    * The visible shape's element: the open card rides the anchored corner
-   * and alone defines the box while `ins-open` is on; otherwise the pill.
+   * and alone defines the box while `dw-open` is on; otherwise the pill.
    * One selection for both the shape reads below (they answer the same
    * shape, live and resting) — null once the element is gone.
    */
@@ -371,15 +371,15 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       const chrome = chromeElement;
       if (chrome === null) return;
       if (position === null) {
-        chrome.style.removeProperty('--ins-drag-x');
-        chrome.style.removeProperty('--ins-drag-y');
+        chrome.style.removeProperty('--dw-drag-x');
+        chrome.style.removeProperty('--dw-drag-y');
         return;
       }
-      chrome.style.setProperty('--ins-drag-x', `${String(position.x)}px`);
-      chrome.style.setProperty('--ins-drag-y', `${String(position.y)}px`);
+      chrome.style.setProperty('--dw-drag-x', `${String(position.x)}px`);
+      chrome.style.setProperty('--dw-drag-y', `${String(position.y)}px`);
     },
     applyDragging: (dragging) => {
-      chromeElement?.classList.toggle('ins-dragging', dragging);
+      chromeElement?.classList.toggle('dw-dragging', dragging);
     }
   };
 
@@ -401,12 +401,12 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     if (chrome === null || !moved) return;
     // Re-arm cleanly over any glue from an interrupted prior re-settle: the
     // class arriving again must be a fresh decision, never a stale rider.
-    chrome.classList.remove('ins-resettle');
-    chrome.classList.add('ins-resettle');
+    chrome.classList.remove('dw-resettle');
+    chrome.classList.add('dw-resettle');
     // The stylesheet decides whether the leg runs (reduced motion drops it):
     // read it back rather than re-deciding the media query in script.
     if (!transitionRunsFor(getComputedStyle(chrome), 'transform')) {
-      chrome.classList.remove('ins-resettle');
+      chrome.classList.remove('dw-resettle');
     }
   };
 
@@ -483,7 +483,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // chrome: an in-flight smooth re-settle ends right here (removal snaps
       // its position leg to the settled value) — a drag is 1:1, never a
       // transitioned follow.
-      chrome.classList.remove('ins-resettle');
+      chrome.classList.remove('dw-resettle');
       // Any press while a drag is live cancels it first: a right-press (the
       // cancel nicety) and a second pointer's press must not be
       // subject to the primary-button guard below — cancel beats grab.
@@ -495,8 +495,8 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       if (event.button !== 0) return; // A wrong button never grabs the chrome.
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const fromPill = target.closest('.ins-pill');
-      const fromHandle = target.closest('.ins-card-head') ?? target.closest('.ins-card-foot');
+      const fromPill = target.closest('.dw-pill');
+      const fromHandle = target.closest('.dw-card-head') ?? target.closest('.dw-card-foot');
       if (fromPill === null && fromHandle === null) return;
       // The close control (any button inside a handle region) never grabs.
       if (fromPill === null && target.closest('button') !== null) return;
@@ -585,7 +585,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       ) {
         return;
       }
-      chrome.classList.remove('ins-resettle');
+      chrome.classList.remove('dw-resettle');
     });
   }
 
@@ -721,13 +721,18 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   const surface = createShadowSurface({
     create: (hooks) =>
       createShadowRootUi(ctx, {
-        name: INSPECTOR_UI_NAME,
+        name: WIDGET_UI_NAME,
         position: 'inline',
         onMount: hooks.onMount,
         onRemove: hooks.onRemove
       }),
     view: () => (
-      <InspectorView model={model} mood={mood} cardOpen={() => state.cardOpen} actions={actions} />
+      <DetectionWidgetView
+        model={model}
+        mood={mood}
+        cardOpen={() => state.cardOpen}
+        actions={actions}
+      />
     ),
     isInvalid: invalidNow,
     onMounted: beginMount,

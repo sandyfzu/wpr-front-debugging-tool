@@ -154,15 +154,15 @@ async function activeFigures(panel: Page): Promise<{ active: number; total: numb
 
 /** The open strip card's Delay JS row. */
 const stripDelayRow = (page: Page): Locator =>
-  page.locator(`${STRIP_HOST} .ins-row`, {
-    has: page.locator('.ins-chip', { hasText: /^Delay JS$/ })
+  page.locator(`${STRIP_HOST} .dw-row`, {
+    has: page.locator('.dw-chip', { hasText: /^Delay JS$/ })
   });
 
 /** Open the strip card from its pill with the keyboard (left as is when already open). */
 async function openStripCard(page: Page): Promise<void> {
-  const card = page.locator(`${STRIP_HOST} .ins-card`);
+  const card = page.locator(`${STRIP_HOST} .dw-card`);
   if (await card.isVisible()) return;
-  const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+  const pill = page.locator(`${STRIP_HOST} .dw-pill`);
   await expect(pill).toContainText('WPR', MOUNT);
   await pill.focus();
   await page.keyboard.press('Enter');
@@ -284,7 +284,7 @@ test.describe('Delay JS simulation over real sessions', () => {
       // The detection widget: the verified marker as the Delay JS row's modifier + the tab line.
       const glyph = page.locator(`${STRIP_HOST} [data-fdt-strip-pill-builder]`);
       await expect(glyph).toHaveAttribute('data-fdt-strip-pill-builder', 'simulated', FRESH);
-      await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toHaveAccessibleName(
+      await expect(page.locator(`${STRIP_HOST} .dw-pill`)).toHaveAccessibleName(
         new RegExp(PILL_SUFFIX)
       );
       await openStripCard(page);
@@ -296,7 +296,7 @@ test.describe('Delay JS simulation over real sessions', () => {
       await expect(row.locator('[data-fdt-strip-modifier]')).toHaveText(WORDS.badge);
       await expect(row.locator('[data-fdt-strip-modifier-line]')).toHaveText(WORDS.sentence);
       const line = page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`);
-      await expect(line.locator('.ins-builder-title')).toHaveText(WORDS.stripLine);
+      await expect(line.locator('.dw-builder-title')).toHaveText(WORDS.stripLine);
       await expect(line.locator('[data-fdt-strip-builder-hint]')).toHaveText([WORDS.stripHint]);
 
       // The panel: the card's simulation modifier; the summary counts it apart from "active".

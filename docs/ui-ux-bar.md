@@ -23,7 +23,7 @@
 
 ## M — Motion (closed list; values pinned)
 
-- **M-1 Tokens only.** `--motion-fast` 120 ms · `--motion-base` 180 ms · `--motion-slow` 280 ms; `--ease-standard` `cubic-bezier(0.2, 0, 0, 1)` · `--ease-entrance` `cubic-bezier(0, 0, 0.2, 1)`. No literal ms/easing in surface code (an injected feature may alias tokens locally, as `inspector.css` does).
+- **M-1 Tokens only.** `--motion-fast` 120 ms · `--motion-base` 180 ms · `--motion-slow` 280 ms; `--ease-standard` `cubic-bezier(0.2, 0, 0, 1)` · `--ease-entrance` `cubic-bezier(0, 0, 0.2, 1)`. No literal ms/easing in surface code (an injected feature may alias tokens locally, as `detection-widget.css` does).
 - **M-2 The sanctioned moments** (Tailwind surfaces import the two constants from `components/ui/classes.ts` — landed there by P6A.1, never re-typed; shadow-root CSS writes the same tokens):
 
   | Moment                                                                           | Mechanism                                                                                                                             | Values                                               |
@@ -37,7 +37,7 @@
 
 - **M-3 Everything else is instant:** hover/press colors (no primitive transitions them), data swaps (filter, search, refresh), counts (no tweening), expand/collapse heights, sidebar fold/unfold (no width animation, M-4).
 - **M-4 Properties.** Animate `opacity`/`transform` only (plus `box-shadow`/`border-color` for the lift); never `height`/`max-height`/`width`/`top`/`margin`.
-- **M-5 Bans.** Per-row/per-index entrances (virtual rows remount on scroll — any row fade, `MOTION_REVEAL` included, replays on every scroll); stagger; `transition-all`; infinite loops except during a real wait (shipped: `Skeleton`'s pulse, `Button`'s busy spinner, the inspector strip's scanning pulse); JS `scrollIntoView`/`scrollTo` with `behavior: 'smooth'` (the reduced-motion reset cannot reach an explicit JS option — use the default or `block: 'nearest'`).
+- **M-5 Bans.** Per-row/per-index entrances (virtual rows remount on scroll — any row fade, `MOTION_REVEAL` included, replays on every scroll); stagger; `transition-all`; infinite loops except during a real wait (shipped: `Skeleton`'s pulse, `Button`'s busy spinner, the detection widget's scanning pulse); JS `scrollIntoView`/`scrollTo` with `behavior: 'smooth'` (the reduced-motion reset cannot reach an explicit JS option — use the default or `block: 'nearest'`).
 - **M-6 Reduced motion.** `prefers-reduced-motion: reduce` drops every animation and transition on every surface — one rule in `tokens.css` (`animation-name`/`transition-property: none`, durations kept collapsed to 0.01 ms for duration-derived timers), loaded by the pages through `theme.css` and by each injected UI's shadow root (`*` stays inside the shadow tree) — so an entrance never paints its `from` frame and `getAnimations()` stays empty. Surfaces verify it (`panel-reduced-motion`, `injected-reduced-motion`), never re-implement it, and never encode state in a transition or its delay (reduced motion must not strand a container).
 
 ## S — States (no dead ends `UX-D9`, no theater `UX-D6`)
