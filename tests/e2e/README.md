@@ -12,6 +12,14 @@ E2E_WORKERS=5 pnpm test:e2e        # run suites in parallel (five browsers)
 pnpm exec playwright show-report tests/e2e/playwright-report   # inspect the last run's HTML report
 ```
 
+`pnpm screenshots:release` rides this harness too: its own config (`capture.config.ts` = this
+config pointed at `capture/*.capture.ts`, so `test:e2e` never runs it) shoots the release images
+(`capture/stages.ts` stages each surface; the plan is `scripts/release-shots.ts`), one browser
+run like any other (port 8891, the docker site). Its browsers launch with
+`repeatablePixels` (`--disable-gpu --num-raster-threads=1`; GPU + parallel raster varied a few text
+pixels per shot) and pin the clock + WP Rocket's cache stamp, so an unchanged UI re-shoots
+byte-identical; it creates (and deletes) a `spring-menu` showcase page through wp-cli.
+
 ## What runs
 
 - **Playwright (latest stable) launches Chromium from the `chromium` channel with the unpacked extension preloaded** from `.output/chrome-mv3/` (`--disable-extensions-except` + `--load-extension`, the documented extension-loading path). Runs are **headless by default** — a gate run never opens windows or steals the foreground; `E2E_HEADED=1` is the debugging opt-in (real windows open and close). The channel's modern headless hosts extensions (verified against the installed build); the legacy headless shell cannot, which is why the tier launched headed-only when it was built.

@@ -104,13 +104,13 @@ export const SITE_ORIGIN: string = new URL(SITE_URL).origin;
  * @param url The absolute site URL to navigate.
  * @param beforeNavigate Hook between page creation and navigation — where
  *   console/pageerror listeners attach so the page emits into a listening
- *   capture.
+ *   capture, or (awaited) media emulation and the viewport are set.
  * @returns The page plus its tab id.
  */
 export async function openSitePage(
   driver: ExtensionDriver,
   url: string,
-  beforeNavigate?: (page: Page) => void
+  beforeNavigate?: (page: Page) => void | Promise<void>
 ): Promise<DriverPage> {
   if (!url.startsWith(`${SITE_ORIGIN}/`)) {
     throw new Error(
@@ -118,7 +118,7 @@ export async function openSitePage(
     );
   }
   const page = await driver.browserContext.newPage();
-  if (beforeNavigate !== undefined) beforeNavigate(page);
+  if (beforeNavigate !== undefined) await beforeNavigate(page);
   await page.goto(url, { waitUntil: 'load' });
   const matches = await driver.evaluateInWorker(
     async (pattern: string) => await chrome.tabs.query({ url: pattern }),

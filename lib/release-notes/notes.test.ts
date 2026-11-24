@@ -2,12 +2,14 @@
  * The release-notes registry's shape: valid, unique, strictly newest-first
  * versions; a row for the `package.json` version (every bump adds one) and
  * 3.0.0 announced; unique ids; no blank copy; only known placeholders;
- * every screenshot id resolving to a bundled file in both palettes.
+ * every screenshot id resolving to a bundled file in both palettes whose
+ * header size is the registry's box.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { compareExtensionVersions, parseExtensionVersion } from '../../utils/extension-version';
+import { readImageSize } from '../../utils/image-size';
 import { COPY_TOKENS, tokensIn } from './copy-tokens';
 import { noticeAppliesTo, RELEASE_NOTES, type ReleaseNote, type ReleaseNotice } from './notes';
 import { LAST_UNMARKED_VERSION, RELEASES } from './releases';
@@ -40,17 +42,8 @@ function copyOf(note: ReleaseNote): string[] {
   ];
 }
 
-/** The bundled table, widened (its id union is empty until screenshots ship). */
+/** The bundled table, widened to string keys (lookups by any id). */
 const table: Readonly<Record<string, ScreenshotMeta>> = RELEASE_SCREENSHOTS;
-
-/**
- * A highlight's screenshot id, widened for the same reason.
- *
- * @param id The highlight's id.
- */
-function widenedId(id: string | undefined): string | undefined {
-  return id;
-}
 
 describe('RELEASE_NOTES', () => {
   it('has valid, unique versions, strictly newest first', () => {
@@ -117,10 +110,10 @@ describe('RELEASE_NOTES', () => {
     }
   });
 
-  it('resolves every screenshot id to a bundled file in both palettes', () => {
+  it('resolves every screenshot id to a bundled file in both palettes, at its declared size', () => {
     for (const note of RELEASE_NOTES) {
       for (const highlight of note.highlights) {
-        const id = widenedId(highlight.screenshot);
+        const id = highlight.screenshot;
         if (id === undefined) continue;
         const meta = table[id];
         expect(meta, id).toBeDefined();
@@ -128,9 +121,22 @@ describe('RELEASE_NOTES', () => {
         for (const palette of SCREENSHOT_PALETTES) {
           const file = path.join(ROOT, 'public', screenshotPath(id, palette, meta.format));
           expect(existsSync(file), file).toBe(true);
+          // The page reserves the row's box: a file of another size would stretch in it.
+          expect(readImageSize(readFileSync(file)), file).toEqual({
+            width: meta.width,
+            height: meta.height
+          });
         }
       }
     }
+  });
+
+  it('shows a screenshot on every 3.0.0 highlight, each image used once', () => {
+    const highlights = RELEASE_NOTES.find((note) => note.version === '3.0.0')?.highlights ?? [];
+    const ids = highlights.map((highlight) => highlight.screenshot);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(id).toBeDefined();
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('declares sane screenshot metadata', () => {

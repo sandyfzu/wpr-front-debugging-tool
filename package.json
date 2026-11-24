@@ -32,6 +32,7 @@
     "check:budgets": "node scripts/check-budgets.mjs",
     "check:html": "node scripts/check-html-refs.mjs",
     "screenshots": "node scripts/panel-screenshots.mjs",
+    "screenshots:release": "playwright test --config tests/e2e/capture.config.ts",
     "parity:wp-rocket": "node scripts/wp-rocket-parity.ts",
     "icons": "node scripts/generate-icons.mjs",
     "store:assets": "node scripts/generate-store-assets.mjs",

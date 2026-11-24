@@ -160,6 +160,11 @@ pnpm bench:detection # checks-phase speed gate: port vs reference engine over th
 pnpm screenshots <label> # panel routes + options at 420/760/1100 × 760 px, dark + light → .screenshots/<label>/ (git-ignored;
                      #   local only, never CI): needs `pnpm build` + the docker site (URL: WPR_FDT_SITE_URL env, else docker/.env);
                      #   flags --out/--page/--only/--headed in scripts/panel-screenshots.mjs's header
+pnpm screenshots:release # release images (local only, never CI; rides the e2e harness: build + docker site):
+                     #   What's new highlights (public/whats-new/<id>-<light|dark>.webp, registry lib/release-notes/screenshots.ts)
+                     #   + store set (store/screenshots/*.png, light, 640×400 CSS at 2× = 1280×800; the README embeds it); plan
+                     #   scripts/release-shots.ts, stages tests/e2e/capture/ (showcase page created/deleted via wp-cli, frozen
+                     #   clock + cache stamp: an unchanged UI re-shoots byte-identical); SHOTS_STAGES=<ids> re-shoots some stages
 pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build, on the
                      #   .nvmrc Node (gzip sizes depend on its zlib: another major is refused); a row with
                      #   `required: true` fails unless each of its globs matches exactly one built file; a

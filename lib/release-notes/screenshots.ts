@@ -31,10 +31,42 @@ export interface ScreenshotMeta {
 }
 
 /**
- * The bundled screenshots, by id. Empty until the shared capture run shoots
- * the shipped UI; highlights without one render as text-only cards.
+ * The size every screenshot is shot at (device scale 1): a 1.6:1 frame that
+ * fits a card. At this width the panel shows its icon rail, not the labeled
+ * sidebar, which leaves the tool's content the room.
  */
-export const RELEASE_SCREENSHOTS = {} as const satisfies Readonly<Record<string, ScreenshotMeta>>;
+const SHOT = { width: 800, height: 500, format: 'webp' } as const;
+
+/**
+ * The bundled screenshots, by id (shot by `pnpm screenshots:release` on the
+ * real UI); highlights without one render as text-only cards.
+ */
+export const RELEASE_SCREENSHOTS = {
+  'exclusion-builder': {
+    ...SHOT,
+    alt: 'The Exclusion Builder open over a page, with a Delay JavaScript execution exclusion applied to the live page.'
+  },
+  'rucss-tester': {
+    ...SHOT,
+    alt: 'The RUCSS Tester in the panel after a test: the used CSS applied to the page, with what it removed and kept.'
+  },
+  'beacon-tester': {
+    ...SHOT,
+    alt: 'The Beacon Tester in the panel after a run, listing what WP Rocket’s beacon found on the page.'
+  },
+  'detection-widget': {
+    ...SHOT,
+    alt: 'The detection widget open in the corner of a page: WP Rocket’s version, the cache state and the features the page uses.'
+  },
+  'toolbar-dot': {
+    ...SHOT,
+    alt: 'The toolbar icon with a green, a blue and a grey dot, each with the tooltip that names the page’s WP Rocket state.'
+  },
+  'command-palette': {
+    ...SHOT,
+    alt: 'The command palette open over a page, listing the on-page actions.'
+  }
+} as const satisfies Readonly<Record<string, ScreenshotMeta>>;
 
 /** One screenshot id (derived from the table: one declaring site). */
 export type ScreenshotId = keyof typeof RELEASE_SCREENSHOTS;
