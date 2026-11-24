@@ -1,8 +1,9 @@
 /**
  * The background entrypoint's wiring, pinned where a missing line would
- * otherwise pass every subsystem's own tests: the toolbar click registers
- * once, with its production defaults, in `main()`'s first synchronous turn
- * (a click that wakes the worker must find the listener). Every subsystem
+ * otherwise pass every subsystem's own tests: the toolbar click and the
+ * What's new listener register once, with their production defaults, in
+ * `main()`'s first synchronous turn (an event that wakes the worker must
+ * find its listener), and the What's new start check runs once. Every subsystem
  * is a double; only the wiring runs.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -35,6 +36,8 @@ vi.mock('./chord-platform', () => ({ registerChordPlatform: vi.fn() }));
 vi.mock('./command-palette', () => ({ registerCommandPalette: vi.fn() }));
 vi.mock('./rucss-fetch', () => ({ registerRucssFetch: vi.fn() }));
 vi.mock('./beacon-runner-load', () => ({ registerBeaconRunnerLoad: vi.fn() }));
+const { catchUp } = vi.hoisted(() => ({ catchUp: vi.fn(() => Promise.resolve()) }));
+vi.mock('./whats-new', () => ({ registerWhatsNew: vi.fn(() => ({ catchUp })) }));
 vi.mock('./data-consent', () => ({
   registerDataConsent: vi.fn(),
   backgroundConsentCheck: vi.fn()
@@ -42,6 +45,7 @@ vi.mock('./data-consent', () => ({
 
 const { registerToolbarClick } = await import('./toolbar-click');
 const { watchBadgeGate } = await import('./badge');
+const { registerWhatsNew } = await import('./whats-new');
 const background = (await import('./index')).default;
 
 afterEach(() => {
@@ -49,11 +53,13 @@ afterEach(() => {
 });
 
 describe('background wiring', () => {
-  it('registers the toolbar click once, with its defaults, before any boot await', async () => {
+  it('registers the toolbar click and What’s new once, with their defaults, before any boot await', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     background.main();
     // Synchronous: no await has run yet in `main()`.
     expect(registerToolbarClick).toHaveBeenCalledExactlyOnceWith();
+    expect(registerWhatsNew).toHaveBeenCalledExactlyOnceWith();
+    expect(catchUp).toHaveBeenCalledOnce();
     // The rest of the boot completes without a wiring failure.
     await vi.waitFor(() => {
       expect(watchBadgeGate).toHaveBeenCalledOnce();

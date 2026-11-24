@@ -169,7 +169,7 @@ test.describe('options persistence', () => {
     try {
       // Three section cards, each carrying exactly its registry rows; every
       // control described by its row's sentence (the aria-describedby wire).
-      await expect(page.locator('[data-fdt="option-row"]')).toHaveCount(6);
+      await expect(page.locator('[data-fdt="option-row"]')).toHaveCount(7);
       await expect(page.getByRole('heading', { name: 'Improvements' })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Features' })).toBeVisible();
@@ -179,7 +179,8 @@ test.describe('options persistence', () => {
         'page-ui-gate',
         'palette-chord',
         'detectionWidget',
-        BADGE_ROW_ID
+        BADGE_ROW_ID,
+        'whats-new-on-update'
       ]) {
         const row = page.locator(`[data-fdt="option-row"][data-fdt-option="${rowId}"]`);
         await expect(row).toBeVisible();

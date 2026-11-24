@@ -75,13 +75,14 @@ describe('option registry integrity', () => {
       'wp-dashboard-dbugger-entry'
     ]);
     expect(optionRowsIn('appearance').map((row) => row.id)).toEqual(['appearance']);
-    // The gate leads its card; the rows it governs follow it; the badge
-    // (unaffected by the gate) closes the card.
+    // The gate leads its card; the rows it governs follow it; the rows the
+    // gate does not reach (badge, What's new) close the card.
     expect(optionRowsIn('features').map((row) => row.id)).toEqual([
       'page-ui-gate',
       'palette-chord',
       'detectionWidget',
-      'toolbarBadge'
+      'toolbarBadge',
+      'whats-new-on-update'
     ]);
     const grouped = OPTION_SECTIONS.flatMap((section) => optionRowsIn(section.id));
     expect(grouped).toHaveLength(OPTION_ROWS.length);
@@ -111,6 +112,16 @@ describe('option registry integrity', () => {
   });
 });
 
+describe('the What’s new row', () => {
+  it('is an instant switch labeled as the page’s own footer switch', async () => {
+    const { WHATS_NEW_ON_UPDATE_LABEL } = await import('../release-notes/words');
+    const row = OPTION_ROWS.find((candidate) => candidate.id === 'whats-new-on-update');
+    expect(row?.kind).toBe('whats-new');
+    expect(row?.label).toBe(WHATS_NEW_ON_UPDATE_LABEL);
+    expect(row !== undefined && isDraftedOptionRow(row)).toBe(false);
+  });
+});
+
 describe('drafted and instant rows', () => {
   it('splits the registry: drafted rows are the sync:options ones, in display order', () => {
     expect(DRAFTED_OPTION_ROWS.map((row) => row.id)).toEqual([
@@ -123,7 +134,8 @@ describe('drafted and instant rows', () => {
     const instant = OPTION_ROWS.filter((row) => !isDraftedOptionRow(row));
     expect(instant.map((row) => [row.kind, row.id])).toEqual([
       ['page-ui-gate', 'page-ui-gate'],
-      ['chord', 'palette-chord']
+      ['chord', 'palette-chord'],
+      ['whats-new', 'whats-new-on-update']
     ]);
   });
 });
@@ -153,7 +165,13 @@ describe('the on-page UI cascade', () => {
     // An unknown gate (loading, unreadable) disables nothing.
     expect(onPageDisabledNote(chord, null)).toBeNull();
     expect(ON_PAGE_UI_OFF_NOTE).toContain(anyRow('page-ui-gate').label);
-    for (const id of ['page-ui-gate', 'wp-dashboard-dbugger-entry', 'appearance', 'toolbarBadge']) {
+    for (const id of [
+      'page-ui-gate',
+      'wp-dashboard-dbugger-entry',
+      'appearance',
+      'toolbarBadge',
+      'whats-new-on-update'
+    ]) {
       expect(onPageDisabledNote(anyRow(id), false)).toBeNull();
     }
   });

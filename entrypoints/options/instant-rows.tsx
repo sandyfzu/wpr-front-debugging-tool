@@ -1,9 +1,10 @@
 /**
  * The options rows that apply the moment they change (registry kinds
- * `page-ui-gate` and `chord`): each renders its instant setting's state
- * matrix — loading (a skeleton the control's shape), failed (the reason +
- * Retry), retrying (the reason held, Retry busy), ready — and hands edits to the page's writers, which toast the
- * outcome. Neither row touches the page's draft.
+ * `page-ui-gate`, `whats-new` and `chord`): each renders its instant
+ * setting's state matrix — loading (a skeleton the control's shape), failed
+ * (the reason + Retry), retrying (the reason held, Retry busy), ready — and
+ * hands edits to the page's writers, which toast the outcome. No row touches
+ * the page's draft.
  */
 import type { JSX } from 'solid-js';
 import { Match, Show, Switch as Branch } from 'solid-js';
@@ -20,7 +21,14 @@ import {
 import type { ChordPlatform } from '../../lib/storage/palette-chord-platform';
 import type { InstantSettingSnapshot } from '../../lib/options/instant-setting';
 import { chordFiringCaveat } from '../../lib/options/chord-capture';
-import type { ChordOptionRow, PageUiGateOptionRow } from '../../lib/options/registry';
+import type {
+  ChordOptionRow,
+  PageUiGateOptionRow,
+  WhatsNewOptionRow
+} from '../../lib/options/registry';
+import { WHATS_NEW_PAGE_PATH } from '../../lib/release-notes/page-path';
+import { WHATS_NEW_NAME } from '../../lib/release-notes/words';
+import { FOCUS_RING } from '../../components/ui/classes';
 import { ChordField } from './chord-field';
 import {
   OPTION_ROW,
@@ -29,6 +37,9 @@ import {
   SWITCH_ROW_LINE_INDENT
 } from './row-look';
 import { cn } from '../../utils/cn';
+
+/** The link's words. */
+export const WHATS_NEW_LINK_TEXT = `Open ${WHATS_NEW_NAME}`;
 
 /** How the instant rows reach their settings and writers (wired by the page). */
 export interface InstantRowsScope {
@@ -40,6 +51,12 @@ export interface InstantRowsScope {
   readonly platform: () => ChordPlatform | null;
   /** A chord's key legend (layout-true when the layout is known). */
   readonly legend: (chord: PaletteChord) => string;
+  /** The What's new setting's state. */
+  readonly whatsNew: () => InstantSettingSnapshot<boolean>;
+  /** Apply the What's new setting now. */
+  readonly setWhatsNew: (next: boolean) => void;
+  /** Retry the What's new setting's failed read. */
+  readonly retryWhatsNew: () => void;
   /** Apply the gate now. */
   readonly setGate: (next: boolean) => void;
   /** Apply a captured shortcut now. */
@@ -112,42 +129,44 @@ function Description(props: { rowId: string; text: string; indent?: boolean }): 
 }
 
 /**
- * The on-page UI master switch.
+ * One instant boolean row: the shared switch over its setting's state
+ * matrix, the row's description, then any extra line (a link).
  *
  * @param props.row The registry row (copy).
- * @param props.scope The wired settings.
+ * @param props.snapshot The setting's state.
+ * @param props.onSet Apply a flip now.
+ * @param props.onRetry Retry a failed read.
+ * @param props.children An extra line under the description.
  */
-export function PageUiGateRow(props: {
-  row: PageUiGateOptionRow;
-  scope: InstantRowsScope;
+function InstantSwitchRow(props: {
+  row: PageUiGateOptionRow | WhatsNewOptionRow;
+  snapshot: InstantSettingSnapshot<boolean>;
+  onSet: (next: boolean) => void;
+  onRetry: () => void;
+  children?: JSX.Element;
 }): JSX.Element {
-  const ready = (): Extract<InstantSettingSnapshot<boolean>, { status: 'ready' }> | null => {
-    const gate = props.scope.gate();
-    return gate.status === 'ready' ? gate : null;
-  };
+  const ready = (): Extract<InstantSettingSnapshot<boolean>, { status: 'ready' }> | null =>
+    props.snapshot.status === 'ready' ? props.snapshot : null;
   return (
     <div data-fdt="option-row" data-fdt-option={props.row.id} class={OPTION_ROW}>
       <Branch>
-        <Match when={readFailed(props.scope.gate())}>
+        <Match when={readFailed(props.snapshot)}>
           <span class="text-xs font-medium text-fg-primary">{props.row.label}</span>
-          <ReadFailure
-            retrying={props.scope.gate().status === 'retrying'}
-            onRetry={props.scope.retryGate}
-          />
+          <ReadFailure retrying={props.snapshot.status === 'retrying'} onRetry={props.onRetry} />
         </Match>
         <Match when={ready()}>
-          {(gate) => (
+          {(setting) => (
             <Switch
               label={props.row.label}
               aria-describedby={descriptionId(props.row.id)}
-              checked={gate().value}
+              checked={setting().value}
               onChange={(next) => {
-                props.scope.setGate(next);
+                props.onSet(next);
               }}
             />
           )}
         </Match>
-        <Match when={props.scope.gate().status === 'loading'}>
+        <Match when={props.snapshot.status === 'loading'}>
           <div class="flex min-h-6 items-center gap-1.5">
             {/* The switch's 36 px hit box around its 28 px pill: the label
                 lands where the ready switch puts it (no shift). */}
@@ -163,9 +182,62 @@ export function PageUiGateRow(props: {
       <Description
         rowId={props.row.id}
         text={props.row.description}
-        indent={!readFailed(props.scope.gate())}
+        indent={!readFailed(props.snapshot)}
       />
+      {props.children}
     </div>
+  );
+}
+
+/**
+ * The on-page UI master switch.
+ *
+ * @param props.row The registry row (copy).
+ * @param props.scope The wired settings.
+ */
+export function PageUiGateRow(props: {
+  row: PageUiGateOptionRow;
+  scope: InstantRowsScope;
+}): JSX.Element {
+  return (
+    <InstantSwitchRow
+      row={props.row}
+      snapshot={props.scope.gate()}
+      onSet={props.scope.setGate}
+      onRetry={props.scope.retryGate}
+    />
+  );
+}
+
+/**
+ * The "Show what's new after updates" switch, with the link that reopens
+ * the page (always shown — reopening never depends on the setting).
+ *
+ * @param props.row The registry row (copy).
+ * @param props.scope The wired settings.
+ */
+export function WhatsNewRow(props: {
+  row: WhatsNewOptionRow;
+  scope: InstantRowsScope;
+}): JSX.Element {
+  return (
+    <InstantSwitchRow
+      row={props.row}
+      snapshot={props.scope.whatsNew()}
+      onSet={props.scope.setWhatsNew}
+      onRetry={props.scope.retryWhatsNew}
+    >
+      <p class={cn(OPTION_ROW_LINE, SWITCH_ROW_LINE_INDENT, 'pt-1')}>
+        <a
+          data-fdt="options-whats-new-link"
+          href={WHATS_NEW_PAGE_PATH}
+          target="_blank"
+          class={cn('font-medium text-accent underline-offset-2 hover:underline', FOCUS_RING)}
+        >
+          {WHATS_NEW_LINK_TEXT}
+        </a>
+      </p>
+    </InstantSwitchRow>
   );
 }
 

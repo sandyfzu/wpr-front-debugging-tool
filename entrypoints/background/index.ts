@@ -33,7 +33,10 @@
  *   runner, injected into the asking page's top frame on its first run,
  * - the data-sharing consent (`./data-consent`, Firefox build only) — the
  *   grant check before a tool sends a page address, its consent tabs, and
- *   the RUCSS request's own check.
+ *   the RUCSS request's own check,
+ * - the What's new page (`./whats-new`) — opened once per announced version
+ *   after an update, from `onInstalled` or the start check that catches a
+ *   missed event.
  *
  * Every subsystem registration happens inside `main()` (nothing at import
  * time beyond constants), the global error handlers are attached first, and
@@ -63,6 +66,7 @@ import { registerLatestExclusionList } from './latest-exclusion-list';
 import { registerRucssFetch } from './rucss-fetch';
 import { registerBeaconRunnerLoad } from './beacon-runner-load';
 import { backgroundConsentCheck, registerDataConsent } from './data-consent';
+import { registerWhatsNew } from './whats-new';
 
 const log = createLogger('background');
 
@@ -222,6 +226,15 @@ async function main(): Promise<void> {
   } catch (cause) {
     // The page's ask then sees no receiver and the test reports the runner unavailable.
     log.error('Beacon runner load init failed — beacon tests cannot run', cause);
+  }
+
+  try {
+    // Fire-and-forget: the check contains its own failures, and nothing
+    // else at boot depends on it.
+    void registerWhatsNew().catchUp();
+  } catch (cause) {
+    // Updates then open no What's new page this session; options still links it.
+    log.error('What’s new init failed — no page after updates this session', cause);
   }
 
   // Firefox only (build-time branch: the Chromium bundle has no consent code).

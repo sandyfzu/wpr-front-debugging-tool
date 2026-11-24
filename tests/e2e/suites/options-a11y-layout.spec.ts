@@ -64,7 +64,7 @@ interface WalkStop {
  * the APG radio pattern the unit tier pins.
  */
 const EXPECTED_STOPS: Array<{
-  tag: 'BUTTON' | 'INPUT';
+  tag: 'BUTTON' | 'INPUT' | 'A';
   row: string | null;
   choice: string | null;
   text: string | null;
@@ -83,6 +83,9 @@ const EXPECTED_STOPS: Array<{
   { tag: 'BUTTON', row: 'palette-chord', choice: null, text: DEFAULT_CHORD_TEXT },
   { tag: 'INPUT', row: 'detectionWidget', choice: null, text: null },
   { tag: 'INPUT', row: 'toolbarBadge', choice: null, text: null },
+  // The What's new switch, then its row's link to the page.
+  { tag: 'INPUT', row: 'whats-new-on-update', choice: null, text: null },
+  { tag: 'A', row: 'whats-new-on-update', choice: null, text: null },
   { tag: 'BUTTON', row: null, choice: null, text: 'Refresh now' }
 ];
 

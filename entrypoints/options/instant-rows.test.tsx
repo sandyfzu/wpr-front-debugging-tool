@@ -6,7 +6,9 @@
  * focus/activation, recording, capture + toast, refusal reasons in the live
  * region, Escape/blur/pointer cancel, Tab passing, waiting keystrokes (IME,
  * lone modifiers), platform notation, layout legends, the Ctrl+Alt caveat
- * per platform, Reset, live follow, failures — plus axe per state.
+ * per platform, Reset, live follow, failures — plus axe per state; and the
+ * What's new switch (instant write + toasts, live follow, the page link,
+ * read/write failures).
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
@@ -24,6 +26,7 @@ import {
   type PaletteChord
 } from '../../lib/storage/palette-chord';
 import { createPageUiGateIO, createPaletteChordIO } from '../../lib/options/instant-io';
+import { readWhatsNewOnUpdate, setWhatsNewOnUpdate } from '../../lib/storage/whats-new';
 import { ON_PAGE_UI_OFF_NOTE } from '../../lib/options/registry';
 import type { ChordPlatform } from '../../lib/storage/palette-chord-platform';
 import type { KeyLayoutLookup } from '../../lib/options/keyboard-layout';
@@ -614,5 +617,73 @@ describe('axe per state', () => {
       expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(2);
     });
     await audit();
+  });
+});
+
+describe('the What’s new row', () => {
+  const ROW = 'Show what’s new after updates';
+
+  it('applies instantly, toasts each direction, and links the page', async () => {
+    mount();
+    const toggle = await screen.findByRole<HTMLInputElement>('switch', { name: ROW });
+    expect(toggle.checked).toBe(true);
+    const link = document.querySelector<HTMLAnchorElement>('[data-fdt="options-whats-new-link"]');
+    expect(link?.getAttribute('href')).toBe('/whats-new.html');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.textContent).toBe('Open What’s new');
+
+    fireEvent.click(toggle);
+    await waitFor(async () => {
+      expect(await readWhatsNewOnUpdate()).toBe(false);
+    });
+    await waitFor(() => {
+      expect(toastItems().map((item) => item.title)).toContain(
+        'What’s new won’t open after updates'
+      );
+    });
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(toastItems().map((item) => item.title)).toContain(
+        'What’s new will open after updates'
+      );
+    });
+    expect(await readWhatsNewOnUpdate()).toBe(true);
+  });
+
+  it('follows the page footer’s write live, and never touches the draft', async () => {
+    mount();
+    const badge = await screen.findByRole<HTMLInputElement>('switch', { name: BADGE_ROW });
+    fireEvent.click(badge);
+    const toggle = await screen.findByRole<HTMLInputElement>('switch', { name: ROW });
+    await setWhatsNewOnUpdate(false);
+    await waitFor(() => {
+      expect(toggle.checked).toBe(false);
+    });
+    // The pending badge edit is still pending (the draft stayed untouched).
+    expect(badge.checked).toBe(false);
+    expect((await optionsStore.getValue()).features.toolbarBadge).toBe(true);
+  });
+
+  it('shows a failed read with Retry, and toasts a failed write', async () => {
+    let failRead = true;
+    mount({
+      whatsNewIO: {
+        read: () => (failRead ? Promise.reject(new Error('dead')) : Promise.resolve(true)),
+        write: () => Promise.reject(new Error('quota')),
+        watch: () => () => undefined,
+        log: quiet
+      }
+    });
+    await screen.findByText('This setting could not be read.');
+    failRead = false;
+    fireEvent.click(screen.getByText('Retry'));
+    const toggle = await screen.findByRole<HTMLInputElement>('switch', { name: ROW });
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(toastItems().map((item) => item.title)).toContain(
+        'The What’s new setting could not be saved'
+      );
+    });
+    expect(toggle.checked).toBe(true);
   });
 });

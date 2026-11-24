@@ -713,6 +713,7 @@ describe('keyboard reachability (structure) and the state matrix', () => {
     // Save first (app bar), the appearance menu's trigger (app bar), the
     // dbugger switch, (the radio group), the gate switch, the shortcut field
     // (a button), the detection widget default switch, the badge switch,
+    // the What's new switch (its link is an anchor, outside this query),
     // then the refresh control — the default shortcut shows no Reset button.
     expect(focusables).toEqual([
       'button',
@@ -720,6 +721,7 @@ describe('keyboard reachability (structure) and the state matrix', () => {
       'switch',
       'switch',
       'button',
+      'switch',
       'switch',
       'switch',
       'button'

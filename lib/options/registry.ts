@@ -12,7 +12,7 @@
  * Two row families: **drafted** rows (boolean switches, the appearance
  * choice) live in the `sync:options` shape and ride the page model's
  * draft/Save cycle; **instant** rows (the on-page UI gate, the palette
- * shortcut) own their storage items and apply the moment they change — they
+ * shortcut, the What's new switch) own their storage items and apply the moment they change — they
  * never enter the draft, so a pending edit elsewhere on the page survives
  * them untouched. Any row may carry the `onPage` marker: it belongs to UI
  * injected into inspected pages, so it disables while the gate is off
@@ -35,6 +35,7 @@ import {
   WP_DASHBOARD_DBUGGER_ENTRY,
   type StoredOptions
 } from '../storage/options';
+import { WHATS_NEW_NAME, WHATS_NEW_ON_UPDATE_LABEL } from '../release-notes/words';
 
 /** The section cards the options page renders, identified for row grouping. */
 export type OptionSectionId = 'improvements' | 'appearance' | 'features';
@@ -114,11 +115,25 @@ export interface ChordOptionRow extends OptionRowBase {
   readonly section: 'features';
 }
 
+/**
+ * "Show what's new after updates" (`sync:whats-new-on-update`): an instant
+ * switch, shared with the What's new page's footer — plus the link that
+ * reopens that page.
+ */
+export interface WhatsNewOptionRow extends OptionRowBase {
+  /** Row discriminator: the instant switch + the page link. */
+  readonly kind: 'whats-new';
+  /** Row identity (the item owns its own key). */
+  readonly id: 'whats-new-on-update';
+  /** The card the switch renders in. */
+  readonly section: 'features';
+}
+
 /** The rows the page model drafts (stored in the `sync:options` shape). */
 export type DraftedOptionRow = BooleanOptionRow | AppearanceOptionRow;
 
 /** The rows that own their storage item and apply instantly. */
-export type InstantOptionRow = PageUiGateOptionRow | ChordOptionRow;
+export type InstantOptionRow = PageUiGateOptionRow | ChordOptionRow | WhatsNewOptionRow;
 
 /** Any registry row — the union the page's controls render from. */
 export type OptionRow = DraftedOptionRow | InstantOptionRow;
@@ -200,6 +215,13 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
     label: 'Show the toolbar badge',
     description:
       "Shows a colored dot on the toolbar icon for the page's WP Rocket state, named in the icon's tooltip — applies as soon as it is saved"
+  },
+  {
+    kind: 'whats-new',
+    id: 'whats-new-on-update',
+    section: 'features',
+    label: WHATS_NEW_ON_UPDATE_LABEL,
+    description: `Opens the ${WHATS_NEW_NAME} page once after an update that brings something new — applies immediately`
   }
 ]);
 

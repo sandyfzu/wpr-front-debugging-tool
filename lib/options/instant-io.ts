@@ -12,6 +12,11 @@ import {
   watchPaletteChord,
   type PaletteChord
 } from '../storage/palette-chord';
+import {
+  readWhatsNewOnUpdate,
+  setWhatsNewOnUpdate,
+  watchWhatsNewOnUpdate
+} from '../storage/whats-new';
 import type { InstantSettingIO } from './instant-setting';
 
 /**
@@ -31,4 +36,19 @@ export function createPageUiGateIO(log: Logger): InstantSettingIO<boolean> {
  */
 export function createPaletteChordIO(log: Logger): InstantSettingIO<PaletteChord> {
   return { read: readPaletteChord, write: setPaletteChord, watch: watchPaletteChord, log };
+}
+
+/**
+ * The "Show what's new after updates" seams (`sync:whats-new-on-update`) —
+ * shared by the options row and the What's new page's footer switch.
+ *
+ * @param log Diagnostics sink.
+ */
+export function createWhatsNewOnUpdateIO(log: Logger): InstantSettingIO<boolean> {
+  return {
+    read: readWhatsNewOnUpdate,
+    write: setWhatsNewOnUpdate,
+    watch: watchWhatsNewOnUpdate,
+    log
+  };
 }

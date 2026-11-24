@@ -49,7 +49,11 @@ import {
   type InstantSettingSnapshot,
   type InstantWriteOutcome
 } from '../../lib/options/instant-setting';
-import { createPageUiGateIO, createPaletteChordIO } from '../../lib/options/instant-io';
+import {
+  createPageUiGateIO,
+  createPaletteChordIO,
+  createWhatsNewOnUpdateIO
+} from '../../lib/options/instant-io';
 import {
   keyLegend,
   readKeyboardLayout,
@@ -77,6 +81,10 @@ const PAGE_UI_OFF_DESCRIPTION = `Open pages close it now; turn it back on here o
 const PAGE_UI_FAILURE_TITLE = 'The on-page UI setting could not be saved';
 const CHORD_SAVED_TITLE = `${capitalize(PAGE_SURFACE_NAMES.commandPalette)} shortcut saved`;
 const CHORD_FAILURE_TITLE = `The ${PAGE_SURFACE_NAMES.commandPalette} shortcut could not be saved`;
+const WHATS_NEW_ON_TITLE = 'What’s new will open after updates';
+const WHATS_NEW_OFF_TITLE = 'What’s new won’t open after updates';
+const WHATS_NEW_OFF_DESCRIPTION = 'Reopen it any time from this page.';
+const WHATS_NEW_FAILURE_TITLE = 'The What’s new setting could not be saved';
 const INSTANT_FAILURE_DESCRIPTION =
   'The previous value stays — check that the extension is still enabled, then try again.';
 /** The app bar's marker while the draft holds edits Save has not written. */
@@ -110,7 +118,7 @@ const APP_BAR_PLACEMENT =
   'pr-[max(calc(var(--spacing)*3),calc((100%_-_var(--container-3xl))_/_2_+_var(--spacing)_*_3))]';
 
 /** The loading skeleton's cards: rows per section, as the registry renders them. */
-const SKELETON_CARD_ROWS = [1, 1, 4] as const;
+const SKELETON_CARD_ROWS = [1, 1, 5] as const;
 
 export interface OptionsPageProps {
   /** The extension's product name, as the manifest declares it (the h1). */
@@ -127,6 +135,8 @@ export interface OptionsPageProps {
   writeAppearance?: (next: Appearance) => Promise<void>;
   /** The on-page UI gate's seams (default: its storage item). */
   pageUiIO?: InstantSettingIO<boolean>;
+  /** The What's new setting's seams (default: its storage item). */
+  whatsNewIO?: InstantSettingIO<boolean>;
   /** The palette shortcut's seams (default: its storage item). */
   chordIO?: InstantSettingIO<PaletteChord>;
   /** The keyboard convention (default: `runtime.getPlatformInfo`, `'other'` on failure). */
@@ -273,6 +283,10 @@ export function App(props: OptionsPageProps): JSX.Element {
   /* eslint-disable solid/reactivity */
   const gate = mountInstantSetting(props.pageUiIO ?? createPageUiGateIO(log), Object.is);
   const chord = mountInstantSetting(props.chordIO ?? createPaletteChordIO(log), chordsEqual);
+  const whatsNew = mountInstantSetting(
+    props.whatsNewIO ?? createWhatsNewOnUpdateIO(log),
+    Object.is
+  );
   const resolvePlatform =
     props.resolvePlatform ??
     (() => resolveChordPlatform({ getPlatformInfo: () => browser.runtime.getPlatformInfo(), log }));
@@ -320,6 +334,7 @@ export function App(props: OptionsPageProps): JSX.Element {
   const instant: InstantRowsScope = {
     gate: gate.snapshot,
     chord: chord.snapshot,
+    whatsNew: whatsNew.snapshot,
     platform,
     legend: (value) => keyLegend(value.code, layout()),
     setGate: (next) => {
@@ -336,6 +351,22 @@ export function App(props: OptionsPageProps): JSX.Element {
         })
         .catch((cause: unknown) => {
           log.error('Applying the on-page UI gate failed unexpectedly', cause);
+        });
+    },
+    setWhatsNew: (next) => {
+      void whatsNew.model
+        .set(next)
+        .then((outcome) => {
+          announceInstant(
+            outcome,
+            next
+              ? { title: WHATS_NEW_ON_TITLE }
+              : { title: WHATS_NEW_OFF_TITLE, description: WHATS_NEW_OFF_DESCRIPTION },
+            WHATS_NEW_FAILURE_TITLE
+          );
+        })
+        .catch((cause: unknown) => {
+          log.error('Applying the What’s new setting failed unexpectedly', cause);
         });
     },
     setChord: (next) => {
@@ -363,6 +394,9 @@ export function App(props: OptionsPageProps): JSX.Element {
     },
     retryChord: () => {
       void chord.model.load();
+    },
+    retryWhatsNew: () => {
+      void whatsNew.model.load();
     },
     refreshLayout
   };

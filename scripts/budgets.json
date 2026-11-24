@@ -3,7 +3,7 @@
     "surface": "background service worker",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 347.9
+      "raw": 360
     }
   },
   {
@@ -65,7 +65,7 @@
     "surface": "options page start JS (options.html + static imports)",
     "start": "options.html",
     "maxKb": {
-      "raw": 198
+      "raw": 204
     }
   },
   {
@@ -73,7 +73,7 @@
     "build": "firefox-mv2",
     "start": "options.html",
     "maxKb": {
-      "raw": 198
+      "raw": 204
     }
   },
   {
@@ -82,6 +82,21 @@
     "start": "data-consent.html",
     "maxKb": {
       "raw": 93
+    }
+  },
+  {
+    "surface": "What's new page start JS (whats-new.html + static imports)",
+    "start": "whats-new.html",
+    "maxKb": {
+      "raw": 126
+    }
+  },
+  {
+    "surface": "What's new page start JS (Firefox)",
+    "build": "firefox-mv2",
+    "start": "whats-new.html",
+    "maxKb": {
+      "raw": 126
     }
   },
   {
@@ -303,7 +318,7 @@
     "globs": ["chunks/stylesheets-*.js"],
     "maxKb": {
       "raw": 20.4,
-      "gzip": 7.3
+      "gzip": 7.5
     },
     "required": true
   },

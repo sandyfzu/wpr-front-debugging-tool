@@ -3,7 +3,7 @@
  * (Improvements / Appearance / Features, calm rows with no hairlines)
  * projected as designed controls —
  * boolean rows ride the shared switch, the appearance tri-state rides the
- * shared choice group's segmented tray, the instant rows (gate, shortcut) render from
+ * shared choice group's segmented tray, the instant rows (gate, shortcut, What's new) render from
  * `./instant-rows`; every label+description pair is wired
  * (labelled/described) keyboard-complete. The gate cascade is data-driven:
  * a row carrying the registry's `onPage` marker disables with its note
@@ -28,7 +28,7 @@ import {
   type DraftedOptionRow,
   type OptionRow
 } from '../../lib/options/registry';
-import { ChordRow, PageUiGateRow, type InstantRowsScope } from './instant-rows';
+import { ChordRow, PageUiGateRow, WhatsNewRow, type InstantRowsScope } from './instant-rows';
 import { SectionCard } from './section-card';
 import {
   OPTION_ROW,
@@ -166,6 +166,9 @@ function OptionRowView(props: {
       </Match>
       <Match when={props.row.kind === 'page-ui-gate' ? props.row : undefined}>
         {(row) => <PageUiGateRow row={row()} scope={props.instant} />}
+      </Match>
+      <Match when={props.row.kind === 'whats-new' ? props.row : undefined}>
+        {(row) => <WhatsNewRow row={row()} scope={props.instant} />}
       </Match>
       <Match when={props.row.kind === 'chord' ? props.row : undefined}>
         {(row) => <ChordRow row={row()} scope={props.instant} disabledNote={note()} />}
