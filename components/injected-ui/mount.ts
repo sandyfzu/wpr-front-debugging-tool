@@ -17,6 +17,7 @@
 
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
+import { reportTeardownFailure } from '../../lib/dead-context';
 import { createLogger } from '../../lib/logger';
 import { isolateUiEvents } from './event-isolation';
 import { followStoredAppearance } from './live-theme';
@@ -34,13 +35,18 @@ const TOKENS_ATTRIBUTE = 'data-fdt-tokens';
  * run.
  *
  * @param stop The follow's stop handle.
- * @param moment The teardown moment, for the warning.
+ * @param moment The teardown moment, for the warning (a dead context: debug only).
  */
 function stopFollowQuietly(stop: () => void, moment: string): void {
   try {
     stop();
   } catch (cause) {
-    log.warn(`Stopping the appearance follow failed during ${moment}`, cause);
+    reportTeardownFailure(
+      log,
+      cause,
+      `Stopping the appearance follow failed during ${moment}`,
+      'warn'
+    );
   }
 }
 

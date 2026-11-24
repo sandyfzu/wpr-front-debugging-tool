@@ -52,7 +52,7 @@ function harness(options: { watchThrows?: boolean } = {}) {
     onInvalidated: (cleanup) => {
       cleanups.push(cleanup);
     },
-    log: { warn, error }
+    log: { debug: vi.fn(), warn, error }
   };
   return {
     deps,
@@ -179,6 +179,19 @@ describe('followPageUiGate', () => {
     }).not.toThrow();
     expect(h.warn).toHaveBeenCalledTimes(1);
   });
+
+  it('a dead-context unwatch after an extension reload is debug only, never a warning', () => {
+    const h = harness();
+    h.unwatch.mockImplementation(() => {
+      throw new Error('Extension context invalidated.');
+    });
+    followPageUiGate(h.deps, vi.fn());
+    expect(() => {
+      h.invalidate();
+    }).not.toThrow();
+    expect(h.warn).not.toHaveBeenCalled();
+    expect(h.deps.log.debug).toHaveBeenCalledTimes(1);
+  });
 });
 
 /** A host whose reads answer from a script, in order (one entry per read). */
@@ -202,7 +215,7 @@ function scriptedReads(answers: ReadonlyArray<boolean | Error>) {
     },
     isInvalid: () => false,
     onInvalidated: () => undefined,
-    log: { warn, error: vi.fn() }
+    log: { debug: vi.fn(), warn, error: vi.fn() }
   };
   return { deps, read, warn, write: (enabled: boolean) => listener?.(enabled) };
 }
@@ -249,7 +262,7 @@ describe('pageUiGateDeps', () => {
         return () => undefined;
       }
     };
-    const log = { warn: vi.fn(), error: vi.fn() };
+    const log = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const deps = pageUiGateDeps(ctx, log);
     expect(deps.source).toBe(PAGE_UI_GATE_SOURCE);
     expect(deps.log).toBe(log);
@@ -310,7 +323,7 @@ describe('PAGE_UI_GATE_SOURCE (the real item)', () => {
         source: PAGE_UI_GATE_SOURCE,
         isInvalid: () => false,
         onInvalidated: () => undefined,
-        log: { warn: vi.fn(), error: vi.fn() }
+        log: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
       },
       apply
     );

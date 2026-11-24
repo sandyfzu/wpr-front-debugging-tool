@@ -17,6 +17,7 @@
 
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
+import { guardInvalidationTeardown } from '../../lib/dead-context';
 import { createLogger } from '../../lib/logger';
 import { setupDataHub } from './data-hub';
 import { setupImprovements } from './improvements';
@@ -119,6 +120,9 @@ export default defineContentScript({
   runAt: 'document_start',
   cssInjectionMode: 'ui',
   main(ctx: ContentScriptContext) {
+    // First: every teardown registered below runs dead-context safe (an
+    // extension reload must never put an error on the host page).
+    guardInvalidationTeardown(ctx, log);
     // Attached first, like every surface's: an error escaping any module's
     // own guards still surfaces as one console line while the world — and
     // every sibling feature — stays alive.

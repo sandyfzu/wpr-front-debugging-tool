@@ -19,6 +19,7 @@
  */
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { URL_PATTERNS } from '../lib/wp-rocket/constants';
+import { guardInvalidationTeardown } from '../lib/dead-context';
 import { createLogger } from '../lib/logger';
 import { onMessage, sendMessage } from '../lib/messaging';
 import { uaIdentityMessenger } from '../lib/messaging/window-bridge';
@@ -32,6 +33,9 @@ export default defineContentScript({
   runAt: 'document_start',
   allFrames: true,
   main(ctx: ContentScriptContext) {
+    // First: every teardown registered below runs dead-context safe (an
+    // extension reload must never put an error on the host page).
+    guardInvalidationTeardown(ctx, log);
     // Attached first, like every isolated-world surface's: an error escaping
     // the guarded setup still surfaces as one console line while the relay
     // itself stays alive until the invalidation tears it down.

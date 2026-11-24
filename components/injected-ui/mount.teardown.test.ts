@@ -90,8 +90,23 @@ describe('mountShadowUi teardown contracts', () => {
     expect(stopFollowing).toHaveBeenCalledTimes(1);
   });
 
-  it('swallows the dead-context stop with an actionable prefixed warning', async () => {
+  it('swallows the dead-context stop with a prefixed debug line, never a page warning', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const { container, shadow } = shadowContainer();
+    const dispose = await mountShadowUi(container, shadow, probeView);
+    expect(() => {
+      dispose();
+    }).not.toThrow();
+    expect(warn).not.toHaveBeenCalled();
+    expect(String(debug.mock.calls[0]?.[0])).toContain('[WPR FDT]');
+  });
+
+  it('any other stop failure still warns, prefixed, without escaping', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(stopFollowing).mockImplementationOnce(() => {
+      throw new Error('listener table corrupt');
+    });
     const { container, shadow } = shadowContainer();
     const dispose = await mountShadowUi(container, shadow, probeView);
     expect(() => {
@@ -110,6 +125,7 @@ describe('mountShadowUi teardown contracts', () => {
   });
   it('a removed mount stops its follow quietly in a dead context and renders nothing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
     const { container, shadow } = shadowContainer();
     const removal = new AbortController();
     const mounting = mountShadowUi(container, shadow, probeView, removal.signal);
@@ -117,7 +133,8 @@ describe('mountShadowUi teardown contracts', () => {
     const dispose = await mounting;
     expect(container.querySelector('.teardown-probe')).toBeNull();
     expect(stopFollowing).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0])).toContain('[WPR FDT]');
+    expect(warn).not.toHaveBeenCalled();
+    expect(String(debug.mock.calls[0]?.[0])).toContain('[WPR FDT]');
     expect(() => {
       dispose();
     }).not.toThrow();

@@ -138,7 +138,7 @@ describe('followGatedSurface', () => {
         source,
         isInvalid: () => false,
         onInvalidated: () => undefined,
-        log: { warn: vi.fn(), error: vi.fn() }
+        log: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
       },
       h.value
     );
