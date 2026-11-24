@@ -342,6 +342,19 @@ describe('calm rows', () => {
     expect(root.querySelector('[data-fdt="calm-list"]')?.className).toContain('@container');
   });
 
+  it('measures the list width on a zero-height probe, never on the content-tall root', () => {
+    const { root } = mount(600);
+    const list = root.querySelector('[data-fdt="calm-list"]');
+    const probe = root.querySelector<HTMLElement>('[data-fdt="calm-list-width-probe"]');
+    // The root grows as rows mount and are measured: observing it would re-notify inside the
+    // frame a deeper observer resized it in (the browser's ResizeObserver loop error).
+    expect(probe?.parentElement).toBe(list);
+    expect(probe?.className).toContain('h-0');
+    expect(probe?.getAttribute('aria-hidden')).toBe('true');
+    expect(observers.targets()).toContain(probe);
+    expect(observers.targets()).not.toContain(list);
+  });
+
   it('renders static rows (no detail): no open button, no chevron, no hover affordance', () => {
     const { root, presence } = mount(600, { detail: false });
     expect(root.querySelector('[data-fdt-row-open]')).toBeNull();

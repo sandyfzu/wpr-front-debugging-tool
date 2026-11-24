@@ -7,7 +7,12 @@
 import { hostLayerMarker } from '../../../lib/detection/host-layers';
 import { hostLayerHint } from '../../../lib/detection/host-layer-hints';
 import { expect, test } from '../helpers/extension';
-import { devtoolsShim, openPanelForFixture, panelPageUrl } from '../helpers/panel-data';
+import {
+  devtoolsShim,
+  openPanelForFixture,
+  panelPageUrl,
+  showPanelRoute
+} from '../helpers/panel-data';
 import { openSitePage, SITE_ORIGIN, SITE_URL } from '../helpers/site';
 
 test('keeps captured response headers on their dedicated page', async ({ extension }) => {
@@ -118,10 +123,7 @@ for (const round of EDGE_ROUNDS) {
       await expect(panel.locator('[data-fdt-summary-fact="cache"]')).toHaveText(round.chip);
       const detectionsText = await panel.evaluate(() => document.body.textContent);
 
-      await panel.evaluate(() => {
-        location.hash = '#/headers-cookies';
-      });
-      await expect(panel.locator('[data-fdt-page="headers-cookies"]')).toBeVisible();
+      await showPanelRoute(panel, 'headers-cookies');
       // Each header row with the section heading it renders under.
       const rows = await panel.evaluate(() => {
         let section = '';

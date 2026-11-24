@@ -12,11 +12,11 @@
  * the URL line itself truncates long before its file name: what a bare URL
  * row would hide.
  */
-import type { Locator, Page } from '@playwright/test';
+import type { Locator } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
 import { closeScriptDetail, openScriptDetail } from '../helpers/javascript-page';
 import { expectSystemPalette, resetStoredOptions } from '../helpers/options';
-import { openPanelForFixture } from '../helpers/panel-data';
+import { openPanelForFixture, showPanelRoute } from '../helpers/panel-data';
 
 /** A path deep enough that its URL truncates at 320 px well before the file name. */
 const DEEP =
@@ -145,22 +145,6 @@ async function settledName(name: Locator): Promise<SettledName> {
   );
 }
 
-/**
- * Switch the panel's route and wait for its page.
- *
- * @param panel The panel page.
- * @param route The route id.
- * @returns The page root.
- */
-async function openRoute(panel: Page, route: string): Promise<Locator> {
-  await panel.evaluate((hash) => {
-    location.hash = hash;
-  }, `#/${route}`);
-  const page = panel.locator(`[data-fdt-page="${route}"]`);
-  await expect(page).toBeVisible();
-  return page;
-}
-
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`URL rows lead with a whole file name at 320 and 768 px (${colorScheme})`, async ({
     extension
@@ -187,7 +171,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       );
       await expectSystemPalette(panel, colorScheme);
       for (const target of PAGES) {
-        const page = await openRoute(panel, target.route);
+        const page = await showPanelRoute(panel, target.route);
         const rows = page.locator(target.row);
         await expect(rows).toHaveCount(target.names.length);
         for (const [index, expected] of target.names.entries()) {
@@ -244,7 +228,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       // Regular tier: the names stay whole once layout settles after the resize.
       await panel.setViewportSize({ width: 768, height: 900 });
       for (const target of PAGES) {
-        const page = await openRoute(panel, target.route);
+        const page = await showPanelRoute(panel, target.route);
         const rows = page.locator(target.row);
         await expect(rows).toHaveCount(target.names.length);
         for (const [index, expected] of target.names.entries()) {

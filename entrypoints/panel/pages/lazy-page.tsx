@@ -1,8 +1,8 @@
 /**
- * Page bodies kept out of the panel's start: pages that only some sessions
- * open (tools) live in their own chunk, fetched once the panel is idle after
- * boot or on the first visit, whichever comes first (`./chunk-loader`) — so
- * the start pays nothing and a visit rarely waits. A plain signal holds the
+ * Page bodies kept out of the panel's start: every page but the one a
+ * session opens on lives in its own chunk, fetched once the panel is idle
+ * after boot or on the first visit, whichever comes first (`./chunk-loader`)
+ * — so the start pays nothing and a visit rarely waits. A plain signal holds the
  * loaded body (no Suspense runtime in the panel's eager bundle).
  *
  * States: loading (the route's titled frame over its loading shape — a real

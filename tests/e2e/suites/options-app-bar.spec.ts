@@ -16,13 +16,11 @@
  *
  * Every write goes through shipped code; the suite only resets the item.
  */
-import { readdirSync, readFileSync } from 'node:fs';
-import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { startSet } from '../../../scripts/budget-start-set.mjs';
-import { EXTENSION_PATH, expect, test } from '../helpers/extension';
+import { expect, test } from '../helpers/extension';
 import { settleFrames } from '../helpers/frames';
 import { openPanelForFixture } from '../helpers/panel-data';
+import { pageStartSet } from '../helpers/start-set';
 import {
   CHOICE_LABELS,
   expectRealmAlive,
@@ -55,26 +53,6 @@ const MENU_CODE_MARKERS: readonly RegExp[] = [
   /convertOffsetParentRelativeRectToViewportRelativeRect/u,
   /["'`]--kb-menu-content-transform-origin["'`]/u
 ];
-
-/**
- * The options page's start set in the built bundle: each file the page
- * loads before it runs (its module scripts, preloads and their static
- * imports), with its code.
- *
- * @returns Each start file's code, by build-relative path.
- * @throws {@link Error} When the walk could not complete (it would under-count).
- */
-function optionsStartSet(): ReadonlyMap<string, string> {
-  const present = new Set(
-    readdirSync(EXTENSION_PATH, { recursive: true, encoding: 'utf8' }).map((file) =>
-      file.split(path.sep).join('/')
-    )
-  );
-  const read = (file: string): string => readFileSync(path.join(EXTENSION_PATH, file), 'utf8');
-  const { files, problems } = startSet('options.html', present, read);
-  if (problems.length > 0) throw new Error(`options start set incomplete: ${problems.join('; ')}`);
-  return new Map(files.map((file) => [file, read(file)]));
-}
 
 /** A document's appearance trigger (its name starts with "Appearance:"). */
 function trigger(page: Page): ReturnType<Page['getByRole']> {
@@ -190,7 +168,7 @@ test.describe('the options app bar', () => {
     try {
       // Off the start: no start file is the menu's chunk or carries its code (it is fetched
       // later, by the idle prefetch or the first press) …
-      const start = optionsStartSet();
+      const start = pageStartSet('options.html');
       expect([...start.keys()].some((file) => file.startsWith('chunks/options-'))).toBe(true);
       for (const [file, source] of start) {
         expect(file, 'the menu chunk on the start').not.toMatch(/appearance-menu-/u);

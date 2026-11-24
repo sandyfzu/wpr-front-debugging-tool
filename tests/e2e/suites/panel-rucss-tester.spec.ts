@@ -42,7 +42,7 @@ import type { Page, Route } from '@playwright/test';
 
 import { RUCSS_ENDPOINT } from '../../../lib/rucss-tester/endpoint';
 import { expect, ORIGIN_A, test, type ExtensionDriver } from '../helpers/extension';
-import { openPanelForFixture, type InspectedPanel } from '../helpers/panel-data';
+import { openPanelForFixture, showPanelRoute, type InspectedPanel } from '../helpers/panel-data';
 import { clearWidgetMap, STRIP_HOST } from '../helpers/strip-pill';
 
 /** The fixture page. */
@@ -476,13 +476,6 @@ test.describe('RUCSS tester (panel → page → background → mocked service)',
       await expect(fixture.page.locator(`${STRIP_HOST} .dw-card`)).toBeHidden();
       return count;
     };
-    /** Show a panel route by hash. */
-    const go = async (route: string): Promise<void> => {
-      await panel.evaluate((hash) => {
-        location.hash = hash;
-      }, `#/${route}`);
-      await expect(panel.locator(`[data-fdt-page="${route}"]`)).toBeVisible();
-    };
 
     try {
       await expect(fixture.page.locator(STRIP_HOST)).toHaveCount(1);
@@ -490,14 +483,14 @@ test.describe('RUCSS tester (panel → page → background → mocked service)',
       expect(await run(panel)).toBe('applied');
       await expect(pillGlyph).toHaveCount(1);
       expect(await cardLines()).toBe(1);
-      await go('detections');
+      await showPanelRoute(panel, 'detections');
       await expect(notice).toHaveCount(1);
       await expect(notice).toContainText(
         "(TEST MODE) A RUCSS test replaced this page's styles. Reload the page to restore them."
       );
 
       // A second run asks first; Run on top applies again — still one glyph, one line, one notice.
-      await go('rucss-tester');
+      await showPanelRoute(panel, 'rucss-tester');
       await panel.locator('[data-fdt-rucss-run]').click();
       await expect(repeat).toContainText("A test already replaced this page's styles.");
       expect(service.calls).toHaveLength(1);
@@ -509,11 +502,11 @@ test.describe('RUCSS tester (panel → page → background → mocked service)',
       await expect(fixture.page.locator(`#${RESULT_ID}`)).toHaveCount(1);
       await expect(pillGlyph).toHaveCount(1);
       expect(await cardLines()).toBe(1);
-      await go('detections');
+      await showPanelRoute(panel, 'detections');
       await expect(notice).toHaveCount(1);
 
       // The repeat question's "Reload for a clean run": the page reloads, every TEST MODE mark goes.
-      await go('rucss-tester');
+      await showPanelRoute(panel, 'rucss-tester');
       await panel.locator('[data-fdt-rucss-run]').click();
       await expect(repeat).toContainText("2 tests already replaced this page's styles.");
       const reloaded = fixture.page.waitForEvent('load');
@@ -530,15 +523,15 @@ test.describe('RUCSS tester (panel → page → background → mocked service)',
       await expect(fixture.page.locator(STRIP_HOST)).toHaveCount(1);
       await expect(pillGlyph).toHaveCount(0);
       await expect(panel.locator('[data-fdt="rucss-outcome"][data-fdt-rucss-stale]')).toBeVisible();
-      await go('detections');
+      await showPanelRoute(panel, 'detections');
       await expect(notice).toHaveCount(0);
 
       // A clean page runs without the question; the Detections notice's own Reload restores it too.
-      await go('rucss-tester');
+      await showPanelRoute(panel, 'rucss-tester');
       expect(await run(panel)).toBe('applied');
       await expect(repeat).toHaveCount(0);
       expect(service.calls).toHaveLength(3);
-      await go('detections');
+      await showPanelRoute(panel, 'detections');
       await expect(notice).toHaveCount(1);
       const reloadedAgain = fixture.page.waitForEvent('load');
       await notice.getByRole('button', { name: 'Reload page' }).click();

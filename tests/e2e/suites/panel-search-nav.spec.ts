@@ -24,7 +24,7 @@
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
-import { openPanelForFixture, relaySearchAction } from '../helpers/panel-data';
+import { openPanelForFixture, relaySearchAction, showPanelRoute } from '../helpers/panel-data';
 
 /** Rows in the generated inventory: a few viewports of each list page. */
 const ROW_COUNT = 48;
@@ -193,10 +193,7 @@ test.describe('panel find navigation (wire-delivered)', () => {
       await expect(field).toHaveValue('');
 
       // --- The Lazyload page (the other page family, one shared body).
-      await panel.evaluate(() => {
-        location.hash = '#/lazyload';
-      });
-      await expect(panel.locator('[data-fdt-page="lazyload"]')).toBeVisible();
+      await showPanelRoute(panel, 'lazyload');
       await relaySearchAction(extension, {
         action: 'performSearch',
         query: 'deep-20',

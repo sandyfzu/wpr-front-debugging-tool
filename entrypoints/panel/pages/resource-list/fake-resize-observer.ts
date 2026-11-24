@@ -15,6 +15,8 @@ export interface FakeResizeObservers {
   resize(width: number): void;
   /** How many observers are observing right now. */
   live(): number;
+  /** Every element a live observer is observing. */
+  targets(): Element[];
 }
 
 /**
@@ -59,6 +61,7 @@ export function installFakeResizeObserver(): FakeResizeObservers {
         if (entries.length > 0) observer.callback(entries, observer.self as ResizeObserver);
       }
     },
-    live: () => [...observers].filter((observer) => observer.targets.length > 0).length
+    live: () => [...observers].filter((observer) => observer.targets.length > 0).length,
+    targets: () => [...observers].flatMap((observer) => observer.targets)
   };
 }

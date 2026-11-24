@@ -3,6 +3,12 @@
  * kit's width rules (`listTier`, `detailLayout`). One `ResizeObserver` per
  * list, observing that list's own root (the `@container` its rows' tier
  * variants read, so script and styles agree), released with its owner.
+ *
+ * A root whose height follows its content (a list whose rows are measured as
+ * they mount) binds the ref to a zero-height probe spanning its content box
+ * instead: the probe's box changes only with the width, so a height change
+ * made by a deeper observer's callback (the virtualizer measuring rows) never
+ * re-notifies in the same frame — the browser's "ResizeObserver loop" error.
  */
 import { createSignal, onCleanup, type Accessor } from 'solid-js';
 

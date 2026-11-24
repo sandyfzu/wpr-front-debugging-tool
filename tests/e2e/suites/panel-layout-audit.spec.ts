@@ -1,6 +1,6 @@
 /** Independent adversarial checks of the panel's bounded workspaces. */
 import { expect, openFixturePage, panelPageUrl, test } from '../helpers/extension';
-import { loadedPageRoot, openPanelForFixture } from '../helpers/panel-data';
+import { openPanelForFixture, showPanelRoute } from '../helpers/panel-data';
 
 /** Every route. */
 const ROUTES = [
@@ -120,11 +120,7 @@ test('reflows all routes under native 200 percent browser zoom', async ({ extens
     );
     await expect.poll(() => panel.evaluate(() => innerWidth)).toBe(before / 2);
     for (const route of ROUTES) {
-      await panel.evaluate((id) => {
-        location.hash = `#/${id}`;
-      }, route);
-      const root = loadedPageRoot(panel, route);
-      await expect(root).toBeVisible();
+      const root = await showPanelRoute(panel, route);
       expect(await root.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
       if (route === 'detections')
         await info.attach('native-zoom-200', {
@@ -164,11 +160,7 @@ test('keeps routes and hostile search contained at narrow, ultrawide and shallow
     ]) {
       await panel.setViewportSize(size);
       for (const route of ROUTES) {
-        await panel.evaluate((id) => {
-          location.hash = `#/${id}`;
-        }, route);
-        const root = loadedPageRoot(panel, route);
-        await expect(root).toBeVisible();
+        const root = await showPanelRoute(panel, route);
         await expect.poll(() => root.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
         const main = panel.locator('[data-fdt="panel-content"]');
         expect(await main.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
