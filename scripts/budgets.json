@@ -88,7 +88,7 @@
     "surface": "What's new page start JS (whats-new.html + static imports)",
     "start": "whats-new.html",
     "maxKb": {
-      "raw": 126
+      "raw": 130
     }
   },
   {
@@ -96,7 +96,7 @@
     "build": "firefox-mv2",
     "start": "whats-new.html",
     "maxKb": {
-      "raw": 126
+      "raw": 130
     }
   },
   {

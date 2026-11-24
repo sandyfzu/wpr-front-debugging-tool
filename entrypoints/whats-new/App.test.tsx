@@ -157,6 +157,28 @@ describe('the What’s new page', () => {
     expect(image()?.getAttribute('src')).toBe('/whats-new/demo-dark.webp');
   });
 
+  it('sizes a screenshot card from its shot width and links the file at full size', () => {
+    const textOnly: ReleaseNote = {
+      ...SHOT_RELEASE,
+      highlights: [{ id: 'no-shot', title: 'No shot', summary: 'None', howTo: ['Here'] }]
+    };
+    renderPage({ view: { featured: [SHOT_RELEASE], history: [textOnly] } });
+    const card = document.querySelector<HTMLElement>('[data-fdt-highlight="with-shot"]');
+    // The width cap comes from the registry row (640 here), never a literal.
+    expect(card?.style.getPropertyValue('--shot-width')).toBe('640px');
+    expect(card?.className).toContain('@feature:grid');
+    const link = card?.querySelector<HTMLAnchorElement>('[data-fdt="highlight-shot"]');
+    expect(link?.getAttribute('href')).toBe('/whats-new/demo-light.webp');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener');
+    expect(link?.title).toBe(RELEASE_WORDS.fullSize);
+    // Its image is the link's name; a text-only card keeps the stacked flow.
+    expect(link?.querySelector('img')?.getAttribute('alt')).toBe('Demo shot');
+    const plain = document.querySelector<HTMLElement>('[data-fdt-highlight="no-shot"]');
+    expect(plain?.style.getPropertyValue('--shot-width')).toBe('');
+    expect(plain?.className).not.toContain('@feature:grid');
+  });
+
   it('collapses earlier releases under their version', () => {
     renderPage({ view: { featured: [SHOT_RELEASE], history: [RELEASE_NOTES[0] as ReleaseNote] } });
     const entry = document.querySelector<HTMLDetailsElement>('[data-fdt-history="3.0.0"]');

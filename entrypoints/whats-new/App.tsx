@@ -31,6 +31,7 @@ import { cn } from '../../utils/cn';
 import type { Appearance } from '../../utils/theme';
 import { OnUpdateSwitch } from './on-update-switch';
 import { ReleaseBody, type ReleaseScope } from './release';
+import { WHATS_NEW_TYPE } from './type-scale';
 
 /** The page's own words. */
 export const PAGE_WORDS = {
@@ -85,7 +86,8 @@ function HistoryEntry(props: {
       <details data-fdt-history={props.version} class="group">
         <summary
           class={cn(
-            'flex cursor-pointer list-none items-start gap-1.5 rounded-lg p-2.5 [&::-webkit-details-marker]:hidden',
+            // `-m-1 p-1`: room for the focus ring without moving the text.
+            '-m-1 flex cursor-pointer list-none items-start gap-1.5 rounded-md p-1 [&::-webkit-details-marker]:hidden',
             FOCUS_RING
           )}
         >
@@ -95,11 +97,11 @@ function HistoryEntry(props: {
             class={cn('mt-0.5 shrink-0 text-fg-muted group-open:rotate-90', MOTION_TURN)}
           />
           <span class="flex min-w-0 flex-col gap-0.5">
-            <span class="font-mono text-xs font-semibold text-fg-primary">{props.version}</span>
-            <span class="text-xs text-fg-secondary">{props.headline}</span>
+            <span class={WHATS_NEW_TYPE.version}>{props.version}</span>
+            <span class={WHATS_NEW_TYPE.body}>{props.headline}</span>
           </span>
         </summary>
-        <div class="px-2.5 pb-2.5">{props.children}</div>
+        <div class="pt-3">{props.children}</div>
       </details>
     </Card>
   );
@@ -121,10 +123,8 @@ function FeaturedRelease(props: {
   return (
     <section data-fdt-release={props.note.version} class="flex flex-col gap-3">
       <div class="flex flex-col gap-1 border-b border-line-1 pb-2">
-        <h2 class="text-sm font-semibold text-fg-primary">
-          {PAGE_WORDS.release(props.note.version)}
-        </h2>
-        <p class="text-sm text-fg-primary">{props.fill(props.note.headline)}</p>
+        <h2 class={WHATS_NEW_TYPE.section}>{PAGE_WORDS.release(props.note.version)}</h2>
+        <p class={WHATS_NEW_TYPE.lead}>{props.fill(props.note.headline)}</p>
       </div>
       <ReleaseBody note={props.note} scope={props.scope} level={3} />
     </section>
@@ -158,9 +158,13 @@ export default function App(props: WhatsNewPageProps): JSX.Element {
 
   return (
     <main class="whats-new-page @container min-h-dvh bg-surface-0" data-fdt-page="whats-new">
+      {/* A wide column: the screenshots take the width (prose caps its own
+          measure). The gutters widen only at `@feature`, where the stacked
+          shot is long 1:1 — widening them earlier (`@wide`) took 16 px from
+          a shot still below its shot width, shrinking it as the window grew. */}
       <div
         data-fdt="whats-new-body"
-        class="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-6 px-4 pb-10 pt-8"
+        class="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-8 px-4 pb-12 pt-8 @wide:pt-12 @feature:px-6"
       >
         <header class="flex flex-col gap-3">
           <div class="flex min-w-0 items-center gap-3">
@@ -172,11 +176,9 @@ export default function App(props: WhatsNewPageProps): JSX.Element {
               class="size-12 shrink-0"
             />
             <div class="flex min-w-0 flex-col gap-0.5">
-              <p class="text-2xs font-medium uppercase tracking-wide text-fg-muted">
-                {WHATS_NEW_NAME}
-              </p>
+              <p class={WHATS_NEW_TYPE.caps}>{WHATS_NEW_NAME}</p>
               <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                <h1 class="min-w-0 text-base font-semibold text-fg-primary">{props.name}</h1>
+                <h1 class={cn('min-w-0', WHATS_NEW_TYPE.title)}>{props.name}</h1>
                 <Badge kind="neutral" variant="outline" class="shrink-0 font-mono">
                   {`v${props.version}`}
                 </Badge>
@@ -185,7 +187,7 @@ export default function App(props: WhatsNewPageProps): JSX.Element {
           </div>
           <Show when={single()}>
             {(note) => (
-              <p data-fdt="whats-new-headline" class="text-sm text-fg-primary">
+              <p data-fdt="whats-new-headline" class={WHATS_NEW_TYPE.lead}>
                 {fill(note().headline)}
               </p>
             )}
@@ -193,9 +195,9 @@ export default function App(props: WhatsNewPageProps): JSX.Element {
         </header>
 
         <Card>
-          <section data-fdt="whats-new-start" class="flex flex-col gap-2 p-2.5">
-            <h2 class="text-sm font-semibold text-fg-primary">{PAGE_WORDS.startTitle}</h2>
-            <ul class="flex list-disc flex-col gap-1 ps-4 text-xs text-fg-secondary">
+          <section data-fdt="whats-new-start" class="flex flex-col gap-2">
+            <h2 class={WHATS_NEW_TYPE.section}>{PAGE_WORDS.startTitle}</h2>
+            <ul class={cn('flex list-disc flex-col gap-1 ps-5', WHATS_NEW_TYPE.body)}>
               <li data-fdt="whats-new-panel-hint">{fill(PAGE_WORDS.panel)}</li>
               <li>{fill(PAGE_WORDS.palette)}</li>
             </ul>
@@ -215,7 +217,7 @@ export default function App(props: WhatsNewPageProps): JSX.Element {
 
         <Show
           when={props.view.featured.length > 0}
-          fallback={<p class="text-xs text-fg-secondary">{PAGE_WORDS.empty}</p>}
+          fallback={<p class={WHATS_NEW_TYPE.body}>{PAGE_WORDS.empty}</p>}
         >
           <Show
             when={single()}
@@ -235,7 +237,7 @@ export default function App(props: WhatsNewPageProps): JSX.Element {
 
         <Show when={props.view.history.length > 0}>
           <section class="flex flex-col gap-2">
-            <h2 class="text-sm font-semibold text-fg-primary">{PAGE_WORDS.history}</h2>
+            <h2 class={WHATS_NEW_TYPE.section}>{PAGE_WORDS.history}</h2>
             <For each={props.view.history}>
               {(note) => (
                 <HistoryEntry version={note.version} headline={fill(note.headline)}>
@@ -247,7 +249,7 @@ export default function App(props: WhatsNewPageProps): JSX.Element {
         </Show>
 
         <footer class="flex flex-col gap-3 border-t border-line-1 pt-4">
-          <p data-fdt="whats-new-support" class="text-xs text-fg-secondary">
+          <p data-fdt="whats-new-support" class={WHATS_NEW_TYPE.meta}>
             {`${PAGE_WORDS.support} `}
             <a href={SUPPORT_MAILTO} class={cn(TEXT_LINK, FOCUS_RING)}>
               {SUPPORT_EMAIL}

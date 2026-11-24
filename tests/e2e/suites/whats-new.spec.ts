@@ -17,8 +17,11 @@
  * fresh worker: `onInstalled` update + the start check; a reload closes the
  * extension's own tabs) opens none.
  *
- * Layout leg (the shared fixture): the page at 320–1280 px in both palettes
- * never scrolls sideways, runs no animation under reduced motion, and its
+ * Layout leg (the shared fixture): the page at 320–1440 px in both palettes
+ * never scrolls sideways and runs no animation under reduced motion; on a
+ * desktop window (1024–1920 px, the side-by-side tier's edge included)
+ * every screenshot renders at its full shot width (its UI text at real size)
+ * and body text at the reading size; its
  * footer switch writes the synced setting.
  */
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -36,6 +39,16 @@ import {
 } from '../helpers/whats-new';
 import { WHATS_NEW_PAGE_PATH } from '../../../lib/release-notes/page-path';
 import packageInfo from '../../../package.json' with { type: 'json' };
+
+/**
+ * Desktop window widths the screenshots must render 1:1 at: a small laptop,
+ * the band below the side-by-side tier, a few px either side of it (≈ 1222 px
+ * with the gutters and scrollbar) and common wide windows.
+ */
+const DESKTOP_WIDTHS = [1024, 1120, 1180, 1210, 1218, 1222, 1226, 1230, 1280, 1440, 1920];
+
+/** Window widths around the old `@wide` gutter step (≈ 776 px), every 4 px. */
+const GROWING_WIDTHS = Array.from({ length: 11 }, (_, step) => 760 + step * 4);
 
 /** The version the store item had before 3.0.0. */
 const PUBLISHED_VERSION = '2.2.5';
@@ -129,7 +142,7 @@ test.describe('What’s new page layout', () => {
     try {
       for (const colorScheme of ['light', 'dark'] as const) {
         await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
-        for (const width of [320, 480, 768, 1280]) {
+        for (const width of [320, 480, 768, 1280, 1440]) {
           await page.setViewportSize({ width, height: 800 });
           await page.goto(`chrome-extension://${id}${WHATS_NEW_PAGE_PATH}`);
           await expect(page.locator('[data-fdt-highlight="command-palette"]')).toBeVisible();
@@ -143,6 +156,68 @@ test.describe('What’s new page layout', () => {
           expect(overflow.scroll, `${colorScheme} @ ${String(width)} px`).toBe(overflow.client);
           expect(overflow.animations, `${colorScheme} @ ${String(width)} px`).toBe(0);
         }
+      }
+      // Every desktop width gives the screenshots their whole shot width, never a
+      // share of it — including the band around the side-by-side tier (list
+      // 1166 px ≈ a 1222 px window), where a too-early switch once shrank them.
+      // Below 1:1 a shot only grows with the window (a gutter step once took
+      // 16 px near 776 px). Both palettes: a resize only, no reload.
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(`chrome-extension://${id}${WHATS_NEW_PAGE_PATH}`);
+      await expect(page.locator('[data-fdt-highlight="command-palette"]')).toBeVisible();
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+        let previous = 0;
+        for (const width of GROWING_WIDTHS) {
+          await page.setViewportSize({ width, height: 900 });
+          const rendered = await page
+            .locator('[data-fdt-highlight] img')
+            .first()
+            .evaluate((image) => image.getBoundingClientRect().width);
+          expect(rendered, `${colorScheme} @ ${String(width)} px`).toBeGreaterThanOrEqual(previous);
+          previous = rendered;
+        }
+        const beside = new Map<number, boolean>();
+        for (const width of DESKTOP_WIDTHS) {
+          await page.setViewportSize({ width, height: 900 });
+          const geometry = await page.evaluate(() => ({
+            shots: [...document.querySelectorAll<HTMLImageElement>('[data-fdt-highlight] img')].map(
+              (image) => {
+                const card = image.closest('[data-fdt-highlight]');
+                const shot = image.getBoundingClientRect();
+                const title = card?.querySelector('h2, h3, h4')?.getBoundingClientRect();
+                return {
+                  id: card?.getAttribute('data-fdt-highlight'),
+                  rendered: shot.width,
+                  // The width attribute is the registry's shot width (CSS px).
+                  shot: Number(image.getAttribute('width')),
+                  // The text column's width when it sits beside the shot, else null.
+                  besideText: title !== undefined && title.left >= shot.right ? title.width : null
+                };
+              }
+            ),
+            body: Number.parseFloat(
+              getComputedStyle(document.querySelector('[data-fdt-highlight] p') ?? document.body)
+                .fontSize
+            )
+          }));
+          expect(geometry.shots.length).toBeGreaterThan(0);
+          for (const shot of geometry.shots) {
+            const where = `${colorScheme} ${String(shot.id)} @ ${String(width)} px`;
+            expect(shot.rendered, where).toBeGreaterThanOrEqual(shot.shot);
+            // Beside the shot, the text keeps its 20 rem reading column.
+            if (shot.besideText !== null)
+              expect(shot.besideText, where).toBeGreaterThanOrEqual(320);
+          }
+          expect(geometry.body).toBeGreaterThanOrEqual(16);
+          beside.set(
+            width,
+            geometry.shots.every((shot) => shot.besideText !== null)
+          );
+        }
+        // Both layouts are exercised: stacked on a small laptop, side by side wide.
+        expect(beside.get(1024)).toBe(false);
+        expect(beside.get(1440)).toBe(true);
       }
       const [light, dark] = [...canvases].map((entry) => entry.split(' ').slice(1).join(' '));
       expect(canvases.size).toBe(2);
