@@ -242,11 +242,17 @@ export default defineConfig({
     // Least privilege — every permission has a concrete consumer somewhere in the
     // ported feature set; each is added/removed by the phase that owns that feature.
     permissions: [
-      // Options (`sync:options`) + Known Conflicts DB cache (`local:known-conflicts-db`).
+      // Options and per-site choices (sync), saved exclusion sets, panel layout,
+      // tool settings and the cached data files (local), builder sessions (session).
       'storage',
-      // Hourly Known Conflicts DB refresh alarm.
+      // Hourly checks of the two public data files: the Known Conflicts DB is
+      // fetched on every alarm (also at browser start + manual update); WP
+      // Rocket's latest exclusion list refreshes only 24 h after a success.
       'alarms',
-      // Read main-frame response headers for the Server / Known Platform cards.
+      // Read main-frame response headers for the Server / Known Platform cards;
+      // Firefox also rewrites builder session documents through
+      // `filterResponseData` and redirects the simulated LazyLoad runtime to
+      // its packaged copy (both with `webRequestBlocking` below).
       'webRequest',
       // Side-by-Side, PSI Side-by-Side, Exclusion Builder, manual KC DB update.
       'contextMenus',
@@ -281,8 +287,7 @@ export default defineConfig({
       // (MDN). Firefox build only — Chromium's MV3 build has no body filter.
       ...(browser === 'firefox' ? ['webRequestBlocking'] : [])
     ],
-    // Required for `webRequest` main-frame header capture (the source omitted these,
-    // putting that feature at risk). `tabs` is intentionally NOT requested; a
+    // Required for `webRequest` main-frame header capture. `tabs` is intentionally NOT requested; a
     // feature that would need it must first verify it cannot work without it.
     // Same list the runtime listeners use — single-sourced in lib/wp-rocket/constants.
     // It also covers the RUCSS test's one request, sent by the background only

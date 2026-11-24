@@ -10,7 +10,7 @@
     "surface": "known-conflicts DB seed asset (background-owned)",
     "globs": ["assets/background.json"],
     "maxKb": {
-      "raw": 85
+      "raw": 81
     },
     "required": true
   },
@@ -18,7 +18,7 @@
     "surface": "known-conflicts DB seed asset (background-owned)",
     "globs": ["assets/background.json"],
     "maxKb": {
-      "raw": 85
+      "raw": 81
     },
     "build": "firefox-mv2",
     "required": true
