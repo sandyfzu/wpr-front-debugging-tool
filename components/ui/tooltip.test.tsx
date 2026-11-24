@@ -15,6 +15,9 @@
  * `""`), so tests assert the open state via `aria-describedby` rather than
  * content removal; in Chromium the content unmounts on close.
  *
+ * The graph's one-time transform is paid in `beforeAll`, outside every
+ * test's time budget.
+ *
  * One runtime per test: the reset also re-evaluates the inlined Solid
  * runtime, so `render`, `createSignal` and the icon are re-imported with the
  * wrapper (`importFresh`) and disposed by that same copy's `cleanup` — a
@@ -26,7 +29,7 @@ import { fireEvent, screen, waitFor, within } from '@solidjs/testing-library';
 import type { render as RenderFn } from '@solidjs/testing-library';
 import type { createSignal as CreateSignalFn } from 'solid-js';
 import type RefreshCwIcon from 'lucide-solid/icons/refresh-cw';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Tooltip as TooltipComponent } from './tooltip';
 
 /** The modules one test renders with — all evaluated on one fresh Solid runtime. */
@@ -39,6 +42,22 @@ interface FreshModules {
 
 /** `cleanup` of the testing-library copy the current test rendered with. */
 let cleanupFresh: (() => void) | undefined;
+
+/**
+ * Pay the module graph's one-time transform before any test: the first fresh
+ * import otherwise compiles the whole Kobalte + Solid stack inside the first
+ * test's time budget (about 1 s alone, several under a loaded parallel run).
+ * Later resets re-evaluate the cached transforms only; nothing renders here,
+ * so this copy's runtime holds no state a test could see.
+ */
+beforeAll(async () => {
+  await Promise.all([
+    import('./tooltip'),
+    import('lucide-solid/icons/refresh-cw'),
+    import('@solidjs/testing-library'),
+    import('solid-js')
+  ]);
+});
 
 afterEach(() => {
   cleanupFresh?.();

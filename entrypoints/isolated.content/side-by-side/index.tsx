@@ -63,7 +63,7 @@ import {
   type PresentationSnapshot,
   type PresentationStateIO
 } from '../../../lib/side-by-side/presentation-state';
-import { isHttpUrl } from '../../../utils/urls';
+import { isHttpUrl, NEW_TAB_FEATURES } from '../../../utils/urls';
 import {
   createShadowSurface,
   type ShadowSurface
@@ -664,7 +664,7 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       void openPerformanceWithConsent(entryUrl, openPerformanceFlow, performanceConsentDeps());
       return;
     }
-    window.open(entryUrl, '_blank', 'noopener');
+    window.open(entryUrl, '_blank', NEW_TAB_FEATURES);
   };
 
   // The menu's receivers and the on-page palette call the same two

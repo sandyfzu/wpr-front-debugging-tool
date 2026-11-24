@@ -5,26 +5,73 @@ import wxtAutoImports from './.wxt/eslint-auto-imports.mjs';
 
 // Dependencies whose roles are covered by committed, lighter alternatives
 // (CSS motion, the ~30-line hash router, the local toast store, shiki). Importing
-// them is a mistake — they bloat bundles or pull in React-only peers.
+// them is a mistake — they bloat bundles or pull in React-only peers. One entry
+// per role, so each message is declared once.
 const bannedDependencies = [
   {
-    group: ['framer-motion', 'framer-motion/*'],
+    group: ['react', 'react/*', 'react-dom', 'react-dom/*'],
+    message: 'The UI is SolidJS; React and its renderers never ship here.'
+  },
+  {
+    group: ['@solidjs/router', '@solidjs/router/*', 'solid-app-router', 'wouter', 'wouter/*'],
+    message: 'Routing is the local hash router from the panel shell; no router library.'
+  },
+  {
+    group: [
+      'motion',
+      'motion/*',
+      'framer-motion',
+      'framer-motion/*',
+      'solid-motionone',
+      '@motionone/*',
+      'solid-transition-group'
+    ],
     message:
       'Animation is CSS transitions/keyframes (prefers-reduced-motion is handled in the token stylesheet).'
   },
   {
-    group: ['wouter', 'wouter/*'],
-    message: 'Routing is the local hash router from the panel shell; no router library.'
-  },
-  {
-    group: ['react-hot-toast'],
+    group: ['solid-toast', 'sonner', 'solid-sonner', 'react-hot-toast'],
     message: 'Toasts are the local toast store + components/ui/toast.'
   },
   {
-    group: ['react-syntax-highlighter'],
-    message: 'Code highlighting is shiki (fine-grained bundle, dynamically imported, panel-only).'
+    group: [
+      'prismjs',
+      'prismjs/*',
+      'highlight.js',
+      'highlight.js/*',
+      'refractor',
+      'refractor/*',
+      'react-syntax-highlighter'
+    ],
+    message:
+      'Code highlighting is shiki (fine-grained bundle, run only in the highlight Web Worker behind components/ui/code-block).'
   }
 ];
+
+/**
+ * `no-restricted-syntax` selectors banning `import()` of one banned group
+ * (`no-restricted-imports` never sees dynamic imports): the package names
+ * (a `/*` suffix stripped) as one anchored regex matching the name or any
+ * subpath, for a string or a template source.
+ * @param {{ group: string[], message: string }} entry - A `bannedDependencies` row.
+ * @returns {{ selector: string, message: string }[]} The two selectors.
+ */
+const dynamicImportBan = ({ group, message }) => {
+  const names = [...new Set(group.map((pattern) => pattern.replace(/\/\*$/, '')))];
+  // Regex-escape, then escape `/` for the esquery regex literal.
+  const source = names
+    .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('/', '\\/'))
+    .join('|');
+  const regex = `/^(${source})(\\/|$)/`;
+  return [
+    { selector: `ImportExpression[source.value=${regex}]`, message },
+    {
+      selector: `ImportExpression[source.type='TemplateLiteral'][source.quasis.0.value.cooked=${regex}]`,
+      message
+    }
+  ];
+};
+const bannedDynamicImportRestriction = bannedDependencies.flatMap(dynamicImportBan);
 
 // WP Rocket's beacon package: one adapter owns its internals, and only the
 // lazily injected runner bundle may carry its bytes (relieved for that file
@@ -179,6 +226,7 @@ export default tseslint.config(
       '@typescript-eslint/no-restricted-imports': extensionApiImportRule,
       'no-restricted-syntax': [
         'error',
+        ...bannedDynamicImportRestriction,
         ...beaconDynamicImportRestriction,
         ...extensionApiDynamicImportRestriction
       ]
@@ -200,6 +248,7 @@ export default tseslint.config(
       // The strict block's selectors restated: last matching config wins.
       'no-restricted-syntax': [
         'error',
+        ...bannedDynamicImportRestriction,
         ...beaconDynamicImportRestriction,
         ...extensionApiDynamicImportRestriction,
         ...extensionApiGlobalReadRestriction

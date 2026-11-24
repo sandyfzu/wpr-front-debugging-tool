@@ -218,6 +218,32 @@ describe('parseKnownConflicts', () => {
   it('tolerates unknown extra fields (additive DB evolution) without carrying them', () => {
     expect(parseKnownConflicts([{ ...row, newField: 1 }])).toEqual([row]);
   });
+
+  // The server-owned DB is untrusted: each field's character cap (pinned
+  // literally) holds at the edge and one character past it rejects the batch.
+  it.each([
+    ['id', 64],
+    ['type', 64],
+    ['name', 256],
+    ['detection_pattern', 512],
+    ['summary', 512],
+    ['issue_description', 8_192],
+    ['url', 2_048]
+  ])('caps %s at %i characters', (field, cap) => {
+    expect(parseKnownConflicts([{ ...row, [field]: 'x'.repeat(cap) }])).toHaveLength(1);
+    expect(parseKnownConflicts([{ ...row, [field]: 'x'.repeat(cap + 1) }])).toBeNull();
+  });
+
+  it('caps the batch at 500 rows', () => {
+    expect(parseKnownConflicts(Array.from({ length: 500 }, () => row))).toHaveLength(500);
+    expect(parseKnownConflicts(Array.from({ length: 501 }, () => row))).toBeNull();
+  });
+
+  it('rejects hostile row values: arrays, objects, a null row', () => {
+    expect(parseKnownConflicts([{ ...row, url: ['https://x.test'] }])).toBeNull();
+    expect(parseKnownConflicts([{ ...row, summary: { toString: () => 'x' } }])).toBeNull();
+    expect(parseKnownConflicts([row, null])).toBeNull();
+  });
 });
 
 describe('parsePreloadedResources', () => {

@@ -33,7 +33,7 @@ import {
 import type { KnownConflict } from '../../../lib/storage/known-conflicts';
 import { findKnownConflicts } from '../../../lib/known-conflicts/match';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
-import { isHttpUrl } from '../../../utils/urls';
+import { isHttpUrl, NEW_TAB_FEATURES } from '../../../utils/urls';
 import { debounce, type DebouncedFunction } from '../../../utils/debounce';
 import { createLogger } from '../../../lib/logger';
 import { createShadowSurface } from '../../../components/injected-ui/shadow-surface';
@@ -124,7 +124,7 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
       log.warn('Conflict link is not an openable http(s) URL — ignoring it');
       return;
     }
-    window.open(url, '_blank', 'noopener');
+    window.open(url, '_blank', NEW_TAB_FEATURES);
   };
 
   /** The focus choreography rides this context's frames (ui/focus's contract). */

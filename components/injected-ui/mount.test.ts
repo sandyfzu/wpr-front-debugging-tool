@@ -126,6 +126,12 @@ describe('mountShadowUi', () => {
     expect(container.dataset.theme).toBe(FALLBACK.appearance);
   });
 
+  it('carries the design tokens on the container (page rules on the host never reach it)', async () => {
+    const { container, shadow } = shadowContainer();
+    await mountShadowUi(container, shadow, () => probeView('tokens-probe'));
+    expect(container.getAttribute('data-fdt-tokens')).toBe('');
+  });
+
   it('still renders, in the system palette, when the appearance read is refused (one warning)', async () => {
     // Firefox refuses storage.sync for a temporary add-on without an id.
     vi.spyOn(optionsStore, 'getValue').mockRejectedValueOnce(
