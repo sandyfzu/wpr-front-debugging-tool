@@ -47,6 +47,24 @@ describe('manifest browser_specific_settings', () => {
   });
 });
 
+describe('store summary', () => {
+  it('keeps the manifest description (every store summary) within the Chrome Web Store limit', () => {
+    const { description } = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      description: string;
+    };
+    // Chrome Web Store: summary ≤ 132 characters, plain text (no markup).
+    expect(description.length).toBeGreaterThan(0);
+    expect(description.length).toBeLessThanOrEqual(132);
+    expect(description).not.toMatch(/[<>*_`]/);
+  });
+});
+
+describe('zip', () => {
+  it('keeps the store listing folder out of the Firefox sources zip', () => {
+    expect(config.zip?.excludeSources).toEqual(['store/**']);
+  });
+});
+
 describe('manifest toolbar button', () => {
   it('declares the button without a popup in the config for every target', async () => {
     for (const browser of ['chrome', 'edge', 'firefox']) {

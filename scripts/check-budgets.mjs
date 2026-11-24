@@ -31,6 +31,12 @@
  *     of the row. An unresolvable set fails the row, and a start file another
  *     non-backstop row also counts fails the gate (a lazily loaded chunk
  *     pulled onto the start path, or a double count);
+ *   - `mustNotContain` / `mustContain` (optional, required globs rows only): text
+ *     markers the row's files must never / must hold — a code-presence
+ *     guard a size ceiling's headroom cannot give (code a build must not
+ *     ship regrowing under the ceiling); pair each forbidden marker with a
+ *     `mustContain` on the bundle that ships it, so a renamed marker fails
+ *     instead of passing vacuously;
  * - `kind: "timing"`: a runtime gate this script cannot measure (no globs,
  *   no `maxKb` — carrying either is malformed). Its `maxMs` is asserted by
  *   the runner named in `measuredBy` (a committed spec); this script only
@@ -219,12 +225,12 @@ export function requiredGlobProblems(files, globs) {
  * first); a required row whose globs do not each match exactly one file is
  * unmatched, and a start row whose start set cannot be fully resolved is
  * broken (both breaches); otherwise absent when no file matches, else its
- * totals, files and breaches.
+ * totals, files and breaches (size and marker).
  *
- * @param {{globs?: string[], start?: string, maxKb: {raw?: number, gzip?: number}, build?: string, required?: boolean}} row A validated bytes row.
+ * @param {{globs?: string[], start?: string, maxKb: {raw?: number, gzip?: number}, build?: string, required?: boolean, mustNotContain?: string[], mustContain?: string[]}} row A validated bytes row.
  * @param {(build: string) => string[] | null} filesOf A build's file list, or null when it is not built.
  * @param {(build: string) => (path: string) => Buffer} readerFor A build's file reader.
- * @returns {{status: 'skipped', build: string} | {status: 'unmatched', problems: Array<{glob: string, matched: number}>} | {status: 'broken', problems: string[]} | {status: 'absent'} | {status: 'measured', rawBytes: number, gzipBytes: number, files: string[], rawOver: boolean, gzipOver: boolean}}
+ * @returns {{status: 'skipped', build: string} | {status: 'unmatched', problems: Array<{glob: string, matched: number}>} | {status: 'broken', problems: string[]} | {status: 'absent'} | {status: 'measured', rawBytes: number, gzipBytes: number, files: string[], rawOver: boolean, gzipOver: boolean, markerProblems: string[]}}
  *   The row's outcome.
  */
 export function measureRow(row, filesOf, readerFor) {
@@ -246,8 +252,56 @@ export function measureRow(row, filesOf, readerFor) {
     gzipBytes,
     files: hit,
     rawOver: row.maxKb.raw !== undefined && rawBytes > row.maxKb.raw * 1024,
-    gzipOver: row.maxKb.gzip !== undefined && gzipBytes > row.maxKb.gzip * 1024
+    gzipOver: row.maxKb.gzip !== undefined && gzipBytes > row.maxKb.gzip * 1024,
+    markerProblems: markerProblems(row, hit, reader)
   };
+}
+
+/**
+ * The marker fields a bytes row may carry (`mustNotContain`, `mustContain`),
+ * each a non-empty list of non-empty text markers.
+ */
+const MARKER_FIELDS = ['mustNotContain', 'mustContain'];
+
+/**
+ * Every field a row of either kind may carry; per-kind exclusions are checked
+ * separately, so this only catches keys no kind knows (typos).
+ */
+const ROW_KEYS = new Set([
+  'surface',
+  'kind',
+  'globs',
+  'start',
+  'maxKb',
+  'build',
+  'required',
+  'backstop',
+  'maxMs',
+  'measuredBy',
+  ...MARKER_FIELDS
+]);
+
+/**
+ * A measured row's marker breaches: each forbidden marker one of its files
+ * holds, and each required marker none of them holds.
+ *
+ * @param {{mustNotContain?: string[], mustContain?: string[]}} row A validated bytes row.
+ * @param {string[]} files The row's files.
+ * @param {(path: string) => Buffer} readFile The build's file reader.
+ * @returns {string[]} One line per breach, naming the marker (and the file for a forbidden one).
+ */
+export function markerProblems(row, files, readFile) {
+  if (row.mustNotContain === undefined && row.mustContain === undefined) return [];
+  const texts = files.map((file) => ({ file, text: readFile(file).toString('utf8') }));
+  const forbidden = (row.mustNotContain ?? []).flatMap((marker) =>
+    texts
+      .filter(({ text }) => text.includes(marker))
+      .map(({ file }) => `${file} contains forbidden marker ${JSON.stringify(marker)}`)
+  );
+  const missing = (row.mustContain ?? [])
+    .filter((marker) => !texts.some(({ text }) => text.includes(marker)))
+    .map((marker) => `required marker ${JSON.stringify(marker)} is in none of ${files.join(', ')}`);
+  return [...forbidden, ...missing];
 }
 
 /** Resolve a relative path and read it from the current build output. */
@@ -261,7 +315,7 @@ function defaultReadFile(relativePath) {
  *
  * @param {unknown} raw The parsed JSON of `scripts/budgets.json` (an array of
  *   rows, per the kind taxonomy in the header).
- * @returns {Array<{kind: 'bytes', surface: string, globs?: string[], start?: string, maxKb: {raw?: number, gzip?: number}, build?: string, required?: true, backstop?: true} | {kind: 'timing', surface: string, maxMs: number, measuredBy: string}>}
+ * @returns {Array<{kind: 'bytes', surface: string, globs?: string[], start?: string, maxKb: {raw?: number, gzip?: number}, build?: string, required?: true, backstop?: true, mustNotContain?: string[], mustContain?: string[]} | {kind: 'timing', surface: string, maxMs: number, measuredBy: string}>}
  *   Validated rows in file order, normalized to their kind.
  */
 export function parseBudgetRows(raw) {
@@ -284,6 +338,10 @@ export function parseBudgetRows(raw) {
     }
     if (typeof row.surface !== 'string' || row.surface.trim() === '') {
       problems.push(`${tag} surface must be a non-empty string`);
+    }
+    // A misspelled field (`mustNotContains`) would otherwise be ignored silently.
+    for (const key of Object.keys(row)) {
+      if (!ROW_KEYS.has(key)) problems.push(`${tag} carries unknown field ${JSON.stringify(key)}`);
     }
     const kind = row.kind === undefined ? 'bytes' : row.kind;
     if (kind === 'bytes') {
@@ -344,6 +402,24 @@ export function parseBudgetRows(raw) {
       if (row.required !== undefined && row.required !== true) {
         problems.push(`${tag} required must be true when present`);
       }
+      for (const field of MARKER_FIELDS) {
+        const markers = row[field];
+        if (markers === undefined) continue;
+        if (row.start !== undefined) {
+          problems.push(`${tag} is a start row — name marker files by globs, not ${field}`);
+        } else if (row.required !== true) {
+          // An optional row matching nothing reads "absent" before its markers
+          // run, so a renamed or moved file would pass the guard vacuously.
+          problems.push(`${tag} carries ${field} — a marker row must be required: true`);
+        }
+        if (
+          !Array.isArray(markers) ||
+          markers.length === 0 ||
+          markers.some((marker) => typeof marker !== 'string' || marker.trim() === '')
+        ) {
+          problems.push(`${tag} ${field} must be a non-empty array of non-empty strings`);
+        }
+      }
     } else if (kind === 'timing') {
       const maxMs = /** @type {{maxMs?: unknown}} */ (row).maxMs;
       if (typeof maxMs !== 'number' || !Number.isFinite(maxMs) || maxMs <= 0) {
@@ -373,7 +449,7 @@ export function parseBudgetRows(raw) {
           `${tag} is a timing row — a timing gate is measured outside the bundle, so it cannot carry required`
         );
       }
-      for (const field of ['start', 'backstop']) {
+      for (const field of ['start', 'backstop', ...MARKER_FIELDS]) {
         if (row[field] !== undefined) {
           problems.push(
             `${tag} is a timing row — a timing gate is measured outside the bundle, so it cannot carry ${field}`
@@ -536,7 +612,7 @@ async function main() {
       continue;
     }
     const { rawBytes, gzipBytes, rawOver, gzipOver } = result;
-    breached ||= rawOver || gzipOver;
+    breached ||= rawOver || gzipOver || result.markerProblems.length > 0;
     console.log(
       `  ${padded(surface)}  ${formatKb(rawBytes, maxKb.raw !== undefined)} ${
         rawOver ? '>' : '<'
@@ -545,6 +621,7 @@ async function main() {
         maxKb.gzip !== undefined
       )}  ${String(maxKb.gzip ?? '—').padStart(5)}`
     );
+    for (const problem of result.markerProblems) console.log(`      ✗ ${problem}`);
     if (row.start === undefined) continue;
     // A start set is derived, so the table names what it counted.
     console.log(`      ${result.files.length} start files: ${result.files.join(', ')}`);
@@ -558,7 +635,7 @@ async function main() {
   }
   console.log('');
   if (breached) {
-    console.error('✗ One or more surfaces exceed their size budget.');
+    console.error('✗ One or more surfaces exceed their size budget or break a marker rule.');
     process.exitCode = 1;
   }
 }

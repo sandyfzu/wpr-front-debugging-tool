@@ -92,7 +92,8 @@ export const EXCLUSION_SET_LIMITS = {
  *   the tab lived on (the debug target went away, e.g. a renderer crash).
  * - `unsupported-page` — this page cannot be intercepted (not an http(s)
  *   top-level document, a browser-internal or store page).
- * - `unsupported-browser` — this build/browser lacks the interception API.
+ * - `unsupported-browser` — this build/browser lacks the interception API
+ *   (or, on Firefox, the `Worker` the engine runs in).
  * - `session-limit` — the concurrent live-session cap is reached; stopping
  *   a session in another tab frees a slot.
  */

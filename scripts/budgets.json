@@ -346,8 +346,16 @@
     "build": "firefox-mv2",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 358
-    }
+      "raw": 254.6
+    },
+    "required": true,
+    "mustNotContain": [
+      "stopAfter",
+      "spanning:",
+      "data-lazy-sizes",
+      "data-wpr-lazyrender",
+      "data-rocket-defer"
+    ]
   },
   {
     "surface": "exclusion engine worker (Firefox only)",
@@ -356,7 +364,15 @@
     "maxKb": {
       "raw": 191.2,
       "gzip": 66.6
-    }
+    },
+    "required": true,
+    "mustContain": [
+      "stopAfter",
+      "spanning:",
+      "data-lazy-sizes",
+      "data-wpr-lazyrender",
+      "data-rocket-defer"
+    ]
   },
   {
     "surface": "whole build (all JS output — ungameable backstop)",

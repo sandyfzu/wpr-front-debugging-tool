@@ -10,13 +10,12 @@ import {
   composeSteps,
   type Composition,
   type CompositionOutput,
-  EXCLUSION_PIPELINE_IDS,
-  EXCLUSION_PIPELINE_STEP_IDS,
   exclusionPipelineSteps,
   featureReports,
   runExclusionPipeline,
   type PipelineStep
 } from './pipeline';
+import { EXCLUSION_PIPELINE_IDS, EXCLUSION_PIPELINE_STEP_IDS } from './pipeline-steps';
 import { delayJsTransform } from './delay-js';
 import { deferJsTransform } from './defer-js';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';

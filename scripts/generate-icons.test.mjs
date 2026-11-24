@@ -248,6 +248,13 @@ describe('driftProblems', () => {
       'public/icon/16.png: differs from a fresh render'
     ]);
   });
+
+  it('names the given folder in each line', () => {
+    expect(driftProblems(rendered, () => undefined, 'store/assets')).toEqual([
+      'store/assets/icon/16.png: missing',
+      'store/assets/icon/32.png: missing'
+    ]);
+  });
 });
 
 describe('parseArgs', () => {
@@ -259,6 +266,12 @@ describe('parseArgs', () => {
   it('refuses anything else with the usage', () => {
     expect(() => parseArgs(['--write', 'x'])).toThrow(
       'Unknown argument(s): --write x (usage: pnpm icons [--check])'
+    );
+  });
+
+  it('names the given command in the usage', () => {
+    expect(() => parseArgs(['-x'], 'pnpm store:assets')).toThrow(
+      'Unknown argument(s): -x (usage: pnpm store:assets [--check])'
     );
   });
 });

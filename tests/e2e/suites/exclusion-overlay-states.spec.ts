@@ -93,7 +93,7 @@ const UNAVAILABLE: Readonly<
   },
   'unsupported-browser': {
     title: 'This browser can’t rewrite pages',
-    body: 'Rewriting pages before they render needs Chrome (or another Chromium browser) or Firefox.',
+    body: 'Rewriting pages before they render needs an up-to-date Chrome (or another Chromium browser) or Firefox.',
     retry: false
   },
   'session-limit': {

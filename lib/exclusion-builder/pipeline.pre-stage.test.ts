@@ -5,12 +5,8 @@
  * run is exactly as before.
  */
 import { describe, expect, it } from 'vitest';
-import {
-  applyPipeline,
-  EXCLUSION_PIPELINE_STEP_IDS,
-  runExclusionPipeline,
-  type PreExclusionStage
-} from './pipeline';
+import { applyPipeline, runExclusionPipeline, type PreExclusionStage } from './pipeline';
+import { EXCLUSION_PIPELINE_STEP_IDS } from './pipeline-steps';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 
 const SET: ExclusionSet = {

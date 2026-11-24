@@ -13,7 +13,8 @@ function row(id: string, isSupported: () => boolean): InterceptionBackendRow {
     create: () => ({
       arm: () => Promise.resolve({ armed: true }),
       disarm: () => Promise.resolve(),
-      resume: () => Promise.resolve(true)
+      resume: () => Promise.resolve(true),
+      runner: () => Promise.reject(new Error('not run'))
     })
   };
 }

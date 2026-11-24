@@ -45,7 +45,7 @@ const VIEW_BOX_ATTRIBUTE = /(\sviewBox\s*=\s*)(["'])([^"']*)\2/;
  *
  * @returns {string} Absolute package root.
  */
-function packageRoot() {
+export function packageRoot() {
   return resolve(dirname(fileURLToPath(import.meta.url)), '..');
 }
 
@@ -231,17 +231,17 @@ export function renderIconSet(master, icons = EXTENSION_ICONS, render = resvgRen
 /**
  * Compare fresh renders with the committed files.
  *
- * @param {Map<string, Buffer>} rendered Icon path → fresh PNG bytes.
+ * @param {Map<string, Buffer>} rendered Path (relative to `dir`) → fresh PNG bytes.
  * @param {(path: string) => Buffer | undefined} readCommitted The committed bytes, `undefined` when absent.
+ * @param {string} dir The repo folder the paths live under (named in each line).
  * @returns {string[]} One line per missing or differing file (empty = in sync).
  */
-export function driftProblems(rendered, readCommitted) {
+export function driftProblems(rendered, readCommitted, dir = PUBLIC_DIR) {
   const problems = [];
   for (const [path, png] of rendered) {
     const committed = readCommitted(path);
-    if (committed === undefined) problems.push(`${PUBLIC_DIR}/${path}: missing`);
-    else if (!committed.equals(png))
-      problems.push(`${PUBLIC_DIR}/${path}: differs from a fresh render`);
+    if (committed === undefined) problems.push(`${dir}/${path}: missing`);
+    else if (!committed.equals(png)) problems.push(`${dir}/${path}: differs from a fresh render`);
   }
   return problems;
 }
@@ -250,13 +250,14 @@ export function driftProblems(rendered, readCommitted) {
  * Read the CLI arguments: none (write) or `--check`.
  *
  * @param {readonly string[]} args Arguments after the script path.
+ * @param {string} command The command the usage line names.
  * @returns {{ check: boolean }} The mode.
  * @throws {Error} On any other argument.
  */
-export function parseArgs(args) {
+export function parseArgs(args, command = 'pnpm icons') {
   const unknown = args.filter((arg) => arg !== '--check');
   if (unknown.length > 0)
-    throw new Error(`Unknown argument(s): ${unknown.join(' ')} (usage: pnpm icons [--check])`);
+    throw new Error(`Unknown argument(s): ${unknown.join(' ')} (usage: ${command} [--check])`);
   return { check: args.includes('--check') };
 }
 
@@ -280,13 +281,13 @@ export function readMaster(root, readText = (path) => readFileSync(path, 'utf8')
 }
 
 /**
- * A committed icon's bytes, `undefined` when the file does not exist.
+ * A committed file's bytes, `undefined` when the file does not exist.
  *
  * @param {string} file Absolute path.
  * @returns {Buffer | undefined} The bytes.
  * @throws {Error} On any read failure other than a missing file.
  */
-function readIfPresent(file) {
+export function readIfPresent(file) {
   try {
     return readFileSync(file);
   } catch (error) {

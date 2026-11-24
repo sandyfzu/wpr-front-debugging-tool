@@ -37,6 +37,17 @@ export const SIMULATED_FEATURES = [
 export type SimulatedFeatureId = (typeof SIMULATED_FEATURES)[number]['id'];
 
 /**
+ * The features a request simulates, in the registry's execution order.
+ *
+ * @param features The request's features.
+ */
+export function simulationStepIds(
+  features: readonly SimulatedFeatureId[]
+): readonly SimulatedFeatureId[] {
+  return SIMULATED_FEATURES.map((feature) => feature.id).filter((id) => features.includes(id));
+}
+
+/**
  * What a session asks to simulate on each of its documents (absent = no
  * simulation): the features, each once, in registry order or not — the
  * steps run in registry order whatever this order.

@@ -1,6 +1,6 @@
 {
   "name": "wpr-front-debugging-tool",
-  "description": "A tool for debugging WP Rocket WordPress plugin.",
+  "description": "See how WP Rocket optimizes any page, inspect scripts and styles, and test exclusions, Remove Unused CSS and the beacon live.",
   "private": true,
   "version": "3.0.0",
   "type": "module",
@@ -33,6 +33,7 @@
     "screenshots": "node scripts/panel-screenshots.mjs",
     "parity:wp-rocket": "node scripts/wp-rocket-parity.ts",
     "icons": "node scripts/generate-icons.mjs",
+    "store:assets": "node scripts/generate-store-assets.mjs",
     "postinstall": "wxt prepare",
     "prepare": "husky"
   },

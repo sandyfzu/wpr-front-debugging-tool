@@ -86,7 +86,7 @@ import type {
   InterceptionHost
 } from './backend';
 import {
-  createInProcessTransformRunner,
+  engineFailed,
   isRewritableResponse,
   rewriteDocument,
   type DocumentTransformRunner
@@ -161,8 +161,6 @@ export interface ExclusionSessionControllerDeps {
   readonly now: () => number;
   /** This extension's id (the panel ask's sender gate). */
   readonly extensionId: string;
-  /** The fallback engine runner; defaults to in-process. */
-  readonly runner?: DocumentTransformRunner;
   /** Where a simulating session's inputs come from; defaults to the inert sources. */
   readonly simulation?: SimulationSources;
   /** The logger; defaults to the `exclusion-session` logger. */
@@ -273,7 +271,6 @@ export function createExclusionSessionController(
 ): ExclusionSessionController {
   const log = deps.log ?? createLogger('exclusion-session');
   const enqueue = createKeyedQueue();
-  const fallbackRunner = deps.runner ?? createInProcessTransformRunner();
   const simulationSources = deps.simulation ?? INERT_SIMULATION_SOURCES;
   /** The sources a runtime request reads, each under its own deadline. */
   const runtimeSources = deadlinedSources(simulationSources, deps.schedule);
@@ -717,11 +714,21 @@ export function createExclusionSessionController(
     return served;
   };
 
-  /** The engine runner in use, bounded past the budget (a runner that never answers is a failure). */
-  const boundedRunner: DocumentTransformRunner = (request) =>
-    bounded('Engine run', request.budgetMs + STEPS.runnerOverhead, () =>
-      (backend?.runner ?? fallbackRunner)(request)
+  /**
+   * The backend's engine runner, bounded past the budget (a runner that
+   * never answers is a failure). There is no runner of the controller's
+   * own: with no backend (it failed to start after handing out the host)
+   * a document is `engine-failed`, served unmodified.
+   */
+  const boundedRunner: DocumentTransformRunner = (request) => {
+    const live = backend;
+    if (live === null) {
+      return Promise.resolve(engineFailed(new Error('No interception backend')));
+    }
+    return bounded('Engine run', request.budgetMs + STEPS.runnerOverhead, () =>
+      live.runner(request)
     );
+  };
 
   /**
    * The engine's run on one document of `session`: the bytes to serve (null:

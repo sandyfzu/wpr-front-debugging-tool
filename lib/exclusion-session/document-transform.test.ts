@@ -4,15 +4,11 @@
  * rewrite (size guard, charset round trip, unchanged runs, runner faults).
  */
 import { describe, expect, it, vi } from 'vitest';
-import {
-  applyPipeline,
-  EXCLUSION_PIPELINE_STEP_IDS,
-  runExclusionPipeline
-} from '../exclusion-builder/pipeline';
+import { applyPipeline, runExclusionPipeline } from '../exclusion-builder/pipeline';
+import { EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder/pipeline-steps';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import { BUILDER_MARKER_META_NAME } from '../wp-rocket/constants';
 import {
-  createInProcessTransformRunner,
   DOCUMENT_BODY_BYTE_LIMIT,
   isRewritableResponse,
   rendersAsPage,
@@ -20,10 +16,10 @@ import {
   overBudgetOutcome,
   overrunRow,
   rewriteDocument,
-  runDocumentPipeline,
   type DocumentTransformRequest,
   type DocumentTransformRunner
 } from './document-transform';
+import { createInProcessTransformRunner, runDocumentPipeline } from './document-pipeline';
 import { DOCUMENT_TRANSFORM_BUDGET_MS } from './timeouts';
 
 /** A set with selected rows/toggles replaced. */
