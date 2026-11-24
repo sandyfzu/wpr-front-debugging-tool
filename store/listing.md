@@ -1,10 +1,10 @@
 # Store listing copy — WPR Front Debugging Tool 3.0.0
 
-Single source for every store's listing text and dashboard fields (Chrome Web Store, Firefox AMO; Edge Add-ons post-release). Specs, limits and asset status: [README.md](README.md). Every claim was checked against the code on 2026-11-23; re-check after any feature change. Status: **draft — owner approval pending** (copy). Publisher: WP Media, WP Rocket's maker (owner 2026-11-24). Edge listing **deferred to post-release** (owner 2026-11-24); the Edge notes below apply then.
+Single source for every store's listing text and dashboard fields (Chrome Web Store, Firefox AMO; Edge Add-ons post-release). Specs, limits and asset status: [README.md](README.md). Privacy policy: [privacy-policy.md](privacy-policy.md). Status: **draft — owner approval pending**. Publisher: WP Media. Re-check every claim against the code after any feature change.
 
 ## Name
 
-`WPR Front Debugging Tool` (manifest `name`, `wxt.config.ts`; rename cancelled 2026-11-23).
+`WPR Front Debugging Tool` (manifest `name`, `wxt.config.ts`).
 
 ## Summary
 
@@ -45,15 +45,15 @@ Made by WP Media, the makers of WP Rocket. Support: support@wp-rocket.me
 
 Firefox build: drop the "About the debugger permission" paragraph (its manifest has no `debugger`; it uses `webRequestBlocking`, see below).
 
-Edge build (**deferred to post-release**): title the paragraph "About the debugger permission" (Edge policy 1.1.2: a listing "must not reference other browsers"); same for the privacy policy, which Edge wants to "primarily refer to the Microsoft Edge browser" — host an Edge variant without the Chrome Web Store sentence.
+Edge build (post-release): title the paragraph "About the debugger permission" (a listing "must not reference other browsers"); host an Edge variant of the privacy policy without the Chrome Web Store sentence (it must "primarily refer to the Microsoft Edge browser").
 
-Last line: WP Media publishes it (owner 2026-11-24), so it names the maker and claims nothing more (CWS Impersonation & Intellectual Property: no implied endorsement or affiliation that is not real — nor a denied one that is). The address is `SUPPORT_EMAIL` (`lib/support/contact.ts`, also the What's new footer link).
+Last line: the support address is `SUPPORT_EMAIL` (`lib/support/contact.ts`).
 
 ## Category
 
-- CWS: **Developer Tools** (dashboard list, [best practices](https://developer.chrome.com/docs/webstore/best-practices), fetched 2026-11-23).
-- AMO: **Web Development** (`web-development`; up to two allowed — one is enough), [AMO categories API](https://addons.mozilla.org/api/v5/addons/categories/) 2026-11-23.
-- Edge (post-release): pick the developer-tools category in Partner Center (list not published in the docs read; verify there).
+- CWS: **Developer Tools** (dashboard list).
+- AMO: **Web Development** (`web-development`; up to two allowed — one is enough).
+- Edge (post-release): pick the developer-tools category in Partner Center.
 
 ## Single purpose (CWS, Edge)
 
@@ -61,7 +61,7 @@ Last line: WP Media publishes it (owner 2026-11-24), so it names the maker and c
 
 ## Permission justifications
 
-Manifests read from `pnpm zip` / `pnpm zip:firefox` output (3.0.0, 2026-11-23). Chromium MV3: `storage, alarms, webRequest, contextMenus, scripting, declarativeNetRequestWithHostAccess, debugger` + hosts `https://*/*, http://*/*`. Firefox MV2: same minus `debugger`, plus `webRequestBlocking`, hosts folded into `permissions`. No optional permissions.
+Built manifests (`pnpm zip` / `pnpm zip:firefox`): Chromium MV3: `storage, alarms, webRequest, contextMenus, scripting, declarativeNetRequestWithHostAccess, debugger` + hosts `https://*/*, http://*/*`. Firefox MV2: same minus `debugger`, plus `webRequestBlocking`, hosts folded into `permissions`. No optional permissions.
 
 | Permission                                   | Justification (paste as is)                                                                                                                                                                                                                                                                                                                                            |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -79,7 +79,7 @@ Remote code (CWS/Edge "Are you using remote code?"): **No.** All code ships in t
 
 ## Data use / privacy fields
 
-Matches `FIREFOX_DATA_COLLECTION` in `wxt.config.ts` and the sends in code (`lib/rucss-tester/endpoint.ts`, `lib/side-by-side/analysis-host.ts`, `entrypoints/background/known-conflicts.ts`, `entrypoints/background/latest-exclusion-list.ts`).
+Must match `FIREFOX_DATA_COLLECTION` in `wxt.config.ts` and the sends in code (`lib/rucss-tester/endpoint.ts`, `lib/side-by-side/analysis-host.ts`, `entrypoints/background/known-conflicts.ts`, `entrypoints/background/latest-exclusion-list.ts`).
 
 - **Firefox manifest** `data_collection_permissions`: `required: ['none']`, `optional: ['browsingActivity']` — asked at first use of each tool that sends the address (RUCSS Tester, PageSpeed Insights), checked on every use.
 - **CWS / Edge data collected:** the user-data FAQ's _web browsing activity_ ("the domains or URLs the browser interacts with"; dashboard checkbox names are not in the docs — tick the one covering web history/browsing): the current page's address, only on two user commands:
@@ -91,43 +91,17 @@ Matches `FIREFOX_DATA_COLLECTION` in `wxt.config.ts` and the sends in code (`lib
     - session storage (in memory, cleared when the browser closes): Exclusion Builder sessions and overlay state per tab, and per-tab simulation markers.
 - Not collected: personally identifiable, health, financial, authentication, personal communications, location, website content, analytics/telemetry/crash reports.
 - **Certifications (all true):** not sold to third parties; not used or transferred for purposes unrelated to the single purpose; not used or transferred to determine creditworthiness or for lending.
-- **Privacy policy:** required (CWS: any product handling user data; AMO: personal data incl. browsing activity; Edge: privacy information). URL: **owner open** — host the text below on a site the owner controls; it must include the CWS Limited Use statement.
-
-### Privacy policy text (draft)
-
-```text
-WPR Front Debugging Tool — Privacy policy
-
-The extension processes the pages you debug inside your browser. It has no analytics, telemetry or crash reporting, and no account.
-
-Data that leaves your browser, only when you ask:
-• RUCSS Tester: when you click Run, the tested page's address (without fragment or login), your Mobile/Home choices and your safelist entries are sent to WP Rocket's RUCSS service (mega.wp-rocket.me) to compute the page's used CSS. No cookies or page content are sent.
-• PageSpeed Insights: when you open Side By Side Performance, the page's address is opened in Google PageSpeed Insights (pagespeed.web.dev), subject to Google's privacy policy.
-On Firefox, each of these asks your permission first.
-
-Downloads without your data: the extension periodically downloads two public files, the Known Conflicts list (apps.wpr-support.com) and WP Rocket's latest exclusion list (b.rucss.wp-rocket.me); the requests carry no information about you or your pages.
-
-Stored in your browser, never sent by the extension:
-• In the browser's sync storage, which your browser may sync to your own account: your options and per-site detection widget choices.
-• On this device only (never synced): the exclusion sets you save per site, widget positions, panel layout, RUCSS Tester and Beacon Tester settings, and the cached public files.
-• For the browser session only (cleared when it closes): Exclusion Builder sessions per tab.
-
-The use of information received by this extension adheres to the Chrome Web Store User Data Policy, including the Limited Use requirements. Data is never sold, used for advertising, or used for purposes unrelated to debugging WP Rocket.
-
-Contact: support@wp-rocket.me
-```
+- **Privacy policy:** required by every store. Text: [privacy-policy.md](privacy-policy.md), published as is on a web page; that page's URL goes in each store's privacy-policy field (AMO takes the full text). URL: **owner open**.
 
 ## Reviewer notes (CWS/Edge certification notes, AMO "notes to reviewer")
 
 - Testing: open any WordPress site running WP Rocket, then DevTools → "WPR FDT" panel; Exclusion Builder: right-click the toolbar icon → Exclusion Builder → Apply (Chromium shows its debugging bar while the session runs).
 - `debugger` (Chromium): used only by the Exclusion Builder session the user starts; see the permission table.
 - AMO sources (paste as is): "Build environment differs from your default: Node.js 24.22.3 (`package.json` `engines.node` >= 24.20.0) and pnpm 12.9.1 (`packageManager`; `corepack enable` installs it). Unzip the sources, then run `pnpm install --frozen-lockfile && pnpm zip:firefox`; the add-on is `.output/firefox-mv2` (zipped as `.output/wpr-front-debugging-tool-<version>-firefox.zip`). Verified byte-identical to the submitted zip on macOS arm64 and on Linux arm64 (Debian bookworm, `node:24-bookworm`). Third-party code: npm packages from the lockfile, unmodified; `wp-rocket-simulation/lazyload/17.8.3/lazyload.min.js` is vanilla-lazyload 17.8.3's release build (https://github.com/verlok/vanilla-lazyload/blob/17.8.3/dist/lazyload.min.js) as WP Rocket packages it — identical but for the missing final newline; `wp-rocket-simulation/simulation-data.json` holds WP Rocket's own inline snippets as data, inserted into the page only when the user runs a simulation, never run in the extension's own pages. Licence notices: `THIRD_PARTY_NOTICES.txt`."
-- Build the sources zip from a clean checkout: `pnpm zip:firefox` refuses while git shows untracked, non-ignored files (they would ship to reviewers), before any zip is written; it checks only when the project folder is a git checkout's top level, so the reviewer's unpacked sources (even inside another repository) are never refused.
-- Verified 2026-11-24 (P15D): the sources zip rebuilt in a scratch folder (macOS, Node 24.22.3) and in `node:24-bookworm` (Linux arm64, corepack pnpm 12.9.1) gives a Firefox zip with the same SHA-256 as the one built from the repo.
+- Build the sources zip from a clean checkout: `pnpm zip:firefox` refuses, naming them, while git shows untracked non-ignored files (they would ship to reviewers).
 
-## Pending cross-checks
+## Contact fields
 
-- **What's new page:** shipped (P15F), disclosed in the description ("Where to find it", 2026-11-24 — CWS "Misleading or Unexpected Behavior", AMO "No Surprises"). Feature list = `lib/release-notes/` 3.0.0 highlights (Exclusion Builder, RUCSS Tester, Beacon Tester + LCP & Vitals, detection widget, toolbar status dot, command palette) and `CHANGELOG.md`.
-- WP Rocket name/trademark use in name and copy: WP Media, WP Rocket's maker, publishes it (owner 2026-11-24) — no third-party mark; the description's last line says who makes it.
-- Packaged WP Rocket bytes (the simulation data's inline snippets; WP Rocket is "GPLv2 or later", © WP Rocket/WP Media) inside a package marked `UNLICENSED`: resolved — the publisher (WP Media) holds those rights.
-- Support: `support@wp-rocket.me` (owner 2026-11-24) — AMO "Support email" field, the description's last line (every store) and the privacy policy's Contact. CWS "Support URL" left empty (no support site given; a `mailto:` there is unverified). Homepage URL: owner open (optional).
+- AMO "Support email": `support@wp-rocket.me`.
+- CWS "Support URL": leave empty (the address is in the description).
+- Homepage URL (every store, optional): **owner open**.

@@ -40,7 +40,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 ├── public/                    # copied to the build output as-is (icons, …)
 ├── branding/                  # master art, never shipped: `icon.svg` → `pnpm icons` → `public/icon/*.png`
 ├── store/                     # store listing, never shipped (out of every zip): `listing.md` (copy + dashboard fields),
-│                              #   `README.md` (per-store asset checklist + specs), `assets/` (`pnpm store:assets`)
+│                              #   `README.md` (per-store asset checklist + specs), `privacy-policy.md` (text to host),
+│                              #   `support-heads-up.md` (pre-rollout note), `assets/` (`pnpm store:assets`)
 ├── assets/                    # bundled assets: images, fonts, `assets/css/theme.css` design tokens
 ├── entrypoints/               # one folder/file per extension surface
 │   ├── background/            # service worker — listener wiring only; logic lives in lib/

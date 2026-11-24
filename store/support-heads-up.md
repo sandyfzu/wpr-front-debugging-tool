@@ -1,6 +1,6 @@
 # Support heads-up — WPR Front Debugging Tool 3.0.0
 
-Draft for the owner to send to the support team **before** the 3.0.0 rollout. Facts checked 2026-11-24 against the 2.2.5 and 3.0.0 manifests and Chrome's [permission-warnings](https://developer.chrome.com/docs/extensions/develop/concepts/permission-warnings) docs ("the extension will be disabled until the user accepts the new permission"; "re-enabled only after the user agrees to accept the new permission"; the only page the docs name for it is `chrome://extensions`, re-checked 2026-11-24). Fill the two placeholders, then send.
+Fill the two placeholders (`<release date>`, `<contact>`), then send to the support team before the 3.0.0 rollout.
 
 ---
 
