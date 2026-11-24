@@ -64,26 +64,56 @@ const EXTENSION_API_MODULE = path.join(
   'utils/extension-api/index.ts'
 );
 
+/** The Chromium resolver + pin that module calls at load (`utils/extension-api/chromium.ts`). */
+const CHROMIUM_EXTENSION_API_MODULE = path.join(path.dirname(EXTENSION_API_MODULE), 'chromium.ts');
+
 /** The messaging library's extension entry: it reads the bare `chrome` global on every call. */
 const MESSAGING_ENTRY = /[\\/]@webext-core[\\/]messaging[\\/]dist[\\/]index\.mjs(\?.*)?$/;
 
 /**
- * Make the messaging library evaluate the extension namespace module first.
- * That module pins the genuine namespace as the world's own `chrome` (see
- * `utils/extension-api/chromium.ts`) — the library reads that global at each
- * call and the shared messenger reads it once at load, so the pin must run
- * before both. Prepending the import is what guarantees the order: module
- * evaluation runs a module's imports before its body, whatever the importer.
+ * The statements prepended to the messaging library's entry so the genuine
+ * namespace is the world's own `chrome` before the library runs — it reads
+ * that global at each call and the shared messenger reads it once at load.
  *
+ * Chromium: the pin is called in the library's own module body, not only
+ * through an import of the namespace module. Module evaluation already runs
+ * imports first, but a bundle split can put the library in a chunk apart
+ * from the namespace module (a page that uses `browser` without messaging
+ * moves that module to a chunk the two share); the call keeps "every bundle
+ * reading `chrome` pins it first" true of the library's own chunk, whatever
+ * the split. The call is idempotent: a world that already owns `chrome` (an
+ * extension page, or a second call) is left alone.
+ * Firefox: no pin exists (`chrome` is the browser's own alias there); the
+ * namespace module is imported first, as every other user does.
+ *
+ * @param browser - The target browser WXT builds for.
+ * @returns The source to prepend, newline-terminated.
+ */
+export function messagingPrelude(browser: string): string {
+  if (browser === 'firefox') return `import ${JSON.stringify(EXTENSION_API_MODULE)};\n`;
+  return (
+    `import { chromiumExtensionApi, pinChromeNamespace } from ${JSON.stringify(CHROMIUM_EXTENSION_API_MODULE)};\n` +
+    'pinChromeNamespace(globalThis, chromiumExtensionApi(globalThis));\n'
+  );
+}
+
+/**
+ * Make the messaging library pin the extension namespace before its body runs
+ * (see {@link messagingPrelude}). Prepending is what guarantees the order:
+ * the prelude's import evaluates before the module, its call before the
+ * library's own statements.
+ *
+ * @param browser - The target browser WXT builds for (picks the prelude).
  * @returns The Vite plugin.
  */
-export function extensionApiBeforeMessaging(): Plugin {
+export function extensionApiBeforeMessaging(browser: string): Plugin {
+  const prelude = messagingPrelude(browser);
   return {
     name: 'wpr-fdt:extension-api-before-messaging',
     enforce: 'pre',
     transform(code, id) {
       if (!MESSAGING_ENTRY.test(id)) return null;
-      return { code: `import ${JSON.stringify(EXTENSION_API_MODULE)};\n${code}`, map: null };
+      return { code: `${prelude}${code}`, map: null };
     }
   };
 }
@@ -97,8 +127,8 @@ export default defineConfig({
   // store listing folder: listing copy and images, never build input. The
   // store zips never hold it (they pack the build output only).
   zip: { excludeSources: ['store/**'] },
-  vite: () => ({
-    plugins: [tailwindcss(), extensionApiBeforeMessaging()],
+  vite: (env) => ({
+    plugins: [tailwindcss(), extensionApiBeforeMessaging(env.browser)],
     // Workers build as ES modules (Vite's default `iife` cannot split code):
     // the code highlighter's worker fetches its CSS/HTML grammar chunk on the
     // first block that needs it. Every worker is spawned `type: 'module'`

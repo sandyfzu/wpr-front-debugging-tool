@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import config, {
   extensionApiBeforeMessaging,
+  messagingPrelude,
   FIREFOX_ADDON_ID,
   FIREFOX_MIN_VERSION
 } from './wxt.config';
@@ -105,21 +106,47 @@ describe('extension namespace alias', () => {
 });
 
 describe('extension namespace before the messaging library', () => {
-  /** Run the plugin's transform hook over one module. */
-  const transform = (id: string): unknown => {
-    const hook = extensionApiBeforeMessaging().transform;
+  /** Run the plugin's transform hook (built for one browser) over one module. */
+  const transform = (id: string, browser = 'chrome'): unknown => {
+    const hook = extensionApiBeforeMessaging(browser).transform;
     if (typeof hook !== 'function') throw new Error('transform is not the function form');
     return (hook as (code: string, id: string) => unknown).call({}, 'BODY', id);
   };
   const pnpmDist =
     '/repo/node_modules/.pnpm/@webext-core+messaging@4.0.1/node_modules/@webext-core/messaging/dist/';
 
-  it('prepends the namespace module import to the library entry (plain or queried id)', () => {
-    for (const id of [`${pnpmDist}index.mjs`, `${pnpmDist}index.mjs?v=1`]) {
-      const out = transform(id) as { code: string };
-      const [first, rest] = out.code.split('\n');
-      expect(first).toMatch(/^import ".*[\\/]utils[\\/]extension-api[\\/]index\.ts";$/);
-      expect(rest).toBe('BODY');
+  it('Chromium: prepends the pin call itself to the library entry (plain or queried id)', () => {
+    // The call sits in the library's own module, so whichever chunk the
+    // library lands in pins before its first `chrome` read.
+    for (const browser of ['chrome', 'edge']) {
+      for (const id of [`${pnpmDist}index.mjs`, `${pnpmDist}index.mjs?v=1`]) {
+        const lines = (transform(id, browser) as { code: string }).code.split('\n');
+        expect(lines[0]).toMatch(
+          /^import \{ chromiumExtensionApi, pinChromeNamespace \} from ".*[\\/]utils[\\/]extension-api[\\/]chromium\.ts";$/
+        );
+        expect(lines[1]).toBe('pinChromeNamespace(globalThis, chromiumExtensionApi(globalThis));');
+        expect(lines.slice(2)).toEqual(['BODY']);
+      }
+    }
+  });
+
+  it('Firefox: prepends the namespace module import only (no pin there)', () => {
+    const lines = (transform(`${pnpmDist}index.mjs`, 'firefox') as { code: string }).code.split(
+      '\n'
+    );
+    expect(lines[0]).toMatch(/^import ".*[\\/]utils[\\/]extension-api[\\/]index\.ts";$/);
+    expect(lines.slice(1)).toEqual(['BODY']);
+  });
+
+  it('the prelude names exports the Chromium module really has', () => {
+    // Read as text: the resolver is never imported outside the build alias.
+    const source = readFileSync(
+      path.join(import.meta.dirname, 'utils/extension-api/chromium.ts'),
+      'utf8'
+    );
+    for (const name of ['chromiumExtensionApi', 'pinChromeNamespace']) {
+      expect(source).toContain(`export function ${name}(`);
+      expect(messagingPrelude('chrome')).toContain(name);
     }
   });
 
