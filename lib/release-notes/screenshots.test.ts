@@ -4,7 +4,12 @@
  * absent id (a text-only card, never a broken image).
  */
 import { describe, expect, it } from 'vitest';
-import { resolveScreenshot, screenshotPath, type ScreenshotMeta } from './screenshots';
+import {
+  RELEASE_SCREENSHOTS,
+  resolveScreenshot,
+  screenshotPath,
+  type ScreenshotMeta
+} from './screenshots';
 
 const TABLE: Readonly<Record<string, ScreenshotMeta>> = {
   palette: { alt: 'The command palette over a page', width: 800, height: 450, format: 'webp' }
@@ -32,7 +37,11 @@ describe('resolveScreenshot', () => {
     expect(resolveScreenshot('toString', 'light', TABLE)).toBeNull();
   });
 
-  it('defaults to the bundled table (empty until the capture run)', () => {
+  it('defaults to the bundled table', () => {
+    expect(resolveScreenshot('command-palette', 'dark')).toEqual({
+      ...RELEASE_SCREENSHOTS['command-palette'],
+      src: '/whats-new/command-palette-dark.webp'
+    });
     expect(resolveScreenshot('palette', 'light')).toBeNull();
   });
 });

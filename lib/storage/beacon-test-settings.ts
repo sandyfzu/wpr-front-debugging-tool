@@ -5,6 +5,7 @@
  * (rules: `./validated-config-store`).
  */
 import {
+  BEACON_TEST_SETTINGS_KEY,
   DEFAULT_BEACON_TEST_SETTINGS,
   findBeaconSettingsProblem,
   parseBeaconTestSettings,
@@ -12,8 +13,8 @@ import {
 } from '../beacon-test/settings';
 import { defineValidatedConfigStore } from './validated-config-store';
 
-/** The store key, single-sourced. */
-export const BEACON_TEST_SETTINGS_KEY = 'local:beacon-test-settings';
+/** The store key (declared with the value's shape). */
+export { BEACON_TEST_SETTINGS_KEY };
 
 /** The bound store (read, write, watch). */
 const store = defineValidatedConfigStore<BeaconTestSettings>({

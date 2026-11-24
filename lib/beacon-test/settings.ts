@@ -50,6 +50,13 @@ export const BEACON_SETTINGS_LIMITS = {
   selectorChars: SELECTOR_COUNT_MAX * (SELECTOR_LENGTH_MAX + 1)
 } as const;
 
+/**
+ * Where the settings are stored (WXT key: `local:` area — machine-local,
+ * never synced). Declared here, beside the value's shape, so a reader
+ * without WXT storage (the browser-test harness) names the same key.
+ */
+export const BEACON_TEST_SETTINGS_KEY = 'local:beacon-test-settings';
+
 /** The fresh-install settings: WP Rocket's defaults, no feature preselected (the user picks). */
 export const DEFAULT_BEACON_TEST_SETTINGS: BeaconTestSettings = /*#__PURE__*/ Object.freeze({
   aboveTheFold: BEACON_TEST_DEFAULTS.features.aboveTheFold,

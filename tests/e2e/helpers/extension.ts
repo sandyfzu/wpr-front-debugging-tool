@@ -136,6 +136,12 @@ export class ExtensionDriver {
   /** Playwright default switches this driver's launches drop (beyond `--hide-scrollbars`). */
   private readonly droppedDefaults: readonly string[];
 
+  /** Device pixels per CSS pixel of every page (Playwright's default 1 when unset). */
+  private readonly deviceScaleFactor: number | undefined;
+
+  /** Switches every launch of this driver adds (beyond the extension's and the host rules). */
+  private readonly launchArgs: readonly string[];
+
   /**
    * Create an unlaunched driver (the fixture does the launch).
    *
@@ -151,6 +157,8 @@ export class ExtensionDriver {
     this.cleanup = cleanup;
     this.droppedDefaults =
       options.backForwardCache === true ? ['--disable-back-forward-cache'] : [];
+    this.deviceScaleFactor = options.deviceScaleFactor;
+    this.launchArgs = options.repeatablePixels === true ? REPEATABLE_PIXELS_ARGS : [];
   }
 
   /** The live context. */
@@ -194,12 +202,16 @@ export class ExtensionDriver {
         // scrollbar geometry/painting so layout and visibility assertions are honest.
         ignoreDefaultArgs: ['--hide-scrollbars', ...this.droppedDefaults],
         viewport: { width: 1280, height: 800 },
+        ...(this.deviceScaleFactor === undefined
+          ? {}
+          : { deviceScaleFactor: this.deviceScaleFactor }),
         timeout: LAUNCH_TIMEOUT_MS,
         args: [
           `--disable-extensions-except=${EXTENSION_PATH}`,
           `--load-extension=${EXTENSION_PATH}`,
           // Every launch, relaunches included: no run ever reaches these hosts.
           HOST_RESOLVER_RULES,
+          ...this.launchArgs,
           ...extraArgs
         ]
       });
@@ -632,7 +644,28 @@ export interface DriverLaunchOptions {
    * a back navigation can then restore the page instead of reloading it.
    */
   readonly backForwardCache?: boolean;
+  /**
+   * Device pixels per CSS pixel (default 1): a layout shot at 2× keeps its
+   * text legible once an image is shown downscaled.
+   */
+  readonly deviceScaleFactor?: number;
+  /**
+   * Render the same pixels on every run ({@link REPEATABLE_PIXELS_ARGS}):
+   * for screenshots committed as files, where noise would rewrite them.
+   */
+  readonly repeatablePixels?: boolean;
 }
+
+/**
+ * Switches that make repeated renders pixel-identical: with the GPU process
+ * and parallel raster, a re-render of an unchanged page varied by one level
+ * on a few text pixels (measured: 2–15 pixels per 1280×800 shot); software
+ * compositing on one raster thread gave byte-identical shots over three runs.
+ */
+export const REPEATABLE_PIXELS_ARGS: readonly string[] = [
+  '--disable-gpu',
+  '--num-raster-threads=1'
+];
 
 /** Re-exported so suites do not import from two places. */
 export { expect };

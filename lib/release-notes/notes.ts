@@ -74,6 +74,7 @@ const RELEASE_3_0_0: ReleaseCopy = {
   highlights: [
     {
       id: 'exclusion-builder',
+      screenshot: 'exclusion-builder',
       title: PAGE_SURFACE_NAMES.exclusionBuilder,
       summary: `Try ${LABEL_DELAY_JAVASCRIPT_EXECUTION}, ${LABEL_LOAD_JAVASCRIPT_DEFERRED} and ${LABEL_IMAGE_LAZYLOAD} exclusions on the live page before changing the site, and simulate those features on a page served without them.`,
       howTo: [
@@ -89,6 +90,7 @@ const RELEASE_3_0_0: ReleaseCopy = {
     },
     {
       id: 'rucss-tester',
+      screenshot: 'rucss-tester',
       title: 'RUCSS Tester',
       summary:
         'Run WP Rocket’s Remove Unused CSS on the page and see the result live, until the page reloads.',
@@ -96,6 +98,7 @@ const RELEASE_3_0_0: ReleaseCopy = {
     },
     {
       id: 'beacon-tester',
+      screenshot: 'beacon-tester',
       title: 'Beacon Tester and LCP & Vitals',
       summary:
         'Run WP Rocket’s beacon on the page to see what it would find (critical images, lazy-render elements), and break the Largest Contentful Paint into its parts beside this visit’s Core Web Vitals.',
@@ -106,6 +109,7 @@ const RELEASE_3_0_0: ReleaseCopy = {
     },
     {
       id: 'detection-widget',
+      screenshot: 'detection-widget',
       title: capitalize(PAGE_SURFACE_NAMES.detectionWidget),
       summary:
         'A pill in the page’s corner shows WP Rocket’s state at a glance; click it for the WP Rocket features the page uses and the evidence for each. Drag it anywhere.',
@@ -117,6 +121,7 @@ const RELEASE_3_0_0: ReleaseCopy = {
     },
     {
       id: 'toolbar-dot',
+      screenshot: 'toolbar-dot',
       title: 'Status dot on the toolbar icon',
       summary:
         'The toolbar icon shows the page’s WP Rocket state at a glance; hover it to read the state in words.',
@@ -129,6 +134,7 @@ const RELEASE_3_0_0: ReleaseCopy = {
     },
     {
       id: 'command-palette',
+      screenshot: 'command-palette',
       title: PALETTE,
       summary: 'Every on-page action in one searchable list, right over the page.',
       howTo: [

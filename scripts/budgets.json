@@ -100,6 +100,49 @@
     }
   },
   {
+    "surface": "What's new screenshots (bundled WebP, both palettes)",
+    "globs": [
+      "whats-new/beacon-tester-dark.webp",
+      "whats-new/beacon-tester-light.webp",
+      "whats-new/command-palette-dark.webp",
+      "whats-new/command-palette-light.webp",
+      "whats-new/detection-widget-dark.webp",
+      "whats-new/detection-widget-light.webp",
+      "whats-new/exclusion-builder-dark.webp",
+      "whats-new/exclusion-builder-light.webp",
+      "whats-new/rucss-tester-dark.webp",
+      "whats-new/rucss-tester-light.webp",
+      "whats-new/toolbar-dot-dark.webp",
+      "whats-new/toolbar-dot-light.webp"
+    ],
+    "maxKb": {
+      "raw": 398
+    },
+    "required": true
+  },
+  {
+    "surface": "What's new screenshots (bundled WebP, both palettes)",
+    "globs": [
+      "whats-new/beacon-tester-dark.webp",
+      "whats-new/beacon-tester-light.webp",
+      "whats-new/command-palette-dark.webp",
+      "whats-new/command-palette-light.webp",
+      "whats-new/detection-widget-dark.webp",
+      "whats-new/detection-widget-light.webp",
+      "whats-new/exclusion-builder-dark.webp",
+      "whats-new/exclusion-builder-light.webp",
+      "whats-new/rucss-tester-dark.webp",
+      "whats-new/rucss-tester-light.webp",
+      "whats-new/toolbar-dot-dark.webp",
+      "whats-new/toolbar-dot-light.webp"
+    ],
+    "maxKb": {
+      "raw": 398
+    },
+    "build": "firefox-mv2",
+    "required": true
+  },
+  {
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
