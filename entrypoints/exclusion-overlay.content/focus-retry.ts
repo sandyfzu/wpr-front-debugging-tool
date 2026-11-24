@@ -53,3 +53,40 @@ export function retryFocus<T>(deps: FocusRetryDeps<T>, tries: number): void {
   };
   step(tries);
 }
+
+/**
+ * What to do, one frame after a state change, about a focused overlay
+ * control that may have been unmounted.
+ *
+ * - `reclaim` — the control is gone and focus fell to the page (nothing
+ *   focused): land it back in the overlay.
+ * - `forget` — focus sits somewhere else (another injected UI, a page
+ *   control): the user moved on, so the lost control is no longer ours to
+ *   repair, now or on any later change.
+ * - `keep` — nothing to do yet (no control lost).
+ */
+export type LostFocusAction = 'reclaim' | 'forget' | 'keep';
+
+/**
+ * Decides {@link LostFocusAction}. Reads the DOCUMENT's focus, never the
+ * overlay's own root: a shadow root answers `null` both when focus fell out
+ * and when it moved into another shadow root (e.g. the detection strip), so
+ * only the document tells "fell to the page" apart from "taken elsewhere".
+ *
+ * @param lost Whether the overlay's last focused control is disconnected.
+ * @param active The document's focused element (`null`, `body` or the root
+ *   element = nothing: a body-less document, e.g. XHTML or SVG, answers its
+ *   root element when nothing is focused).
+ * @param body The document's body (`null` when it has none).
+ * @param root The document's root element.
+ * @returns The action.
+ */
+export function lostFocusAction<T>(
+  lost: boolean,
+  active: T | null,
+  body: T | null,
+  root: T | null
+): LostFocusAction {
+  if (!lost) return 'keep';
+  return active === null || active === body || active === root ? 'reclaim' : 'forget';
+}

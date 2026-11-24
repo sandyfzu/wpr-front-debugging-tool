@@ -1,6 +1,6 @@
 /** Independent adversarial checks of the panel's bounded workspaces. */
 import { expect, openFixturePage, panelPageUrl, test } from '../helpers/extension';
-import { openPanelForFixture } from '../helpers/panel-data';
+import { loadedPageRoot, openPanelForFixture } from '../helpers/panel-data';
 
 /** Every route. */
 const ROUTES = [
@@ -123,7 +123,7 @@ test('reflows all routes under native 200 percent browser zoom', async ({ extens
       await panel.evaluate((id) => {
         location.hash = `#/${id}`;
       }, route);
-      const root = panel.locator(`[data-fdt-page="${route}"]`);
+      const root = loadedPageRoot(panel, route);
       await expect(root).toBeVisible();
       expect(await root.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
       if (route === 'detections')
@@ -167,7 +167,7 @@ test('keeps routes and hostile search contained at narrow, ultrawide and shallow
         await panel.evaluate((id) => {
           location.hash = `#/${id}`;
         }, route);
-        const root = panel.locator(`[data-fdt-page="${route}"]`);
+        const root = loadedPageRoot(panel, route);
         await expect(root).toBeVisible();
         await expect.poll(() => root.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
         const main = panel.locator('[data-fdt="panel-content"]');
