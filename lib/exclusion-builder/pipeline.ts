@@ -25,6 +25,7 @@ import { notStoredRows } from './field-text';
 import { prevalidateExclusionSet } from './validate';
 import type { DocumentBytes } from './libxml/charset';
 import { EXCLUSION_FEATURES, type ExclusionFeatureId, type ExclusionSet } from './set';
+import { INLINE_PASS_FEATURE } from './pipeline-steps';
 import type { TransformReport, TransformResult } from './report';
 import type { SimulationStage } from '../wp-rocket-simulation/spec';
 
@@ -127,15 +128,17 @@ const AFTER_INLINE_PASS: Partial<
   defer_all_js: deferJsTransformAfterInlinePass
 };
 
-/** The pipeline steps, derived from the registry's declared execution order. */
-const FEATURE_PIPELINE: readonly FeatureEntry[] = EXCLUSION_FEATURES.map(({ id }) => ({
-  id,
-  transform: FEATURE_TRANSFORMS[id]
-}));
-
-/** The pipeline's execution order, for consumers that display it. */
-export const EXCLUSION_PIPELINE_IDS: readonly ExclusionFeatureId[] = FEATURE_PIPELINE.map(
-  (entry) => entry.id
+/**
+ * The pipeline steps, derived from the registry's declared execution order.
+ * `__PURE__`: a bundle that imports this module without running the
+ * pipeline (a build-time dead backend row) drops the table and, with it,
+ * every transform.
+ */
+const FEATURE_PIPELINE: readonly FeatureEntry[] = /*#__PURE__*/ EXCLUSION_FEATURES.map(
+  ({ id }) => ({
+    id,
+    transform: FEATURE_TRANSFORMS[id]
+  })
 );
 
 /**
@@ -144,18 +147,6 @@ export const EXCLUSION_PIPELINE_IDS: readonly ExclusionFeatureId[] = FEATURE_PIP
  * (no report of its own — Defer JS reports it).
  */
 export type ExclusionPipelineStep = PipelineStep<TransformReport | null, ExclusionFeatureId>;
-
-/** The feature whose work the inline-pass replay is (WP Rocket's Defer JS). */
-const INLINE_PASS_FEATURE: ExclusionFeatureId = 'defer_all_js';
-
-/**
- * The ids of {@link exclusionPipelineSteps}' steps, in execution order: the
- * inline-pass replay (as Defer JS), then the features.
- */
-export const EXCLUSION_PIPELINE_STEP_IDS: readonly ExclusionFeatureId[] = [
-  INLINE_PASS_FEATURE,
-  ...EXCLUSION_PIPELINE_IDS
-];
 
 /**
  * The exclusion pipeline's feature steps for one set, in execution order —
@@ -175,7 +166,8 @@ export const EXCLUSION_PIPELINE_STEP_IDS: readonly ExclusionFeatureId[] = [
  * @param set The exclusion set every step reads.
  * @param bytes How the session decoded the page, when known (Automatic Lazy
  *   Rendering rebuilds libxml's reading of the bytes from it).
- * @returns The replay step, then one step per feature in pipeline order.
+ * @returns The replay step, then one step per feature in pipeline order —
+ *   ids `EXCLUSION_PIPELINE_STEP_IDS` (`./pipeline-steps`).
  */
 export function exclusionPipelineSteps(
   set: ExclusionSet,

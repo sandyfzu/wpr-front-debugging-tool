@@ -188,7 +188,7 @@ describe('withRuntimeHooks', () => {
     );
     const resume = vi.fn<InterceptionBackend['resume']>(() => Promise.resolve(live));
     const disarm = vi.fn<InterceptionBackend['disarm']>(() => Promise.resolve());
-    const backend: InterceptionBackend = { arm, resume, disarm };
+    const backend: InterceptionBackend = { arm, resume, disarm, runner: vi.fn() };
     const set = vi.fn();
     return {
       wrapped: withRuntimeHooks(backend, { set, heldTabs: () => [] }),

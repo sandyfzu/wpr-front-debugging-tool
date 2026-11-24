@@ -19,7 +19,8 @@ import {
 import { SIMULATION_MARKER_META_NAME } from '../wp-rocket/constants';
 import * as deferForward from '../wp-rocket-simulation/defer-js-forward';
 import * as delayForward from '../wp-rocket-simulation/delay-js-forward';
-import { runDocumentPipeline, type DocumentTransformResult } from './document-transform';
+import { type DocumentTransformResult } from './document-transform';
+import { runDocumentPipeline } from './document-pipeline';
 import { LAZYLOAD_PACKAGE_FIXTURE } from './simulation-package.fixtures';
 import { lazyloadInput } from './simulation-sources';
 import { simulationStage } from './simulation-stage';

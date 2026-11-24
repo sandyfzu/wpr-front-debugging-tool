@@ -10,15 +10,15 @@ import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set
 import type { DocumentSimulationInput } from '../messaging/exclusion-simulation';
 import { simulateDelayJs } from '../wp-rocket-simulation/delay-js-forward';
 import {
-  createInProcessTransformRunner,
   overrunRow,
   rewriteDocument,
-  runDocumentPipeline,
   type DocumentTransformRequest,
   type DocumentTransformRunner
 } from './document-transform';
+import { createInProcessTransformRunner, runDocumentPipeline } from './document-pipeline';
 import type { SimulationPreparer } from './simulation-sources';
-import { createWorkerTransformRunner, handleTransformWorkerMessage } from './transform-worker';
+import { createWorkerTransformRunner } from './transform-worker';
+import { handleTransformWorkerMessage } from './transform-worker-handler';
 
 const SET: ExclusionSet = {
   rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['b\\.js'] },

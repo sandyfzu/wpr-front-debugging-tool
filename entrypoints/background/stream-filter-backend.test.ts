@@ -3,7 +3,8 @@
  * detection, the four top-level hooks (filter, extra info), their
  * hand-off to the backend and their isolation, and the simulated-runtime
  * hook (held per tab only while its session simulates LazyLoad; filter,
- * extra info, its hand-off to the host). The backend itself is pinned
+ * extra info, its hand-off to the host), and the engine: only ever in the
+ * packaged worker (no Worker ⇒ the row is unsupported). The backend itself is pinned
  * in `lib/exclusion-session/stream-backend.test.ts`. The fake browser cannot
  * fire `webRequest` events, so the registered listeners are captured.
  */
@@ -11,6 +12,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InterceptionHost } from '../../lib/exclusion-session/backend';
 import type { StreamInterceptionBackend } from '../../lib/exclusion-session/stream-backend';
 import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
+import type { DocumentTransformRequest } from '../../lib/exclusion-session/document-transform';
+import { EMPTY_EXCLUSION_SET } from '../../lib/exclusion-builder/set';
 import { STREAM_FILTER_BACKEND } from './stream-filter-backend';
 
 type Hook = (details: unknown) => unknown;
@@ -63,16 +66,63 @@ function wire(filterResponseData: (id: string) => unknown) {
   return { backend, registered, removed };
 }
 
+/** A request the row's runner hands its worker. */
+const TRANSFORM_REQUEST: DocumentTransformRequest = {
+  html: '<p>x</p>',
+  set: EMPTY_EXCLUSION_SET,
+  budgetMs: 100
+};
+
+/** A fake engine worker: where it was spawned from, what it was posted. */
+class FakeWorker {
+  readonly posted: unknown[] = [];
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  onerror: ((event: unknown) => void) | null = null;
+
+  /** @param url The script URL the worker was spawned from. */
+  constructor(readonly url: string) {}
+
+  /** Records a posted message. */
+  postMessage(message: unknown): void {
+    this.posted.push(message);
+  }
+
+  /** Nothing to stop. */
+  terminate(): void {
+    return undefined;
+  }
+}
+
+/** Stub the global `Worker` with {@link FakeWorker}s; returns those spawned. */
+function stubWorker(): FakeWorker[] {
+  const spawned: FakeWorker[] = [];
+  vi.stubGlobal(
+    'Worker',
+    class extends FakeWorker {
+      constructor(url: string) {
+        super(url);
+        spawned.push(this);
+      }
+    }
+  );
+  return spawned;
+}
+
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
   delete (browser.webRequest as { filterResponseData?: unknown }).filterResponseData;
 });
 
 describe('stream-filter row', () => {
-  it('is selected only where webRequest exposes filterResponseData', () => {
+  it('is selected only where webRequest exposes filterResponseData and a Worker exists', () => {
+    stubWorker();
     expect(STREAM_FILTER_BACKEND.isSupported()).toBe(false);
     Object.assign(browser.webRequest, { filterResponseData: () => null });
     expect(STREAM_FILTER_BACKEND.isSupported()).toBe(true);
+    // No Worker to run the engine in: unsupported (Apply answers `unsupported-browser`).
+    vi.stubGlobal('Worker', undefined);
+    expect(STREAM_FILTER_BACKEND.isSupported()).toBe(false);
   });
 
   it('registers the request and headers hooks blocking, the error and completion hooks not, over top-level documents', () => {
@@ -157,10 +207,25 @@ describe('stream-filter row', () => {
     expect(error).toHaveBeenCalledTimes(4);
   });
 
-  it('runs the engine through the worker runner where a Worker exists', () => {
+  it('runs the engine only in its worker: each run is posted to the packaged worker script', async () => {
+    const spawned = stubWorker();
     const { backend } = wire(() => null);
-    expect(typeof Worker === 'function' ? typeof backend.runner : 'undefined').toBe(
-      typeof Worker === 'function' ? 'function' : 'undefined'
-    );
+    const pending = backend.runner(TRANSFORM_REQUEST);
+    expect(spawned).toHaveLength(1);
+    const worker = spawned[0];
+    expect(worker?.url).toBe(browser.runtime.getURL('/exclusion-transform-worker.js'));
+    expect(worker?.posted).toEqual([{ type: 'transform', id: 0, request: TRANSFORM_REQUEST }]);
+    const result = { ok: true, html: '<p>x</p>', outcome: { outcome: 'rewritten', reports: [] } };
+    worker?.onmessage?.({ data: { type: 'result', id: 0, result } });
+    await expect(pending).resolves.toEqual(result);
+  });
+
+  it('answers engine-failed (never runs the engine here) when no Worker can be spawned', async () => {
+    vi.stubGlobal('Worker', undefined);
+    const { backend } = wire(() => null);
+    await expect(backend.runner(TRANSFORM_REQUEST)).resolves.toMatchObject({
+      ok: false,
+      outcome: { outcome: 'failed', reason: 'engine-failed' }
+    });
   });
 });

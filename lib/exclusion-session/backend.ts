@@ -278,8 +278,12 @@ export interface InterceptionBackend {
     origin?: string,
     simulate?: SimulateSpec
   ): Promise<boolean>;
-  /** A preempting engine runner (e.g. worker-hosted); absent → in-process. */
-  readonly runner?: DocumentTransformRunner;
+  /**
+   * The engine runner this backend's documents run through, picked by its
+   * registry row: in-process where the background's thread may run the
+   * engine, worker-hosted (preempting) where it cannot or should not.
+   */
+  readonly runner: DocumentTransformRunner;
 }
 
 /** One registry row: a backend and the feature detection that selects it. */

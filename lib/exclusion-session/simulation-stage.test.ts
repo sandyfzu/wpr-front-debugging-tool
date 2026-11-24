@@ -7,7 +7,7 @@ import {
   simulateDelayJs,
   type DelayJsForwardReport
 } from '../wp-rocket-simulation/delay-js-forward';
-import { simulationStage, simulationStepIds, wireSimulationReport } from './simulation-stage';
+import { simulationStage, wireSimulationReport } from './simulation-stage';
 
 /** An input without CSP or marker (each case adds what it needs). */
 function input(overrides: Partial<DocumentSimulationInput> = {}): DocumentSimulationInput {
@@ -48,13 +48,6 @@ function forward(overrides: Partial<DelayJsForwardReport> = {}): DelayJsForwardR
 function crossesContract(report: unknown): boolean {
   return parseDocumentSimulationReport(report, { features: ['delay_js'] }, 'reject') !== null;
 }
-
-describe('simulationStepIds', () => {
-  it('keeps the registry order and only the requested features', () => {
-    expect(simulationStepIds(['delay_js'])).toEqual(['delay_js']);
-    expect(simulationStepIds([])).toEqual([]);
-  });
-});
 
 describe('simulationStage', () => {
   it('throws on an input naming an unsupported version (the input guard refuses it: a broken invariant)', () => {

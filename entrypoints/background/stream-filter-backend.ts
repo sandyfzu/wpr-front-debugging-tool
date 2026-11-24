@@ -3,12 +3,15 @@
  * (`lib/exclusion-session/stream-backend`) to `webRequest` — a blocking
  * top-level request hook that attaches the body filter, a blocking
  * response-headers hook for the response facts, completion and error hooks
- * telling whether a body is whole, a worker-hosted engine
- * runner that preempts a runaway row, and a blocking script-request hook
+ * telling whether a body is whole, the worker-hosted engine
+ * runner that preempts a runaway row (the only engine this background
+ * runs), and a blocking script-request hook
  * redirecting a simulated page's runtime URL to its packaged copy
  * (`lib/exclusion-session/runtime-redirect`) — held only on the tabs whose
  * live session simulates a runtime feature. Selected by feature detection of
- * `webRequest.filterResponseData`.
+ * `webRequest.filterResponseData` and `Worker`: without a worker the row is
+ * unsupported, so Apply answers `unsupported-browser` and the page stays
+ * unmodified — the engine never runs on this thread.
  */
 import { createLogger, type Logger } from '../../lib/logger';
 import type { InterceptionBackendRow } from '../../lib/exclusion-session/backend';
@@ -21,7 +24,6 @@ import {
   createWorkerTransformRunner,
   type TransformWorkerPort
 } from '../../lib/exclusion-session/transform-worker';
-import type { DocumentTransformRunner } from '../../lib/exclusion-session/document-transform';
 import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import type { InterceptionHost } from '../../lib/exclusion-session/backend';
 import {
@@ -47,9 +49,13 @@ function topLevelDocuments(): Parameters<typeof browser.webRequest.onBeforeReque
   return { urls: [...URL_PATTERNS], types: ['main_frame' as const] };
 }
 
-/** Whether this browser exposes response-body filtering. */
+/**
+ * Whether this background can run the row: response-body filtering, and a
+ * `Worker` to run the engine in (there is no in-thread engine to fall back
+ * to).
+ */
 function supportsStreamFilters(): boolean {
-  return 'filterResponseData' in browser.webRequest;
+  return 'filterResponseData' in browser.webRequest && typeof Worker === 'function';
 }
 
 /**
@@ -69,20 +75,6 @@ function spawnTransformWorker(): TransformWorkerPort {
   return new Worker(
     browser.runtime.getURL(TRANSFORM_WORKER_PATH)
   ) as unknown as TransformWorkerPort;
-}
-
-/**
- * The preempting runner, or undefined (logged) when this background cannot
- * host a worker — the controller then runs the engine in-process.
- *
- * @param log The row's logger.
- */
-function workerRunner(log: Logger): DocumentTransformRunner | undefined {
-  if (typeof Worker !== 'function') {
-    log.warn('No Worker in this background — the engine budget is checked between steps');
-    return undefined;
-  }
-  return createWorkerTransformRunner({ spawn: spawnTransformWorker }).run;
 }
 
 /**
@@ -168,7 +160,7 @@ export const STREAM_FILTER_BACKEND: InterceptionBackendRow = {
       host,
       openFilter: (requestId) => webRequest.filterResponseData(requestId),
       log,
-      runner: workerRunner(log)
+      runner: createWorkerTransformRunner({ spawn: spawnTransformWorker }).run
     });
     registerHooks(backend, log);
     return withRuntimeHooks(backend, runtimeHooks(host, log));

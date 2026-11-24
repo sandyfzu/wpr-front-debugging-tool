@@ -17,15 +17,13 @@ import {
   parseSimulationTable
 } from '../wp-rocket-simulation/simulation-parity-table';
 import type { InterceptedDocument } from './backend';
-import {
-  rewriteDocument,
-  runDocumentPipeline,
-  type DocumentTransformRunner
-} from './document-transform';
+import { rewriteDocument, type DocumentTransformRunner } from './document-transform';
+import { runDocumentPipeline } from './document-pipeline';
 import { webSha256Hex } from '../../utils/web-sha256';
 import { createPackagedRuntimeSource } from './packaged-simulation-data';
 import { INERT_SIMULATION_SOURCES, simulationPreparer } from './simulation-sources';
-import { handleTransformWorkerMessage, type TransformWorkerMessage } from './transform-worker';
+import { type TransformWorkerMessage } from './transform-worker';
+import { handleTransformWorkerMessage } from './transform-worker-handler';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

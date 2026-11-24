@@ -3,13 +3,11 @@
  * background page spawns to run one document pipeline per request off its
  * thread, so the host can terminate a runaway row at its budget. Built as
  * an unlisted script so the Chromium package (whose service worker cannot
- * host a `Worker`) never carries it; the whole protocol lives in the
- * shared runner module.
+ * host a `Worker`) never carries it; the protocol lives in the shared
+ * runner modules (host and handler).
  */
-import {
-  handleTransformWorkerMessage,
-  type TransformWorkerMessage
-} from '../lib/exclusion-session/transform-worker';
+import { handleTransformWorkerMessage } from '../lib/exclusion-session/transform-worker-handler';
+import type { TransformWorkerMessage } from '../lib/exclusion-session/transform-worker';
 
 export default defineUnlistedScript({
   include: ['firefox'],

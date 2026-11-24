@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   buildDirectory,
+  markerProblems,
   matchesGlob,
   measureRow,
   requiredGlobProblems,
@@ -200,6 +202,20 @@ describe('parseBudgetRows', () => {
     );
   });
 
+  it('rejects unknown fields on either kind, naming the row and the field (a typo is never ignored)', () => {
+    expect(() => parseBudgetRows([{ ...bytesRow, mustNotContains: ['a'] }])).toThrow(
+      /#0 \(options JS\) carries unknown field "mustNotContains"/
+    );
+    expect(() => parseBudgetRows([{ ...timingRow, maxMS: 1 }])).toThrow(
+      /carries unknown field "maxMS"/
+    );
+  });
+
+  it('parses every committed row (each of its fields is a known one)', () => {
+    const raw = JSON.parse(readFileSync('scripts/budgets.json', 'utf8'));
+    expect(parseBudgetRows(raw)).toHaveLength(raw.length);
+  });
+
   it('rejects bytes rows that carry timing fields (dead letters would read like maxima)', () => {
     expect(() => parseBudgetRows([{ ...bytesRow, maxMs: 500 }])).toThrow(/bytes row.*maxMs/);
     expect(() => parseBudgetRows([{ ...bytesRow, measuredBy: 'a runner' }])).toThrow(
@@ -250,6 +266,105 @@ describe('measureRow', () => {
       rawOver: true,
       gzipOver: false
     });
+  });
+});
+
+describe('marker rows', () => {
+  const base = {
+    kind: 'bytes',
+    surface: 'background',
+    globs: ['bg.js'],
+    maxKb: { raw: 10 },
+    required: true
+  };
+  const engine = Buffer.from('x={stopAfter:1,spanning:2}');
+  const clean = Buffer.from('x={other:1}');
+  /** A reader over named in-memory files. */
+  const readerOf = (map) => (path) => map[path];
+
+  it('flags each forbidden marker a file holds, naming file and marker', () => {
+    const row = { ...base, mustNotContain: ['stopAfter', 'spanning:', 'absent'] };
+    expect(markerProblems(row, ['bg.js'], readerOf({ 'bg.js': engine }))).toEqual([
+      'bg.js contains forbidden marker "stopAfter"',
+      'bg.js contains forbidden marker "spanning:"'
+    ]);
+    expect(markerProblems(row, ['bg.js'], readerOf({ 'bg.js': clean }))).toEqual([]);
+  });
+
+  it('flags a required marker none of the files holds (a renamed marker fails, never passes vacuously)', () => {
+    const row = { ...base, globs: ['a.js', 'b.js'], mustContain: ['stopAfter', 'renamed'] };
+    expect(
+      markerProblems(row, ['a.js', 'b.js'], readerOf({ 'a.js': clean, 'b.js': engine }))
+    ).toEqual(['required marker "renamed" is in none of a.js, b.js']);
+  });
+
+  it('reads no file for a row without markers', () => {
+    expect(
+      markerProblems(base, ['bg.js'], () => {
+        throw new Error('read');
+      })
+    ).toEqual([]);
+  });
+
+  it('carries marker breaches on a measured row, empty when clean', () => {
+    const row = { ...base, mustNotContain: ['stopAfter'] };
+    expect(
+      measureRow(
+        row,
+        () => ['bg.js'],
+        () => readerOf({ 'bg.js': engine })
+      )
+    ).toMatchObject({
+      status: 'measured',
+      rawOver: false,
+      markerProblems: ['bg.js contains forbidden marker "stopAfter"']
+    });
+    expect(
+      measureRow(
+        row,
+        () => ['bg.js'],
+        () => readerOf({ 'bg.js': clean })
+      )
+    ).toMatchObject({ status: 'measured', markerProblems: [] });
+  });
+
+  it('pairs every forbidden marker of the committed table with a bundle that must ship it', () => {
+    const rows = parseBudgetRows(JSON.parse(readFileSync('scripts/budgets.json', 'utf8')));
+    const forbidden = rows.flatMap((row) => row.mustNotContain ?? []);
+    const required = new Set(rows.flatMap((row) => row.mustContain ?? []));
+    expect(forbidden.length).toBeGreaterThan(0);
+    expect(forbidden.filter((marker) => !required.has(marker))).toEqual([]);
+  });
+
+  it('parses marker lists and rejects malformed ones, on start rows and on timing rows', () => {
+    const parsed = parseBudgetRows([{ ...base, mustNotContain: ['a'], mustContain: ['b'] }]);
+    expect(parsed[0]).toMatchObject({ mustNotContain: ['a'], mustContain: ['b'] });
+    for (const markers of [[], [''], ['  '], [1], 'a']) {
+      expect(() => parseBudgetRows([{ ...base, mustNotContain: markers }])).toThrow(
+        /#0 \(background\) mustNotContain must be a non-empty array of non-empty strings/
+      );
+      expect(() => parseBudgetRows([{ ...base, mustContain: markers }])).toThrow(
+        /mustContain must be a non-empty array/
+      );
+    }
+    const { globs: _globs, ...startRow } = { ...base, start: 'panel.html' };
+    expect(() => parseBudgetRows([{ ...startRow, mustNotContain: ['a'] }])).toThrow(
+      /start row — name marker files by globs, not mustNotContain/
+    );
+    expect(() =>
+      parseBudgetRows([
+        { surface: 't', kind: 'timing', maxMs: 1, measuredBy: 'a spec', mustContain: ['a'] }
+      ])
+    ).toThrow(/timing row.*cannot carry mustContain/);
+  });
+
+  it('rejects marker lists on a row that is not required (an absent file would pass vacuously)', () => {
+    const { required: _required, ...optional } = base;
+    for (const field of ['mustNotContain', 'mustContain']) {
+      expect(() => parseBudgetRows([{ ...optional, [field]: ['a'] }])).toThrow(
+        new RegExp(`#0 \\(background\\) carries ${field} — a marker row must be required: true`)
+      );
+    }
   });
 });
 

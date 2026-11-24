@@ -20,7 +20,7 @@ import type {
 } from '../backend';
 import type { PackagedRuntimeFile } from '../simulation-sources';
 import type { PassedDocumentFailure } from '../../messaging/exclusion-session';
-import { DOCUMENT_BODY_BYTE_LIMIT } from '../document-transform';
+import { DOCUMENT_BODY_BYTE_LIMIT, type DocumentTransformRunner } from '../document-transform';
 import { speculationRulesGuardSource } from '../speculation-rules';
 import {
   DOCUMENT_TRANSFORM_BUDGET_MS,
@@ -36,6 +36,9 @@ import {
   createChromiumInterceptionBackend
 } from './backend';
 import type { DebuggerEventHandlers, DebuggerPort, DebuggerTarget, TabPresence } from './port';
+
+/** The engine runner handed to the backend (it never runs one: the host does). */
+const RUNNER: DocumentTransformRunner = () => Promise.reject(new Error('Not run by the backend'));
 
 const TAB = 4;
 /** The commands that enable a session after attaching, in order. */
@@ -348,6 +351,7 @@ beforeEach(() => {
   const backend = createChromiumInterceptionBackend({
     port,
     host,
+    runner: RUNNER,
     log,
     schedule: timers.schedule,
     clock: clock.now,
@@ -1313,7 +1317,9 @@ describe('defaults', () => {
     port.commands.set('Fetch.getResponseBody', () =>
       Promise.resolve({ body: bytesToBase64(BODY), base64Encoded: true })
     );
-    const backend = createChromiumInterceptionBackend({ port, host });
+    const backend = createChromiumInterceptionBackend({ port, host, runner: RUNNER });
+    // The row's runner is exposed as given (the host runs documents through it).
+    expect(backend.runner).toBe(RUNNER);
     await expect(backend.arm(TAB, 1)).resolves.toEqual({ armed: true });
     // Each field against its own time base: `receivedAt` is the monotonic
     // stamp (time origin + `performance.now()`), `wallAt` is `Date.now()`.

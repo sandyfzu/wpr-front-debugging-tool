@@ -40,12 +40,10 @@ import {
   type SimulateRow
 } from '../wp-rocket-simulation/simulation-parity-table';
 import type { SimulatedFeatureId } from '../wp-rocket-simulation/spec';
-import {
-  runDocumentPipeline,
-  type DocumentTransformRequest,
-  type DocumentTransformResult
-} from './document-transform';
-import { handleTransformWorkerMessage, type TransformWorkerMessage } from './transform-worker';
+import { type DocumentTransformRequest, type DocumentTransformResult } from './document-transform';
+import { runDocumentPipeline } from './document-pipeline';
+import { type TransformWorkerMessage } from './transform-worker';
+import { handleTransformWorkerMessage } from './transform-worker-handler';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

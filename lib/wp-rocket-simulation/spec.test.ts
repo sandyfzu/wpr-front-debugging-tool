@@ -23,6 +23,7 @@ import {
   SIMULATION_MARKER_ID_PATTERN,
   SIMULATION_NOT_APPLICABLE_REASONS,
   SIMULATION_REPORT_VOCABULARY,
+  simulationStepIds,
   SIMULATION_RUNTIME_UNAVAILABLE_CAUSES,
   SIMULATION_STATES,
   UNREPRODUCED_REGEXES
@@ -192,5 +193,13 @@ describe('simulation vocabulary', () => {
     expect(SIMULATION_MARKER_ID_PATTERN.test('f'.repeat(31))).toBe(false);
     expect(SIMULATION_MARKER_ID_PATTERN.test('F'.repeat(32))).toBe(false);
     expect(SIMULATION_MARKER_ID_PATTERN.test(`${'0'.repeat(32)}\n`)).toBe(false);
+  });
+});
+
+describe('simulationStepIds', () => {
+  it('keeps the registry order and only the requested features', () => {
+    expect(simulationStepIds(['delay_js'])).toEqual(['delay_js']);
+    expect(simulationStepIds([])).toEqual([]);
+    expect(simulationStepIds(['delay_js', 'lazyload'])).toEqual(['lazyload', 'delay_js']);
   });
 });
