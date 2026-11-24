@@ -5,18 +5,6 @@
          adds a second one, turning named access into a bare HTMLCollection. -->
     <meta charset="utf-8" />
     <title>FDT e2e — page whose root element is named `chrome`</title>
-    <script>
-      // Every WXT content script announces its start with a window message
-      // whose type begins with the runtime id its `browser` reports — the
-      // page-visible witness of which namespace each bundle resolved.
-      window.__wxtStarts = [];
-      window.addEventListener('message', (event) => {
-        const type = event.data && event.data.type;
-        if (typeof type === 'string' && type.endsWith(':wxt:content-script-started')) {
-          window.__wxtStarts.push(type);
-        }
-      });
-    </script>
   </head>
   <body>
     <main>

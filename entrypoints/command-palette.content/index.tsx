@@ -26,6 +26,7 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import { guardInvalidationTeardown } from '../../lib/dead-context';
+import { QUIET_START, installRestartGuard } from '../../lib/content-script-restart';
 import { createLogger } from '../../lib/logger';
 import {
   readChordHint,
@@ -139,6 +140,8 @@ function startView(ctx: ContentScriptContext, bridge: PaletteBridge): void {
 }
 
 export default defineContentScript({
+  // No start broadcast to the page's `message` listeners (it names our id).
+  ...QUIET_START,
   // Injected on demand by the background (never listed in the manifest).
   registration: 'runtime',
   matches: [...URL_PATTERNS],
@@ -147,6 +150,9 @@ export default defineContentScript({
     // First: every teardown registered below runs dead-context safe (an
     // extension reload must never put an error on the host page).
     guardInvalidationTeardown(ctx, log);
+    // Then, before the page can run again: only a dead extension context or a
+    // newer start of this script in our own world may end it, never the page.
+    installRestartGuard(ctx, log);
     // The palette acts on the page as a whole: never inside a frame.
     if (window.top !== window) return;
     const bridge = readPaletteBridge(ISOLATED_WORLD);
