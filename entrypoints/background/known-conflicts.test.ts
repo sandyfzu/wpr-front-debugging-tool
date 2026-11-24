@@ -106,11 +106,13 @@ function fakeFetch() {
   const requestedUrls: unknown[] = [];
   const requestSignals: unknown[] = [];
   const requestCacheModes: unknown[] = [];
+  const requestCredentials: unknown[] = [];
   const fetch: typeof globalThis.fetch = (url: unknown, init?: RequestInit): Promise<Response> => {
     callCount += 1;
     requestedUrls.push(url);
     requestSignals.push(init?.signal);
     requestCacheModes.push(init?.cache);
+    requestCredentials.push(init?.credentials);
     if (queuedError !== null) throw queuedError;
     const json = queuedJson ?? noPayloadSupplier;
     return Promise.resolve(stubResponse(json, queuedOk));
@@ -121,6 +123,7 @@ function fakeFetch() {
     urls: requestedUrls,
     signals: requestSignals,
     cacheModes: requestCacheModes,
+    credentials: requestCredentials,
     queueJson(json: PromiseSupplier<unknown>): void {
       queuedJson = json;
       queuedError = null;
@@ -199,6 +202,13 @@ describe('fetchAndStoreKnownConflicts', () => {
     fetcher.queueJson((): Promise<unknown> => Promise.resolve(SAMPLE_ROWS));
     await fetchAndStoreKnownConflicts(deps);
     expect(fetcher.cacheModes).toEqual(['no-cache']);
+  });
+
+  it('sends no credentials (cookies) with the request', async () => {
+    const { deps, fetcher } = makeDeps({});
+    fetcher.queueJson((): Promise<unknown> => Promise.resolve(SAMPLE_ROWS));
+    await fetchAndStoreKnownConflicts(deps);
+    expect(fetcher.credentials).toEqual(['omit']);
   });
 
   it('reports a distinct http-error outcome without touching storage', async () => {

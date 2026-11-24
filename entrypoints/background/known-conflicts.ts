@@ -105,7 +105,10 @@ export async function fetchAndStoreKnownConflicts(deps: UpdateDeps): Promise<Upd
     // `Last-Modified` without `Cache-Control`, so the default mode would serve
     // a heuristically "fresh" HTTP-cache copy with no network at all, and the
     // refresh would stamp stale rows as just fetched (even offline).
+    // `omit`: never send the endpoint site's cookies, whatever a browser's
+    // default for an extension-origin request — it carries nothing of the user.
     response = await deps.fetch(DB_ENDPOINT, {
+      credentials: 'omit',
       cache: 'no-cache',
       signal: AbortSignal.timeout(DB_FETCH_TIMEOUT_MS)
     });

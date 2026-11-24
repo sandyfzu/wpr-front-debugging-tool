@@ -65,7 +65,7 @@ Every script, the stack and the repository rules: [`AGENTS.md`](AGENTS.md). Stor
 - **Downloads without user data:** the Known Conflicts list (`apps.wpr-support.com`) and WP Rocket's latest exclusion list (`b.rucss.wp-rocket.me`), the Known Conflicts list fetched on every hourly check, at browser start and on a manual update; the exclusion list checked hourly and refreshed 24 h after its last success; JSON data, validated, never executed.
 - **Everything else stays local:** no analytics or telemetry. Options and per-site widget choices sit in the browser's sync storage (they roam with the user's own browser sync); exclusion sets, widget positions, panel layout, tool settings and the cached data files in local storage; builder sessions in session storage. Page data is shown in the tool or logged under `[WPR FDT]` in masked shapes (counts, versions — never markup, scripts or full addresses; a builder session page's origin + path at most). The live tools send nothing: the Beacon Tester runs the bundled `wp-rocket-scripts` beacon without asking or saving anything on the site.
 
-Full store disclosure: [`store/listing.md`](store/listing.md#data-use--privacy-fields).
+Full store disclosure: [`store/listing.md`](store/listing.md#data-use--privacy-fields); privacy policy: [`store/privacy-policy.md`](store/privacy-policy.md).
 
 ## Known limitation: Firefox scrollbars
 
