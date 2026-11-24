@@ -148,7 +148,7 @@ test.describe('extension namespace vs page DOM clobbering', () => {
         `${id}:exclusion-overlay:wxt:content-script-started`,
         `${id}:command-palette:wxt:content-script-started`
       ]);
-    await expect(page.getByRole('heading', { name: 'Exclusion builder' })).toBeVisible(MOUNT);
+    await expect(page.getByRole('heading', { name: 'Exclusion Builder' })).toBeVisible(MOUNT);
   });
 
   test('a tab loaded before install with a form named chrome: the overlay messages over the pinned chrome', async () => {
@@ -166,7 +166,7 @@ test.describe('extension namespace vs page DOM clobbering', () => {
     await expect
       .poll(() => starts(page))
       .toEqual([`${id}:exclusion-overlay:wxt:content-script-started`]);
-    await expect(page.getByRole('heading', { name: 'Exclusion builder' })).toBeVisible(MOUNT);
+    await expect(page.getByRole('heading', { name: 'Exclusion Builder' })).toBeVisible(MOUNT);
     expect(logs.filter((line) => /failed/i.test(line))).toEqual([]);
   });
 
@@ -222,7 +222,7 @@ test.describe('extension namespace vs page DOM clobbering', () => {
         `${id}:ua-relay:wxt:content-script-started`
       ]);
     await injectInto(worker, url, '/content-scripts/exclusion-overlay.js');
-    await expect(page.getByRole('heading', { name: 'Exclusion builder' })).toBeVisible(MOUNT);
+    await expect(page.getByRole('heading', { name: 'Exclusion Builder' })).toBeVisible(MOUNT);
     expect(await starts(page)).not.toContainEqual(expect.stringMatching(/^x:/));
   });
 

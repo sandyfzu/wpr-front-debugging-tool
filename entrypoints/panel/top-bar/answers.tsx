@@ -91,7 +91,7 @@ export const ANSWER_TARGETS: Record<Exclude<SegmentId, 'freshness'>, string> = {
 };
 
 /**
- * The freshness answer's hover detail: the data's absolute capture stamp,
+ * The freshness answer's hover detail: the absolute instant the panel fetched the data,
  * plus the stale state's remedy.
  *
  * @param kind The freshness answer shown.
@@ -100,10 +100,10 @@ export const ANSWER_TARGETS: Record<Exclude<SegmentId, 'freshness'>, string> = {
  */
 export function freshnessTitle(
   kind: 'current' | 'stale',
-  view: { readonly capturedAt: string | null }
+  view: { readonly fetchedAt: string | null }
 ): string | undefined {
-  if (view.capturedAt === null) return undefined;
-  const stamp = `Page data captured at ${view.capturedAt}`;
+  if (view.fetchedAt === null) return undefined;
+  const stamp = `Page data fetched at ${view.fetchedAt}`;
   return kind === 'current'
     ? `${stamp}.`
     : `${stamp} — older than ${STALE_WINDOW_MINUTES.toString()} min. Re-verify against the page; reload it to refresh.`;
@@ -120,12 +120,12 @@ export function freshnessTitle(
  */
 function FreshnessDetail(props: {
   kind: 'current' | 'stale';
-  view: { readonly capturedAt: string | null };
+  view: { readonly fetchedAt: string | null };
 }): JSX.Element {
   return (
     <span class="sr-only">
-      {props.view.capturedAt === null ? null : (
-        <span>Page data captured at {props.view.capturedAt}. </span>
+      {props.view.fetchedAt === null ? null : (
+        <span>Page data fetched at {props.view.fetchedAt}. </span>
       )}
       <Show when={props.kind === 'stale'} fallback={null}>
         <span>

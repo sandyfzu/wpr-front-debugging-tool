@@ -7,6 +7,7 @@
  */
 import { formatCount } from '../../utils/format-count';
 import type { AskMiss } from '../messaging/bounded-ask';
+import { ASK_MISS_TITLES } from '../messaging/ask-miss-words';
 import {
   rate,
   VITAL_THRESHOLDS,
@@ -211,27 +212,27 @@ export function describeVitalsMiss(miss: AskMiss): VitalsMissView {
   switch (miss) {
     case 'no-receiver':
       return {
-        title: "The page isn't listening",
+        title: ASK_MISS_TITLES['no-receiver'],
         message:
           'The extension is not active on this page yet. Reload it (an http or https page): vitals are collected from the start of a load.',
         recoveries: ['reload-page', 'retry']
       };
     case 'timeout':
       return {
-        title: "The page didn't answer in time",
+        title: ASK_MISS_TITLES.timeout,
         message: `No answer within ${formatCount(CURRENT_VISIT_ASK_DEADLINE_MS / 1000)} s. Refresh; reload the page if it keeps happening.`,
         recoveries: ['retry', 'reload-page']
       };
     case 'invalid-reply':
       return {
-        title: "The page's answer was unreadable",
+        title: ASK_MISS_TITLES['invalid-reply'],
         message:
           'The page runs another version of the extension — reload it so both match, then refresh.',
         recoveries: ['reload-page', 'retry']
       };
     case 'failed':
       return {
-        title: "Couldn't reach the page",
+        title: ASK_MISS_TITLES.failed,
         message: 'Asking the page for its vitals failed — reload it and refresh.',
         recoveries: ['reload-page', 'retry']
       };

@@ -51,16 +51,16 @@ describe('lazyloadStateChips', () => {
     expect(lazyloadStateChips(lazy, table())).toEqual([
       {
         id: 'lazyloaded',
-        label: 'Lazyloaded',
+        label: 'Lazy loaded',
         source: 'wp-rocket',
-        title: 'Lazyloaded by WP Rocket (LazyLoad for images)'
+        title: 'Lazy loaded by WP Rocket (LazyLoad for images)'
       }
     ]);
   });
 
   it('WP Rocket’s LazyLoad not detected: the lazy markup is the page’s own (any plugin writes it)', () => {
     expect(lazyloadStateChips(lazy, table(null, false))).toEqual([
-      { id: 'lazyloaded', label: 'Lazyloaded', source: 'page', title: PAGE_LAZY_MARKUP_TITLE }
+      { id: 'lazyloaded', label: 'Lazy loaded', source: 'page', title: PAGE_LAZY_MARKUP_TITLE }
     ]);
     expect(PAGE_LAZY_MARKUP_TITLE).toBe(
       "Lazy markup on the page (WP Rocket's LazyLoad not detected)"
@@ -69,7 +69,7 @@ describe('lazyloadStateChips', () => {
     expect(lazyloadStateChips(lazy, table('unverified', false))).toEqual([
       {
         id: 'lazyloaded',
-        label: 'Lazyloaded',
+        label: 'Lazy loaded',
         source: 'page',
         title: `${PAGE_LAZY_MARKUP_TITLE}${UNVERIFIED_SIMULATION_SUFFIX}`
       }
@@ -80,9 +80,9 @@ describe('lazyloadStateChips', () => {
     expect(lazyloadStateChips(lazy, table('simulated', false))).toEqual([
       {
         id: 'lazyloaded',
-        label: 'Lazyloaded',
+        label: 'Lazy loaded',
         source: 'simulated',
-        title: "Lazyloaded by the FDT's LazyLoad for images simulation"
+        title: "Lazy loaded by the FDT's LazyLoad for images simulation"
       }
     ]);
   });
@@ -91,7 +91,7 @@ describe('lazyloadStateChips', () => {
     const [chip] = lazyloadStateChips(lazy, table('unverified'));
     expect(chip?.source).toBe('wp-rocket');
     expect(chip?.title).toBe(
-      `Lazyloaded by WP Rocket (LazyLoad for images)${UNVERIFIED_SIMULATION_SUFFIX}`
+      `Lazy loaded by WP Rocket (LazyLoad for images)${UNVERIFIED_SIMULATION_SUFFIX}`
     );
   });
 
@@ -235,9 +235,9 @@ describe('chip facts and row views', () => {
 
   it('lists whether the image is lazyloaded as its one fact', () => {
     expect(lazyloadFacts(row({ lazyloaded: true }))).toEqual([
-      { label: 'Lazyloaded', value: 'Yes', mono: false }
+      { label: 'Lazy loaded', value: 'Yes', mono: false }
     ]);
-    expect(lazyloadFacts(row())).toEqual([{ label: 'Lazyloaded', value: 'No', mono: false }]);
+    expect(lazyloadFacts(row())).toEqual([{ label: 'Lazy loaded', value: 'No', mono: false }]);
   });
 });
 

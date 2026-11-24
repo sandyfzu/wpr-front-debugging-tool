@@ -5,7 +5,7 @@
  *
  * Row facts only, from the lazyload scan: WP Rocket's lazy attribute on the
  * image, and the local exclusion marker among its exclusion reasons. Who
- * produced a Lazyloaded state (WP Rocket or a verified FDT simulation) is a
+ * produced a Lazy loaded state (WP Rocket or a verified FDT simulation) is a
  * page fact the view layer reads; it never decides whether the state holds.
  */
 import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
@@ -35,12 +35,12 @@ export interface LazyloadImageState {
 
 /**
  * Every positive state, most important first: the deliberate local
- * exclusion leads, as on the JavaScript page. Not lazyloaded is no state (no
- * chip); its facet value (Non-lazyloaded) negates Lazyloaded.
+ * exclusion leads, as on the JavaScript page. Not lazy loaded is no state (no
+ * chip); its facet value (Not lazy loaded) negates Lazy loaded.
  */
 export const LAZYLOAD_IMAGE_STATES: readonly LazyloadImageState[] = [
   { id: 'excluded', label: 'Excluded', holds: isFdtExcludedImage },
-  { id: 'lazyloaded', label: 'Lazyloaded', holds: (row) => row.lazyloaded }
+  { id: 'lazyloaded', label: 'Lazy loaded', holds: (row) => row.lazyloaded }
 ];
 
 /**

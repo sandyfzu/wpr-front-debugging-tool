@@ -1,13 +1,13 @@
 /**
- * The LCP analysis section: a run bar (Analyse, the opt-in highlight switch,
+ * The LCP analysis section: a run bar (Analyze, the opt-in highlight switch,
  * what an analysis does) above a result card holding the analysis's state —
  * the outcome with its notes and recoveries, the four-part breakdown with
  * its total, and the candidates in paint order. Every state is read from the
  * session; nothing here latches.
  *
- * States: never analysed (an empty card saying what Analyse produces) ·
+ * States: never analysed (an empty card saying what Analyze produces) ·
  * first analysis pending (a skeleton shaped like the result — the real wait
- * only) · re-analysing (keeps the shown answer, Analyse busy) ·
+ * only) · re-analysing (keeps the shown answer, Analyze busy) ·
  * page-unreachable (per miss) · unsupported · no LCP · no navigation timing
  * (candidates only) · breakdown (+ text/missing-resource, prerender,
  * highlight and stale notes) · a failed re-analysis (its notice above the
@@ -42,8 +42,9 @@ import { OutcomeNotice } from '../outcome-notice';
 import { RecoveryButtons } from '../recovery-buttons';
 import { ToolEmptyCard } from '../tool-empty-card';
 import type { LcpVitalsSession } from './session';
+import { RELOAD_PAGE_LABEL } from '../recovery-words';
 
-/** What an analysis does, next to Analyse. */
+/** What an analysis does, next to Analyze. */
 export const LCP_DISCLOSURE =
   'Reads the LCP the browser reported for the inspected page so far. The page is not changed — framing the element only draws over it.';
 
@@ -52,19 +53,19 @@ export const HIGHLIGHT_LABEL = `Frame the LCP element on the page (${formatCount
 
 /** The line once the page reloaded or navigated after the shown analysis. */
 export const LCP_STALE_COPY =
-  'The page reloaded or changed since this analysis — it describes the earlier page load. Analyse again for the page as it is now.';
+  'The page reloaded or changed since this analysis — it describes the earlier page load. Analyze again for the page as it is now.';
 
 /** The recoveries' button labels. */
 export const LCP_RECOVERY_LABELS: Readonly<Record<LcpRecovery, string>> = {
-  retry: 'Analyse again',
-  'reload-page': 'Reload page'
+  retry: 'Analyze again',
+  'reload-page': RELOAD_PAGE_LABEL
 };
 
-/** The result card before any analysis: what Analyse produces. */
+/** The result card before any analysis: what Analyze produces. */
 export const LCP_EMPTY = {
   title: 'No analysis yet',
   description:
-    "Analyse to split this page's LCP into its four parts, from the first byte to the paint, and list every candidate in paint order."
+    "Analyze to split this page's LCP into its four parts, from the first byte to the paint, and list every candidate in paint order."
 } as const;
 
 /** The parts' grid: stacked when compact, two by two from `@regular`, one row from `@wide`. */
@@ -181,7 +182,7 @@ function Candidates(props: {
   );
 }
 
-/** The result card before any analysis: an honest empty view naming what Analyse produces. */
+/** The result card before any analysis: an honest empty view naming what Analyze produces. */
 function EmptyResult(): JSX.Element {
   return (
     <ToolEmptyCard
@@ -239,7 +240,7 @@ export function LcpCard(props: LcpCardProps): JSX.Element {
     const failure = run().failure;
     return failure === null ? null : describeLcpOutcome(failure.outcome);
   });
-  /** Analyse again. */
+  /** Analyze again. */
   const analyse = (): void => {
     void props.session.analysis.start();
   };
@@ -277,7 +278,7 @@ export function LcpCard(props: LcpCardProps): JSX.Element {
               <Show when={!run().pending}>
                 <ScanSearch size={12} aria-hidden="true" />
               </Show>
-              {run().pending ? 'Analysing…' : 'Analyse LCP'}
+              {run().pending ? 'Analyzing…' : 'Analyze LCP'}
             </Button>
             <Switch
               label={HIGHLIGHT_LABEL}

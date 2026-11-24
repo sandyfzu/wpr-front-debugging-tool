@@ -21,6 +21,7 @@ import { formatCount } from '../../../../utils/format-count';
 import { OutcomeNotice } from '../outcome-notice';
 import { RecoveryButtons } from '../recovery-buttons';
 import type { BeaconTesterSession, FinishedBeaconRun } from './session';
+import { RELOAD_PAGE_LABEL, RUN_AGAIN_LABEL } from '../recovery-words';
 
 /** What a run does, beside Run (no request leaves the browser). */
 export const RUN_DISCLOSURE =
@@ -35,8 +36,8 @@ export const STALE_COPY =
 
 /** The recoveries' button labels. */
 export const RECOVERY_LABELS: Readonly<Record<BeaconRecovery, string>> = {
-  retry: 'Run again',
-  'reload-page': 'Reload page',
+  retry: RUN_AGAIN_LABEL,
+  'reload-page': RELOAD_PAGE_LABEL,
   'review-settings': 'Review settings'
 };
 

@@ -45,6 +45,7 @@ import ImageOff from 'lucide-solid/icons/image-off';
 import { EmptyState } from '../../../../components/ui/empty-state';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import { IMAGE_NOUN } from '../../../../lib/detection/count-nouns';
+import { SHORT_LABEL_LAZYLOAD } from '../../../../lib/detection/labels';
 import { runtimeOnPage } from '../../../../lib/detection/simulation-fact';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
@@ -85,8 +86,8 @@ import {
 const COLUMNS: ListRowColumns = { size: false, states: true };
 
 /** The page's title and one-line intro. */
-export const LAZYLOAD_TITLE = 'Lazyload';
-export const LAZYLOAD_SUBTITLE = 'Every image on the page and whether WP Rocket lazyloads it.';
+export const LAZYLOAD_TITLE = SHORT_LABEL_LAZYLOAD;
+export const LAZYLOAD_SUBTITLE = 'Every image on the page and whether WP Rocket lazy loads it.';
 
 /** Props of {@link LazyloadPage} — test seams only; the shell passes none. */
 export interface LazyloadPageProps {
@@ -120,7 +121,7 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
       ? state.data.wprDetections.lazyload
       : null;
   });
-  /** The facts deciding who produced each Lazyloaded chip — an unchanged set keeps the chip table. */
+  /** The facts deciding who produced each Lazy loaded chip — an unchanged set keeps the chip table. */
   const facts = createMemo(() => lazyloadChipFacts(lazyload()), NO_LAZYLOAD_CHIP_FACTS, {
     equals: sameLazyloadChipFacts
   });

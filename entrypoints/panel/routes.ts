@@ -20,6 +20,7 @@ import TestTubeDiagonal from 'lucide-solid/icons/test-tube-diagonal';
 import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
 import { HEADER_NOUN, HINT_NOUN, IMAGE_NOUN, SCRIPT_NOUN } from '../../lib/detection/count-nouns';
+import { SHORT_LABEL_LAZYLOAD } from '../../lib/detection/labels';
 import { runtimeOnPage } from '../../lib/detection/simulation-fact';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
@@ -195,7 +196,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
   { id: 'stylesheets', label: 'Stylesheets', icon: Palette, group: 'Inspect', canvas: 'split' },
   {
     id: 'lazyload',
-    label: 'Lazyload',
+    label: SHORT_LABEL_LAZYLOAD,
     icon: Images,
     group: 'Inspect',
     canvas: 'split',

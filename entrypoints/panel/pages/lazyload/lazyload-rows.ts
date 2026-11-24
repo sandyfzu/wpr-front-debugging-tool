@@ -34,7 +34,7 @@ import type { StateSource } from '../resource-list/state-sources';
 
 /**
  * The sources an image row's chips can show (the page's legend): WP Rocket,
- * its simulation, or the page's own lazy markup for Lazyloaded; the FDT for
+ * its simulation, or the page's own lazy markup for Lazy loaded; the FDT for
  * Excluded.
  */
 export const LAZYLOAD_CHIP_SOURCES = [
@@ -44,7 +44,7 @@ export const LAZYLOAD_CHIP_SOURCES = [
   'page'
 ] as const satisfies readonly StateSource[];
 
-/** The page facts that decide who produced a Lazyloaded state. */
+/** The page facts that decide who produced a Lazy loaded state. */
 export interface LazyloadChipFacts {
   /** WP Rocket's LazyLoad is detected (its script and its options on the page). */
   readonly present: boolean;
@@ -75,11 +75,11 @@ export function sameLazyloadChipFacts(a: LazyloadChipFacts, b: LazyloadChipFacts
   return a.present === b.present && a.simulation === b.simulation;
 }
 
-/** Title of a Lazyloaded chip whose lazy markup no detected runtime vouches for. */
+/** Title of a Lazy loaded chip whose lazy markup no detected runtime vouches for. */
 export const PAGE_LAZY_MARKUP_TITLE = "Lazy markup on the page (WP Rocket's LazyLoad not detected)";
 
 /**
- * Who produced a Lazyloaded state. The lazy attribute alone proves nothing
+ * Who produced a Lazy loaded state. The lazy attribute alone proves nothing
  * about its author (other lazy-load plugins and themes write it too), so
  * only a detected runtime attributes it: a verified simulation's, else WP
  * Rocket's (flagged under an unverified marker); without one it is the
@@ -93,7 +93,7 @@ function lazyloadedDisplay(facts: LazyloadChipFacts): Pick<StateChip, 'source' |
     const flag = facts.simulation === 'unverified' ? UNVERIFIED_SIMULATION_SUFFIX : '';
     return { source: 'page', title: `${PAGE_LAZY_MARKUP_TITLE}${flag}` };
   }
-  return simulatableSource(facts.simulation, 'Lazyloaded', getRealOptionName('lazyload'));
+  return simulatableSource(facts.simulation, 'Lazy loaded', getRealOptionName('lazyload'));
 }
 
 /** Per state: its chip under one fact set (built once per fact set, shared by every row). */
@@ -230,7 +230,7 @@ export const IMAGE_KIND = 'Image';
  * @returns The facts, in reading order.
  */
 export function lazyloadFacts(row: LazyloadImageResource): DetailFact[] {
-  return [{ label: 'Lazyloaded', value: row.lazyloaded ? 'Yes' : 'No', mono: false }];
+  return [{ label: 'Lazy loaded', value: row.lazyloaded ? 'Yes' : 'No', mono: false }];
 }
 
 /** A non-lazyloaded row's reasons, split for display. */

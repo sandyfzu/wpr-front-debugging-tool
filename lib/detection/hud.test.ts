@@ -95,26 +95,27 @@ describe('the HUD registry shape', () => {
 
   it('compact wordings are the plugin strings they were verified against', () => {
     // Literals restated: WP Rocket 3.23.5.1 support-data option names, the
-    // settings page's field/section titles and the Priority Elements notice.
+    // settings page's field/section titles and the Priority Elements notice,
+    // in one Title Case with LazyLoad cased as the settings page brands it.
     expect(Object.fromEntries(HUD_FEATURES.map((entry) => [entry.row, entry.shortLabel]))).toEqual({
       remove_unused_css: 'Remove Unused CSS',
       delay_js: 'Delay JS',
       defer_all_js: 'Defer JS',
-      async_css: 'Load CSS asynchronously',
+      async_css: 'Load CSS Asynchronously',
       minify_css: 'Minify CSS',
       minify_js: 'Minify JS',
       minify_concatenate_js: 'Combine JS',
-      lazyload: 'Lazyload Images',
-      lazyload_iframes: 'Lazyload Iframes',
-      lazyload_css_bg_img: 'Lazyload CSS Background Images',
+      lazyload: 'LazyLoad Images',
+      lazyload_iframes: 'LazyLoad Iframes',
+      lazyload_css_bg_img: 'LazyLoad CSS Background Images',
       image_dimensions: 'Image Dimensions',
       self_hosted_fonts: 'Self-host Google Fonts',
       preload_links: 'Preload Links',
       // G5: the removed settings field's name, compacted.
-      dns_prefetch: 'DNS prefetch',
+      dns_prefetch: 'DNS Prefetch',
       rocket_cdn: 'CDN',
-      // The KB article's name for the option (no settings field in 3.24).
-      mobile_cache: 'Mobile cache',
+      // The support-data name (no settings field in 3.24).
+      mobile_cache: 'Mobile Cache',
       rocket_above_the_fold_optimization: 'Critical Images',
       automatic_lazy_rendering: 'Automatic Lazy Rendering',
       auto_preload_fonts: 'Preload Fonts',

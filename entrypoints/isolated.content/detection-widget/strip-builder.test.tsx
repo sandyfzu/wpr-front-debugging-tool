@@ -36,7 +36,7 @@ const DECLARING_GENERATOR =
 
 /** The owner's example line, word for word. */
 const MANY_LINE =
-  'Exclusion Builder rewrote this page — Delay JS off · Defer JS off on this page · Lazyload Images: 3 excluded';
+  'Exclusion Builder rewrote this page — Delay JS off · Defer JS off on this page · LazyLoad Images: 3 excluded';
 
 /**
  * The engine's rows for a WP Rocket page with an optional builder marker.
@@ -144,14 +144,14 @@ describe('the strip model — tab-level line', () => {
     expect(card.builderLine?.hints).toEqual([
       'Delay JS off',
       'Defer JS off on this page',
-      'Lazyload Images: 3 excluded'
+      'LazyLoad Images: 3 excluded'
     ]);
   });
 
   it('excluded only: the line names the count, nothing is called off', () => {
     const card = model('v1 lazyload=excluded:1');
     expect(card.builderLine?.spoken).toBe(
-      'Exclusion Builder rewrote this page — Lazyload Images: 1 excluded'
+      'Exclusion Builder rewrote this page — LazyLoad Images: 1 excluded'
     );
   });
 
@@ -266,14 +266,14 @@ describe('the rendered card', () => {
     expect(hints).toEqual([
       'Delay JS off',
       'Defer JS off on this page',
-      'Lazyload Images: 3 excluded'
+      'LazyLoad Images: 3 excluded'
     ]);
     // The dot is CSS-drawn with empty alt text: never in the DOM text.
     expect(line?.textContent).not.toContain('·');
     // Spoken once, as one sentence (the laid-out pieces are hidden from
     // assistive tech): commas where the eye sees the dot.
     const sentence =
-      'Exclusion Builder rewrote this page — Delay JS off, Defer JS off on this page, Lazyload Images: 3 excluded';
+      'Exclusion Builder rewrote this page — Delay JS off, Defer JS off on this page, LazyLoad Images: 3 excluded';
     expect(spokenText(line as HTMLElement)).toBe(sentence);
     expect(root.querySelector(`#${WIDGET_BUILDER_LINE_ID}`)?.textContent).toBe(sentence);
     // The joiner glyph rides the shared CSS content value.

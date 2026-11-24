@@ -183,17 +183,17 @@ const OPEN_RETRY = 'Try again, or open it from the extension toolbar button’s 
  */
 export function openFeedback(outcome: AskOutcome<ExclusionOverlayOpenOutcome>): OpenFeedback {
   if (outcome.kind !== 'reply') {
-    return { tone: 'error', title: 'The exclusion builder didn’t open', description: OPEN_RETRY };
+    return { tone: 'error', title: 'The Exclusion Builder didn’t open', description: OPEN_RETRY };
   }
   switch (outcome.reply) {
     case 'injected':
-      return { tone: 'success', title: 'Exclusion builder opened on the page' };
+      return { tone: 'success', title: 'Exclusion Builder opened on the page' };
     case 'revealed':
-      return { tone: 'success', title: 'Exclusion builder shown on the page' };
+      return { tone: 'success', title: 'Exclusion Builder shown on the page' };
     case 'unsupported-page':
       return {
         tone: 'error',
-        title: 'This page can’t host the exclusion builder',
+        title: 'This page can’t host the Exclusion Builder',
         description: 'Open a regular http or https page in this tab.'
       };
     case 'not-html':
@@ -201,12 +201,12 @@ export function openFeedback(outcome: AskOutcome<ExclusionOverlayOpenOutcome>): 
         tone: 'error',
         title: 'This page isn’t a web page the builder can open on',
         description:
-          'The exclusion builder works on HTML pages, not on images, feeds or other files.'
+          'The Exclusion Builder works on HTML pages, not on images, feeds or other files.'
       };
     case 'tab-gone':
       return {
         tone: 'error',
-        title: 'The exclusion builder didn’t open',
+        title: 'The Exclusion Builder didn’t open',
         description: 'The inspected tab is gone.'
       };
     case 'page-ui-off':
@@ -216,6 +216,6 @@ export function openFeedback(outcome: AskOutcome<ExclusionOverlayOpenOutcome>): 
         description: `The builder lives on the page. Turn on-page UI back on from ${PAGE_UI_MENU_RESCUE} or ${PAGE_UI_OPTIONS_RESCUE}, then open it again.`
       };
     case 'failed':
-      return { tone: 'error', title: 'The exclusion builder didn’t open', description: OPEN_RETRY };
+      return { tone: 'error', title: 'The Exclusion Builder didn’t open', description: OPEN_RETRY };
   }
 }

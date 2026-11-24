@@ -36,8 +36,8 @@ export const KC_CARD_DESCRIPTION =
 export const KC_NEVER_SYNCED_TEXT = 'Not synced yet — the tool checks hourly.';
 
 /** The outcome toasts' copy, verbatim for the tests. */
-export const KC_REFRESH_SUCCESS_TITLE = 'Conflict database refreshed';
-export const KC_REFRESH_FAILURE_TITLE = 'Refreshing the conflict database failed';
+export const KC_REFRESH_SUCCESS_TITLE = 'Known Conflicts database refreshed';
+export const KC_REFRESH_FAILURE_TITLE = 'Refreshing the Known Conflicts database failed';
 const KC_REFRESH_NULL_DESCRIPTION = 'The refresh did not complete — try again in a moment.';
 const KC_REFRESH_TRANSPORT_DESCRIPTION =
   'The background service did not answer. Reload the page, then try again.';

@@ -32,8 +32,8 @@ export function Input(props: InputProps): JSX.Element {
     <input
       data-fdt="input"
       class={cn(
-        'h-7 rounded-control border border-line-2 bg-surface-2 px-2.5 text-xs text-fg-primary placeholder:text-fg-muted',
-        'hover:border-line-3',
+        'h-7 rounded-control border border-line-strong bg-surface-2 px-2.5 text-xs text-fg-primary placeholder:text-fg-muted',
+        'hover:border-fg-muted',
         'aria-invalid:border-status-error aria-invalid:ring-1 aria-invalid:ring-status-error/40',
         // Same disabled treatment as every other interactive primitive: dimmed
         // but still hover-explained (no pointer-events kill).

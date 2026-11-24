@@ -15,6 +15,7 @@ import { RUCSS_TEST_MODE_SENTENCE, RUCSS_TEST_MODE_TAG } from '../../../lib/rucs
 import type { RucssTestModeFact } from '../../../lib/wp-rocket/types';
 import { cn } from '../../../utils/cn';
 import { NOTICE_FRAME, NOTICE_ICON_SIZE } from './outcome-notice';
+import { RELOAD_PAGE_LABEL } from './recovery-words';
 
 /** Props of {@link TestModeNotice}. */
 export interface TestModeNoticeProps {
@@ -61,7 +62,7 @@ export function TestModeNotice(props: TestModeNoticeProps): JSX.Element {
               }}
             >
               <RotateCw size={12} aria-hidden="true" />
-              Reload page
+              {RELOAD_PAGE_LABEL}
             </Button>
           )}
         </Show>

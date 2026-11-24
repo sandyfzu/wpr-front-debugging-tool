@@ -46,7 +46,7 @@ export const VISIBLE_DEFINITIONS = 5;
  * errors thrown by scripts from another origin.
  */
 export const CROSS_ORIGIN_EXPLANATION =
-  'Since the error occurred in a file loaded from an external server, the browser limited the information that can be read from it. Make sure to disable CDNs if there are any.';
+  'The error came from a script loaded from another origin, so the browser hides its details. If the site serves scripts from a CDN, turn the CDN off and reload to read the full error.';
 
 /**
  * The note a single-letter word opens with: the name has the shape minified

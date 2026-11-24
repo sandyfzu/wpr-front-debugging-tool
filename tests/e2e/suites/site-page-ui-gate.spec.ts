@@ -56,7 +56,7 @@ const PLUGINS_URL = `${SITE_URL}/wp-admin/plugins.php`;
  */
 const PLUGINS_ACTIVE_URL = `${PLUGINS_URL}?plugin_status=active`;
 /** The Known Conflicts empty verdict's exact copy. */
-const KC_EMPTY_COPY = 'No known conflicts found...';
+const KC_EMPTY_COPY = 'No known conflicts found';
 /** Mount settle (hub pass, DB load, the plugins screen's late pass). */
 const SETTLE = { timeout: 15_000, intervals: [250, 500] };
 /**

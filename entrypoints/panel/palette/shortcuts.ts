@@ -61,6 +61,9 @@ export const SHORTCUTS_OVERLAY_BINDING = {
   accepts: ['/', '?'] as readonly string[]
 } as const;
 
+/** The palette's keys on any platform, as the trigger's tooltip and the shortcuts list both read them. */
+export const PALETTE_KEYS_ANY_PLATFORM = 'Ctrl / ⌘ K';
+
 /** One row of the shortcuts overlay. */
 export interface ShortcutRow {
   /** The keys as they read on any platform. */
@@ -94,7 +97,11 @@ export function paletteKeyHint(platform: ChordPlatform): string {
  * stream); the appearance cycle has no direct key — it is a palette row.
  */
 export const PANEL_SHORTCUTS: readonly ShortcutRow[] = [
-  { keys: 'Ctrl / ⌘ K', action: 'Open or close the command palette', opensPalette: true },
+  {
+    keys: PALETTE_KEYS_ANY_PLATFORM,
+    action: 'Open or close the command palette',
+    opensPalette: true
+  },
   { keys: '↑ ↓', action: 'Highlight the previous / next command', context: 'Command palette' },
   { keys: 'Home / End', action: 'First / last command', context: 'Command palette' },
   { keys: 'Enter', action: 'Run the highlighted command', context: 'Command palette' },

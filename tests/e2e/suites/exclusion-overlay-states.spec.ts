@@ -77,7 +77,7 @@ const UNAVAILABLE: Readonly<
     retry: false
   },
   'infobar-cancelled': {
-    title: 'Interception was cancelled',
+    title: 'Interception was canceled',
     body: 'The browser’s “started debugging” bar was closed with Cancel. Retry, and leave the bar open while the session runs.',
     retry: true
   },
@@ -93,7 +93,7 @@ const UNAVAILABLE: Readonly<
   },
   'unsupported-browser': {
     title: 'This browser can’t rewrite pages',
-    body: 'Rewriting pages before they render needs an up-to-date Chrome (or another Chromium browser) or Firefox.',
+    body: 'This browser doesn’t give extensions the page-rewriting capability Apply uses, so no session can start here. Use Chrome or Firefox to apply exclusions.',
     retry: false
   },
   'session-limit': {
@@ -305,12 +305,12 @@ test.describe('exclusion builder session states', () => {
 
     // Folded, the pill carries the same indicator; Enter brings the panel back.
     await page.keyboard.press('Escape');
-    const pill = page.getByRole('button', { name: /open the exclusion builder$/ });
+    const pill = page.getByRole('button', { name: /open the Exclusion Builder$/ });
     await expect(pill).toBeFocused();
     expect(await readIndicator(page, 'pill')).toEqual(unmodified);
     await expect(pill).toHaveAccessibleName(/Served unmodified/);
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('heading', { name: 'Exclusion builder' })).toBeFocused();
+    await expect(page.getByRole('heading', { name: 'Exclusion Builder' })).toBeFocused();
 
     // Back to nothing applied: no banner, Apply only.
     await pushStatus(extension, tabId, { state: 'inactive' });
@@ -383,7 +383,7 @@ test.describe('exclusion builder session states', () => {
       glyph: 'lucide-circle-dashed'
     });
     // The unmounted Stop hands focus to the heading, never to the page.
-    await expect(page.getByRole('heading', { name: 'Exclusion builder' })).toBeFocused();
+    await expect(page.getByRole('heading', { name: 'Exclusion Builder' })).toBeFocused();
     expect(await footerActions(page)).toEqual(['Apply']);
     // No navigation: the rewritten document is still the one on screen; the draft is kept.
     expect(await page.evaluate(() => 'e2eBeforeStop' in window)).toBe(true);

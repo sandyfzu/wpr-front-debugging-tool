@@ -13,6 +13,7 @@ import Search from 'lucide-solid/icons/search';
 import { KEY_CHIP } from '../../../components/ui/classes';
 import { Tooltip } from '../../../components/ui/tooltip';
 import { cn } from '../../../utils/cn';
+import { PALETTE_KEYS_ANY_PLATFORM } from './shortcuts';
 
 export interface PaletteTriggerProps {
   /** Whether the palette is open right now (`aria-expanded`). */
@@ -67,7 +68,7 @@ export function PaletteTrigger(props: PaletteTriggerProps): JSX.Element {
       content={
         <>
           <span class="font-medium">Command palette</span>
-          <span class="block text-2xs text-fg-secondary">Ctrl / ⌘ K</span>
+          <span class="block text-2xs text-fg-secondary">{PALETTE_KEYS_ANY_PLATFORM}</span>
         </>
       }
       placement="bottom"

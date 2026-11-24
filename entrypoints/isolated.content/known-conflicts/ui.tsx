@@ -57,14 +57,14 @@ export interface KnownConflictsUiActions {
 
 /** Pill accessible label + the visible count's sentence stem (exact string). */
 const BADGE_LABEL = 'Known Conflicts found: ';
-/** Card title (case-exact user-facing string; this copy was corrected). */
-const LIST_TITLE = 'Known conflicts found';
-/** Empty-state copy (the corrected version of the shipped copy defect). */
-const EMPTY_COPY = 'No known conflicts found...';
+/** Card title (case-exact: the feature's name). */
+const LIST_TITLE = 'Known Conflicts found';
+/** Empty-state copy (a settled verdict: no trailing ellipsis). */
+const EMPTY_COPY = 'No known conflicts found';
 /** Empty-state sub-line: what a settled empty verdict means. */
-const EMPTY_HINT = 'Nothing on this page matches the conflict database.';
+const EMPTY_HINT = 'Nothing on this page matches the Known Conflicts database.';
 /** Loading-state copy shown until the database resolves. */
-const LOADING_COPY = 'Loading conflicts database...';
+const LOADING_COPY = 'Loading the Known Conflicts database…';
 /** Footer affordance hint: what rows do. */
 const FOOT_HINT = 'Click a row to open its support article.';
 /** Footer affordance hint, close key. */

@@ -103,9 +103,9 @@ describe('chipPhrase', () => {
 
 describe('simulatableSource', () => {
   it('a verified simulation is the source, named with the feature', () => {
-    expect(simulatableSource('simulated', 'Lazyloaded', 'Feature X')).toEqual({
+    expect(simulatableSource('simulated', 'Lazy loaded', 'Feature X')).toEqual({
       source: 'simulated',
-      title: "Lazyloaded by the FDT's Feature X simulation"
+      title: "Lazy loaded by the FDT's Feature X simulation"
     });
   });
 

@@ -339,7 +339,7 @@ describe('PanelApp shell structure', () => {
     // The Undefined References row answers its state before the page data
     // settles (the fixture never loads scripts, so the row is "Monitoring"
     // by design) — its name carries the suffix.
-    for (const label of ['Detections', 'JavaScript', 'Lazyload', 'Preloaded Resources']) {
+    for (const label of ['Detections', 'JavaScript', 'LazyLoad', 'Preloaded Resources']) {
       expect(screen.getByRole('link', { name: label })).toBeTruthy();
     }
     expect(screen.getByRole('link', { name: /Undefined References/ })).toBeTruthy();
@@ -412,7 +412,7 @@ describe('PanelApp shell structure', () => {
     expect(shell.search.cursor()).toBe(2);
     hashTo('lazyload');
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Lazyload' })).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'LazyLoad' })).toBeTruthy();
     });
     expect(shell.search.matchCount()).toBe(0);
     expect(shell.search.cursor()).toBe(0);

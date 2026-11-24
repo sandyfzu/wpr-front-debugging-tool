@@ -138,11 +138,11 @@ const WORDS = {
     'Site filters, options and DONOTLAZYLOAD aren’t applied.'
   ],
   badge: 'Simulated in this tab',
-  stripHint: 'Lazyload Images simulated',
+  stripHint: 'LazyLoad Images simulated',
   panelNote:
     "Simulated in this tab by the extension — not the site's configuration; its own WP Rocket exclusions aren't included.",
   /** A lazy row's chip: the state word, its source the FDT simulation (flask, dashed outline). */
-  panelChip: 'Lazyloaded'
+  panelChip: 'Lazy loaded'
 } as const;
 
 /** The lane's script-address line lead, by where the address came from. */
@@ -258,11 +258,11 @@ async function stripLazyloadRow(page: Page): Promise<Locator> {
     await expect(card).toBeVisible();
   }
   return page.locator(`${STRIP_HOST} .dw-row`, {
-    has: page.locator('.dw-chip', { hasText: /^Lazyload Images$/ })
+    has: page.locator('.dw-chip', { hasText: /^LazyLoad Images$/ })
   });
 }
 
-/** Open the real panel on its Lazyload page, inspecting `tabId` through the devtools seam. */
+/** Open the real panel on its LazyLoad page, inspecting `tabId` through the devtools seam. */
 async function openLazyloadPanel(extension: ExtensionDriver, tabId: number): Promise<Page> {
   const panel = await extension.browserContext.newPage();
   await panel.addInitScript(devtoolsShim(tabId));

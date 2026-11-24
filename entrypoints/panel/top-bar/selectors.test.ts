@@ -340,7 +340,7 @@ describe('freshnessSegment', () => {
     expect(freshnessSegment(state, NOW_MS)).toEqual({
       kind: 'current',
       age: '45 s ago',
-      capturedAt: formatCacheTimestamp(Math.round((NOW_MS - 45_000) / 1000))
+      fetchedAt: formatCacheTimestamp(Math.round((NOW_MS - 45_000) / 1000))
     });
   });
 
@@ -411,7 +411,7 @@ describe('topBarSegments', () => {
     expect(view.freshness).toEqual({
       kind: 'current',
       age: '10 s ago',
-      capturedAt: formatCacheTimestamp(Math.round((NOW_MS - 10_000) / 1000))
+      fetchedAt: formatCacheTimestamp(Math.round((NOW_MS - 10_000) / 1000))
     });
   });
 });

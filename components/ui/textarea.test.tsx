@@ -17,7 +17,7 @@ describe('Textarea', () => {
     const field = screen.getByPlaceholderText('Deny JS sources');
     expect(field.getAttribute('data-fdt')).toBe('textarea');
     expect(field.className).toContain('font-mono');
-    expect(field.className).toContain('border-line-2');
+    expect(field.className).toContain('border-line-strong');
   });
 
   it("shares Input's look: fill, border, 7 px control corner and inline padding", () => {
@@ -29,7 +29,7 @@ describe('Textarea', () => {
     ));
     const area = screen.getByLabelText('Patterns').className.split(/\s+/);
     const input = screen.getByLabelText('Search').className.split(/\s+/);
-    for (const token of ['rounded-control', 'border-line-2', 'bg-surface-2', 'px-2.5']) {
+    for (const token of ['rounded-control', 'border-line-strong', 'bg-surface-2', 'px-2.5']) {
       expect(area, token).toContain(token);
       expect(input, token).toContain(token);
     }

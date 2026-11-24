@@ -218,11 +218,11 @@ const CASES: readonly SyncCase[] = [
       row: 'lazyload',
       fact: { excluded: 1 },
       name: LAZYLOAD,
-      chipLabel: 'Lazyload Images',
+      chipLabel: 'LazyLoad Images',
       kind: 'excluded',
       badge: '1 excluded',
       sentence: '1 image excluded by the Exclusion Builder.',
-      hint: 'Lazyload Images: 1 excluded'
+      hint: 'LazyLoad Images: 1 excluded'
     }
   },
   {

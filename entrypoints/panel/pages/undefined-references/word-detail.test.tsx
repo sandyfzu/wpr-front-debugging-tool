@@ -444,7 +444,7 @@ describe('WordDetail — verdicts and bodies', () => {
     show(UNDEFINED_REFERENCE_EXTERNAL_ERROR, []);
     expect(verdict().textContent).toBe('Details hidden');
     expect(document.querySelector('[data-fdt="word-explanation"]')?.textContent).toBe(
-      'Since the error occurred in a file loaded from an external server, the browser limited the information that can be read from it. Make sure to disable CDNs if there are any.'
+      'The error came from a script loaded from another origin, so the browser hides its details. If the site serves scripts from a CDN, turn the CDN off and reload to read the full error.'
     );
     expect(document.querySelector('[data-fdt="word-definitions"]')).toBeNull();
   });
