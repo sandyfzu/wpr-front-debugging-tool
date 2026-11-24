@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import config, {
   extensionApiBeforeMessaging,
   messagingPrelude,
+  missingMessagingEntryError,
   FIREFOX_ADDON_ID,
   FIREFOX_MIN_VERSION
 } from './wxt.config';
@@ -159,6 +160,95 @@ describe('extension namespace before the messaging library', () => {
     ]) {
       expect(transform(id)).toBeNull();
     }
+  });
+
+  /**
+   * Drive one build (or dev) pass through the plugin's hooks: resolve each
+   * specifier, transform each module id, then end the pass.
+   *
+   * @param pass - What the pass resolves and transforms; `failed` = an earlier error.
+   * @param plugin - The plugin instance (reuse one to run consecutive passes).
+   * @returns The `this.error` message raised at `buildEnd`, or `null`.
+   */
+  const runPass = (
+    pass: { specifiers: string[]; ids: string[]; command?: 'build' | 'serve'; failed?: Error },
+    plugin = extensionApiBeforeMessaging('chrome')
+  ): string | null => {
+    const call = (hook: unknown, self: object, ...args: unknown[]): unknown => {
+      if (typeof hook !== 'function') throw new Error('hook is not the function form');
+      return (hook as (...a: unknown[]) => unknown).apply(self, args);
+    };
+    const raised: { message: string | null } = { message: null };
+    const context = {
+      error: (message: string): never => {
+        raised.message = message;
+        throw new Error(message);
+      }
+    };
+    call(plugin.configResolved, {}, { command: pass.command ?? 'build' });
+    call(plugin.buildStart, {});
+    for (const source of pass.specifiers) expect(call(plugin.resolveId, {}, source)).toBeNull();
+    for (const id of pass.ids) call(plugin.transform, {}, 'BODY', id);
+    try {
+      call(plugin.buildEnd, context, pass.failed);
+    } catch (thrown) {
+      // Only the plugin's own `this.error` is the expected outcome.
+      if (raised.message === null) throw thrown;
+    }
+    return raised.message;
+  };
+
+  it('a build pass that imports and transforms the library passes', () => {
+    expect(
+      runPass({ specifiers: ['@webext-core/messaging'], ids: [`${pnpmDist}index.mjs`] })
+    ).toBeNull();
+  });
+
+  it('a build pass that imports the library but never transforms its entry fails loudly', () => {
+    // The entry was renamed: the library loads, the prelude never lands.
+    const message = runPass({
+      specifiers: ['@webext-core/messaging'],
+      ids: [`${pnpmDist}main.mjs`]
+    });
+    expect(message).toContain(
+      '@webext-core/messaging was imported but its entry was never transformed'
+    );
+    expect(message).toContain('@webext-core/messaging/dist/index.mjs');
+    expect(message).toContain('MESSAGING_ENTRY');
+  });
+
+  it('a pass that never imports the library (or only its page subpath) passes', () => {
+    expect(runPass({ specifiers: [], ids: [] })).toBeNull();
+    expect(
+      runPass({ specifiers: ['@webext-core/messaging/page'], ids: [`${pnpmDist}page.mjs`] })
+    ).toBeNull();
+  });
+
+  it('dev serving and an already failing pass are never checked', () => {
+    // Dev transforms lazily: an unrequested entry is not a broken one.
+    expect(
+      runPass({ specifiers: ['@webext-core/messaging'], ids: [], command: 'serve' })
+    ).toBeNull();
+    expect(
+      runPass({ specifiers: ['@webext-core/messaging'], ids: [], failed: new Error('earlier') })
+    ).toBeNull();
+  });
+
+  it('each pass starts unrecorded (buildStart resets the previous pass)', () => {
+    const plugin = extensionApiBeforeMessaging('chrome');
+    const imported = { specifiers: ['@webext-core/messaging'], ids: [] };
+    expect(runPass({ ...imported, failed: new Error('earlier') }, plugin)).toBeNull();
+    // The next pass never imports messaging: the previous record must not leak.
+    expect(runPass({ specifiers: [], ids: [] }, plugin)).toBeNull();
+    // Control: the same plugin still fails a broken pass.
+    expect(runPass(imported, plugin)).not.toBeNull();
+  });
+
+  it('the error message is null exactly when the pass is consistent', () => {
+    expect(missingMessagingEntryError(false, false)).toBeNull();
+    expect(missingMessagingEntryError(true, true)).toBeNull();
+    expect(missingMessagingEntryError(false, true)).toBeNull();
+    expect(missingMessagingEntryError(true, false)).toMatch(/^\[WPR FDT\] /);
   });
 
   it('the installed library reads the bare chrome global only in its extension entry', () => {

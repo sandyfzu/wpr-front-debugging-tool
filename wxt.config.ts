@@ -97,23 +97,70 @@ export function messagingPrelude(browser: string): string {
   );
 }
 
+/** The bare specifier every messaging user imports (the `page` subpath is a separate entry). */
+const MESSAGING_SPECIFIER = '@webext-core/messaging';
+
+/**
+ * The build failure for a pass that imported the messaging library but never
+ * prepended its prelude — the entry was renamed or moved, so
+ * {@link MESSAGING_ENTRY} no longer matches and bundles would read `chrome`
+ * unpinned with nothing else failing.
+ *
+ * @param imported - Whether this pass resolved {@link MESSAGING_SPECIFIER}.
+ * @param transformed - Whether this pass prepended the prelude to the entry.
+ * @returns The error message, or `null` when the pass is consistent.
+ */
+export function missingMessagingEntryError(imported: boolean, transformed: boolean): string | null {
+  if (!imported || transformed) return null;
+  return (
+    `[WPR FDT] ${MESSAGING_SPECIFIER} was imported but its entry was never transformed: ` +
+    `no module id matched ${String(MESSAGING_ENTRY)} (expected …/@webext-core/messaging/dist/index.mjs). ` +
+    "Update MESSAGING_ENTRY in wxt.config.ts to the package's new entry."
+  );
+}
+
 /**
  * Make the messaging library pin the extension namespace before its body runs
  * (see {@link messagingPrelude}). Prepending is what guarantees the order:
  * the prelude's import evaluates before the module, its call before the
- * library's own statements.
+ * library's own statements. A build pass that imports the library without
+ * transforming its entry fails at `buildEnd` ({@link missingMessagingEntryError});
+ * passes that never import it, and dev serving (modules transform lazily), are
+ * never checked. WXT creates one plugin per pass (its `vite` config runs per
+ * build), and `buildStart` resets the record anyway.
  *
  * @param browser - The target browser WXT builds for (picks the prelude).
  * @returns The Vite plugin.
  */
 export function extensionApiBeforeMessaging(browser: string): Plugin {
   const prelude = messagingPrelude(browser);
+  let isBuild = false;
+  let imported = false;
+  let transformed = false;
   return {
     name: 'wpr-fdt:extension-api-before-messaging',
     enforce: 'pre',
+    configResolved(config) {
+      isBuild = config.command === 'build';
+    },
+    buildStart() {
+      imported = false;
+      transformed = false;
+    },
+    resolveId(source) {
+      if (source === MESSAGING_SPECIFIER) imported = true;
+      return null;
+    },
     transform(code, id) {
       if (!MESSAGING_ENTRY.test(id)) return null;
+      transformed = true;
       return { code: `${prelude}${code}`, map: null };
+    },
+    buildEnd(error) {
+      // A pass already failing reports its own error, not this one.
+      if (!isBuild || error) return;
+      const message = missingMessagingEntryError(imported, transformed);
+      if (message) this.error(message);
     }
   };
 }
