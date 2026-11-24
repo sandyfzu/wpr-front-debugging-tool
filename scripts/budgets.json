@@ -424,5 +424,31 @@
     "maxKb": {
       "raw": 2418
     }
+  },
+  {
+    "surface": "whole build (all JS output, Firefox — ungameable backstop)",
+    "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
+    "build": "firefox-mv2",
+    "backstop": true,
+    "maxKb": {
+      "raw": 2582
+    }
+  },
+  {
+    "surface": "whole build CSS (all stylesheets — backstop)",
+    "globs": ["assets/*.css", "content-scripts/*.css"],
+    "backstop": true,
+    "maxKb": {
+      "raw": 118
+    }
+  },
+  {
+    "surface": "whole build CSS (Firefox — backstop)",
+    "globs": ["assets/*.css", "content-scripts/*.css"],
+    "build": "firefox-mv2",
+    "backstop": true,
+    "maxKb": {
+      "raw": 118
+    }
   }
 ]

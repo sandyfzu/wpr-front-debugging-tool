@@ -459,7 +459,13 @@ async function sweepRenderedBadges(badge: BadgeRuntime): Promise<void> {
  * Resolve the toolbar-badge option once and keep following it: the options
  * toggle must apply without a service worker restart.
  *
+ * The watch is registered before the first read, so a change landing while
+ * that read (or its sweep) is pending is never missed; passes run one after
+ * another, so a slower earlier pass (an off pass awaiting its sweep) can
+ * never land after a later one and leave a stale gate.
+ *
  * @param badge The runtime to gate.
+ * @returns Settles when the first pass has applied; rejects when it failed.
  */
 export async function watchBadgeGate(badge: BadgeRuntime): Promise<void> {
   const applyGate = async (): Promise<void> => {
@@ -472,10 +478,15 @@ export async function watchBadgeGate(badge: BadgeRuntime): Promise<void> {
       void badge.apply(effect);
     }
   };
-  await applyGate();
+  // The tail of the pass chain. An earlier pass's failure is already
+  // reported by its own caller, so it never blocks the next pass.
+  let tail: Promise<void> = Promise.resolve();
+  // Passes are serialized: a never-settling action/storage call would block later passes (accepted: those APIs settle); option changes arrive at human speed, so the queue stays small.
+  const enqueue = (): Promise<void> => (tail = tail.catch(() => undefined).then(applyGate));
   optionsStore.watch(() => {
-    void applyGate().catch((cause: unknown) => {
+    void enqueue().catch((cause: unknown) => {
       log.error('Badge option change ignored', cause);
     });
   });
+  await enqueue();
 }

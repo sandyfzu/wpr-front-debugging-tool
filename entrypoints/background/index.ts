@@ -40,8 +40,10 @@
  *
  * Every subsystem registration happens inside `main()` (nothing at import
  * time beyond constants), the global error handlers are attached first, and
- * no event is registered after an await so no wake-up event can be missed
- * while a boot step is still pending.
+ * no browser event listener is registered after an await so no wake-up event
+ * can be missed while a boot step is still pending. The one late registration,
+ * the badge option's storage watch, loses nothing: it is armed before its
+ * first read of the option, which already sees any earlier change.
  */
 
 import { createLogger } from '../../lib/logger';
