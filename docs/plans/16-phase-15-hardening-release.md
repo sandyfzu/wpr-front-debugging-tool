@@ -10,11 +10,20 @@ Owner 2026-11-17: deferred after the first release as [P22](./22-phase-22-post-r
 
 ## P15 hardening/release
 
-Depends:all required phases inclP14.5/P5J/P21 WP Rocket simulation (before release, owner 2026-10-22)/P23 panel redesign (owner 2026-11-18); P10 needs owner replan/disposition, not silent skip; P17 optional. Parallel:—final gate. Installed Node24/pinned pnpm/TS5.9/WXT/Solid/test tools, no speculative upgrades.
+Depends:all required phases inclP14.5/P5J/P21 WP Rocket simulation (before release, owner 2026-10-22)/P23 panel redesign (owner 2026-11-18); P10 needs owner replan/disposition, not silent skip; P17 optional. Installed Node24/pinned pnpm/TS5.9/WXT/Solid/test tools, no speculative upgrades.
+
+**Run order** (owner 2026-11-23; ≤ 3 workers, one browser-tier/screenshot run at a time; rows split by real file overlap, not letter order):
+
+| Wave | In parallel                                                                                                                                                        |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | F code (no screenshots) · B code rows (Kobalte, inputs/redaction, isolation, links, tooltip test, HTML→CSS, web-ext) · A Firefox engine removal + Defer re-measure |
+| 2    | C mechanical (widget rename, copy sweep, `line-*` contrast; after wave 1) · B upgrade path + reload/navigation leaks · E.3 specs/copy/`store/`                     |
+| 3    | shared capture script → F + E.3 screenshots · C audits/ledger · D docs/KC seed/source recheck                                                                      |
+| 4    | A final measurements, alone (quiet machine) → D store-policy/zips; release CI when GitHub CI returns (December)                                                    |
 
 ### P15A — Budgets/performance
 
-Depends:implementation complete. Parallel:—.
+Depends:Firefox engine row —; measurement rows B–C, F code merged. Parallel:engine row with B, F; measurements alone.
 
 - [ ] Fresh both-browser builds, `pnpm check:budgets`, committed raw/gzip table per surface; panel600KiB hard/**350 stretch met/not with measured reason**. Last historical panel387.1KiB exceeded stretch; worker near368/75 row. Remeasure, not receipt reuse.
 - [ ] Reaudit whole-build accounting including worker/assets and shared web/types chunks only backstop-counted. Evaluate precompiled grammar/raw-engine lever only with dependency/size evidence; no silent ceiling nudge. Current budget table authoritative.
@@ -27,7 +36,7 @@ DoD: current measured table/protocol/CI evidence and all ceilings green, stretch
 
 ### P15B — Security/reliability/browser matrix
 
-Depends:A baseline and all boundaries. Parallel:—.
+Depends:code rows —; upgrade row F. Parallel:A engine row, C mechanical, E.3, F.
 
 - [ ] Inventory messages×senders/storage/KC JSON/DOM/file inputs with tested validators/caps. Redaction at capture/export/report/DOM/copy, intentional full-source clipboard distinguished; hostile word/header/DB fixtures. Least privilege why-comments/CSP/remote-code/data separation, exact wp-rocket-scripts pin/adapter. Dependency-ban listing diff vs master choices, no React/router/motion/toast/highlighter replacements creeping back.
 - [ ] Shadow/adopted-style isolation+hostile CSS for every injected surface; no unscoped style/font/property leak. Respect documented native admin-bar/SBS overflow/session-continuity exceptions and intentional tester style mutation. Grep review **does not blindly reject** validated Shiki-generated HTML/token sheets or RUCSS's requested style injection; verify safe boundaries/allowlist, not source string absence alone. External links noopener/noreferrer, explicit window.open targets.
@@ -45,7 +54,7 @@ DoD: all required security/reliability/runtime rows pass or owner-approved scope
 
 ### P15C — UI/copy/enhancement audit
 
-Depends:B. Parallel:—.
+Depends:mechanical rows B code rows; audit/ledger rows all UI code merged. Parallel:B upgrade, E.3, D docs.
 
 - [ ] Every surface/state visible focus, one truthful h1/page; existing axe assertions stay strict 0 violations, incomplete results fail unless exact evidence-reviewed target allowance (keyboard-completeness audit + new axe coverage dropped — owner 2026-10-27: no screen-reader support). UI bar D1–D7: required widths/dockings, live System/Light/Dark (System under both OS palettes), reduce, state recovery/refresh, perf.
 - [ ] All **four** remaining quality checks (axe + full keyboard dropped — owner 2026-10-27: no screen-reader support): large-list gate, approved token motion only, palette tokens+committed screenshots, design-craft hierarchy/spacing/type/icons/async states. Current bar wins over old literal-zero-animation/bare-transition grep wording; real-wait busy motion/finished animation objects documented, no idle theater.
@@ -79,7 +88,7 @@ Depends:—. Parallel:A–C. Effort:M. Difficulty:medium (design).
 
 #### P15E.3 — Store listing assets
 
-Depends:E.2, P15C (shipped UI final). Parallel:P15D rows except release/store-policy. Effort:M. Difficulty:medium.
+Depends:E.2; screenshots P15C. Parallel:A–C, F; P15D rows except release/store-policy. Effort:M. Difficulty:medium.
 
 - [ ] Per store (Chrome Web Store, AMO, Edge if listed), list the required + optional assets from the **current** official specs fetched at execution (e.g. store icon, screenshots, promo tiles, marquee — sizes/formats/counts as those pages state, not from memory) and produce each.
 - [ ] Screenshots: real shipped surfaces (Detections panel, Exclusion Builder overlay, command palette, RUCSS/Beacon testers, options) on the local docker site — no customer data, real-site URLs, tokens or personal data; consistent theme per set; scripted where possible (extend `pnpm screenshots` or a sibling script) so they can be regenerated after UI changes.
@@ -89,7 +98,7 @@ Depends:E.2, P15C (shipped UI final). Parallel:P15D rows except release/store-po
 
 ### P15F — "What's new" page on update
 
-Depends:E.2 (logo), P15C (shipped UI final). Parallel:E.3. Effort:M. Difficulty:medium. **Release-critical** (owner 2026-11-20): existing users updating to 3.0.0 see a page presenting the new version.
+Depends:E.2; screenshots P15C. Parallel:A–C, E.3. Effort:M. Difficulty:medium. **Release-critical** (owner 2026-11-20): existing users updating to 3.0.0 see a page presenting the new version.
 
 **Risks → mitigation.** Page opens on every browser start / service-worker wake (spam) → once per announced version, stored marker. Opens for a fresh install as "new version" → install path never announces (seed the marker). Missed event (Chrome disables the update until the `debugger` warning is accepted; `onInstalled` may not reach a disabled extension — **verify at execution**) → startup check against the marker catches it once re-enabled. Store rejection (unexpected tabs, remote content) → bundled page, no remote code/analytics, behavior disclosed in the listing, verified in the P15D store-policy row for both stores. Copy drifting from what ships → notes data from one registry, reviewed in the P15C ledger.
 
@@ -104,7 +113,7 @@ Depends:E.2 (logo), P15C (shipped UI final). Parallel:E.3. Effort:M. Difficulty:
 
 ### P15D — Docs/release
 
-Depends:A–C, E, F. Parallel:—.
+Depends:A–C, E, F (docs/KC/source-recheck rows: C mechanical). Parallel:docs rows with C audits.
 
 - [ ] README actual features/screenshots/setup/build/zip/browser/privacy notes; concise architecture/detection/protocol references from owning code, no duplicate implementation diary. AGENTS final scripts/deps/permissions/structure/conventions sync; paths/commands checked.
 - [ ] Recheck both behavioral sources past audited v2.2.5/v4.1.1; fold drift into owning scope first. Refresh live KC seed verbatim, format, repin exact row count/comment/asset budget as AGENTS requires.
