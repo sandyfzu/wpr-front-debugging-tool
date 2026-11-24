@@ -25,8 +25,11 @@ import {
 } from '../../lib/messaging/window-bridge';
 import { ERROR_WORD_LIMITS } from '../../lib/messaging/error-words';
 import {
+  CHROMIUM_ERROR_DIALECT,
   DEFAULT_FLUSH_DELAY_MS,
   extractUndefinedReference,
+  extractWithShapes,
+  readStack,
   startUndefinedReferenceCapture,
   type UndefinedReferenceCaptureDeps
 } from './capture-undefined-references';
@@ -135,6 +138,34 @@ describe('extractUndefinedReference', () => {
   it('an empty capture is no word (the guard falls through to nothing)', () => {
     // Double space: the pattern matches with an identifier-less capture.
     expect(extractUndefinedReference('ReferenceError:  is not defined')).toBeNull();
+  });
+});
+
+describe('extractWithShapes + readStack', () => {
+  it('the first non-null shape wins; no shapes, no word', () => {
+    const never = (): null => null;
+    expect(extractWithShapes('anything', [never, () => 'first', () => 'second'])).toBe('first');
+    expect(extractWithShapes('anything', [])).toBeNull();
+  });
+
+  it('an empty-string answer stops the scan (admission refuses it later)', () => {
+    expect(extractWithShapes('x', [() => '', () => 'later'])).toBe('');
+  });
+
+  it('readStack: string stacks only', () => {
+    expect(readStack({ stack: 'ReferenceError: a is not defined' })).toBe(
+      'ReferenceError: a is not defined'
+    );
+    expect(readStack({ stack: 1 })).toBeNull();
+    expect(readStack({})).toBeNull();
+  });
+
+  it('the default (Chromium) dialect scans the stack with the V8 shapes', () => {
+    const text = "TypeError: Cannot read properties of undefined (reading 'k')\n    at a.js:1:1";
+    expect(CHROMIUM_ERROR_DIALECT.readText({ stack: text })).toBe(text);
+    expect(extractWithShapes(text, CHROMIUM_ERROR_DIALECT.shapes)).toBe(
+      extractUndefinedReference(text)
+    );
   });
 });
 

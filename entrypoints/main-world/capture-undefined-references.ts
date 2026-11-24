@@ -5,12 +5,13 @@
  * failures, so this module attaches quiet observers (`error` +
  * `unhandledrejection`, non-capture, never intercepting — no
  * `preventDefault`, no rethrows) and scans the reported text for the three
- * recognizable undefined-reference shapes. Found identifiers are deduplicated
- * per page lifetime, bounded, batched behind a short quiet period, and pushed
- * to the isolated world through the window bridge. The cross-origin sentinel
- * rides those batches under its own once-per-page flags — it is never a
- * ledger entry, so the full unique-identifier cap stays available to the
- * page's identifiers.
+ * recognizable undefined-reference shapes (text and phrasing per engine
+ * dialect: {@link CHROMIUM_ERROR_DIALECT} by default). Found identifiers are
+ * deduplicated per page lifetime, bounded, batched behind a short quiet
+ * period, and pushed to the isolated world through the window bridge. The
+ * cross-origin sentinel rides those batches under its own once-per-page
+ * flags — it is never a ledger entry, so the full unique-identifier cap stays
+ * available to the page's identifiers.
  *
  * Page-world safety, hard requirements:
  * - every listener body is wrapped — a capture failure logs and returns, it
@@ -39,6 +40,28 @@ const log = createLogger('main-world');
 /** Quiet period before a burst of fresh identifiers ships as one batch. */
 export const DEFAULT_FLUSH_DELAY_MS = 500;
 
+/**
+ * One recognizable undefined-reference shape: the identifier it names in the
+ * given error text, or null when the text does not carry the shape (the next
+ * shape is then tried).
+ */
+export type UndefinedReferenceShape = (errorText: string) => string | null;
+
+/**
+ * How one engine reports a thrown value: the text to scan, and the shapes to
+ * scan it for, in priority order. Engines differ in both (stack header, error
+ * phrasing), so each build passes its own.
+ */
+export interface ErrorTextDialect {
+  /**
+   * The scannable text of an object-shaped thrown value, or null when it has
+   * none. May run page getters — callers guard it.
+   */
+  readText: (thrown: object) => string | null;
+  /** Shapes tried in order; the first non-null answer wins. */
+  shapes: readonly UndefinedReferenceShape[];
+}
+
 /** Extract the undefined reference out of an error `ReferenceError`. */
 const REFERENCE_ERROR_PATTERN = /ReferenceError: (.*) is not defined/;
 /** Extract the property name inside an "object is undefined" `TypeError`. */
@@ -48,7 +71,63 @@ const READING_UNDEFINED_PATTERN =
 const NOT_A_FUNCTION_PATTERN = /TypeError: (.*) is not a function/;
 
 /**
- * Scan error text — a stack, or a message — for an undefined reference.
+ * The first capture of a pattern, empty counting as none.
+ *
+ * @param pattern A pattern with one capture group.
+ * @param errorText The text to scan.
+ * @returns The capture, or null when absent or empty (pattern-shaped yet
+ *   identifier-less text names nothing).
+ */
+const firstCapture = (pattern: RegExp, errorText: string): string | null =>
+  errorText.match(pattern)?.[1] || null;
+
+/** `x is not defined` — the identifier itself (V8 and SpiderMonkey alike). */
+export const REFERENCE_ERROR_SHAPE: UndefinedReferenceShape = (errorText) =>
+  firstCapture(REFERENCE_ERROR_PATTERN, errorText);
+
+/** V8's property read on undefined — the key being read. */
+export const READING_UNDEFINED_SHAPE: UndefinedReferenceShape = (errorText) =>
+  firstCapture(READING_UNDEFINED_PATTERN, errorText);
+
+/**
+ * `a.b.c is not a function` (V8 and SpiderMonkey alike) — the chain reduces
+ * to its last `.` segment, the missing symbol. Always the last shape of a
+ * dialect: an empty chain answers `''`, which admission then refuses.
+ */
+export const NOT_A_FUNCTION_SHAPE: UndefinedReferenceShape = (errorText) => {
+  const notAFunction = errorText.match(NOT_A_FUNCTION_PATTERN)?.[1];
+  if (notAFunction === undefined) return null;
+  const missingSymbol = notAFunction.split('.').at(-1);
+  return typeof missingSymbol === 'string' ? missingSymbol : null;
+};
+
+/** The shapes of V8 (Chromium) messages, in priority order. */
+const V8_SHAPES: readonly UndefinedReferenceShape[] = [
+  REFERENCE_ERROR_SHAPE,
+  READING_UNDEFINED_SHAPE,
+  NOT_A_FUNCTION_SHAPE
+];
+
+/**
+ * Scan error text with the given shapes, in order.
+ *
+ * @param errorText The text to scan.
+ * @param shapes The shapes to try; the first non-null answer wins.
+ * @returns The identifier it names, or null when no shape matches.
+ */
+export function extractWithShapes(
+  errorText: string,
+  shapes: readonly UndefinedReferenceShape[]
+): string | null {
+  for (const shape of shapes) {
+    const word = shape(errorText);
+    if (word !== null) return word;
+  }
+  return null;
+}
+
+/**
+ * Scan V8 error text — a stack, or a message — for an undefined reference.
  *
  * The three shapes are matched in order, verbatim: the reference error wins
  * over the property-read error, which wins over the not-a-function error; a
@@ -56,22 +135,32 @@ const NOT_A_FUNCTION_PATTERN = /TypeError: (.*) is not a function/;
  * The `.` of these patterns cannot cross line terminators, so matching stays
  * line-local in multi-line stacks.
  *
- * @param errorText The text to scan, whatever the shape (stacks include the
- *   message as their first line).
+ * @param errorText The text to scan (a V8 stack opens with its
+ *   `Name: message` line, so the stack alone carries the message).
  * @returns The identifier it names, or null when nothing recognizable
  *   (including empty captures, pattern-shaped yet identifier-less text).
  */
 export function extractUndefinedReference(errorText: string): string | null {
-  const referenceError = errorText.match(REFERENCE_ERROR_PATTERN)?.[1] ?? null;
-  if (referenceError) return referenceError;
-  const readingUndefined = errorText.match(READING_UNDEFINED_PATTERN)?.[1] ?? null;
-  if (readingUndefined) return readingUndefined;
-  const notAFunction = errorText.match(NOT_A_FUNCTION_PATTERN)?.[1];
-  if (notAFunction === undefined) return null;
-  // The chain reduces to its missing symbol — the chain's last `.` segment.
-  const missingSymbol = notAFunction.split('.').at(-1);
-  return typeof missingSymbol === 'string' ? missingSymbol : null;
+  return extractWithShapes(errorText, V8_SHAPES);
 }
+
+/**
+ * The thrown value's stack. Shared by every dialect: the frames, and in V8
+ * the `Name: message` header line too.
+ *
+ * @param thrown The object-shaped thrown value (its getter may throw).
+ * @returns `stack` when it is a string, else null.
+ */
+export function readStack(thrown: object): string | null {
+  const stack: unknown = (thrown as { stack?: unknown }).stack;
+  return typeof stack === 'string' ? stack : null;
+}
+
+/** Chromium (V8): the stack alone carries the message, scanned for V8 phrasing. */
+export const CHROMIUM_ERROR_DIALECT: ErrorTextDialect = {
+  readText: readStack,
+  shapes: V8_SHAPES
+};
 
 /**
  * Runtime dependencies of the capture, injectable for tests and for future
@@ -91,6 +180,11 @@ export interface UndefinedReferenceCaptureDeps {
    * strings) — a throw is a degraded batch delivered nothing and is logged.
    */
   sendBatch?: (words: string[]) => void;
+  /**
+   * How the engine reports thrown values. Defaults to
+   * {@link CHROMIUM_ERROR_DIALECT}; the Firefox build passes its own.
+   */
+  dialect?: ErrorTextDialect;
   /** Quiet period before shipping (milliseconds). */
   flushDelayMs?: number;
   /**
@@ -125,6 +219,7 @@ export function startUndefinedReferenceCapture(
 ): () => void {
   const eventTarget = deps.eventTarget ?? window;
   const sendBatch = deps.sendBatch ?? sendThroughBridge;
+  const dialect = deps.dialect ?? CHROMIUM_ERROR_DIALECT;
   const flushDelayMs = deps.flushDelayMs ?? DEFAULT_FLUSH_DELAY_MS;
   const maxUniqueWords = deps.maxUniqueWords ?? ERROR_WORD_LIMITS.count;
   const maxWordChars = deps.maxWordChars ?? ERROR_WORD_LIMITS.chars;
@@ -212,16 +307,22 @@ export function startUndefinedReferenceCapture(
     flushNow();
   };
 
+  /**
+   * Scan one thrown value through the dialect. Only object-shaped values are
+   * read: primitives and callables carry no engine-built error text.
+   */
+  const considerThrown = (thrown: unknown): void => {
+    if (thrown === null || typeof thrown !== 'object') return;
+    const errorText = dialect.readText(thrown);
+    if (errorText !== null) considerWord(extractWithShapes(errorText, dialect.shapes));
+  };
+
   const onError = (event: ErrorEvent): void => {
     try {
       if (event.message === CROSS_ORIGIN_ERROR_MESSAGE) considerCrossOriginError();
       // Cross-origin errors arrive message-only (error withheld by the
-      // browser); readable ones carry the thrown value, whose stack holds the
-      // message as its first line.
-      const thrownValue: unknown = event.error;
-      if (thrownValue === null || typeof thrownValue !== 'object') return;
-      const stack: unknown = (thrownValue as { stack?: unknown }).stack;
-      if (typeof stack === 'string') considerWord(extractUndefinedReference(stack));
+      // browser); readable ones carry the thrown value, read per dialect.
+      considerThrown(event.error);
     } catch (cause) {
       // A hostile thrown value (e.g. a throwing `stack` getter) must not
       // become an error in the page's own console — swallow and log.
@@ -231,10 +332,7 @@ export function startUndefinedReferenceCapture(
 
   const onRejection = (event: PromiseRejectionEvent): void => {
     try {
-      const reason: unknown = event.reason;
-      if (reason === null || typeof reason !== 'object') return;
-      const stack: unknown = (reason as { stack?: unknown }).stack;
-      if (typeof stack === 'string') considerWord(extractUndefinedReference(stack));
+      considerThrown(event.reason);
     } catch (cause) {
       log.debug('Rejection event could not be read', cause);
     }
