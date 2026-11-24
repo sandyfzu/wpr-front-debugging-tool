@@ -218,7 +218,7 @@ export function RucssTesterPage(props: RucssTesterPageProps = {}): JSX.Element {
           onChange={(value) => {
             if (!unmounting) handle.setTab(value === 'styles' ? 'styles' : 'test');
           }}
-          label="RUCSS tester views"
+          label="RUCSS Tester views"
           rootClass="flex min-h-0 flex-1 flex-col gap-3"
         >
           <TabPanel value="test" class={TOOL_LAYOUT}>

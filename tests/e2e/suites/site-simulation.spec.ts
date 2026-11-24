@@ -487,7 +487,7 @@ test.describe('Delay JS simulation over real sessions', () => {
       await injectOverlay(extension, opened);
       expect(await applySimulated(page)).toBe('Applied');
       await page.reload({ waitUntil: 'load' });
-      await expect(page.getByRole('heading', { name: 'Exclusion builder' })).toBeVisible(APPLIED);
+      await expect(page.getByRole('heading', { name: 'Exclusion Builder' })).toBeVisible(APPLIED);
       expect(hasDelayRuntime(await lastDocument())).toBe(true);
       await expect
         .poll(() => simulationMarkers(page), FRESH)
@@ -520,7 +520,7 @@ test.describe('Delay JS simulation over real sessions', () => {
 
       // A second page of the site, opened in the tab: simulated, the overlay back on it.
       await page.goto(SECOND, { waitUntil: 'load' });
-      await expect(page.getByRole('heading', { name: 'Exclusion builder' })).toBeVisible(APPLIED);
+      await expect(page.getByRole('heading', { name: 'Exclusion Builder' })).toBeVisible(APPLIED);
       expect(hasDelayRuntime(await lastDocument())).toBe(true);
       expect((await documentSimulation(extension, tabId)).state).toBe('simulated');
       await expect
@@ -535,7 +535,7 @@ test.describe('Delay JS simulation over real sessions', () => {
 
       // A page WP Rocket already delays: its own Delay JS, nothing simulated, the mode kept.
       await page.goto(ON, { waitUntil: 'load' });
-      await expect(page.getByRole('heading', { name: 'Exclusion builder' })).toBeVisible(APPLIED);
+      await expect(page.getByRole('heading', { name: 'Exclusion Builder' })).toBeVisible(APPLIED);
       await expect
         .poll(
           async () => (await storedSession(extension, tabId))?.document?.simulation?.state,

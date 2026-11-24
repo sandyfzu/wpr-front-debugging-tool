@@ -40,6 +40,7 @@ import { countLabel, formatCount } from '../../../../utils/format-count';
 import { OutcomeNotice } from '../outcome-notice';
 import { ToolEmptyCard } from '../tool-empty-card';
 import type { RucssTesterSession } from './session';
+import { RELOAD_PAGE_LABEL, RUN_AGAIN_LABEL } from '../recovery-words';
 
 /** The running line (the bound is the panel's worst-case wait: start, build and apply in turn). */
 export const RUNNING_COPY = `Waiting for the RUCSS service, then building and applying the CSS — up to ${formatCount(Math.round(RUCSS_RUN_WORST_CASE_MS / 1000))} s.`;
@@ -70,8 +71,8 @@ export const INSPECT_STYLES_LABEL = 'Inspect page styles';
 
 /** The recoveries' button labels. */
 export const RECOVERY_LABELS: Readonly<Record<RucssRecovery, string>> = {
-  retry: 'Run again',
-  'reload-page': 'Reload page',
+  retry: RUN_AGAIN_LABEL,
+  'reload-page': RELOAD_PAGE_LABEL,
   'review-patterns': 'Review patterns',
   'inspect-styles': INSPECT_STYLES_LABEL,
   'ask-consent': 'Ask again'

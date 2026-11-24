@@ -210,7 +210,7 @@ describe('LcpVitalsPage — LCP analysis', () => {
     await analyseNow();
     fireEvent.click(find('[data-fdt-lcp-analyse]'));
     await settle();
-    expect(find('[data-fdt-lcp-analyse]').textContent).toContain('Analysing…');
+    expect(find('[data-fdt-lcp-analyse]').textContent).toContain('Analyzing…');
     expect(document.querySelector('[data-fdt="lcp-breakdown"]')).not.toBeNull();
     finish({ kind: 'unsupported' });
     await settle();

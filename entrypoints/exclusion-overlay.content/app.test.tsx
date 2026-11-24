@@ -242,7 +242,7 @@ describe('OverlayApp', () => {
     ]) {
       expect(screen.getByRole('heading', { level: 2, name: lane })).toBeTruthy();
     }
-    expect(screen.getByRole('heading', { level: 1, name: 'Exclusion builder' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Exclusion Builder' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Stop/ })).toBeNull();
   });
 
@@ -360,7 +360,7 @@ describe('OverlayApp', () => {
     expect(onPresented).not.toHaveBeenCalled();
     fireEvent.keyDown(layerOf(container), { key: 'Escape' });
     fireEvent.click(await screen.findByRole('button', { name: /open the exclusion builder/i }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Close the exclusion builder' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Close the Exclusion Builder' }));
     expect(onPresented.mock.calls).toEqual([[false], [true], [false]]);
   });
 
@@ -394,7 +394,7 @@ describe('OverlayApp', () => {
   it('an explicit open lands focus on the heading', async () => {
     mount(port({ state: 'inactive' }));
     await waitFor(() => {
-      expect(document.activeElement?.textContent).toBe('Exclusion builder');
+      expect(document.activeElement?.textContent).toBe('Exclusion Builder');
     });
   });
 
@@ -440,7 +440,7 @@ describe('OverlayApp', () => {
     try {
       mount(port({ state: 'inactive' }), null, undefined, false, true);
       await waitFor(() => {
-        expect(document.activeElement?.textContent).toBe('Exclusion builder');
+        expect(document.activeElement?.textContent).toBe('Exclusion Builder');
       });
     } finally {
       strip.remove();
@@ -454,7 +454,7 @@ describe('OverlayApp', () => {
     try {
       mount(port({ state: 'inactive' }), null, undefined, false, true);
       await waitFor(() => {
-        expect(document.activeElement?.textContent).toBe('Exclusion builder');
+        expect(document.activeElement?.textContent).toBe('Exclusion Builder');
       });
     } finally {
       control.remove();
@@ -626,7 +626,7 @@ describe('OverlayApp', () => {
       expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
     });
     await waitFor(() => {
-      expect(document.activeElement?.textContent).toBe('Exclusion builder');
+      expect(document.activeElement?.textContent).toBe('Exclusion Builder');
     });
   });
 
@@ -664,7 +664,7 @@ describe('OverlayApp', () => {
     await waitFor(() => {
       expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
     });
-    expect(document.activeElement?.textContent).toBe('Exclusion builder');
+    expect(document.activeElement?.textContent).toBe('Exclusion Builder');
     expect(onPresented).toHaveBeenLastCalledWith(true);
     fireEvent.click(screen.getByRole('button', { name: 'Pick on page' }));
     expect(screen.getByRole('group', { name: 'Picking on the page' })).toBeTruthy();
@@ -686,7 +686,7 @@ describe('OverlayApp', () => {
 
   it('closes on request', async () => {
     const { onClose } = mount(port({ state: 'inactive' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Close the exclusion builder' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Close the Exclusion Builder' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

@@ -25,7 +25,7 @@ const OVERLAY_ROW_COUNT = 11;
 /** The route bodies' own heading, in registry naming (the jump's landing). */
 const JUMPS: ReadonlyArray<{ readonly ticker: string; readonly heading: string }> = [
   { ticker: 'javascript', heading: 'JavaScript' },
-  { ticker: 'lazyload', heading: 'Lazyload' },
+  { ticker: 'lazyload', heading: 'LazyLoad' },
   { ticker: 'preloaded', heading: 'Preloaded Resources' },
   { ticker: 'undefined', heading: 'Undefined References' },
   { ticker: 'detections', heading: 'Detections' }
@@ -97,10 +97,10 @@ function captureStamp(page: Page): Promise<string | null> {
     const bar = document.querySelector<HTMLElement>('[data-fdt="panel-top-bar"]');
     if (bar === null) return null;
     const detail = [...bar.querySelectorAll<HTMLElement>('span')].find((node) =>
-      node.textContent.startsWith('Page data captured at')
+      node.textContent.startsWith('Page data fetched at')
     );
     if (detail === undefined) return null;
-    const match = /Page data captured at (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC/.exec(
+    const match = /Page data fetched at (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC/.exec(
       detail.textContent
     );
     return match?.[1] ?? null;

@@ -174,11 +174,11 @@ describe('openFeedback', () => {
   it('confirms an injected open and names each failure’s remedy', () => {
     expect(openFeedback({ kind: 'reply', reply: 'injected' })).toEqual({
       tone: 'success',
-      title: 'Exclusion builder opened on the page'
+      title: 'Exclusion Builder opened on the page'
     });
     expect(openFeedback({ kind: 'reply', reply: 'revealed' })).toEqual({
       tone: 'success',
-      title: 'Exclusion builder shown on the page'
+      title: 'Exclusion Builder shown on the page'
     });
     expect(openFeedback({ kind: 'reply', reply: 'unsupported-page' })).toMatchObject({
       tone: 'error',
@@ -186,7 +186,7 @@ describe('openFeedback', () => {
     });
     expect(openFeedback({ kind: 'reply', reply: 'not-html' })).toMatchObject({
       tone: 'error',
-      description: 'The exclusion builder works on HTML pages, not on images, feeds or other files.'
+      description: 'The Exclusion Builder works on HTML pages, not on images, feeds or other files.'
     });
     expect(openFeedback({ kind: 'reply', reply: 'tab-gone' }).description).toBe(
       'The inspected tab is gone.'
@@ -206,7 +206,7 @@ describe('openFeedback', () => {
       { kind: 'failed', cause: 1 }
     ] as const) {
       const feedback = openFeedback(outcome);
-      expect(feedback).toMatchObject({ tone: 'error', title: 'The exclusion builder didn’t open' });
+      expect(feedback).toMatchObject({ tone: 'error', title: 'The Exclusion Builder didn’t open' });
       expect(feedback.description).toMatch(/toolbar button’s menu/);
     }
   });

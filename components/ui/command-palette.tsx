@@ -101,7 +101,7 @@ export type CommandPaletteVariant = ModalDialogVariant;
  * the shared keyboard-focus ring (the list never receives real focus).
  */
 const FIELD_CLASSES =
-  'h-8 w-full shrink-0 rounded border border-line-3 bg-surface-2 px-2 text-xs text-fg-primary placeholder:text-fg-muted hover:border-line-2';
+  'h-8 w-full shrink-0 rounded border border-line-strong bg-surface-2 px-2 text-xs text-fg-primary placeholder:text-fg-muted hover:border-fg-muted';
 
 /** The list: bounded height, token-thin scroll, styled rows below. */
 const LIST_CLASSES = 'max-h-72 overflow-y-auto rounded p-1';
@@ -167,7 +167,7 @@ export const PALETTE_LOOKS: Readonly<Record<CommandPaletteVariant, PaletteLook>>
     root: 'flex min-h-0 flex-1 flex-col',
     fieldFrame: 'relative shrink-0 border-b border-line-1 p-2',
     field:
-      'h-8 w-full rounded-control border border-line-2 bg-surface-1 ps-8 pe-2.5 text-xs text-fg-primary placeholder:text-fg-muted hover:border-line-3',
+      'h-8 w-full rounded-control border border-line-strong bg-surface-1 ps-8 pe-2.5 text-xs text-fg-primary placeholder:text-fg-muted hover:border-fg-muted',
     list: 'max-h-72 overflow-y-auto p-1.5',
     row:
       'group flex h-8 w-full cursor-pointer select-none items-center gap-2.5 rounded-md px-2 text-left text-xs text-fg-secondary no-underline' +

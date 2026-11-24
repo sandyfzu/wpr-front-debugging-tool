@@ -188,6 +188,10 @@ const REQUIRED_PAIRS: RequiredPair[] = [
   ),
   // Focus ring / accent indicator is non-text: 3:1 suffices (WCAG 1.4.11).
   ...SURFACES.map((background) => ({ foreground: 'accent', background, min: 3 })),
+  // The control boundary (text fields, switch tracks) is the only cue of a
+  // field's extent: 3:1 on every surface (WCAG 1.4.11). Its hover step,
+  // `fg-muted`, is already pinned at 4.5:1 above.
+  ...SURFACES.map((background) => ({ foreground: 'line-strong', background, min: 3 })),
   // Text laid over accent fills (buttons, badges); deliberately NOT paired with
   // the decorative gradient endpoints — text on a gradient uses a solid fill.
   { foreground: 'on-accent', background: 'accent-strong', min: 4.5 },
@@ -267,9 +271,10 @@ describe('token structure in the token files', () => {
     const pairedBackgrounds = new Set(REQUIRED_PAIRS.map((pair) => pair.background));
     const missing: string[] = [];
     for (const name of shared.keys()) {
-      // Decorative hairlines are excluded from the AA pair table by design; every
-      // other token must appear as background or text.
-      if (name.startsWith('line-')) continue;
+      // Decorative hairlines (`line-0`…`line-4`) are excluded from the AA pair
+      // table by design; every other token, the `line-strong` control
+      // boundary included, must appear as background or foreground.
+      if (/^line-\d$/.test(name)) continue;
       const isBackground =
         name.startsWith('surface-') || name.endsWith('-soft') || name === 'accent-strong';
       if (isBackground && !pairedBackgrounds.has(name)) missing.push(`--${name} (background)`);
@@ -397,6 +402,45 @@ describe('WCAG AA pairs', () => {
       }
     }
     expect(failures).toEqual([]);
+  });
+});
+
+describe('control boundaries (WCAG 1.4.11)', () => {
+  /**
+   * Every text field and switch track, on every surface: the source that
+   * draws its rest border, and the rule (a Tailwind class string or a CSS
+   * block) that must name the control boundary — never a decorative
+   * `line-0`…`line-4` hairline, which sits below 3:1.
+   */
+  const CONTROLS: readonly { file: string; rule: RegExp }[] = [
+    { file: '../../components/ui/input.tsx', rule: /'h-7 rounded-control [^']*'/ },
+    { file: '../../components/ui/textarea.tsx', rule: /'w-full rounded-control [^']*'/ },
+    { file: '../../components/ui/command-palette.tsx', rule: /FIELD_CLASSES =\s*'[^']*'/ },
+    { file: '../../components/ui/command-palette.tsx', rule: /field:\s*'[^']*'/ },
+    { file: '../../components/ui/switch.tsx', rule: /'inline-flex h-3\.5 w-7 [^']*'/ },
+    {
+      file: '../../entrypoints/command-palette.content/palette.css',
+      rule: /\[data-fdt='palette-input'\] \{[^}]*\}/
+    },
+    {
+      file: '../../entrypoints/isolated.content/side-by-side/side-by-side.css',
+      rule: /\.sbs-switch-input \{[^}]*\}/
+    },
+    {
+      file: '../../entrypoints/exclusion-overlay.content/overlay.css',
+      rule: /\.xo-row-input \{[^}]*border:[^}]*\}/
+    },
+    {
+      file: '../../entrypoints/exclusion-overlay.content/overlay.css',
+      rule: /\.xo-switch-track \{[^}]*\}/
+    }
+  ];
+
+  it.each(CONTROLS)('$file draws its field boundary with line-strong', ({ file, rule }) => {
+    const found = rule.exec(read(file))?.[0];
+    expect(found, `no rule matching ${String(rule)} in ${file}`).toBeDefined();
+    expect(found).toMatch(/border-line-strong|var\(--line-strong\)/);
+    expect(found).not.toMatch(/border-line-\d|var\(--line-\d\)/);
   });
 });
 

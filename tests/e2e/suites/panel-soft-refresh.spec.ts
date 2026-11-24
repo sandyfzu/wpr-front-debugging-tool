@@ -75,7 +75,7 @@ test.describe('panel soft refresh (the real push)', () => {
       await panel.evaluate(() => {
         location.hash = '#/lazyload';
       });
-      await expect.poll(async () => await h1(panel)).toBe('Lazyload');
+      await expect.poll(async () => await h1(panel)).toBe('LazyLoad');
       expect(await barText(panel)).toContain('WP Rocket 3.20.1');
 
       // The realm marker + focused rail anchor: state the swap must not touch
@@ -114,7 +114,7 @@ test.describe('panel soft refresh (the real push)', () => {
           hash: location.hash,
           h1: document.querySelector('[data-fdt-page] h1')?.textContent ?? null
         }))
-      ).toEqual({ hash: '#/lazyload', h1: 'Lazyload' });
+      ).toEqual({ hash: '#/lazyload', h1: 'LazyLoad' });
       expect(
         await panel.evaluate(
           (): boolean =>

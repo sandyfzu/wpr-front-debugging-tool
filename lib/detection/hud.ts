@@ -52,7 +52,8 @@ import {
   LABEL_CDN,
   LABEL_SELF_HOST_GOOGLE_FONTS,
   SHORT_LABEL_DEFER_JS,
-  SHORT_LABEL_DELAY_JS
+  SHORT_LABEL_DELAY_JS,
+  SHORT_LABEL_LAZYLOAD
 } from './labels';
 
 /**
@@ -84,7 +85,10 @@ export interface HudFeature {
   readonly row: FeatureMetaRow;
   /** The verified full name (card name, tooltip head, report row). */
   readonly label: HudLabel;
-  /** The plugin's own compact wording (the strip chip). */
+  /**
+   * The strip chip's compact name, Title Case; the full label itself where it
+   * is already compact (one declaring site), LazyLoad cased as WP Rocket brands it.
+   */
   readonly shortLabel: string;
   /** The group the feature renders under (strip heading; registry order within it). */
   readonly group: HudGroupId;
@@ -166,7 +170,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'remove_unused_css',
     label: LABEL_REMOVE_UNUSED_CSS,
-    shortLabel: 'Remove Unused CSS',
+    shortLabel: LABEL_REMOVE_UNUSED_CSS,
     group: 'file-optimization',
     unit: null,
     count: null,
@@ -195,7 +199,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'async_css',
     label: LABEL_LOAD_CSS_ASYNCHRONOUSLY,
-    shortLabel: 'Load CSS asynchronously',
+    shortLabel: 'Load CSS Asynchronously',
     group: 'file-optimization',
     unit: null,
     count: null,
@@ -236,7 +240,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'lazyload',
     label: LABEL_IMAGE_LAZYLOAD,
-    shortLabel: 'Lazyload Images',
+    shortLabel: `${SHORT_LABEL_LAZYLOAD} Images`,
     group: 'media',
     unit: IMAGE_NOUN,
     count: (report) => report[LABEL_IMAGE_LAZYLOAD]['lazy-loaded images'],
@@ -248,7 +252,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'lazyload_iframes',
     label: LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD,
-    shortLabel: 'Lazyload Iframes',
+    shortLabel: `${SHORT_LABEL_LAZYLOAD} Iframes`,
     group: 'media',
     unit: null,
     count: null,
@@ -259,7 +263,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'lazyload_css_bg_img',
     label: LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD,
-    shortLabel: 'Lazyload CSS Background Images',
+    shortLabel: `${SHORT_LABEL_LAZYLOAD} CSS Background Images`,
     group: 'media',
     unit: null,
     count: null,
@@ -280,7 +284,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'self_hosted_fonts',
     label: LABEL_SELF_HOST_GOOGLE_FONTS,
-    shortLabel: 'Self-host Google Fonts',
+    shortLabel: LABEL_SELF_HOST_GOOGLE_FONTS,
     group: 'media',
     unit: null,
     count: null,
@@ -293,7 +297,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'preload_links',
     label: LABEL_PRELOAD_LINKS,
-    shortLabel: 'Preload Links',
+    shortLabel: LABEL_PRELOAD_LINKS,
     group: 'preload',
     unit: null,
     count: null,
@@ -304,7 +308,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'dns_prefetch',
     label: LABEL_DNS_PREFETCH,
-    shortLabel: 'DNS prefetch',
+    shortLabel: 'DNS Prefetch',
     group: 'preload',
     unit: DOMAIN_NOUN,
     // The hints are unattributed (core prints the same): a count only once declared.
@@ -341,7 +345,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'automatic_lazy_rendering',
     label: LABEL_AUTOMATIC_LAZY_RENDERING,
-    shortLabel: 'Automatic Lazy Rendering',
+    shortLabel: LABEL_AUTOMATIC_LAZY_RENDERING,
     group: 'features',
     unit: ELEMENT_NOUN,
     count: (report) => report[LABEL_AUTOMATIC_LAZY_RENDERING]['converted elements'],
@@ -360,7 +364,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'preconnect_external_domains',
     label: LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS,
-    shortLabel: 'Preconnect to External Domains',
+    shortLabel: LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS,
     group: 'features',
     unit: DOMAIN_NOUN,
     count: (report) => report[LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS]['domains hinted'],
@@ -370,7 +374,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
   {
     row: 'mobile_cache',
     label: LABEL_MOBILE_CACHE,
-    shortLabel: 'Mobile cache',
+    shortLabel: 'Mobile Cache',
     group: 'features',
     unit: null,
     count: null,

@@ -124,13 +124,13 @@ test.describe('panel ready boot (the devtools-contract data path)', () => {
         .toBe('Detections');
 
       // Scoped to the nav: page bodies may carry links naming the same page
-      // (e.g. the Detections cards' "Open Lazyload").
+      // (e.g. the Detections cards' "Open LazyLoad").
       await panel
         .getByRole('navigation', { name: 'WPR FDT pages' })
-        .getByRole('link', { name: 'Lazyload' })
+        .getByRole('link', { name: 'LazyLoad' })
         .click();
       await panel.waitForURL(/#\/lazyload$/);
-      await expect.poll(async () => await h1(panel)).toBe('Lazyload');
+      await expect.poll(async () => await h1(panel)).toBe('LazyLoad');
 
       // The top bar is shell-owned: the route swap never resets its answers.
       expect(await barText(panel)).toContain('WP Rocket 3.20.1');
@@ -157,7 +157,7 @@ test.describe('panel ready boot (the devtools-contract data path)', () => {
           timeout: 15_000,
           intervals: [50, 100, 250]
         })
-        .toBe('Lazyload');
+        .toBe('LazyLoad');
       expect(
         await panel.evaluate(
           (): string | null =>
@@ -174,7 +174,7 @@ test.describe('panel ready boot (the devtools-contract data path)', () => {
           timeout: 15_000,
           intervals: [50, 100, 250]
         })
-        .toBe('Lazyload');
+        .toBe('LazyLoad');
       expect(
         await panel.evaluate(
           (): string | null =>

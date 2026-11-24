@@ -49,6 +49,7 @@ import { cn } from '../../../../utils/cn';
 import { OutcomeNotice } from '../outcome-notice';
 import { RecoveryButtons } from '../recovery-buttons';
 import type { LcpVitalsSession } from './session';
+import { RELOAD_PAGE_LABEL } from '../recovery-words';
 
 /** The line once the page reloaded or navigated after the shown read. */
 export const VITALS_STALE_COPY =
@@ -57,7 +58,7 @@ export const VITALS_STALE_COPY =
 /** The recoveries' button labels. */
 export const VITALS_RECOVERY_LABELS: Readonly<Record<VitalsRecovery, string>> = {
   retry: 'Refresh',
-  'reload-page': 'Reload page'
+  'reload-page': RELOAD_PAGE_LABEL
 };
 
 /** The value shown for a metric the browser does not report, or one without data yet. */

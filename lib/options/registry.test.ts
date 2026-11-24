@@ -6,7 +6,13 @@
  * split, and the data-driven on-page UI cascade.
  */
 import { describe, expect, it } from 'vitest';
-import { FALLBACK, storedOptionsOrFallback, type StoredOptions } from '../storage/options';
+import {
+  FALLBACK,
+  storedOptionsOrFallback,
+  WP_DASHBOARD_DBUGGER_ENTRY,
+  type StoredOptions
+} from '../storage/options';
+import { DBUGGER_ENTRY_LABEL } from './dbugger-entry';
 import { PAGE_UI_GATE_OPTION_LABEL, PAGE_UI_MENU_RESCUE } from '../page-commands/commands';
 import {
   DRAFTED_OPTION_ROWS,
@@ -119,6 +125,13 @@ describe('the What’s new row', () => {
     expect(row?.kind).toBe('whats-new');
     expect(row?.label).toBe(WHATS_NEW_ON_UPDATE_LABEL);
     expect(row !== undefined && isDraftedOptionRow(row)).toBe(false);
+  });
+});
+
+describe('the D-bugger entry row', () => {
+  it('quotes the entry text the content script renders (one declaring site)', () => {
+    expect(DBUGGER_ENTRY_LABEL).toBe('WPR D-bugger');
+    expect(rowOf(WP_DASHBOARD_DBUGGER_ENTRY).description).toContain(`“${DBUGGER_ENTRY_LABEL}”`);
   });
 });
 

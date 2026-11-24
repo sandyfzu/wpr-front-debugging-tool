@@ -1,7 +1,7 @@
 /**
  * The Lazyload page's state chips on `fixtures/lazyload/sources.html`
  * (WP Rocket's lazy markup, script and options; the runtime never loads):
- * WP Rocket's Lazyloaded and the FDT's Excluded each read by their source
+ * WP Rocket's Lazy loaded and the FDT's Excluded each read by their source
  * look under one legend, the marker-only image's detail shows no reasons
  * section while the excluded one's lists its page reason, the Excluded
  * toggle selects exactly the Excluded rows — and at 768 / 480 / 320 px
@@ -65,7 +65,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       ).toHaveText('Detected');
       await expect(panel.locator(IMAGE_ROW)).toHaveCount(4);
       expect(await chipSources(rowWith(panel, 'a-very-long-hero-image'))).toEqual([
-        'Lazyloaded/wp-rocket'
+        'Lazy loaded/wp-rocket'
       ]);
       expect(await chipSources(rowWith(panel, 'excluded.jpg'))).toEqual(['Excluded/excluded']);
       expect(await chipSources(rowWith(panel, 'marker-only.jpg'))).toEqual(['Excluded/excluded']);
@@ -73,7 +73,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       // Hover names the source and the feature.
       await expect(
         rowWith(panel, 'a-very-long-hero-image').locator('[data-fdt-state="lazyloaded"] [title]')
-      ).toHaveAttribute('title', 'Lazyloaded by WP Rocket (LazyLoad for images)');
+      ).toHaveAttribute('title', 'Lazy loaded by WP Rocket (LazyLoad for images)');
       await expect(
         rowWith(panel, 'excluded.jpg').locator('[data-fdt-state="excluded"] [title]')
       ).toHaveAttribute('title', 'Excluded by FDT from LazyLoad for images');

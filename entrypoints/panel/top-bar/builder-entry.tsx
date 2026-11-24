@@ -160,7 +160,7 @@ export function createBuilderEntryModel(deps: BuilderEntryDeps): BuilderEntryMod
     opening,
     description: () =>
       tabId === null
-        ? 'Open the panel in DevTools to use the exclusion builder.'
+        ? 'Open the panel in DevTools to use the Exclusion Builder.'
         : view().description,
     open
   };
@@ -295,7 +295,7 @@ function BuilderEntryControl(props: {
           </Show>
         )}
       </Show>
-      <span class="sr-only"> — open the exclusion builder on the page</span>
+      <span class="sr-only"> — open the Exclusion Builder on the page</span>
     </button>
   );
 }

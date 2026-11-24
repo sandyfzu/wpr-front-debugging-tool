@@ -116,7 +116,7 @@ describe('BuilderEntry', () => {
     answer({ kind: 'reply', reply: 'injected' });
     await waitFor(() => {
       expect(toastItems().map((item) => item.title)).toEqual([
-        'Exclusion builder opened on the page'
+        'Exclusion Builder opened on the page'
       ]);
     });
     expect(entry().getAttribute('aria-busy')).toBe('false');
@@ -135,7 +135,7 @@ describe('BuilderEntry', () => {
     await waitFor(() => {
       expect(toastItems()[0]).toMatchObject({
         tone: 'error',
-        title: 'This page can’t host the exclusion builder',
+        title: 'This page can’t host the Exclusion Builder',
         description: 'Open a regular http or https page in this tab.'
       });
     });
@@ -149,10 +149,10 @@ describe('BuilderEntry', () => {
     await waitFor(() => {
       expect(entry().getAttribute('title')).toBe('No exclusions applied in this tab.');
     });
-    expect(entry().textContent).toBe('Exclusions — open the exclusion builder on the page');
+    expect(entry().textContent).toBe('Exclusions — open the Exclusion Builder on the page');
     d.push({ tabId: TAB, summary: { state: 'active', origin: 'https://example.com' } });
     await screen.findByText('On');
-    expect(entry().textContent).toBe('ExclusionsOn — open the exclusion builder on the page');
+    expect(entry().textContent).toBe('ExclusionsOn — open the Exclusion Builder on the page');
   });
 
   it('icon form: a 28 px square, the word sr-only, a news state as a dot plus sr-only words', async () => {
@@ -178,7 +178,7 @@ describe('BuilderEntry', () => {
       });
       expect(entry().querySelector('[data-fdt="status-badge"]')).toBeNull();
       expect(entry().textContent).toBe(
-        `Exclusions ${word} — open the exclusion builder on the page`
+        `Exclusions ${word} — open the Exclusion Builder on the page`
       );
       expect(screen.getByText(` ${word}`, { normalizer: (text) => text }).classList).toContain(
         'sr-only'

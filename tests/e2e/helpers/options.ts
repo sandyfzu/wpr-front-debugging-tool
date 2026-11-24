@@ -23,7 +23,7 @@ import { expect } from './extension';
 import type { ExtensionDriver } from './extension';
 
 /** The registry's row labels, as the page renders them (user-facing parity). */
-export const DBUGGER_ROW_LABEL = "Add an entry to access the D-bugger to WP Rocket's menu";
+export const DBUGGER_ROW_LABEL = "Add a D-bugger link to WP Rocket's admin bar menu";
 export const BADGE_ROW_LABEL = 'Show the toolbar badge';
 export const APPEARANCE_ROW_LABEL = 'Color theme';
 export const PAGE_UI_GATE_ROW_LABEL = 'Show on-page UI';
@@ -33,8 +33,8 @@ export type ChoiceValue = keyof typeof CHOICE_LABELS;
 
 /** The save/kc outcomes' copy, verbatim (pinned in the unit tier too). */
 export const SAVE_SUCCESS_TITLE = 'Options saved';
-export const KC_REFRESH_SUCCESS_TITLE = 'Conflict database refreshed';
-export const KC_REFRESH_FAILURE_TITLE = 'Refreshing the conflict database failed';
+export const KC_REFRESH_SUCCESS_TITLE = 'Known Conflicts database refreshed';
+export const KC_REFRESH_FAILURE_TITLE = 'Refreshing the Known Conflicts database failed';
 export const KC_REFRESH_REFUSAL = 'The refresh did not complete — try again in a moment.';
 export const KC_NEVER_SYNCED = 'Not synced yet — the tool checks hourly.';
 

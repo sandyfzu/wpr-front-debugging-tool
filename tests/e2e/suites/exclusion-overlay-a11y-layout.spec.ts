@@ -433,7 +433,7 @@ async function panelControls(page: Page): Promise<string[]> {
  * @returns The controls visited, in order (equal to the expectation).
  */
 async function tabWalk(page: Page): Promise<string[]> {
-  await page.getByRole('heading', { name: 'Exclusion builder' }).focus();
+  await page.getByRole('heading', { name: 'Exclusion Builder' }).focus();
   const expected = await panelControls(page);
   const visited: string[] = [];
   for (let step = 0; step < expected.length + 5; step += 1) {
@@ -510,10 +510,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
       expect(visited.some((name) => name.startsWith('button Add '))).toBe(true);
       expect(visited.some((name) => name.startsWith('button Added: '))).toBe(true);
       await page.keyboard.press('Escape');
-      const pill = page.getByRole('button', { name: /open the exclusion builder$/ });
+      const pill = page.getByRole('button', { name: /open the Exclusion Builder$/ });
       await expect(pill).toBeFocused();
       const focused = await focusedControl(page);
-      expect(focused?.name, 'the folded pill').toMatch(/open the exclusion builder$/);
+      expect(focused?.name, 'the folded pill').toMatch(/open the Exclusion Builder$/);
       expect(focused?.ring, 'ring on the folded pill').toBe(true);
       await page.close();
     });
@@ -642,11 +642,11 @@ test.describe('exclusion builder overlay §D-2 (palette + motion)', () => {
     await motionless('after mount');
     await reduced.page.keyboard.press('Escape');
     await expect(
-      reduced.page.getByRole('button', { name: /open the exclusion builder$/ })
+      reduced.page.getByRole('button', { name: /open the Exclusion Builder$/ })
     ).toBeFocused();
     await motionless('folded');
     await reduced.page.keyboard.press('Enter');
-    await expect(reduced.page.getByRole('heading', { name: 'Exclusion builder' })).toBeFocused();
+    await expect(reduced.page.getByRole('heading', { name: 'Exclusion Builder' })).toBeFocused();
     await motionless('unfolded');
     await reduced.page.close();
 

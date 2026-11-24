@@ -9,6 +9,7 @@
  */
 import { countLabel, formatCount } from '../../utils/format-count';
 import { DATA_CONSENT_FEATURES } from '../data-consent/consent';
+import { ASK_MISS_TITLES } from '../messaging/ask-miss-words';
 import type { RucssApplyFailure, RucssStartFailure } from '../messaging/rucss-test';
 import { RUCSS_TEST_LIMITS } from '../messaging/rucss-test';
 import type { RucssBuildOutcome } from './build-client';
@@ -103,28 +104,28 @@ function startMissView(miss: RucssAskMiss): RucssOutcomeView {
     case 'no-receiver':
       return view(
         'error',
-        "The page isn't listening",
+        ASK_MISS_TITLES['no-receiver'],
         `The extension is not active on this page yet — reload it (an http or https page) and run again. ${UNCHANGED}`,
         ['reload-page', 'retry']
       );
     case 'timeout':
       return view(
         'error',
-        "The page didn't answer in time",
+        ASK_MISS_TITLES.timeout,
         `No answer within ${seconds(RUCSS_START_DEADLINE_MS)}, the service request included. Run again; reload the page if it keeps happening. ${UNCHANGED}`,
         ['retry', 'reload-page']
       );
     case 'invalid-reply':
       return view(
         'error',
-        "The page's answer was unreadable",
+        ASK_MISS_TITLES['invalid-reply'],
         `The page runs another version of the extension — reload it so both match, then run again. ${UNCHANGED}`,
         ['reload-page', 'retry']
       );
     case 'failed':
       return view(
         'error',
-        "Couldn't reach the page",
+        ASK_MISS_TITLES.failed,
         `Sending the test to the page failed — reload it and run again. ${UNCHANGED}`,
         ['reload-page', 'retry']
       );
@@ -159,8 +160,8 @@ function fetchFailureView(failure: RucssFetchFailure, requestUrl: string): Rucss
     case 'cancelled':
       return view(
         'warn',
-        'The request was cancelled',
-        `A newer test on this page cancelled it. ${UNCHANGED}`,
+        'The request was canceled',
+        `A newer test on this page canceled it. ${UNCHANGED}`,
         ['retry'],
         at
       );

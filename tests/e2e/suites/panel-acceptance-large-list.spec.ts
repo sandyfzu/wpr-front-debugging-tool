@@ -319,7 +319,7 @@ test.describe('large-list acceptance (5,000-row seeded fixture, real capture)', 
         location.hash = '#/lazyload';
       });
       await expect(
-        facetSegment(panel.locator('[data-fdt-page="lazyload"]'), 'any', 'Lazyload').locator(
+        facetSegment(panel.locator('[data-fdt-page="lazyload"]'), 'any', 'LazyLoad').locator(
           'input'
         )
       ).toHaveAccessibleName(/5,000$/);

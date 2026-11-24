@@ -219,7 +219,7 @@ function reuseHooks(facet: string): {
 /** The first facet of each list under test. */
 const FIRST_FACET = {
   javascript: 'Delay',
-  lazyload: 'Lazyload',
+  lazyload: 'LazyLoad',
   'preloaded-resources': 'Source'
 } as const;
 

@@ -116,7 +116,7 @@ describe('ListRow', () => {
         mono
         preview="https://cdn.example/logo.png"
         size="12 KB"
-        chips={splitStateChips([{ id: 'a', label: 'Lazyloaded', source: 'wp-rocket' }], 2)}
+        chips={splitStateChips([{ id: 'a', label: 'Lazy loaded', source: 'wp-rocket' }], 2)}
         actions={<button type="button">Copy</button>}
       />
     ));
@@ -178,7 +178,7 @@ describe('ListRow', () => {
       <ListRow
         columns={BOTH}
         name="a"
-        chips={splitStateChips([{ id: 'a', label: 'Lazyloaded', source: 'wp-rocket' }], 2)}
+        chips={splitStateChips([{ id: 'a', label: 'Lazy loaded', source: 'wp-rocket' }], 2)}
         stateContent={<span data-fdt="own-state">Unattributed</span>}
       />
     ));

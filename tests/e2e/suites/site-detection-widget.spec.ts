@@ -127,20 +127,20 @@ const EXPECTED_ROWS: Array<{ label: string; group: string }> = [
   { label: 'Remove Unused CSS', group: 'JavaScript & CSS' },
   { label: 'Delay JS', group: 'JavaScript & CSS' },
   { label: 'Defer JS', group: 'JavaScript & CSS' },
-  { label: 'Load CSS asynchronously', group: 'JavaScript & CSS' },
+  { label: 'Load CSS Asynchronously', group: 'JavaScript & CSS' },
   { label: 'Minify CSS', group: 'JavaScript & CSS' },
   { label: 'Minify JS', group: 'JavaScript & CSS' },
   { label: 'Combine JS', group: 'JavaScript & CSS' },
-  { label: 'Lazyload Images', group: 'Image & Media' },
-  { label: 'Lazyload Iframes', group: 'Image & Media' },
-  { label: 'Lazyload CSS Background Images', group: 'Image & Media' },
+  { label: 'LazyLoad Images', group: 'Image & Media' },
+  { label: 'LazyLoad Iframes', group: 'Image & Media' },
+  { label: 'LazyLoad CSS Background Images', group: 'Image & Media' },
   { label: 'Image Dimensions', group: 'Image & Media' },
   { label: 'Self-host Google Fonts', group: 'Image & Media' },
   { label: 'Preload Links', group: 'Preload' },
-  { label: 'DNS prefetch', group: 'Preload' },
+  { label: 'DNS Prefetch', group: 'Preload' },
   { label: 'CDN', group: 'Content Delivery' },
   ...FAMILY_ROWS.map((row) => ({ label: row.label, group: 'Features' })),
-  { label: 'Mobile cache', group: 'Features' }
+  { label: 'Mobile Cache', group: 'Features' }
 ];
 
 /** The chip state a given evidence state maps to (the D-2 matrix). */
@@ -195,8 +195,8 @@ function expectedChip(detections: SiteDetections, label: string): string {
     'Combine JS': detections.minify_concatenate_js,
     'Image Dimensions': detections.image_dimensions,
     'Self-host Google Fonts': detections.self_hosted_fonts,
-    'Mobile cache': detections.mobile_cache,
-    'DNS prefetch': detections.dns_prefetch
+    'Mobile Cache': detections.mobile_cache,
+    'DNS Prefetch': detections.dns_prefetch
   };
   const undecided = undecidable[label];
   if (undecided !== undefined) {
@@ -210,10 +210,10 @@ function expectedChip(detections: SiteDetections, label: string): string {
       'Remove Unused CSS': detections.remove_unused_css.present,
       'Delay JS': detections.delay_js.present,
       'Defer JS': detections.defer_all_js.present,
-      'Load CSS asynchronously': detections.async_css.present,
-      'Lazyload Images': detections.lazyload.present,
-      'Lazyload Iframes': detections.lazyload_iframes.present,
-      'Lazyload CSS Background Images': detections.lazyload_css_bg_img.present,
+      'Load CSS Asynchronously': detections.async_css.present,
+      'LazyLoad Images': detections.lazyload.present,
+      'LazyLoad Iframes': detections.lazyload_iframes.present,
+      'LazyLoad CSS Background Images': detections.lazyload_css_bg_img.present,
       'Minify CSS': detections.minify_css.present,
       'Minify JS': detections.minify_js.present,
       'Preload Links': detections.preload_links.present,

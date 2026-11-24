@@ -8,7 +8,7 @@
  * this body renders on `ready`/`refreshing`): the vitals tiles (see
  * `./vitals-card`) above the LCP run bar and result card (see `./lcp-card`).
  * The vitals are read on the page's first open (a passive read), so they
- * lead; the analysis waits for Analyse (it may frame the element).
+ * lead; the analysis waits for Analyze (it may frame the element).
  *
  * The session outlives the page body (panel lifetime): leaving the route
  * mid-ask keeps the ask, and its answer is there on return. A data refresh

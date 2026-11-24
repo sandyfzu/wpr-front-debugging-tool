@@ -52,6 +52,7 @@ import { resourceName, urlPreview } from '../resource-list/resource-list-view';
 import { SourceLink } from '../resource-list/source-link';
 import { ToolEmptyCard } from '../tool-empty-card';
 import type { SettingsLoadState } from '../settings/stored-settings';
+import { RUN_AGAIN_LABEL } from '../recovery-words';
 
 /** The candidates' noun (announcements, counts). */
 const CANDIDATE_NOUN = { one: 'candidate', other: 'candidates' } as const;
@@ -222,7 +223,7 @@ function FeatureResults<T>(props: FeatureResultsProps<T>): JSX.Element {
           title="The beacon's list was unreadable"
           message="The page answered something that is not a list. Run again; reload the page if it keeps happening."
           onRetry={props.onRun}
-          retryLabel="Run again"
+          retryLabel={RUN_AGAIN_LABEL}
         />
       </Match>
       <Match when={ok()}>

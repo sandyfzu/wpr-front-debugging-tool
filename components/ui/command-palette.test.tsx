@@ -145,7 +145,7 @@ describe('CommandPalette looks', () => {
     root: 'flex min-h-0 flex-1 flex-col gap-1',
     fieldFrame: null,
     field:
-      'h-8 w-full shrink-0 rounded border border-line-3 bg-surface-2 px-2 text-xs text-fg-primary placeholder:text-fg-muted hover:border-line-2',
+      'h-8 w-full shrink-0 rounded border border-line-strong bg-surface-2 px-2 text-xs text-fg-primary placeholder:text-fg-muted hover:border-fg-muted',
     list: 'max-h-72 overflow-y-auto rounded p-1',
     row: 'flex h-7 w-full cursor-pointer select-none items-center gap-2 rounded px-2 text-left text-xs text-fg-secondary no-underline data-highlighted:bg-surface-3 data-highlighted:text-fg-primary data-disabled:cursor-not-allowed data-disabled:text-fg-muted',
     rowIcon: 'shrink-0 text-fg-muted',
