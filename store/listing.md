@@ -35,7 +35,7 @@ Where to find it
 The main tool is a panel in the browser's DevTools ("WPR FDT"). The on-page tools open from the toolbar icon, the right-click menu or the command palette. Light, dark or system appearance everywhere. After an update that brings new features, the extension opens a tab listing what's new, once (switch it off on that page or in the options).
 
 Privacy
-Page data is processed in your browser. Data leaves the browser only when you ask: starting a RUCSS test sends the page's address, the Mobile and Home choices and your safelist to WP Rocket's RUCSS service (no page content), and opening PageSpeed Insights sends the page's address to Google; nothing else about you or the pages you visit is sent, and there are no analytics. The extension downloads two public data files, the Known Conflicts list (apps.wpr-support.com) and WP Rocket's latest exclusion list (b.rucss.wp-rocket.me), with no information about you.
+Page data is processed in your browser. Data leaves the browser only when you ask: starting a RUCSS test sends the page's address, a timestamp, the Mobile and Home choices and your safelist to WP Rocket's RUCSS service (no page content), and opening PageSpeed Insights sends the page's address and its cache-bypassed copy (?nowprocket=1) to Google; nothing else about you or the pages you visit is sent, and there are no analytics. The extension downloads two public data files, the Known Conflicts list (apps.wpr-support.com) and WP Rocket's latest exclusion list (b.rucss.wp-rocket.me), with no information about you.
 
 About the debugger permission (Chrome, Edge)
 The Exclusion Builder rewrites the page before the browser reads it, which needs the "debugger" permission. It is attached only to a tab while you run a builder session there; the browser shows its debugging bar meanwhile.
@@ -83,8 +83,8 @@ Must match `FIREFOX_DATA_COLLECTION` in `wxt.config.ts` and the sends in code (`
 
 - **Firefox manifest** `data_collection_permissions`: `required: ['none']`, `optional: ['browsingActivity']` — asked at first use of each tool that sends the address (RUCSS Tester, PageSpeed Insights), checked on every use.
 - **CWS / Edge data collected:** the user-data FAQ's _web browsing activity_ ("the domains or URLs the browser interacts with"; dashboard checkbox names are not in the docs — tick the one covering web history/browsing): the current page's address, only on two user commands:
-  - RUCSS Tester Run → `https://mega.wp-rocket.me/support/wpr-rucss-v2.php`: the address (fragment and credentials removed), the Mobile/Home choices and the user's safelist entries; no cookies, no page content.
-  - Side By Side Performance → opens `https://pagespeed.web.dev` with the address (Google's PageSpeed Insights, in a tab or frames).
+  - RUCSS Tester Run → `https://mega.wp-rocket.me/support/wpr-rucss-v2.php`: the address (fragment and credentials removed) with a request timestamp, the Mobile/Home choices and the user's safelist entries; no cookies, no page content.
+  - Side By Side Performance → opens `https://pagespeed.web.dev` with the address and its cache-bypassed copy (`?nowprocket=1`) (Google's PageSpeed Insights, in a tab or frames).
   - Stored in the browser only, never sent by the extension:
     - sync storage (roams with the user's own browser sync): options, the on-page UI switch, the palette shortcut and the per-site detection widget choices keyed by site origin;
     - local storage (this device, never synced): the exclusion sets saved per site origin, detection widget positions, panel layout (nav pin, detail pane width), RUCSS Tester and Beacon Tester settings, and the cached public data files;

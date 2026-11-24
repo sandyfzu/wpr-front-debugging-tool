@@ -19,7 +19,8 @@ The extension regularly downloads two public data files: the Known Conflicts lis
 
 - **Sync storage**, which your browser may sync to your own browser account: your options, keyboard shortcut and the sites where you chose to show or hide the detection widget.
 - **This device only** (never synced): the exclusion sets you save per site, detection widget positions, panel layout, RUCSS Tester and Beacon Tester settings, the last version whose "What's new" page was shown, and the cached public data files.
-- **This browser session only** (cleared when the browser closes): Exclusion Builder sessions and simulation state per tab.
+- **This browser session only** (cleared when the browser closes): Exclusion Builder sessions, whether you left the Exclusion Builder window open or folded, and simulation state per tab.
+- **The debugged site's own session storage** (that tab only, cleared when it closes): while Side By Side is open, the page's address, so the comparison reopens after a reload.
 
 ## Limited Use
 
