@@ -235,7 +235,7 @@
     "surface": "devtools panel start JS (panel.html + static imports)",
     "start": "panel.html",
     "maxKb": {
-      "raw": 706
+      "raw": 462
     }
   },
   {
@@ -243,7 +243,7 @@
     "build": "firefox-mv2",
     "start": "panel.html",
     "maxKb": {
-      "raw": 706
+      "raw": 462
     }
   },
   {
@@ -309,7 +309,7 @@
     "required": true
   },
   {
-    "surface": "Beacon Tester page (panel chunk, loaded on first visit)",
+    "surface": "Beacon Tester page (panel chunk, loaded at first idle or first visit)",
     "globs": ["chunks/beacon-tester-*.js"],
     "maxKb": {
       "raw": 46.7,
@@ -328,7 +328,7 @@
     "required": true
   },
   {
-    "surface": "LCP & Vitals page (panel chunk, loaded on first visit)",
+    "surface": "LCP & Vitals page (panel chunk, loaded at first idle or first visit)",
     "globs": ["chunks/lcp-vitals-*.js"],
     "maxKb": {
       "raw": 32.1,
@@ -347,11 +347,11 @@
     "required": true
   },
   {
-    "surface": "Stylesheets page (panel chunk, loaded on first visit)",
+    "surface": "Stylesheets page (panel chunk, loaded at first idle or first visit)",
     "globs": ["chunks/stylesheets-*.js"],
     "maxKb": {
-      "raw": 20.4,
-      "gzip": 7.3
+      "raw": 21.2,
+      "gzip": 7.6
     },
     "required": true
   },
@@ -360,8 +360,141 @@
     "build": "firefox-mv2",
     "globs": ["chunks/stylesheets-*.js"],
     "maxKb": {
-      "raw": 20.4,
-      "gzip": 7.5
+      "raw": 21.2,
+      "gzip": 7.6
+    },
+    "required": true
+  },
+  {
+    "surface": "JavaScript page (panel chunk, loaded at first idle or first visit)",
+    "globs": ["chunks/javascript-*.js"],
+    "maxKb": {
+      "raw": 18.6,
+      "gzip": 6.8
+    },
+    "required": true
+  },
+  {
+    "surface": "JavaScript page (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["chunks/javascript-*.js"],
+    "maxKb": {
+      "raw": 18.6,
+      "gzip": 6.8
+    },
+    "required": true
+  },
+  {
+    "surface": "Lazyload page (panel chunk, loaded at first idle or first visit)",
+    "globs": ["chunks/lazyload-*.js"],
+    "maxKb": {
+      "raw": 7.3,
+      "gzip": 3
+    },
+    "required": true
+  },
+  {
+    "surface": "Lazyload page (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["chunks/lazyload-*.js"],
+    "maxKb": {
+      "raw": 7.3,
+      "gzip": 3
+    },
+    "required": true
+  },
+  {
+    "surface": "Preloaded Resources page (panel chunk, loaded at first idle or first visit)",
+    "globs": ["chunks/preloaded-resources-*.js"],
+    "maxKb": {
+      "raw": 8.2,
+      "gzip": 3.4
+    },
+    "required": true
+  },
+  {
+    "surface": "Preloaded Resources page (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["chunks/preloaded-resources-*.js"],
+    "maxKb": {
+      "raw": 8.2,
+      "gzip": 3.4
+    },
+    "required": true
+  },
+  {
+    "surface": "Headers & Cookies page (panel chunk, loaded at first idle or first visit)",
+    "globs": ["chunks/headers-cookies-*.js"],
+    "maxKb": {
+      "raw": 15.1,
+      "gzip": 5.5
+    },
+    "required": true
+  },
+  {
+    "surface": "Headers & Cookies page (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["chunks/headers-cookies-*.js"],
+    "maxKb": {
+      "raw": 15.1,
+      "gzip": 5.5
+    },
+    "required": true
+  },
+  {
+    "surface": "Undefined References page (panel chunk, loaded at first idle or first visit)",
+    "globs": ["chunks/undefined-references-*.js"],
+    "maxKb": {
+      "raw": 29,
+      "gzip": 10.6
+    },
+    "required": true
+  },
+  {
+    "surface": "Undefined References page (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["chunks/undefined-references-*.js"],
+    "maxKb": {
+      "raw": 29,
+      "gzip": 10.6
+    },
+    "required": true
+  },
+  {
+    "surface": "RUCSS Tester page (panel chunk, loaded at first idle or first visit)",
+    "globs": ["chunks/rucss-tester-*.js"],
+    "maxKb": {
+      "raw": 49.4,
+      "gzip": 15.9
+    },
+    "required": true
+  },
+  {
+    "surface": "RUCSS Tester page (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["chunks/rucss-tester-*.js"],
+    "maxKb": {
+      "raw": 49.4,
+      "gzip": 15.9
+    },
+    "required": true
+  },
+  {
+    "surface": "resource list kit (panel chunks shared by the list pages, loaded with the first)",
+    "globs": ["chunks/list-row-*.js", "chunks/source-link-*.js"],
+    "maxKb": {
+      "raw": 90.8,
+      "gzip": 28.9
+    },
+    "required": true
+  },
+  {
+    "surface": "resource list kit (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["chunks/list-row-*.js", "chunks/source-link-*.js"],
+    "maxKb": {
+      "raw": 90.8,
+      "gzip": 28.9
     },
     "required": true
   },
@@ -369,8 +502,8 @@
     "surface": "JavaScript Runtime states section (panel chunk, loaded on first show)",
     "globs": ["chunks/runtime-states-*.js"],
     "maxKb": {
-      "raw": 16.2,
-      "gzip": 6.1
+      "raw": 16.7,
+      "gzip": 6.4
     },
     "required": true
   },
@@ -379,8 +512,8 @@
     "build": "firefox-mv2",
     "globs": ["chunks/runtime-states-*.js"],
     "maxKb": {
-      "raw": 16.2,
-      "gzip": 6.3
+      "raw": 16.7,
+      "gzip": 6.4
     },
     "required": true
   },
@@ -422,7 +555,7 @@
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "backstop": true,
     "maxKb": {
-      "raw": 2418
+      "raw": 2493
     }
   },
   {

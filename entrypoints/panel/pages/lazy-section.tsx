@@ -1,8 +1,8 @@
 /**
- * A page section kept out of the panel's start: its code lives in its own
- * chunk, loaded through the shared loader (`./chunk-loader`: early at the
- * first idle moment, or on first show) — for a section of an eager page
- * that only some sessions open.
+ * A page section kept out of its page's code: it lives in its own chunk,
+ * loaded through the shared loader (`./chunk-loader`: early at the first
+ * idle moment, or on first show) — for a section that only some sessions
+ * open, so the page itself loads without it.
  *
  * States: loading (skeleton rows — a real wait), failed (named, with the
  * remedy: reloading the panel document), loaded (the section, with the

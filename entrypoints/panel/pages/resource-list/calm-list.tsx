@@ -278,11 +278,17 @@ export function CalmFilteredList<Row, Id extends string>(
       value={{ interactive: detail !== undefined, drill: () => md.layout() === 'drill' }}
     >
       <div
-        ref={measured.ref}
         data-fdt="calm-list"
         data-fdt-layout={md.layout()}
         class="@container relative flex min-h-0 flex-1 flex-col"
       >
+        {/* The width probe: the root's content width at a constant zero height (see `createContentWidth`). */}
+        <div
+          ref={measured.ref}
+          data-fdt="calm-list-width-probe"
+          aria-hidden="true"
+          class="h-0 shrink-0"
+        />
         <Show
           when={rows().length > 0}
           fallback={<div class={cn(PAGE_FILL_SCROLLER, 'grid')}>{props.empty}</div>}

@@ -21,10 +21,40 @@
  * top bar's exact values: the depth of the four segments (ages, stamps,
  * navigation) is the top-bar suite's row; this suite pins "the ready boot
  * renders real answers from the data path".
+ *
+ * Start-set leg: only the default route (Detections) is on the panel's start
+ * — every other page's chunk and the list kit they share stay off it (walked
+ * from the build the way the budget gate walks it), yet Detections renders
+ * with no loading frame and a list page still opens on its first visit.
  */
 import type { Page } from '@playwright/test';
 import { expect, panelPageUrl, test } from '../helpers/extension';
 import { openPanelForFixture } from '../helpers/panel-data';
+import { pageStartSet } from '../helpers/start-set';
+
+/**
+ * The routes that load from their own chunk (`chunks/<route>-*.js`): every
+ * route but the default. Repeated here as test literals (the spec's node
+ * context cannot import the panel's route table).
+ */
+const LAZY_ROUTES = [
+  'javascript',
+  'stylesheets',
+  'lazyload',
+  'preloaded-resources',
+  'headers-cookies',
+  'undefined-references',
+  'rucss-tester',
+  'beacon-tester',
+  'lcp-vitals'
+] as const;
+
+/**
+ * Code only the list kit carries: the virtualizer's item read (a method
+ * name, so minification keeps it). In the start set means the kit moved back
+ * onto the panel's start, under whatever chunk name.
+ */
+const LIST_KIT_MARKER = /\bgetVirtualItems\b/u;
 
 /** The route body's single heading (the ready body's first observable). */
 function h1(panel: Page): Promise<string | null> {
@@ -41,6 +71,39 @@ function barText(page: Page): Promise<string | null> {
 }
 
 test.describe('panel ready boot (the devtools-contract data path)', () => {
+  test('starts with the default route only: other pages and the list kit load later', async ({
+    extension
+  }) => {
+    const start = pageStartSet('panel.html');
+    expect([...start.keys()].some((file) => file.startsWith('chunks/panel-'))).toBe(true);
+    for (const [file, source] of start) {
+      for (const route of LAZY_ROUTES)
+        expect(file, `the ${route} page chunk on the start`).not.toMatch(
+          new RegExp(`^chunks/${route}-`, 'u')
+        );
+      expect(source, `${file} carries the list kit`).not.toMatch(LIST_KIT_MARKER);
+    }
+
+    const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
+    try {
+      await expect
+        .poll(async () => await h1(panel), { timeout: 15_000, intervals: [50, 100, 250] })
+        .toBe('Detections');
+      // The default route is eager: its body, never a chunk-loading frame.
+      expect(await panel.locator('[data-fdt-page-chunk-loading]').count()).toBe(0);
+      await panel
+        .getByRole('navigation', { name: 'WPR FDT pages' })
+        .getByRole('link', { name: 'JavaScript' })
+        .click();
+      await panel.waitForURL(/#\/javascript$/);
+      await expect.poll(async () => await h1(panel)).toBe('JavaScript');
+      await expect(panel.locator('[data-fdt-page-chunk-loading]')).toHaveCount(0);
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+
   test('renders the ready state from the fixture page’s real detections', async ({ extension }) => {
     const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
     try {
