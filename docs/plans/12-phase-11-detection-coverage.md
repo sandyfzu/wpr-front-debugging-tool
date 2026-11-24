@@ -100,7 +100,7 @@ The merged RUCSS/async card's heading is `LABEL_OPTIMIZE_CSS_DELIVERY` = "Optimi
 - **Hosting cache layer ("cache exclusion"):** read as the behavioral baseline's signature nullifier. `cacheLayerHint(state, headers)` names a served verified marker only when the cache state neither settles it (`cached`: the stamp proves the signature survived) nor already names it (`possibly-cached`). In practice that is the signature-without-stamp state.
   - Rendered as the `- **Hosting cache layer:**` report line and a panel-summary-strip fact.
   - `summarizeFdtData` is the one wiring the page and the report share.
-- **Still open — owned by P12D, not P11C:** the SB-D5 exclusion-hint suffix on the **on-page** strip's cache chip. [P12D](./13-phase-12-on-page-inspector.md) "cache age/exclusion evidence shared formatter" owns it, per `design-decisions.md` SB-D5.
+- **Dropped (owner 2026-10-28, `9cc8b64`):** the SB-D5 exclusion-hint suffix on the **on-page** strip's cache chip — its owner [P12D](./13-phase-12-on-page-inspector.md#p12d--dropped-owner-2026-10-28) was dropped.
 - **Golden deltas (support report):**
   - Source column.
   - WordPress-version line.

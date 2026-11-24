@@ -116,7 +116,7 @@ Read owning records only when relevant: core manual120-tab/HS/in-place reload/ba
 
 ## 8. Committed extensions
 
-P15 evidence/disposition ledger must include:
+P15 evidence/disposition ledger ([release ledger](./release-ledger.md)) must include:
 
 - Three-state restart-safe toolbar dot and console state/count summary:P1/P2/P3/P9.
 - Support report/summary/full headers+names-only cookies/redaction/reference exclusion bridge/complete script copy:P6; Elements Rocket/WPR inventory:P5.

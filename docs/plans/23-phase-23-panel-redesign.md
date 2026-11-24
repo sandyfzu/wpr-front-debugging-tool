@@ -2,7 +2,7 @@
 
 ## TLDR
 
-Owner 2026-11-18 rated the panel's look "3/10" and approved a full redesign of the devtools panel and the options page on the [mockup canvas](https://claude.ai/artifact/D7zrRhaseFoB4iaxDXmbcv) (injected UIs unchanged): one top bar, labeled sidebar folding to the rail, calm lists + master–detail, combinable facets, larger stat numerals, options on the same system. **All phases done 2026-11-19** (+ owner round [P23.2](#p232--detail-layout-owner-round)) on `feat/p23-panel-redesign` (not merged into `develop`: owner decides). Lasting decisions, limits and open items: [completed record](./completed-panel-redesign.md). Remaining: the [owner Firefox checklist](#owner-firefox-checklist), the owner decisions listed there, the merge; next train slot P15.
+Owner 2026-11-18 rated the panel's look "3/10" and approved a full redesign of the devtools panel and the options page on the [mockup canvas](https://claude.ai/artifact/D7zrRhaseFoB4iaxDXmbcv) (injected UIs unchanged): one top bar, labeled sidebar folding to the rail, calm lists + master–detail, combinable facets, larger stat numerals, options on the same system. **All phases done 2026-11-19** (+ owner round [P23.2](#p232--detail-layout-owner-round)) on `feat/p23-panel-redesign`, merged into `develop` (`3f3a34d`). Lasting decisions, limits and open items: [completed record](./completed-panel-redesign.md). Remaining: the [owner Firefox checklist](#owner-firefox-checklist), the owner decisions listed there; next train slot P15.
 
 Phase instructions, verified facts, risks, receipts and audit rounds were condensed into the record (2026-11-19); the full text stays in Git history (`git show 95bcdf9:docs/plans/23-phase-23-panel-redesign.md`).
 
