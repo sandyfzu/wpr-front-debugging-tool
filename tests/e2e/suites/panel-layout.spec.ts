@@ -24,7 +24,7 @@ const ROUTES = [
   { id: 'detections', label: 'Detections' },
   { id: 'javascript', label: 'JavaScript' },
   { id: 'stylesheets', label: 'Stylesheets' },
-  { id: 'lazyload', label: 'Lazyload' },
+  { id: 'lazyload', label: 'LazyLoad' },
   { id: 'preloaded-resources', label: 'Preloaded Resources' },
   { id: 'headers-cookies', label: 'Headers & Cookies' },
   { id: 'undefined-references', label: 'Undefined References' },

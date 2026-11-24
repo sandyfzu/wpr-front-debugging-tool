@@ -32,9 +32,9 @@ const KC_HOST = 'wpr-fdt-known-conflicts';
 /** Exact badge label (user-facing string parity). */
 const BADGE_LABEL = 'Known Conflicts found';
 /** Exact empty-state copy (the corrected string). */
-const EMPTY_COPY = 'No known conflicts found...';
+const EMPTY_COPY = 'No known conflicts found';
 /** Exact list title (the corrected string). */
-const LIST_TITLE = 'Known conflicts found';
+const LIST_TITLE = 'Known Conflicts found';
 
 /** The badge count display cap beyond which the badge reads `9+`. */
 const BADGE_COUNT_CAP = 9;

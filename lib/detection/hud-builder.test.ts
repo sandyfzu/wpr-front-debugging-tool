@@ -118,7 +118,7 @@ describe('builderModifierCopy — the declared words', () => {
     expect(builderModifierCopy(LAZYLOAD, { excluded: 3 })).toEqual({
       chip: '3 excluded',
       sentence: '3 images excluded by the Exclusion Builder.',
-      hint: 'Lazyload Images: 3 excluded'
+      hint: 'LazyLoad Images: 3 excluded'
     });
     expect(builderModifierCopy(DELAY, { excluded: 1 })).toEqual({
       chip: '1 excluded',
@@ -266,11 +266,11 @@ describe('builderTabLine — the strip’s tab-level line', () => {
       hints: [
         'Delay JS off',
         'Defer JS off on this page',
-        'Lazyload Images: 3 excluded',
+        'LazyLoad Images: 3 excluded',
         'Automatic Lazy Rendering: 1 excluded'
       ],
       spoken:
-        'Exclusion Builder rewrote this page — Delay JS off, Defer JS off on this page, Lazyload Images: 3 excluded, Automatic Lazy Rendering: 1 excluded'
+        'Exclusion Builder rewrote this page — Delay JS off, Defer JS off on this page, LazyLoad Images: 3 excluded, Automatic Lazy Rendering: 1 excluded'
     });
   });
 

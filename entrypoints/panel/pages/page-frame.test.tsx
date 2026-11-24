@@ -74,12 +74,12 @@ describe('PageFrame', () => {
 
   it('renders exactly one h1 — the shell’s route-switch focus target', () => {
     render(() => (
-      <PageFrame id="lazyload" title="Lazyload" subtitle="Images the page deferred">
+      <PageFrame id="lazyload" title="LazyLoad" subtitle="Images the page deferred">
         <h2>Section</h2>
       </PageFrame>
     ));
     expect(document.querySelectorAll('h1')).toHaveLength(1);
-    const heading = screen.getByRole('heading', { level: 1, name: 'Lazyload' });
+    const heading = screen.getByRole('heading', { level: 1, name: 'LazyLoad' });
     expect(document.querySelector(ROUTE_HEADING_SELECTOR)).toBe(heading);
     expect(heading.getAttribute('tabindex')).toBe('-1');
     expect(screen.getByText('Images the page deferred')).toBeTruthy();
@@ -97,7 +97,7 @@ describe('PageFrame', () => {
     for (const [id, title] of [
       ['javascript', 'JavaScript'],
       ['stylesheets', 'Stylesheets'],
-      ['lazyload', 'Lazyload'],
+      ['lazyload', 'LazyLoad'],
       ['preloaded-resources', 'Preloaded Resources']
     ] as const) {
       let open: ((value: boolean) => void) | undefined;

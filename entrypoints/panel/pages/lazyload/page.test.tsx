@@ -183,7 +183,7 @@ describe('LazyloadPage — summary', () => {
   it('renders the frame, the feature with its spelled-out state, and the total', () => {
     const { root } = mount();
     expect(root.getAttribute('data-fdt-page')).toBe('lazyload');
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Lazyload');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('LazyLoad');
     expect(screen.getByText(LAZYLOAD_SUBTITLE)).toBeTruthy();
     const summary = root.querySelector('[data-fdt="resource-summary"]');
     expect(summary?.textContent).toContain('LazyLoad for images');
@@ -264,17 +264,17 @@ describe('LazyloadPage — rows', () => {
     expect(within(list).getAllByRole('listitem')).toHaveLength(5);
   });
 
-  it('shows one-word state chips by source: Lazyloaded (WP Rocket), Excluded (FDT); none for a plain image', () => {
+  it('shows one-word state chips by source: Lazy loaded (WP Rocket), Excluded (FDT); none for a plain image', () => {
     mount();
     expect(rows().map(chipSources)).toEqual([
-      ['Lazyloaded/wp-rocket'],
+      ['Lazy loaded/wp-rocket'],
       [],
       ['Excluded/excluded'],
       [],
-      ['Lazyloaded/wp-rocket']
+      ['Lazy loaded/wp-rocket']
     ]);
     const lazy = rows()[0]?.querySelector('[data-fdt="state-chip"] [data-fdt="badge"]');
-    expect(lazy?.getAttribute('title')).toBe('Lazyloaded by WP Rocket (LazyLoad for images)');
+    expect(lazy?.getAttribute('title')).toBe('Lazy loaded by WP Rocket (LazyLoad for images)');
     expect(lazy?.className).toContain('text-status-info');
     const excluded = rows()[2]?.querySelector('[data-fdt="state-chip"] [data-fdt="badge"]');
     expect(excluded?.getAttribute('title')).toBe('Excluded by FDT from LazyLoad for images');
@@ -285,22 +285,24 @@ describe('LazyloadPage — rows', () => {
     mount(withSimulation('simulated'));
     const title = (): string | null | undefined =>
       rowNamed('hero.webp').querySelector('[data-fdt="state-chip"] [title]')?.getAttribute('title');
-    expect(chipSources(rowNamed('hero.webp'))).toEqual(['Lazyloaded/simulated']);
-    expect(title()).toBe("Lazyloaded by the FDT's LazyLoad for images simulation");
+    expect(chipSources(rowNamed('hero.webp'))).toEqual(['Lazy loaded/simulated']);
+    expect(title()).toBe("Lazy loaded by the FDT's LazyLoad for images simulation");
     cleanup();
     mount(withSimulation('unverified'));
-    expect(chipSources(rowNamed('hero.webp'))).toEqual(['Lazyloaded/wp-rocket']);
-    expect(title()).toBe('Lazyloaded by WP Rocket (LazyLoad for images) (simulation not verified)');
+    expect(chipSources(rowNamed('hero.webp'))).toEqual(['Lazy loaded/wp-rocket']);
+    expect(title()).toBe(
+      'Lazy loaded by WP Rocket (LazyLoad for images) (simulation not verified)'
+    );
   });
 
   it('reads lazy markup as the page’s own while LazyLoad is not detected', () => {
     mount(fixture(false));
     expect(rows().map(chipSources)).toEqual([
-      ['Lazyloaded/page'],
+      ['Lazy loaded/page'],
       [],
       ['Excluded/excluded'],
       [],
-      ['Lazyloaded/page']
+      ['Lazy loaded/page']
     ]);
   });
 
@@ -338,7 +340,7 @@ describe('LazyloadPage — rows', () => {
 });
 
 describe('LazyloadPage — facets and search', () => {
-  it('counts each facet value and narrows by Lazyload', () => {
+  it('counts each facet value and narrows by LazyLoad', () => {
     mount();
     expect([count('any'), count('lazyloaded'), count('non-lazyloaded')]).toEqual(['5', '2', '3']);
     expect(excludedToggle().querySelector('[data-fdt-toggle-count]')?.textContent).toBe('1');
@@ -365,7 +367,7 @@ describe('LazyloadPage — facets and search', () => {
     mount();
     fireEvent.click(segment('lazyloaded'));
     type('zzz');
-    expect(screen.getByText('Nothing in "Lazyloaded" matches "zzz".')).toBeTruthy();
+    expect(screen.getByText('Nothing in "Lazy loaded" matches "zzz".')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(names()).toHaveLength(5);
   });
@@ -377,11 +379,11 @@ describe('LazyloadPage — detail', () => {
     open('hero.webp');
     expect(pane().querySelector('[data-fdt="detail-kind"]')?.textContent).toBe('Image');
     expect(pane().querySelector('[data-fdt="detail-title"]')?.textContent).toBe('hero.webp');
-    expect(chipSources(pane())).toEqual(['Lazyloaded/wp-rocket']);
+    expect(chipSources(pane())).toEqual(['Lazy loaded/wp-rocket']);
     // No "Open in Sources" here (the seam is null): the tile opens a new tab.
     const tile = pane().querySelector('[data-fdt="source-link-open"]');
     expect(tile?.getAttribute('href')).toBe('https://cdn.example/up/hero.webp');
-    expect(pane().querySelector('[data-fdt="lazyload-facts"]')?.textContent).toBe('LazyloadedYes');
+    expect(pane().querySelector('[data-fdt="lazyload-facts"]')?.textContent).toBe('Lazy loadedYes');
     // A lazyloaded image has no exclusion to explain.
     expect(reasons()).toBeNull();
     expect(pane().querySelector('[data-fdt="lazyload-reasons-off"]')).toBeNull();
@@ -400,7 +402,7 @@ describe('LazyloadPage — detail', () => {
   it('lists the page’s reasons as mono outline badges; the tool marker is the chip, never a reason', () => {
     mount();
     open('logo.png');
-    expect(pane().querySelector('[data-fdt="lazyload-facts"]')?.textContent).toBe('LazyloadedNo');
+    expect(pane().querySelector('[data-fdt="lazyload-facts"]')?.textContent).toBe('Lazy loadedNo');
     const logo = within(pane());
     expect(logo.getByText('data-skip-lazy').className).toContain('font-mono');
     expect(logo.getByText('skip-lazy').className).toContain('border');
@@ -464,8 +466,8 @@ describe('LazyloadPage — refresh and states', () => {
       expect(after.slice(1, 4)).toEqual(before.slice(1, 4));
       const source = present ? 'wp-rocket' : 'page';
       expect([after[0], after[4]].map((row) => chipSources(row as HTMLElement))).toEqual([
-        [`Lazyloaded/${source}`],
-        [`Lazyloaded/${source}`]
+        [`Lazy loaded/${source}`],
+        [`Lazy loaded/${source}`]
       ]);
       expect(document.activeElement).toBe(button);
     }
@@ -474,9 +476,9 @@ describe('LazyloadPage — refresh and states', () => {
   it('a changed simulation fact re-derives the chips; a new marker only the title', () => {
     const page = mount();
     page.refresh(withSimulation('unverified'));
-    expect(chipSources(rowNamed('hero.webp'))).toEqual(['Lazyloaded/wp-rocket']);
+    expect(chipSources(rowNamed('hero.webp'))).toEqual(['Lazy loaded/wp-rocket']);
     page.refresh(withSimulation('simulated'));
-    expect(chipSources(rowNamed('hero.webp'))).toEqual(['Lazyloaded/simulated']);
+    expect(chipSources(rowNamed('hero.webp'))).toEqual(['Lazy loaded/simulated']);
   });
 
   it('keeps facets, query and the selection when an image is added above', () => {

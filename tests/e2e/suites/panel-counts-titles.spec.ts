@@ -40,7 +40,7 @@ const LONG_NAME_TITLE = `${LONG_NAME.slice(0, 300)}…`;
 /** Each list's first facet, its rows' hook and its detail's copy name. */
 const LISTS = {
   javascript: { facet: 'Delay', row: '[data-fdt="script-row"]', copy: 'Script URL' },
-  lazyload: { facet: 'Lazyload', row: '[data-fdt="lazyload-row"]', copy: 'Image URL' },
+  lazyload: { facet: 'LazyLoad', row: '[data-fdt="lazyload-row"]', copy: 'Image URL' },
   'preloaded-resources': { facet: 'Source', row: '[data-fdt="hint-row"]', copy: 'Hint URL' }
 } as const;
 

@@ -83,13 +83,17 @@
   --surface-3: light-dark(#eef0f5, #1e242c);
   --surface-4: light-dark(#e6e9f0, #262e38);
 
-  /* Borders per surface level: use border-line-N with bg-surface-N. */
+  /* Borders per surface level: use border-line-N with bg-surface-N. These are
+   * decorative hairlines (cards, dividers, popover edges, text-labelled
+   * buttons/tiles), deliberately below 3:1. `line-strong` is the control
+   * boundary (text fields, switch tracks — hover steps to `fg-muted`): >= 3:1
+   * on every surface in both palettes (WCAG 1.4.11), pinned by theme.test.ts. */
   --line-0: light-dark(#dcdfe6, #1d232b);
   --line-1: light-dark(#d2d7e0, #242b34);
   --line-2: light-dark(#c7cdd9, #2c3441);
   --line-3: light-dark(#b9c1ce, #35404e);
   --line-4: light-dark(#a9b2c2, #3f4b5b);
-  --line-strong: light-dark(#9aa4b8, #55637a);
+  --line-strong: light-dark(#7d8595, #6d798d);
 
   /* Text hierarchy. */
   --fg-primary: light-dark(#171a20, #e8eaf0);

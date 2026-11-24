@@ -14,7 +14,7 @@
  *   the marked row), while the marker stays with the cursor's row;
  * - a `cancelSearch` delivery ends the find: no row is named, the field
  *   empties;
- * - the same contract runs on the shared resource-list page (Lazyload) and
+ * - the same contract runs on the shared resource-list page (LazyLoad) and
  *   on the Headers & Cookies page (whose match set is its filtered name
  *   rows among the section scaffolding), so the seam is real for every page
  *   family, not just the JavaScript one;

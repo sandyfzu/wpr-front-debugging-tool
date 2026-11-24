@@ -134,7 +134,7 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
   {
     action: 'refresh-database',
     id: CONTEXT_MENU_IDS.updateKnownConflictsDB,
-    title: 'Update Known Conflicts Database',
+    title: 'Update Known Conflicts database',
     contexts: ['action'],
     whileUiOff: 'keep'
   },

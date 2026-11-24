@@ -313,7 +313,7 @@ test.describe('panel keyboard + a11y', () => {
       // target, not a control. Forced colors keep an outline while focused.
       const keyboardRoutes = [
         { scheme: 'dark', link: 'Stylesheets' },
-        { scheme: 'light', link: 'Lazyload' }
+        { scheme: 'light', link: 'LazyLoad' }
       ] as const;
       for (const { scheme, link } of keyboardRoutes) {
         await panel.emulateMedia({ colorScheme: scheme, forcedColors: 'none' });

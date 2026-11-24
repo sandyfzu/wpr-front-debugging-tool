@@ -54,10 +54,10 @@ function withImages(images: FdtData['wprDetections']['lazyload']['images']): Fdt
   return { ...base, wprDetections: { ...base.wprDetections, lazyload: { present: true, images } } };
 }
 
-/** A row's chips: Lazyloaded (WP Rocket), Excluded and a third to overflow the calm cap. */
+/** A row's chips: Lazy loaded (WP Rocket), Excluded and a third to overflow the calm cap. */
 function chipsOf(row: Row): StateChip[] {
   const chips: StateChip[] = [];
-  if (row.lazyloaded) chips.push({ id: 'lazyloaded', label: 'Lazyloaded', source: 'wp-rocket' });
+  if (row.lazyloaded) chips.push({ id: 'lazyloaded', label: 'Lazy loaded', source: 'wp-rocket' });
   if (row.excludedReasons.length > 0) {
     chips.push({ id: 'excluded', label: 'Excluded', source: 'excluded' });
     chips.push({ id: 'reason', label: 'Reason', source: 'page' });
@@ -378,7 +378,7 @@ describe('facets inline (regular list)', () => {
     if (toggle === null) throw new Error('no toggle');
     fireEvent.click(toggle);
     expect(names(root)).toEqual(['excluded.jpg']);
-    // Lazyloaded under Excluded keeps nothing: disabled, but Any stays available.
+    // Lazy loaded under Excluded keeps nothing: disabled, but Any stays available.
     const lazy = root.querySelector(
       '[data-fdt-choice-value="lazyloaded"] input'
     ) as HTMLInputElement;
@@ -405,7 +405,7 @@ describe('facets inline (regular list)', () => {
       target: { value: 'hero' }
     });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
-    expect(screen.getByText('Nothing in "Non-lazyloaded" matches "hero".')).toBeTruthy();
+    expect(screen.getByText('Nothing in "Not lazy loaded" matches "hero".')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
     const clear = screen.getByRole('button', { name: 'Clear filters' });
     clear.focus();
@@ -439,10 +439,10 @@ describe('facets compact (Filters button + sheet)', () => {
     expect(names(root)).toEqual(['hero.webp', 'gallery.jpg']);
     expect(within(sheet).getByRole('button', { name: 'Show 2 images' })).toBeTruthy();
     expect(button.querySelector('[data-fdt="facet-filters-count"]')?.textContent).toBe('1');
-    const chip = screen.getByRole('button', { name: 'Remove filter Lazyloaded' });
+    const chip = screen.getByRole('button', { name: 'Remove filter Lazy loaded' });
     fireEvent.click(chip);
     expect(names(root)).toHaveLength(5);
-    expect(screen.queryByRole('button', { name: 'Remove filter Lazyloaded' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Remove filter Lazy loaded' })).toBeNull();
   });
 
   it('Reset clears the picks; Show N closes the sheet', () => {

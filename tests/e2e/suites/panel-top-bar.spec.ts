@@ -372,7 +372,7 @@ function readFreshness(page: Page): Promise<FreshnessRead | null> {
 
 /** The capture stamp of a freshness title, as epoch ms (NaN when it is not one). */
 function stampMs(title: string): number {
-  const capture = /^Page data captured at (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC\.$/.exec(title);
+  const capture = /^Page data fetched at (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC\.$/.exec(title);
   return capture?.[1] === undefined ? Number.NaN : Date.parse(`${capture[1].replace(' ', 'T')}Z`);
 }
 
@@ -642,10 +642,10 @@ test.describe('panel top bar', () => {
       await expect(entry).toHaveAttribute('title', 'No exclusions applied in this tab.');
       await entry.click();
       await expect(
-        fixture.page.getByRole('heading', { name: 'Exclusion builder', exact: true })
+        fixture.page.getByRole('heading', { name: 'Exclusion Builder', exact: true })
       ).toBeVisible({ timeout: 15_000 });
       expect(opened, 'the panel named its inspected tab, once').toEqual([fixture.tabId]);
-      await expect(panel.getByText('Exclusion builder opened on the page')).toBeVisible();
+      await expect(panel.getByText('Exclusion Builder opened on the page')).toBeVisible();
     } finally {
       await panel.close();
       await fixture.page.close();

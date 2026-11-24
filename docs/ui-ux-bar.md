@@ -59,7 +59,7 @@
 
 ## C — Color, contrast, themes
 
-- **C-1 Tokens only** — no hex/`rgb()`, no `opacity-*`/`/NN` alpha on text, no gradient text on data. `assets/css/theme.test.ts` pins every `fg-*`/`accent`/`status-*` text token at AA 4.5:1 on every `surface-*` and `status-*-soft` background (`fg-*`/`accent` also on `accent-soft`) in both palettes and both token scopes (shared, and the extension-page block panel + options resolve), so a token pair passes by construction; contrast audits beyond the tokens are not required (owner 2026-10-27).
+- **C-1 Tokens only** — no hex/`rgb()`, no `opacity-*`/`/NN` alpha on text, no gradient text on data. `assets/css/theme.test.ts` pins every `fg-*`/`accent`/`status-*` text token at AA 4.5:1 on every `surface-*` and `status-*-soft` background (`fg-*`/`accent` also on `accent-soft`) in both palettes and both token scopes (shared, and the extension-page block panel + options resolve), so a token pair passes by construction; contrast audits beyond the tokens are not required (owner 2026-10-27). Control boundaries (text fields, switch tracks) use `line-strong`, pinned ≥ 3:1 on every surface (WCAG 1.4.11; hover steps to `fg-muted`); `line-0`…`line-4` are decorative hairlines (cards, dividers, popover edges, text-labelled buttons, tiles and segments), below 3:1 by design.
 - **C-2 One status vocabulary** (`UX-D7`) through `StatusBadge`/`Badge` and the `STATUS_*` tables; an optional feature being off is `neutral`, never `error`.
 - **C-3 Themes:** verified in `system`, `dark`, `light`, switched live (AGENTS.md UI-themes rule); injected UIs honor it inside their shadow roots.
 
@@ -74,6 +74,7 @@
 
 - **W-1** Sentence case; feature names only from the option map/verified labels (never re-typed); digits for numbers; present tense; no "please", no exclamation marks, no blame; toasts `"<Thing> copied"`.
 - **W-2** Every string delta vs a reference surface is listed in the phase's receipts; P15's copy sweep owns final wording.
+- **W-3** Vocabulary: US spelling ("Analyze", "canceled"); feature names cased as declared (`Exclusion Builder`, `Known Conflicts`, `RUCSS Tester`, `Beacon Tester`, `LazyLoad` = `SHORT_LABEL_LAZYLOAD`), strip chips in Title Case; verb forms open ("lazy loaded", "Not lazy loaded"), never "lazyloaded"; "fetched" = when the panel read the page's data, "captured" = what was observed or recorded as the page loaded (response headers, cookies); one failure, one headline (shared tables, e.g. the panel ask-miss titles).
 
 ## D — Definition of done (every UI change, receipted in its phase doc)
 
@@ -118,3 +119,4 @@
 - 2026-11-19 — `L-3` side pane = half the list width (was a fixed 350 px; floors 350/480, `@split` 830 unchanged) with a persisted splitter; detail one column in both views (the drill's 2-column `@regular` body squeezed the code and source tile); detail code capped at the view's height and minified code opened wrapped. `L-5` pane-open region floor 20 rem — owner round, P23.2.
 - 2026-11-19 — `M-6` extension pages drop animations/transitions under reduced motion (a 0.01 ms run still painted its `from` frame once, measured in Chromium); injected UIs unchanged — P23H.2.
 - 2026-11-19 — `M-6` the drop moves to `tokens.css`: injected UIs (overlay, on-page palette, detection widget, Known Conflicts, notices) no longer paint the `from` frame either — P23.3.
+- 2026-11-23 — `C-1` names the control-boundary token (`line-strong` ≥ 3:1, fields + switch tracks) and the decorative `line-0`…`line-4`; `W-3` vocabulary — P15C copy/contrast.

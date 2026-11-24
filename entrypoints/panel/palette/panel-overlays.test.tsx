@@ -91,15 +91,15 @@ describe('the keyboard overlays in the shell', () => {
     await waitFor(() => {
       // The arm matters as much as the render: Enter runs the current highlight.
       expect(field.getAttribute('aria-activedescendant')).not.toBeNull();
-      expect(screen.getByRole('option', { name: /Lazyload/ })).toBeTruthy();
+      expect(screen.getByRole('option', { name: /LazyLoad/ })).toBeTruthy();
     });
     fireEvent.keyDown(field, { key: 'Enter' });
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Lazyload' })).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'LazyLoad' })).toBeTruthy();
     });
     // The palette is gone; focus followed the destination heading.
     expect(document.querySelector('[data-fdt="palette-input"]')).toBeNull();
-    expect(document.activeElement?.textContent).toBe('Lazyload');
+    expect(document.activeElement?.textContent).toBe('LazyLoad');
   });
 
   it('the reload action drives a second request flight through the data store', async () => {
@@ -221,7 +221,7 @@ describe('the keyboard overlays in the shell', () => {
     const field = await paletteField();
     fireEvent.input(field, { target: { value: 'lazyload' } });
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: /Lazyload/ })).toBeTruthy();
+      expect(screen.getByRole('option', { name: /LazyLoad/ })).toBeTruthy();
     });
     // The library's input keydown clears the highlight key on caret moves
     // without changing the ranked list — the guard's post-key arm restores it.
@@ -232,7 +232,7 @@ describe('the keyboard overlays in the shell', () => {
     // …and Enter after the caret move runs the armed row (the arm's purpose).
     fireEvent.keyDown(field, { key: 'Enter', bubbles: true, cancelable: true });
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Lazyload' })).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'LazyLoad' })).toBeTruthy();
     });
   });
 

@@ -14,6 +14,7 @@
  */
 
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
+import { DBUGGER_ENTRY_LABEL } from '../../lib/options/dbugger-entry';
 import { getOptions } from '../../lib/storage/options';
 import { createLogger } from '../../lib/logger';
 
@@ -27,9 +28,6 @@ const WP_ROCKET_BAR_GROUP_SELECTOR = '#wp-admin-bar-wp-rocket-default';
 
 /** The D-bugger page's query, relative to any WordPress admin base. */
 const DBUGGER_ADMIN_PATH = 'tools.php?page=wprockettoolset';
-
-/** Text rendered on the entry (user-facing string parity). */
-const DBUGGER_LABEL = 'WPR D-bugger';
 
 /** The admin segment that separates a site's base from everything after it. */
 const ADMIN_SEGMENT = '/wp-admin/';
@@ -89,7 +87,7 @@ export function appendDbuggerEntry(doc: Document): void {
     const link = doc.createElement('a');
     link.className = 'ab-item';
     link.href = deriveDbuggerHref(rocketGroup.querySelector('a')?.getAttribute('href') ?? null);
-    link.textContent = DBUGGER_LABEL;
+    link.textContent = DBUGGER_ENTRY_LABEL;
     item.appendChild(link);
     rocketGroup.appendChild(item);
   } catch (error) {

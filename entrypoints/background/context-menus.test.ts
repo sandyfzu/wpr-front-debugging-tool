@@ -253,7 +253,7 @@ describe('menuCreateParams', () => {
       },
       {
         id: CONTEXT_MENU_IDS.updateKnownConflictsDB,
-        title: 'Update Known Conflicts Database',
+        title: 'Update Known Conflicts database',
         contexts: ['action']
       },
       {
@@ -316,7 +316,7 @@ describe('menuCreateParams', () => {
       },
       {
         id: CONTEXT_MENU_IDS.updateKnownConflictsDB,
-        title: 'Update Known Conflicts Database',
+        title: 'Update Known Conflicts database',
         contexts: ['action']
       },
       {
@@ -438,7 +438,7 @@ describe('platformMenuCreateParams', () => {
       },
       {
         id: CONTEXT_MENU_IDS.updateKnownConflictsDB,
-        title: 'Update Known Conflicts Database',
+        title: 'Update Known Conflicts database',
         contexts: ['action']
       },
       {

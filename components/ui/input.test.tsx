@@ -16,7 +16,7 @@ describe('Input', () => {
     const input = screen.getByPlaceholderText('Filter…');
     expect(input.dataset.fdt).toBe('input');
     expect(input.className).toContain('h-7');
-    expect(input.className).toContain('border-line-2');
+    expect(input.className).toContain('border-line-strong');
     expect(input.className).toContain('bg-surface-2');
   });
 

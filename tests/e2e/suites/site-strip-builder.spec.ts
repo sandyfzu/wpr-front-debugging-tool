@@ -56,7 +56,7 @@ const NOTE = {
 
 /** The tab-level line's visible title and hints. */
 const TITLE = 'Exclusion Builder rewrote this page';
-const HINTS = ['Delay JS off', 'Defer JS off on this page', 'Lazyload Images: 3 excluded'];
+const HINTS = ['Delay JS off', 'Defer JS off on this page', 'LazyLoad Images: 3 excluded'];
 
 /** What opening the card announces (the shared line, its dots spoken as commas). */
 const DESCRIPTION = `${TITLE} — ${HINTS.join(', ')}`;
@@ -76,7 +76,7 @@ const ROWS = [
     sentence: 'Off in this tab: an Exclusion Builder row stops WP Rocket deferring.'
   },
   {
-    label: 'Lazyload Images',
+    label: 'LazyLoad Images',
     kind: 'excluded',
     chip: '3 excluded',
     sentence: '3 images excluded by the Exclusion Builder.'

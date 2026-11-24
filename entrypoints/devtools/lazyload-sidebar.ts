@@ -1,5 +1,5 @@
 /**
- * The Elements sidebar pane ("WPR Lazyload"): a live object view of the
+ * The Elements sidebar pane ("WPR LazyLoad"): a live object view of the
  * user's current `$0` selection, evaluated in the inspected page. The
  * expression it evaluates and the eval-callback mapping live in
  * `./sidebar-eval`; this module only registers the surface and keeps every
@@ -7,6 +7,7 @@
  * inside the pane, never a blank pane.
  */
 
+import { SHORT_LABEL_LAZYLOAD } from '../../lib/detection/labels';
 import { createLogger } from '../../lib/logger';
 import { LAZYLOAD_SIDEBAR_EXPRESSION, sidebarEvalOutcome } from './sidebar-eval';
 import { readLastError } from '../../utils/last-error';
@@ -14,7 +15,7 @@ import { readLastError } from '../../utils/last-error';
 const log = createLogger('devtools');
 
 /** The pane's title in the Elements sidebar (user-facing, parity string). */
-const PANE_TITLE = 'WPR Lazyload';
+const PANE_TITLE = `WPR ${SHORT_LABEL_LAZYLOAD}`;
 /** The label the pane shows above the displayed object tree (parity string). */
 const ROOT_TITLE = 'Object: ';
 

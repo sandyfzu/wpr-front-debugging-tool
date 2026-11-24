@@ -46,7 +46,7 @@ afterEach(() => {
 const PROPS = { name: 'WPR Front Debugging Tool', version: '0.9.0' } as const;
 
 /** The dbugger switch row's label (its registry copy, pinned verbatim here). */
-const DBUGGER_ROW = "Add an entry to access the D-bugger to WP Rocket's menu";
+const DBUGGER_ROW = "Add a D-bugger link to WP Rocket's admin bar menu";
 const BADGE_ROW = 'Show the toolbar badge';
 const GATE_ROW = 'Show on-page UI';
 const WIDGET_DEFAULT_ROW = 'Show the detection widget on pages by default';

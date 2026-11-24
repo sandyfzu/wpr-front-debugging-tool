@@ -114,11 +114,11 @@ describe('LazyLoad simulated — HUD and panel words (the approved patterns, no 
       verdict: 'not applied',
       simulation: 'simulated'
     });
-    expect(simulationTabHint(ROW)).toBe('Lazyload Images simulated');
+    expect(simulationTabHint(ROW)).toBe('LazyLoad Images simulated');
     expect(builderTabLine(detections)).toEqual({
       title: BUILDER_TAB_LINE_TITLE,
-      hints: ['Lazyload Images simulated'],
-      spoken: `${BUILDER_TAB_LINE_TITLE} — Lazyload Images simulated`
+      hints: ['LazyLoad Images simulated'],
+      spoken: `${BUILDER_TAB_LINE_TITLE} — LazyLoad Images simulated`
     });
     expect(builderPageKind(detections)).toBe('simulated');
   });

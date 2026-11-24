@@ -133,7 +133,7 @@
   height: 32px;
   flex: none;
   padding: 0 10px;
-  border: 1px solid var(--line-3);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
   background: var(--surface-1);
   color: var(--fg-primary);
@@ -147,7 +147,7 @@
 }
 
 .cp-layer [data-fdt='palette-input']:hover {
-  border-color: var(--line-4);
+  border-color: var(--fg-muted);
 }
 
 .cp-layer [data-fdt='palette-input']:focus-visible {

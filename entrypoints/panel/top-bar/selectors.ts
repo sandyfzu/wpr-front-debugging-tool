@@ -105,12 +105,12 @@ export type FreshnessSegmentView =
   | {
       readonly kind: 'current';
       readonly age: string;
-      readonly capturedAt: string | null;
+      readonly fetchedAt: string | null;
     }
   | {
       readonly kind: 'stale';
       readonly age: string;
-      readonly capturedAt: string | null;
+      readonly fetchedAt: string | null;
     };
 
 /** The four segments' views, resolved together from one data state. */
@@ -270,10 +270,10 @@ export function freshnessSegment(state: DataState, nowMs: number): FreshnessSegm
   switch (state.status) {
     case 'ready': {
       const age = relativeAge(nowMs - state.fetchedAt);
-      const capturedAt = absoluteStampFromMs(state.fetchedAt);
+      const fetchedAt = absoluteStampFromMs(state.fetchedAt);
       return isDataStale(state.fetchedAt, nowMs)
-        ? { kind: 'stale', age, capturedAt }
-        : { kind: 'current', age, capturedAt };
+        ? { kind: 'stale', age, fetchedAt }
+        : { kind: 'current', age, fetchedAt };
     }
     case 'refreshing':
       return { kind: 'refreshing' };

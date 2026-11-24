@@ -471,7 +471,7 @@ describe('the strip reads the HUD registry (one feature list)', () => {
       ...handled(),
       mobile_cache: { present: true, variant: 'mobile', source: 'meta' }
     }).find((entry) => entry.id === 'mobile_cache');
-    expect(row?.label).toBe('Mobile cache');
+    expect(row?.label).toBe('Mobile Cache');
     expect(row?.chipState).toBe('ok');
     expect(row?.tooltip).toBe(
       "Separate cache files for mobile devices — applied on this page: rendered for mobile. Declared on this render; separate mobile files also need WP Rocket's mobile cache option, which the page doesn't show. Tablets count as mobile here but get the desktop file under WP Rocket's default tablet setting. Decided by WP Rocket's generator meta tag on this page."
@@ -483,7 +483,7 @@ describe('the strip reads the HUD registry (one feature list)', () => {
       ...handled(),
       dns_prefetch: { present: true, domains: ['https://a.example/'], source: 'meta' }
     }).find((entry) => entry.id === 'dns_prefetch');
-    expect(row?.label).toBe('DNS prefetch');
+    expect(row?.label).toBe('DNS Prefetch');
     expect(row?.chipState).toBe('ok');
     expect(row?.count).toBe(1);
     expect(row?.unit).toBe('domain');

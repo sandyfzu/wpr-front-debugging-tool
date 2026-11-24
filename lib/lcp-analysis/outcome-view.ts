@@ -6,6 +6,7 @@
  */
 import { formatCount } from '../../utils/format-count';
 import type { AskMiss } from '../messaging/bounded-ask';
+import { ASK_MISS_TITLES } from '../messaging/ask-miss-words';
 import type { LcpCandidateFacts, LcpElementFacts, LcpHighlight } from '../messaging/lcp-analysis';
 import { sinceActivation, type LcpPartKey, type LcpResourceState } from './breakdown';
 import { LCP_ANALYSIS_ASK_DEADLINE_MS, LCP_HIGHLIGHT_MS } from './deadlines';
@@ -52,7 +53,7 @@ export const LCP_HIGHLIGHT_NOTES: Readonly<Record<LcpHighlight, string | null>> 
   off: null,
   shown: `The LCP element was framed on the page for ${formatCount(LCP_HIGHLIGHT_MS / 1000)} s when this analysis ran.`,
   unavailable:
-    "Couldn't frame the LCP element: it is no longer on the page. Analyse again to frame the current one."
+    "Couldn't frame the LCP element: it is no longer on the page. Analyze again to frame the current one."
 };
 
 /** Sentence ending every miss: the page was not measured. */
@@ -176,29 +177,29 @@ function missView(miss: AskMiss): LcpOutcomeView {
     case 'no-receiver':
       return view(
         'error',
-        "The page isn't listening",
-        `The extension is not active on this page yet — reload it (an http or https page) and analyse again. ${NOTHING_MEASURED}`,
+        ASK_MISS_TITLES['no-receiver'],
+        `The extension is not active on this page yet — reload it (an http or https page) and analyze again. ${NOTHING_MEASURED}`,
         ['reload-page', 'retry']
       );
     case 'timeout':
       return view(
         'error',
-        "The page didn't answer in time",
-        `No answer within ${formatCount(LCP_ANALYSIS_ASK_DEADLINE_MS / 1000)} s. Analyse again; reload the page if it keeps happening.`,
+        ASK_MISS_TITLES.timeout,
+        `No answer within ${formatCount(LCP_ANALYSIS_ASK_DEADLINE_MS / 1000)} s. Analyze again; reload the page if it keeps happening.`,
         ['retry', 'reload-page']
       );
     case 'invalid-reply':
       return view(
         'error',
-        "The page's answer was unreadable",
-        'The page runs another version of the extension — reload it so both match, then analyse again.',
+        ASK_MISS_TITLES['invalid-reply'],
+        'The page runs another version of the extension — reload it so both match, then analyze again.',
         ['reload-page', 'retry']
       );
     case 'failed':
       return view(
         'error',
-        "Couldn't reach the page",
-        `Asking the page for its LCP failed — reload it and analyse again. ${NOTHING_MEASURED}`,
+        ASK_MISS_TITLES.failed,
+        `Asking the page for its LCP failed — reload it and analyze again. ${NOTHING_MEASURED}`,
         ['reload-page', 'retry']
       );
   }
@@ -217,7 +218,7 @@ export function describeLcpOutcome(outcome: LcpAnalysisOutcome): LcpOutcomeView 
       return view(
         'neutral',
         'LCP not supported',
-        "This browser doesn't report Largest Contentful Paint, so there is nothing to analyse."
+        "This browser doesn't report Largest Contentful Paint, so there is nothing to analyze."
       );
     case 'analysed': {
       const count = outcome.candidates.length;
@@ -226,7 +227,7 @@ export function describeLcpOutcome(outcome: LcpAnalysisOutcome): LcpOutcomeView 
           return view(
             'warn',
             'No LCP yet',
-            "The page hasn't painted a candidate yet. Let it finish loading, then analyse again.",
+            "The page hasn't painted a candidate yet. Let it finish loading, then analyze again.",
             ['retry']
           );
         case 'no-navigation':

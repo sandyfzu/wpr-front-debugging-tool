@@ -94,7 +94,7 @@ export const COUNT_WORDS = {
 } as const satisfies Readonly<Record<string, CountNoun>>;
 
 /** The tool's name (the overlay's heading). */
-export const TOOL_TITLE = 'Exclusion builder';
+export const TOOL_TITLE = 'Exclusion Builder';
 
 /** One lane's words. */
 export interface LaneCopy {
@@ -664,7 +664,7 @@ export const UNAVAILABLE_COPY: Readonly<Record<InterceptionUnavailableCause, Sta
     body: 'This browser is managed and forbids extension debugging. Ask its administrator, or use an unmanaged profile.'
   },
   'infobar-cancelled': {
-    title: 'Interception was cancelled',
+    title: 'Interception was canceled',
     body: 'The browser’s “started debugging” bar was closed with Cancel. Retry, and leave the bar open while the session runs.'
   },
   detached: {
@@ -677,7 +677,7 @@ export const UNAVAILABLE_COPY: Readonly<Record<InterceptionUnavailableCause, Sta
   },
   'unsupported-browser': {
     title: 'This browser can’t rewrite pages',
-    body: 'Rewriting pages before they render needs an up-to-date Chrome (or another Chromium browser) or Firefox.'
+    body: 'This browser doesn’t give extensions the page-rewriting capability Apply uses, so no session can start here. Use Chrome or Firefox to apply exclusions.'
   },
   'session-limit': {
     title: 'Too many sessions',
@@ -804,7 +804,7 @@ export const PROBLEM_COPY: Readonly<Record<SessionProblem, string>> = {
   timeout: 'The extension took too long to answer. Try again.',
   'invalid-reply': 'The extension sent an unexpected answer. Try again.',
   'context-invalidated':
-    'The extension was reloaded or updated. Open the exclusion builder again from the extension.',
+    'The extension was reloaded or updated. Open the Exclusion Builder again from the extension.',
   failed: 'The request to the extension failed. Try again.'
 };
 

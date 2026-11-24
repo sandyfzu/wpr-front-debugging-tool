@@ -15,6 +15,7 @@ import type {
   ResourceHintRel,
   WprDetections
 } from '../wp-rocket/types';
+import { SHORT_LABEL_LAZYLOAD } from '../detection/labels';
 import { hintAttribution, hintRank, type HintAttribution } from './hint-attribution';
 import { lazyloadImageState } from './lazyload-states';
 import {
@@ -176,10 +177,10 @@ export const JS_PAGE_FACETS: FacetSet<JsScriptResource, JsFacetId> = defineFacet
 
 /** Lazyload value: WP Rocket's lazyload took the image. */
 const LAZYLOADED_IMAGES = stateValue(lazyloadImageState('lazyloaded'));
-/** Lazyload value: every image Lazyloaded leaves out. */
+/** Lazyload value: every image Lazy loaded leaves out. */
 const NON_LAZYLOADED_IMAGES: FacetValue<LazyloadImageResource> = {
   id: 'non-lazyloaded',
-  label: 'Non-lazyloaded',
+  label: 'Not lazy loaded',
   predicate: (row) => !LAZYLOADED_IMAGES.predicate(row)
 };
 /** Excluded toggle: the local exclusion marker kept the image out of lazyload. */
@@ -199,15 +200,15 @@ export function lazyloadImageSearchField(row: LazyloadImageResource): string {
 export type LazyloadFacetId = 'lazyload' | 'excluded';
 
 /**
- * The Lazyload page's facets: Lazyload splits every image in two; Excluded
- * is a subset of Non-lazyloaded (the marker counts only on an image that is
+ * The LazyLoad page's facets: LazyLoad splits every image in two; Excluded
+ * is a subset of Not lazy loaded (the marker counts only on an image that is
  * not lazyloaded), so it is a toggle — on alone it keeps exactly the rows its chip marks.
  */
 export const LAZYLOAD_PAGE_FACETS: FacetSet<LazyloadImageResource, LazyloadFacetId> = defineFacets<
   LazyloadImageResource,
   LazyloadFacetId
 >([
-  choiceFacet('lazyload', 'Lazyload', [LAZYLOADED_IMAGES, NON_LAZYLOADED_IMAGES]),
+  choiceFacet('lazyload', SHORT_LABEL_LAZYLOAD, [LAZYLOADED_IMAGES, NON_LAZYLOADED_IMAGES]),
   toggleFacet('excluded', EXCLUDED_IMAGES.label, EXCLUDED_IMAGES.predicate)
 ]);
 

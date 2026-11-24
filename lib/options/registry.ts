@@ -21,6 +21,7 @@
 
 import { capitalize } from '../../utils/text';
 import { isAppearance, type Appearance } from '../../utils/theme';
+import { DBUGGER_ENTRY_LABEL } from './dbugger-entry';
 import {
   PAGE_SURFACE_NAMES,
   PAGE_UI_GATE_OPTION_LABEL,
@@ -153,7 +154,7 @@ export const OPTION_SECTIONS: readonly OptionSection[] = freezeRows<OptionSectio
   {
     id: 'improvements',
     title: 'Improvements',
-    description: 'Injects little scripts or styles to improve tools we use daily'
+    description: 'Small additions to the WordPress admin that speed up everyday support work'
   },
   {
     id: 'appearance',
@@ -173,9 +174,8 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
     kind: 'boolean',
     id: WP_DASHBOARD_DBUGGER_ENTRY,
     section: 'improvements',
-    label: "Add an entry to access the D-bugger to WP Rocket's menu",
-    description:
-      'Adds a convenient entry in the WP Rocket menu for quick access to the D-bugger tool'
+    label: "Add a D-bugger link to WP Rocket's admin bar menu",
+    description: `Adds a “${DBUGGER_ENTRY_LABEL}” entry to WP Rocket's admin bar menu for one-click access to the D-bugger tool`
   },
   {
     kind: 'appearance',

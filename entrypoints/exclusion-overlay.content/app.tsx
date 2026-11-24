@@ -608,7 +608,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
             <button
               type="button"
               class="xo-icon-button"
-              aria-label="Close the exclusion builder"
+              aria-label="Close the Exclusion Builder"
               title="Close"
               onClick={() => {
                 props.onPresented?.(false);
@@ -734,7 +734,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
           <Show when={simulated() && !paused()}>
             <SimulatedIndicator />
           </Show>
-          <span class="xo-sr-only"> — open the exclusion builder</span>
+          <span class="xo-sr-only"> — open the Exclusion Builder</span>
         </button>
       </Show>
 

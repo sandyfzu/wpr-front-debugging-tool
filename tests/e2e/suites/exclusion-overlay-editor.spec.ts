@@ -195,7 +195,7 @@ test.describe('exclusion builder editor', () => {
     await expect(bar).toBeVisible();
     await expect(bar).toContainText('Point at an image or a lazily rendered section, then click.');
     // The panel steps aside while picking (inert, out of the tab order).
-    await expect(page.getByRole('heading', { name: 'Exclusion builder' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Exclusion Builder' })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(bar).toHaveCount(0);
     await expect(pickButton).toBeFocused();

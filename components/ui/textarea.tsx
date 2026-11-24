@@ -30,8 +30,8 @@ export function Textarea(props: TextareaProps): JSX.Element {
     <textarea
       data-fdt="textarea"
       class={cn(
-        'w-full rounded-control border border-line-2 bg-surface-2 px-2.5 py-1.5 font-mono text-xs text-fg-primary placeholder:text-fg-muted',
-        'hover:border-line-3',
+        'w-full rounded-control border border-line-strong bg-surface-2 px-2.5 py-1.5 font-mono text-xs text-fg-primary placeholder:text-fg-muted',
+        'hover:border-fg-muted',
         'aria-invalid:border-status-error aria-invalid:ring-1 aria-invalid:ring-status-error/40',
         DISABLED,
         FOCUS_RING,

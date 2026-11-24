@@ -11,6 +11,7 @@ import {
   LABEL_OPTIMIZE_CRITICAL_IMAGES
 } from '../detection/labels';
 import type { AskMiss } from '../messaging/bounded-ask';
+import { ASK_MISS_TITLES } from '../messaging/ask-miss-words';
 import {
   SELECTOR_COUNT_MAX,
   SELECTOR_LENGTH_MAX,
@@ -177,28 +178,28 @@ function missView(miss: AskMiss): BeaconOutcomeView {
     case 'no-receiver':
       return view(
         'error',
-        "The page isn't listening",
+        ASK_MISS_TITLES['no-receiver'],
         `The extension is not active on this page yet — reload it (an http or https page) and run again. ${NOTHING_MEASURED}`,
         ['reload-page', 'retry']
       );
     case 'timeout':
       return view(
         'error',
-        "The page didn't answer in time",
+        ASK_MISS_TITLES.timeout,
         `No answer within ${seconds(BEACON_TEST_ASK_DEADLINE_MS)}, the beacon's loading included. Run again; reload the page if it keeps happening.`,
         ['retry', 'reload-page']
       );
     case 'invalid-reply':
       return view(
         'error',
-        "The page's answer was unreadable",
+        ASK_MISS_TITLES['invalid-reply'],
         'The page runs another version of the extension — reload it so both match, then run again.',
         ['reload-page', 'retry']
       );
     case 'failed':
       return view(
         'error',
-        "Couldn't reach the page",
+        ASK_MISS_TITLES.failed,
         `Sending the test to the page failed — reload it and run again. ${NOTHING_MEASURED}`,
         ['reload-page', 'retry']
       );

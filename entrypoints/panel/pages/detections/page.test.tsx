@@ -141,7 +141,7 @@ describe('DetectionsView', () => {
     // the same page).
     expect(link('delay_js')?.hasAttribute('aria-label')).toBe(false);
     expect(link('delay_js')?.textContent).toBe('Open JavaScript, Delay JavaScript execution');
-    expect(link('lazyload')?.textContent).toBe('Open Lazyload, LazyLoad for images');
+    expect(link('lazyload')?.textContent).toBe('Open LazyLoad, LazyLoad for images');
     // The row reads name, notes, state, then the link.
     expect(card('delay_js').textContent).toBe(
       'Delay JavaScript executionVersion 2.0, ActiveOpen JavaScript, Delay JavaScript execution'

@@ -35,10 +35,10 @@ describe('isFdtExcludedImage', () => {
 });
 
 describe('LAZYLOAD_IMAGE_STATES', () => {
-  it('lists the exclusion first, then Lazyloaded, each with a one-word label', () => {
+  it('lists the exclusion first, then Lazy loaded, each with a one-word label', () => {
     expect(LAZYLOAD_IMAGE_STATES.map(({ id, label }) => [id, label])).toEqual([
       ['excluded', 'Excluded'],
-      ['lazyloaded', 'Lazyloaded']
+      ['lazyloaded', 'Lazy loaded']
     ]);
   });
 

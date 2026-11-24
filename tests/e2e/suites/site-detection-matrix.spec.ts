@@ -59,24 +59,24 @@ const SETTLE = { timeout: 15_000, intervals: [250, 500] };
 /** How each pinned row renders on the three surfaces (the UI's own literals). */
 const ROW_UI: Readonly<Record<MatrixRow, { readonly name: string; readonly chip: string }>> = {
   remove_unused_css: { name: 'Remove Unused CSS', chip: 'Remove Unused CSS' },
-  async_css: { name: 'Load CSS asynchronously', chip: 'Load CSS asynchronously' },
+  async_css: { name: 'Load CSS asynchronously', chip: 'Load CSS Asynchronously' },
   delay_js: { name: 'Delay JavaScript execution', chip: 'Delay JS' },
   defer_all_js: { name: 'Load JavaScript deferred', chip: 'Defer JS' },
   minify_css: { name: 'Minify CSS files', chip: 'Minify CSS' },
   minify_js: { name: 'Minify JavaScript files', chip: 'Minify JS' },
   minify_concatenate_js: { name: 'Combine JavaScript files', chip: 'Combine JS' },
-  lazyload: { name: 'LazyLoad for images', chip: 'Lazyload Images' },
-  lazyload_iframes: { name: 'LazyLoad for iframes/videos', chip: 'Lazyload Iframes' },
+  lazyload: { name: 'LazyLoad for images', chip: 'LazyLoad Images' },
+  lazyload_iframes: { name: 'LazyLoad for iframes/videos', chip: 'LazyLoad Iframes' },
   lazyload_css_bg_img: {
     name: 'LazyLoad CSS backgrounds',
-    chip: 'Lazyload CSS Background Images'
+    chip: 'LazyLoad CSS Background Images'
   },
   image_dimensions: { name: 'Add missing image dimensions', chip: 'Image Dimensions' },
   self_hosted_fonts: { name: 'Self-host Google Fonts', chip: 'Self-host Google Fonts' },
   preload_links: { name: 'Preload Links', chip: 'Preload Links' },
   rocket_cdn: { name: 'Content Delivery Network', chip: 'CDN' },
-  mobile_cache: { name: 'Separate cache files for mobile devices', chip: 'Mobile cache' },
-  dns_prefetch: { name: 'Prefetch DNS Requests', chip: 'DNS prefetch' }
+  mobile_cache: { name: 'Separate cache files for mobile devices', chip: 'Mobile Cache' },
+  dns_prefetch: { name: 'Prefetch DNS Requests', chip: 'DNS Prefetch' }
 };
 
 /**

@@ -67,11 +67,12 @@ import {
   urlClipped
 } from './runtime-rows';
 import { createRuntimeStatesSession, type RuntimeStatesSession } from './runtime-session';
+import { RELOAD_PAGE_LABEL } from '../recovery-words';
 
 /** The recoveries' button labels. */
 export const RUNTIME_RECOVERY_LABELS: Readonly<Record<RuntimeRecovery, string>> = {
   retry: 'Read again',
-  'reload-page': 'Reload page'
+  'reload-page': RELOAD_PAGE_LABEL
 };
 
 /** The panel-lifetime session (created on the section's first show). */

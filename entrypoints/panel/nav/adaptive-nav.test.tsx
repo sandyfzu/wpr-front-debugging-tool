@@ -376,7 +376,7 @@ describe('AdaptiveNav live state', () => {
         }
       })
     });
-    fireEvent.focus(screen.getByRole('link', { name: 'Lazyload' }));
+    fireEvent.focus(screen.getByRole('link', { name: 'LazyLoad' }));
     const lazyTooltip = screen.getByRole('tooltip');
     expect(lazyTooltip.textContent).toContain('2 images');
 
@@ -562,7 +562,7 @@ describe('AdaptiveNav overflow — the slice', () => {
     // crashes, nothing silently jumps back to full visibility.
     expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'JavaScript' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Lazyload' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'LazyLoad' })).toBeNull();
   });
 
   it('fits exactly at the boundary: every row stays (the trigger never appears)', () => {
@@ -591,7 +591,7 @@ describe('AdaptiveNav overflow — the “More pages” menu', () => {
     const menu = await screen.findByRole('menu');
     for (const [label, href] of [
       ['Stylesheets', '#/stylesheets'],
-      ['Lazyload', '#/lazyload'],
+      ['LazyLoad', '#/lazyload'],
       ['Preloaded Resources', '#/preloaded-resources'],
       ['Headers & Cookies', '#/headers-cookies'],
       ['Undefined References', '#/undefined-references'],
@@ -622,7 +622,7 @@ describe('AdaptiveNav overflow — the “More pages” menu', () => {
     openMenu();
     const menu = await screen.findByRole('menu');
     expect(
-      within(menu).getByRole('menuitem', { name: 'Lazyload' }).getAttribute('aria-current')
+      within(menu).getByRole('menuitem', { name: 'LazyLoad' }).getAttribute('aria-current')
     ).toBe('page');
     // The non-active hidden rows carry none.
     expect(
@@ -723,7 +723,7 @@ describe('AdaptiveNav labeled form', () => {
     renderNav({ form: 'labeled', data: richData() });
     const cases = [
       ['JavaScript', '2/3', 'delayed 2/3'],
-      ['Lazyload', '2', '2 images'],
+      ['LazyLoad', '2', '2 images'],
       ['Headers & Cookies', '3', '3 headers']
     ] as const;
     for (const [label, short, phrase] of cases) {

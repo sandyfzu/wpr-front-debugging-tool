@@ -221,7 +221,7 @@ const LAZYLOAD_CASES: Readonly<Record<string, SelectionCase<LazyloadFacetId>>> =
 describe('LAZYLOAD_PAGE_FACETS', () => {
   it('words every facet and value in sentence case', () => {
     expect(words(LAZYLOAD_PAGE_FACETS)).toEqual([
-      ['Lazyload', 'choice', ['Lazyloaded', 'Non-lazyloaded']],
+      ['LazyLoad', 'choice', ['Lazy loaded', 'Not lazy loaded']],
       ['Excluded', 'toggle', ['Excluded']]
     ]);
   });
@@ -241,7 +241,7 @@ describe('LAZYLOAD_PAGE_FACETS', () => {
     expect(exclusivityViolations(IMAGES, LAZYLOAD_PAGE_FACETS)).toEqual([]);
   });
 
-  it('Excluded sits inside Not lazyloaded: with it the same rows, with Lazyloaded none', () => {
+  it('Excluded sits inside Not lazy loaded: with it the same rows, with Lazy loaded none', () => {
     const alone = applyFacets(IMAGES, LAZYLOAD_PAGE_FACETS, { excluded: 'yes' }, noSearch());
     expect(
       applyFacets(
