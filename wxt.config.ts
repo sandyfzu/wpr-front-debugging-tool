@@ -93,6 +93,10 @@ const SIMULATION_PACKAGE_DIR = SIMULATION_DATA_PATH.slice(0, SIMULATION_DATA_PAT
 
 export default defineConfig({
   modules: ['@wxt-dev/module-solid'],
+  // The Firefox sources zip (what AMO reviewers rebuild from) leaves out the
+  // store listing folder: listing copy and images, never build input. The
+  // store zips never hold it (they pack the build output only).
+  zip: { excludeSources: ['store/**'] },
   vite: () => ({
     plugins: [tailwindcss(), extensionApiBeforeMessaging()],
     // Workers build as ES modules (Vite's default `iife` cannot split code):
