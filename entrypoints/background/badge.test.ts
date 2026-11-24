@@ -640,4 +640,101 @@ describe('restart guarantee (the browser outlives this worker)', () => {
     ]);
     expect(direct).not.toHaveBeenCalled();
   });
+
+  /**
+   * Stores the toolbar-badge option with every other feature at a fixed value,
+   * and serves the manifest the sweep reads its tooltip from.
+   *
+   * @param toolbarBadge The badge option to store.
+   */
+  async function storeBadgeOption(toolbarBadge: boolean): Promise<void> {
+    await optionsStore.setValue({
+      improvements: { 'wp-dashboard-dbugger-entry': true },
+      appearance: 'system',
+      features: {
+        toolbarBadge,
+        sbsScrollSync: false,
+        sbsMobileSim: false,
+        sbsDesktopWidth: false,
+        detectionWidget: true
+      }
+    });
+    // The sweep reads the default tooltip from the manifest (the fake has none).
+    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({
+      manifest_version: 3,
+      name: TITLES.name,
+      version: '1.0.0',
+      action: { default_title: TITLES.defaultTitle }
+    });
+  }
+
+  /**
+   * A runtime recording every gate value it is handed, the sweep's clears
+   * dropped (only the gate order is under test).
+   *
+   * @param apply The applier (default: settles at once); a held one holds the
+   *   sweep that awaits it.
+   * @returns The runtime and the recorded gate values, in call order.
+   */
+  function gateRecorder(apply: BadgeRuntime['apply'] = () => Promise.resolve()): {
+    runtime: BadgeRuntime;
+    gates: boolean[];
+  } {
+    const gates: boolean[] = [];
+    const runtime: BadgeRuntime = {
+      processSummary: () => null,
+      navigationStarted: () => null,
+      tabRemoved: () => undefined,
+      setFeatureEnabled: (enabled) => {
+        gates.push(enabled);
+        return [];
+      },
+      apply
+    };
+    return { runtime, gates };
+  }
+
+  it('an option change landing while the first pass sweeps is applied after it', async () => {
+    fakeBrowser.reset();
+    await storeBadgeOption(false);
+    // One open tab, so the first (off) pass's sweep clears it and is held
+    // on that clear until released.
+    await fakeBrowser.tabs.create({ url: 'https://site.test/one' });
+    let releaseSweep: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      releaseSweep = resolve;
+    });
+    const apply = vi.fn<BadgeRuntime['apply']>(() => held);
+    const { runtime, gates } = gateRecorder(apply);
+    const first = watchBadgeGate(runtime);
+    // The sweep is in flight (every tab's clear held), no gate applied yet.
+    await vi.waitFor(() => {
+      expect(apply).toHaveBeenCalled();
+    });
+    expect(gates).toEqual([]);
+    await storeBadgeOption(true);
+    releaseSweep();
+    await first;
+    // The change's pass waits for the held one, then lands last: on wins.
+    await vi.waitFor(() => {
+      expect(gates).toEqual([false, true]);
+    });
+  });
+
+  it('a failed first pass rejects to its caller; the next option change still applies', async () => {
+    fakeBrowser.reset();
+    await storeBadgeOption(false);
+    const query = vi
+      .spyOn(fakeBrowser.tabs, 'query')
+      .mockRejectedValueOnce(new Error('tabs unavailable'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { runtime, gates } = gateRecorder();
+    await expect(watchBadgeGate(runtime)).rejects.toThrow('tabs unavailable');
+    expect(query).toHaveBeenCalledOnce();
+    await storeBadgeOption(true);
+    await vi.waitFor(() => {
+      expect(gates).toEqual([true]);
+    });
+    expect(error).not.toHaveBeenCalled();
+  });
 });
