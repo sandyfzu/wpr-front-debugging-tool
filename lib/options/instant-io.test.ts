@@ -11,7 +11,8 @@ import {
   readPaletteChord,
   type PaletteChord
 } from '../storage/palette-chord';
-import { createPageUiGateIO, createPaletteChordIO } from './instant-io';
+import { readWhatsNewOnUpdate } from '../storage/whats-new';
+import { createPageUiGateIO, createPaletteChordIO, createWhatsNewOnUpdateIO } from './instant-io';
 
 beforeEach(() => {
   fakeBrowser.reset();
@@ -57,5 +58,20 @@ describe('createPaletteChordIO', () => {
     await expect(createPaletteChordIO(log).write({ code: 'KeyC', mod: true })).rejects.toThrow(
       /Refused an invalid palette chord/
     );
+  });
+});
+
+describe('createWhatsNewOnUpdateIO', () => {
+  it('reads/writes/watches sync:whats-new-on-update only', async () => {
+    const io = createWhatsNewOnUpdateIO(log);
+    const seen: boolean[] = [];
+    const unwatch = io.watch((value) => seen.push(value));
+    expect(await io.read()).toBe(true);
+    await io.write(false);
+    await flush();
+    expect(await readWhatsNewOnUpdate()).toBe(false);
+    expect(seen).toEqual([false]);
+    expect(await optionsStore.getValue()).toEqual(optionsStore.fallback);
+    unwatch();
   });
 });

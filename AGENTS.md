@@ -75,6 +75,9 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── data-consent/          # Firefox-only unlisted page: the data-sharing consent (`permissions.request`
 │   │                          #   needs an extension page — panel/content scripts have no `permissions` API);
 │   │                          #   shown by the background on a tool's first use, one tab per tool (`lib/data-consent`); reads appearance only
+│   ├── whats-new/             # unlisted page (both builds): "What's new", opened once per announced version after an
+│   │                          #   update (`entrypoints/background/whats-new.ts`: `onInstalled` + a start catch-up) and
+│   │                          #   linked from options; reads appearance only; screenshots `public/whats-new/<id>-<palette>.*`
 │   ├── main-world.content.ts  # content script — MAIN world (undefined-references capture)
 │   ├── ua-relay.content.ts    # content script — isolated world, all frames;
 │   │   │                      #   device-sim relay: cached boot ask + live pushes (`ua-relay/`)
@@ -103,6 +106,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── data-consent/          # Firefox data-sharing consent: vocabulary + grant read, the consent page's
 │   │                          #   state machine and its address, the background's consent-tab registry
 │   │                          #   (tools: RUCSS Tester, PageSpeed Insights)
+│   ├── release-notes/         # What's new: release index (`releases.ts`: version + `announce`, the background's only
+│   │                          #   import) + copy (`notes.ts`, keyed by version), the open decision, screenshot table
 │   ├── beacon-test/           # beacon test config/result validation + runner bridge; live-analysis
 │   │                          #   siblings: `lcp-analysis/`, `script-runtime/`, `web-vitals/` (current visit)
 │   └── <domain>/              # one folder per feature; its data files colocated
@@ -278,7 +283,7 @@ Requirements, not suggestions:
 ## Git & releases
 
 - **Conventional Commits** — enforced by the `commit-msg` hook (`commitlint`); non-conforming messages are rejected. The `pre-commit` hook runs `lint-staged` (eslint --fix + prettier) on staged files with `--no-stash`: worktrees share one `refs/stash` and lint-staged drops its backup by stash index, so a concurrent commit elsewhere could drop the wrong entry; partially staged files stay protected by its patch in the per-worktree git dir (trade-off: a failing task no longer auto-reverts the tree). Hooks are husky v9 — activated by `pnpm install` (`prepare` script).
-- **Semantic Versioning** — bump `package.json` version for every store upload.
+- **Semantic Versioning** — bump `package.json` version for every store upload, adding its row to `lib/release-notes/releases.ts` + its copy in `notes.ts` (test-enforced; `announce: true` only for majors/notable minors — those open the What's new page once after the update).
 - **Known Conflicts DB snapshot MUST be re-synced with the server before every release.** `lib/known-conflicts/known-conflicts-db.json` is the offline/first-run fallback seed, and a stale seed ships a blind spot on offline installs; it must mirror the live endpoint (`DB_ENDPOINT` in `entrypoints/background/known-conflicts.ts`) at release time. Refresh it verbatim from that URL, format it with Prettier, then re-pin the row count (the comment in `lib/storage/known-conflicts-seed.ts` + the exact-count assertion in `lib/storage/storage.test.ts`) and re-derive the ceiling of both `known-conflicts DB seed asset (background-owned)` rows (Chromium, and the `required` `firefox-mv2` twin) in `scripts/budgets.json` from the new byte size — the payload is server-owned data that grows over time, so raising those rows is expected, never a code regression to hide.
 - Never commit secrets or build output (`.output/`, `.wxt/`).
 

@@ -1,0 +1,27 @@
+/*
+ * The What's new page's own stylesheet — the mount-only entrance (the
+ * page/view-mount moment, the same keyframe shape as the options page).
+ * Tokens and the Tailwind layer arrive through `theme.css`; reduced motion
+ * drops the animation there (`tokens.css`).
+ */
+
+@keyframes whats-new-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.whats-new-page {
+  /* Keep the entrance's translated pixels inside the page's natural bounds. */
+  overflow: clip;
+}
+
+.whats-new-page > [data-fdt='whats-new-body'] {
+  /* `backwards`: no transform is pinned after the run (no fixed-position trap). */
+  animation: whats-new-page-enter var(--motion-base) var(--ease-entrance) backwards;
+}

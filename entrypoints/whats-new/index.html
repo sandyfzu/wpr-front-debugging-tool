@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" data-fdt-surface="extension-page">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      The What's new page (both builds; unlisted): opened once in a tab after
+      an update that announces something new, and from the options page any
+      time. Everything it shows ships with the extension — no remote fonts,
+      images or scripts.
+    -->
+    <!--
+      Paint lock, as on the options page: hidden until the stored appearance
+      resolved (`data-theme-lock="done"`), the root still painting the themed
+      canvas — no wrong-palette or white first frame (see `./main.tsx`).
+    -->
+    <style>
+      html {
+        background-color: var(--surface-0);
+      }
+      html:not([data-theme-lock='done']) {
+        visibility: hidden;
+      }
+    </style>
+    <link rel="stylesheet" href="../../assets/css/theme.css" />
+    <!-- Favicons: the full-bleed toolbar icons, served from the extension root. -->
+    <link rel="icon" type="image/png" sizes="16x16" href="/icon/16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icon/32.png" />
+    <title>WPR FDT — What’s new</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

@@ -56,12 +56,15 @@ describe('the cascade over a marked boolean row', () => {
     const instant: InstantRowsScope = {
       gate,
       chord: () => chord,
+      whatsNew: () => ({ status: 'ready', value: true, writing: false }),
       platform: () => 'mac',
       legend: () => 'K',
       setGate: vi.fn(),
       setChord: vi.fn(),
       retryGate: vi.fn(),
       retryChord: vi.fn(),
+      setWhatsNew: vi.fn(),
+      retryWhatsNew: vi.fn(),
       refreshLayout: vi.fn()
     };
     render(() => <OptionSections scope={scope} instant={instant} drafted />);
