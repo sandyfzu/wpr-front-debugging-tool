@@ -26,8 +26,10 @@
  * - No shipped bundle reads the `browser` global; every bundle pins `chrome`
  *   before its first `chrome` read.
  *
- * Witness: each WXT content script posts `<runtime.id>:<entrypoint>:wxt:
- * content-script-started` to the window at start — the id its `browser` reads.
+ * Witness: each WXT content script dispatches `<runtime.id>:<entrypoint>:
+ * wxt:content-script-started` on `document` at start — the id its `browser`
+ * reads. The page listens for those names under the real and the forged id
+ * ({@link watchStarts}); nothing is broadcast to the page any more.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -56,9 +58,36 @@ const FORGED_ID = 'x';
 /** Mount wait (the overlay is injected on demand). */
 const MOUNT = { timeout: 15_000 };
 
-/** The start announcements the page saw. */
+/** Every isolated-world entrypoint (each dispatches its own start event). */
+const ENTRYPOINTS = ['isolated', 'ua-relay', 'command-palette', 'exclusion-overlay'];
+
+/** The start events the page saw. */
 const starts = (page: Page): Promise<string[]> =>
-  page.evaluate(() => (window as unknown as { __wxtStarts: string[] }).__wxtStarts);
+  page.evaluate(() => (window as unknown as { __wxtStarts?: string[] }).__wxtStarts ?? []);
+
+/**
+ * Record every start event named under one of `ids` on the page's
+ * `document`, from now (`now`) or from the next document's first moment,
+ * ahead of `document_start` scripts (`next`).
+ *
+ * @param page The page.
+ * @param ids The runtime ids to listen under (the real one and the forged one).
+ * @param when The current document, or every next one.
+ */
+async function watchStarts(page: Page, ids: string[], when: 'now' | 'next'): Promise<void> {
+  const names = ids.flatMap((id) =>
+    ENTRYPOINTS.map((entry) => `${id}:${entry}:wxt:content-script-started`)
+  );
+  const install = (eventNames: string[]): void => {
+    const record = window as unknown as { __wxtStarts?: string[] };
+    record.__wxtStarts ??= [];
+    for (const name of eventNames) {
+      document.addEventListener(name, () => record.__wxtStarts?.push(name));
+    }
+  };
+  if (when === 'now') await page.evaluate(install, names);
+  else await page.addInitScript(install, names);
+}
 
 /**
  * Inject one built script into a tab's top frame, the way the background's
@@ -136,6 +165,7 @@ test.describe('extension namespace vs page DOM clobbering', () => {
 
     const { id, worker } = await late.install();
     expect(id).not.toBe(FORGED_ID);
+    await watchStarts(page, [id, FORGED_ID], 'now');
 
     await injectInto(worker, url, '/content-scripts/exclusion-overlay.js');
     // The palette view leaves a page without its module (no document_start
@@ -161,6 +191,7 @@ test.describe('extension namespace vs page DOM clobbering', () => {
     expect(await page.locator('form#chrome input[name="runtime"]').count()).toBe(1);
 
     const { id, worker } = await late.install();
+    await watchStarts(page, [id, FORGED_ID], 'now');
     await injectInto(worker, url, '/content-scripts/exclusion-overlay.js');
 
     await expect
@@ -190,6 +221,7 @@ test.describe('extension namespace vs page DOM clobbering', () => {
     // `chrome` at world creation (a later navigation in the same tab did not
     // reproduce, measured on this Chromium).
     const page = await late.context.newPage();
+    await watchStarts(page, [id, FORGED_ID], 'next');
     const logs = extensionLogs(page);
     const url = `${ORIGIN_A}${CHROME_ROOT}?leg=chrome-root`;
     await page.goto(url, { waitUntil: 'load' });
@@ -212,6 +244,7 @@ test.describe('extension namespace vs page DOM clobbering', () => {
   test('a tab loaded after install: document_start scripts resolve the real namespace', async () => {
     const { id, worker } = await late.install();
     const page = await late.context.newPage();
+    await watchStarts(page, [id, FORGED_ID], 'next');
     const url = `${ORIGIN_A}${FIXTURE}?leg=after-install`;
     await page.goto(url, { waitUntil: 'load' });
 

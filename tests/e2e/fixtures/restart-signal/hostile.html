@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>FDT e2e — page hostile to the content-script restart signal</title>
+    <script>
+      // Records every window message whose payload names a content-script
+      // start (the broadcast that would hand the page the extension id).
+      window.__startBroadcasts = [];
+      window.addEventListener('message', (event) => {
+        const type = event.data && event.data.type;
+        if (typeof type === 'string' && type.includes(':wxt:')) {
+          window.__startBroadcasts.push(type);
+        }
+      });
+      // Fires the exact restart event a newer instance of `script` would
+      // dispatch, with a foreign message id: what a hostile page can forge.
+      window.__forgeRestart = (extensionId, script) => {
+        document.dispatchEvent(
+          new CustomEvent(`${extensionId}:${script}:wxt:content-script-started`, {
+            detail: { contentScriptName: script, messageId: 'forged-by-page' }
+          })
+        );
+      };
+    </script>
+  </head>
+  <body>
+    <main>
+      <h1>A page that forges content-script restart signals</h1>
+      <p>Plain content for the scripts to read.</p>
+    </main>
+  </body>
+</html>

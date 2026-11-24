@@ -1,6 +1,6 @@
 import { createSignal } from 'solid-js';
 import { readFileSync } from 'node:fs';
-import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ExclusionSessionStatus } from '../../lib/messaging/exclusion-session';
 import type { ExclusionSet } from '../../lib/exclusion-builder/set';
@@ -129,7 +129,9 @@ function mount(
   /** Run frame requests on a later task, like a browser (default: at once). */
   laterFrames = false,
   /** The page's Delay JS evidence (default: not read). */
-  delayEvidence?: LanePageEvidence
+  delayEvidence?: LanePageEvidence,
+  /** Where to render (default: a div in the document; a shadow-root div mirrors the injected mount). */
+  container?: HTMLElement
 ) {
   let reveal: (() => void) | null = null;
   const onClose = vi.fn();
@@ -141,7 +143,9 @@ function mount(
   let setPageModal: (value: boolean) => void = () => undefined;
   let setModalNow: (value: boolean) => void = () => undefined;
   let made: ReturnType<typeof createOverlayController> | null = null;
-  const result = render(() => {
+  const renderIn: typeof render = (ui) =>
+    container === undefined ? render(ui) : render(ui, { container });
+  const result = renderIn(() => {
     const page = pageTools(modalAtStart);
     setPageModal = page.setPageModal;
     setModalNow = page.setModalNow;
@@ -727,6 +731,57 @@ describe('OverlayApp', () => {
     await waitFor(() => {
       expect(document.activeElement?.tagName).toBe('H1');
     });
+  });
+
+  it('leaves focus on another injected UI when Stop removes the focused button', async () => {
+    // Both surfaces in their own shadow roots, as injected: the overlay's
+    // root then reads no focus whether it fell out or moved to the strip.
+    const shadowRoot = (): ShadowRoot =>
+      document.body.appendChild(document.createElement('div')).attachShadow({ mode: 'open' });
+    const overlayRoot = shadowRoot().appendChild(document.createElement('div'));
+    const stripRoot = shadowRoot();
+    const strip = stripRoot.appendChild(document.createElement('button'));
+    try {
+      mount(port(activeRecord()), null, undefined, false, false, undefined, overlayRoot);
+      const stop = await within(overlayRoot).findByRole('button', { name: /Stop/ });
+      stop.focus();
+      fireEvent.click(stop);
+      // The user moves to the strip before the stop answer lands.
+      strip.focus();
+      await waitFor(() => {
+        expect(within(overlayRoot).queryByRole('button', { name: /Stop/ })).toBeNull();
+      });
+      expect(document.activeElement).toBe(stripRoot.host);
+      expect(stripRoot.activeElement).toBe(strip);
+    } finally {
+      cleanup();
+      document.body.replaceChildren();
+    }
+  });
+
+  it('leaves focus on a page control when Stop removes the focused button', async () => {
+    // The overlay in a shadow root, as injected: its root reads no focus
+    // whether focus fell out or moved to a page control in the light DOM.
+    const host = document.body.appendChild(document.createElement('div'));
+    const overlayRoot = host
+      .attachShadow({ mode: 'open' })
+      .appendChild(document.createElement('div'));
+    const input = document.body.appendChild(document.createElement('input'));
+    try {
+      mount(port(activeRecord()), null, undefined, false, false, undefined, overlayRoot);
+      const stop = await within(overlayRoot).findByRole('button', { name: /Stop/ });
+      stop.focus();
+      fireEvent.click(stop);
+      // The user moves to a page field before the stop answer lands.
+      input.focus();
+      await waitFor(() => {
+        expect(within(overlayRoot).queryByRole('button', { name: /Stop/ })).toBeNull();
+      });
+      expect(document.activeElement).toBe(input);
+    } finally {
+      cleanup();
+      document.body.replaceChildren();
+    }
   });
 
   it('moves focus to the heading when an accepted apply removes the footer', async () => {
