@@ -20,6 +20,7 @@
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { URL_PATTERNS } from '../lib/wp-rocket/constants';
 import { guardInvalidationTeardown } from '../lib/dead-context';
+import { QUIET_START, installRestartGuard } from '../lib/content-script-restart';
 import { createLogger } from '../lib/logger';
 import { onMessage, sendMessage } from '../lib/messaging';
 import { uaIdentityMessenger } from '../lib/messaging/window-bridge';
@@ -29,6 +30,8 @@ import { startUaIdentityRelay } from './ua-relay/relay';
 const log = createLogger('ua-relay');
 
 export default defineContentScript({
+  // No start broadcast to the page's `message` listeners (it names our id).
+  ...QUIET_START,
   matches: [...URL_PATTERNS],
   runAt: 'document_start',
   allFrames: true,
@@ -36,6 +39,9 @@ export default defineContentScript({
     // First: every teardown registered below runs dead-context safe (an
     // extension reload must never put an error on the host page).
     guardInvalidationTeardown(ctx, log);
+    // Then, before the page can run again: only a dead extension context or a
+    // newer start of this script in our own world may end it, never the page.
+    installRestartGuard(ctx, log);
     // Attached first, like every isolated-world surface's: an error escaping
     // the guarded setup still surfaces as one console line while the relay
     // itself stays alive until the invalidation tears it down.

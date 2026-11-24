@@ -178,7 +178,7 @@
     "surface": "ua-relay content script (isolated world)",
     "globs": ["content-scripts/ua-relay*.js"],
     "maxKb": {
-      "raw": 12.5
+      "raw": 13.4
     }
   },
   {
