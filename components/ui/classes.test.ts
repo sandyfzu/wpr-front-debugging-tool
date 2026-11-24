@@ -4,7 +4,7 @@
  * collapse reaches them) — any drift fails here.
  */
 import { describe, expect, it } from 'vitest';
-import { DISABLED, FOCUS_RING, KEY_CHIP, MOTION_REVEAL, MOTION_TURN } from './classes';
+import { DISABLED, FOCUS_RING, KEY_CHIP, MOTION_REVEAL, MOTION_TURN, TEXT_LINK } from './classes';
 
 describe('motion class constants', () => {
   it('pin the exact sanctioned literals', () => {
@@ -21,6 +21,10 @@ describe('interaction class constants', () => {
   it('keep the focus ring keyboard-only and the disabled state hoverable', () => {
     expect(FOCUS_RING).toMatch(/^(focus-visible:\S+ ?)+$/);
     expect(DISABLED).not.toContain('pointer-events-none');
+  });
+
+  it('give inline links the accent token and a hover-only underline', () => {
+    expect(TEXT_LINK).toBe('font-medium text-accent underline-offset-2 hover:underline');
   });
 });
 

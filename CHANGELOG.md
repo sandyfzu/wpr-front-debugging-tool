@@ -14,7 +14,7 @@ A rebuilt, faster tool that replaces 2.2.5 in place (settings carry over; no dat
 - **Detection widget**: a draggable pill on the page with WP Rocket's state and, on click, the features the page uses with their evidence; on by default, switchable per site and in Options.
 - **Toolbar status dot**: green (served from cache), blue (WP Rocket active, not cached), grey (not detected); the icon's tooltip names the state.
 - **Command palette**: every on-page action in one searchable list (keyboard shortcut, toolbar click or right-click menu; shortcut set in Options).
-- **What's new page**: opens once after an update that announces one (never on install or browser restart); can be switched off.
+- **What's new page**: opens once after an update that announces one (never on install or browser restart); can be switched off. Names the support address (support@wp-rocket.me).
 
 ### Changed
 

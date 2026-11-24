@@ -2,7 +2,8 @@
  * The What's new page's view: the mark, product name and running version
  * as the headline; how to start (the DevTools shortcut — no browser lets an
  * extension open DevTools — and the options page); the featured releases in
- * full; earlier releases as collapsed history; and the footer's opt-out.
+ * full; earlier releases as collapsed history; and the footer: the support
+ * address and the opt-out.
  *
  * State matrix: one featured release renders under the page's headline;
  * several (an update across announced releases) each get their version
@@ -16,7 +17,7 @@ import Settings from 'lucide-solid/icons/settings';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
-import { FOCUS_RING, MOTION_TURN } from '../../components/ui/classes';
+import { FOCUS_RING, MOTION_TURN, TEXT_LINK } from '../../components/ui/classes';
 import { createSystemDark, type ColorSchemeQuery } from '../../components/system-dark';
 import { iconOfSize } from '../../lib/branding/icons';
 import type { InstantSettingIO } from '../../lib/options/instant-setting';
@@ -25,6 +26,7 @@ import type { ReleaseNote } from '../../lib/release-notes/notes';
 import type { WhatsNewView } from '../../lib/release-notes/page-view';
 import type { ScreenshotPalette } from '../../lib/release-notes/screenshots';
 import { WHATS_NEW_NAME } from '../../lib/release-notes/words';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../../lib/support/contact';
 import { cn } from '../../utils/cn';
 import type { Appearance } from '../../utils/theme';
 import { OnUpdateSwitch } from './on-update-switch';
@@ -39,7 +41,9 @@ export const PAGE_WORDS = {
   history: 'Earlier versions',
   /** A featured release's heading, when several are shown. */
   release: (version: string): string => `Version ${version}`,
-  empty: 'No release notes ship with this version.'
+  empty: 'No release notes ship with this version.',
+  /** The footer's lead-in before the support address. */
+  support: 'Questions or a problem? Email'
 } as const;
 
 /** The mark the header shows (the padded store art, drawn at 48 px). */
@@ -242,7 +246,13 @@ export default function App(props: WhatsNewPageProps): JSX.Element {
           </section>
         </Show>
 
-        <footer class="border-t border-line-1 pt-4">
+        <footer class="flex flex-col gap-3 border-t border-line-1 pt-4">
+          <p data-fdt="whats-new-support" class="text-xs text-fg-secondary">
+            {`${PAGE_WORDS.support} `}
+            <a href={SUPPORT_MAILTO} class={cn(TEXT_LINK, FOCUS_RING)}>
+              {SUPPORT_EMAIL}
+            </a>
+          </p>
           <OnUpdateSwitch io={props.settingIO} />
         </footer>
       </div>
