@@ -357,7 +357,7 @@ test.describe('options appearance', () => {
       const pillMounted = async (): Promise<boolean> =>
         await site.page.evaluate(
           (host: string) =>
-            document.querySelector(host)?.shadowRoot?.querySelector('.ins-pill') !== null,
+            document.querySelector(host)?.shadowRoot?.querySelector('.dw-pill') !== null,
           STRIP_HOST
         );
       await expect.poll(pillMounted, MOUNT_SETTLE).toBe(true);
@@ -422,7 +422,7 @@ async function stripPillBackground(page: Page): Promise<string> {
   return await page.evaluate((host: string) => {
     const pill = document
       .querySelector<HTMLElement>(host)
-      ?.shadowRoot?.querySelector<HTMLElement>('.ins-pill');
+      ?.shadowRoot?.querySelector<HTMLElement>('.dw-pill');
     if (pill === null || pill === undefined) {
       throw new Error('the strip pill is not mounted');
     }

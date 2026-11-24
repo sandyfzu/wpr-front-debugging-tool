@@ -22,11 +22,11 @@ import { BUILDER_MARKER_META_NAME } from '../../../lib/wp-rocket/constants';
 import type { FeatureMetaRow, WprDetections } from '../../../lib/wp-rocket/types';
 import {
   buildStripCardModel,
-  INSPECTOR_BUILDER_LINE_ID,
+  WIDGET_BUILDER_LINE_ID,
   type StripCardModel,
   type StripCardRow
 } from './strip-state';
-import { InspectorView } from './ui';
+import { DetectionWidgetView } from './ui';
 
 afterEach(cleanup);
 
@@ -88,7 +88,7 @@ function feature(id: string): HudFeature {
 function renderCard(card: StripCardModel): HTMLElement {
   const noop = (): void => undefined;
   const { container } = render(() => (
-    <InspectorView
+    <DetectionWidgetView
       model={() => card}
       mood={() => 'green'}
       cardOpen={() => true}
@@ -116,7 +116,7 @@ function spokenText(node: Node): string {
 
 /** The visible text: every text node outside the visually hidden spans. */
 function visibleText(node: Node): string {
-  if (node instanceof Element && node.classList.contains('ins-sr')) return '';
+  if (node instanceof Element && node.classList.contains('dw-sr')) return '';
   if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
   return Array.from(node.childNodes, visibleText).join('');
 }
@@ -256,7 +256,7 @@ describe('the rendered card', () => {
     const root = renderCard(model('v1 delay_js=off defer_all_js=page-off lazyload=excluded:3'));
     const line = root.querySelector<HTMLElement>('[data-fdt-strip-builder]');
     expect(line).not.toBeNull();
-    expect(line?.querySelector('.ins-builder-title')?.textContent).toBe(
+    expect(line?.querySelector('.dw-builder-title')?.textContent).toBe(
       'Exclusion Builder rewrote this page'
     );
     const hints = Array.from(
@@ -275,18 +275,18 @@ describe('the rendered card', () => {
     const sentence =
       'Exclusion Builder rewrote this page — Delay JS off, Defer JS off on this page, Lazyload Images: 3 excluded';
     expect(spokenText(line as HTMLElement)).toBe(sentence);
-    expect(root.querySelector(`#${INSPECTOR_BUILDER_LINE_ID}`)?.textContent).toBe(sentence);
+    expect(root.querySelector(`#${WIDGET_BUILDER_LINE_ID}`)?.textContent).toBe(sentence);
     // The joiner glyph rides the shared CSS content value.
-    expect(line?.style.getPropertyValue('--ins-joiner')).toBe(`'·' / ''`);
+    expect(line?.style.getPropertyValue('--dw-joiner')).toBe(`'·' / ''`);
     // Opening the card announces the line: it is the dialog's description.
     expect(root.querySelector('[role="dialog"]')?.getAttribute('aria-describedby')).toBe(
-      INSPECTOR_BUILDER_LINE_ID
+      WIDGET_BUILDER_LINE_ID
     );
   });
 
   it('renders each modifier as a hidden badge plus a visible sentence, spoken once', () => {
     const root = renderCard(model('v1 delay_js=off defer_all_js=page-off lazyload=excluded:3'));
-    const rows = Array.from(root.querySelectorAll<HTMLElement>('.ins-row')).filter(
+    const rows = Array.from(root.querySelectorAll<HTMLElement>('.dw-row')).filter(
       (entry) => entry.querySelector('[data-fdt-strip-modifier]') !== null
     );
     expect(rows).toHaveLength(3);
@@ -322,12 +322,12 @@ describe('the rendered card', () => {
       expect(entry.hasAttribute('title')).toBe(false);
     });
     // Rows without a modifier keep their explaining tooltip.
-    const plain = Array.from(root.querySelectorAll<HTMLElement>('.ins-row')).find(
-      (entry) => entry.querySelector('.ins-chip')?.textContent === 'Minify JS'
+    const plain = Array.from(root.querySelectorAll<HTMLElement>('.dw-row')).find(
+      (entry) => entry.querySelector('.dw-chip')?.textContent === 'Minify JS'
     );
     expect(plain?.getAttribute('title')).toMatch(/^Minify JavaScript files — /);
     // Off rows show no count; the excluded row keeps its value chip.
-    const values = rows.map((entry) => entry.querySelector('.ins-value')?.textContent ?? null);
+    const values = rows.map((entry) => entry.querySelector('.dw-value')?.textContent ?? null);
     expect(values).toEqual([null, null, '1 image']);
   });
 
@@ -382,7 +382,7 @@ describe('the strip model — closed pill hint', () => {
 describe('the rendered pill', () => {
   /** The pill button of a rendered widget. */
   function pillOf(root: HTMLElement): HTMLElement {
-    const pill = root.querySelector<HTMLElement>('.ins-pill');
+    const pill = root.querySelector<HTMLElement>('.dw-pill');
     if (pill === null) throw new Error('no pill');
     return pill;
   }
@@ -397,7 +397,7 @@ describe('the rendered pill', () => {
       expect(glyph?.dataset['fdtStripPillBuilder'], marker).toBe(kind);
       expect(glyph?.getAttribute('aria-hidden'), marker).toBe('true');
       // Right after the identity (the version), before the status chip.
-      expect(glyph?.previousElementSibling?.classList.contains('ins-identity'), marker).toBe(true);
+      expect(glyph?.previousElementSibling?.classList.contains('dw-identity'), marker).toBe(true);
       expect(glyph?.querySelectorAll('svg'), marker).toHaveLength(1);
       // The card badge's own glyph for that kind (lucide circle-off / list-x).
       const paths = Array.from(glyph?.querySelectorAll('path') ?? [], (path) =>
@@ -425,8 +425,8 @@ describe('the rendered pill', () => {
     // space before the comma in Chromium); the shown identity is hidden, heard once.
     const spoken = pill.querySelector('[data-fdt-strip-pill-builder-spoken]');
     expect(spoken?.textContent).toBe(`WPR 3.23.5.1${PILL_SUFFIX}`);
-    expect(spoken?.classList.contains('ins-sr')).toBe(true);
-    const shown = pill.querySelector('.ins-identity > [aria-hidden="true"]');
+    expect(spoken?.classList.contains('dw-sr')).toBe(true);
+    const shown = pill.querySelector('.dw-identity > [aria-hidden="true"]');
     expect(shown?.textContent).toBe('WPR 3.23.5.1');
     // Never repeated as the pill's description: the tooltip is unchanged.
     expect(pill.getAttribute('title')).toBe(plainTitle);

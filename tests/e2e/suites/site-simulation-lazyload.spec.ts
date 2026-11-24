@@ -250,15 +250,15 @@ async function lazyloadLaneLines(page: Page): Promise<string[]> {
 
 /** The open strip card's LazyLoad row (the card opened from its pill with the keyboard). */
 async function stripLazyloadRow(page: Page): Promise<Locator> {
-  const card = page.locator(`${STRIP_HOST} .ins-card`);
+  const card = page.locator(`${STRIP_HOST} .dw-card`);
   if (!(await card.isVisible())) {
-    const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+    const pill = page.locator(`${STRIP_HOST} .dw-pill`);
     await pill.focus();
     await page.keyboard.press('Enter');
     await expect(card).toBeVisible();
   }
-  return page.locator(`${STRIP_HOST} .ins-row`, {
-    has: page.locator('.ins-chip', { hasText: /^Lazyload Images$/ })
+  return page.locator(`${STRIP_HOST} .dw-row`, {
+    has: page.locator('.dw-chip', { hasText: /^Lazyload Images$/ })
   });
 }
 

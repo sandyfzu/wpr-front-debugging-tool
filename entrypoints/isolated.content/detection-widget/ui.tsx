@@ -24,19 +24,19 @@ import { RUCSS_TEST_MODE_PILL_SPOKEN } from '../../../lib/rucss-tester/test-mode
 import type { StripCardModel, StripRowModifier } from './strip-state';
 import {
   CARD_ARIA_LABEL,
-  INSPECTOR_BUILDER_LINE_ID,
-  INSPECTOR_CARD_ID,
-  INSPECTOR_RUCSS_LINE_ID,
+  WIDGET_BUILDER_LINE_ID,
+  WIDGET_CARD_ID,
+  WIDGET_RUCSS_LINE_ID,
   PILL_LABEL_STEM
 } from './strip-state';
-import type { InspectorMood } from './strip-state';
+import type { WidgetMood } from './strip-state';
 import type { StripIconGlyph } from './icons';
 import { MODIFIER_ICONS, PRESENT_ICON_PATHS, RUCSS_TEST_ICON } from './icons';
 import { StrokeIcon, CLOSE_ICON_PATHS } from '../ui/icons';
 import { TOOL_EYEBROW } from '../ui/copies';
 
 /** Behavior the owner module wires to the widget's controls. */
-export interface InspectorUiActions {
+export interface WidgetUiActions {
   /** Register the card's root element once (focus choreography). */
   registerCard(element: HTMLElement | null): void;
   /** Register the pill once (the focus hand-back on close). */
@@ -50,24 +50,24 @@ export interface InspectorUiActions {
 }
 
 /** The chrome's mood classes (state never rides a transition — class handles). */
-const MOOD_CLASS: Record<InspectorMood, string> = {
-  green: 'ins-green',
-  amber: 'ins-amber',
-  gray: 'ins-gray',
-  pulse: 'ins-pulse',
-  red: 'ins-red'
+const MOOD_CLASS: Record<WidgetMood, string> = {
+  green: 'dw-green',
+  amber: 'dw-amber',
+  gray: 'dw-gray',
+  pulse: 'dw-pulse',
+  red: 'dw-red'
 };
 
 /** The widget's reactive inputs (accessors — the components run once). */
-export interface InspectorViewProps {
+export interface DetectionWidgetViewProps {
   /** The card model for the current data. */
   model: () => StripCardModel;
   /** The chrome mood. */
-  mood: () => InspectorMood;
+  mood: () => WidgetMood;
   /** Whether the card is open. */
   cardOpen: () => boolean;
   /** The wired controls. */
-  actions: InspectorUiActions;
+  actions: WidgetUiActions;
 }
 
 /** Render one glyph through the shared factory (its path/node data verbatim). */
@@ -91,19 +91,19 @@ const GroupGlyph = (props: { glyph: StripIconGlyph }): JSXElement => (
  * @returns The line block.
  */
 const BuilderLine = (props: { line: BuilderTabLine }): JSXElement => (
-  <div class="ins-builder" data-fdt-strip-builder style={{ '--ins-joiner': LIST_JOINER_CONTENT }}>
+  <div class="dw-builder" data-fdt-strip-builder style={{ '--dw-joiner': LIST_JOINER_CONTENT }}>
     {/* Spoken once, as one sentence: the laid-out pieces below are flex
      * items, whose accessible text would gain stray spaces around commas. */}
-    <span id={INSPECTOR_BUILDER_LINE_ID} class="ins-sr">
+    <span id={WIDGET_BUILDER_LINE_ID} class="dw-sr">
       {props.line.spoken}
     </span>
-    <div class="ins-builder-shown" aria-hidden="true">
-      <p class="ins-builder-title">{props.line.title}</p>
-      <p class="ins-builder-hints">
-        <span class="ins-builder-list">
+    <div class="dw-builder-shown" aria-hidden="true">
+      <p class="dw-builder-title">{props.line.title}</p>
+      <p class="dw-builder-hints">
+        <span class="dw-builder-list">
           <For each={props.line.hints}>
             {(hint) => (
-              <span class="ins-builder-hint" data-fdt-strip-builder-hint>
+              <span class="dw-builder-hint" data-fdt-strip-builder-hint>
                 {hint}
               </span>
             )}
@@ -123,9 +123,9 @@ const BuilderLine = (props: { line: BuilderTabLine }): JSXElement => (
  * @returns The line block.
  */
 const RucssTestLine = (props: { line: string }): JSXElement => (
-  <div class="ins-builder ins-rucss" data-fdt-strip-rucss>
-    <p id={INSPECTOR_RUCSS_LINE_ID} class="ins-builder-title ins-rucss-title">
-      <span class="ins-rucss-glyph" aria-hidden="true">
+  <div class="dw-builder dw-rucss" data-fdt-strip-rucss>
+    <p id={WIDGET_RUCSS_LINE_ID} class="dw-builder-title dw-rucss-title">
+      <span class="dw-rucss-glyph" aria-hidden="true">
         <GroupGlyph glyph={RUCSS_TEST_ICON} />
       </span>
       {props.line}
@@ -141,8 +141,8 @@ const RucssTestLine = (props: { line: string }): JSXElement => (
  */
 export function cardDescriptionIds(model: StripCardModel): string | undefined {
   const ids = [
-    model.builderLine === null ? null : INSPECTOR_BUILDER_LINE_ID,
-    model.rucssTestLine === null ? null : INSPECTOR_RUCSS_LINE_ID
+    model.builderLine === null ? null : WIDGET_BUILDER_LINE_ID,
+    model.rucssTestLine === null ? null : WIDGET_RUCSS_LINE_ID
   ].filter((id) => id !== null);
   return ids.length === 0 ? undefined : ids.join(' ');
 }
@@ -172,14 +172,14 @@ export function pillSpokenIdentity(model: StripCardModel): string | null {
  */
 const RowModifier = (props: { modifier: StripRowModifier }): JSXElement => (
   <>
-    <span class="ins-mod" data-fdt-strip-modifier={props.modifier.kind} aria-hidden="true">
-      <span class="ins-mod-icon">
+    <span class="dw-mod" data-fdt-strip-modifier={props.modifier.kind} aria-hidden="true">
+      <span class="dw-mod-icon">
         <GroupGlyph glyph={MODIFIER_ICONS[props.modifier.kind]} />
       </span>
       {props.modifier.chip}
     </span>
-    <span class="ins-mod-line" data-fdt-strip-modifier-line>
-      <span class="ins-sr">, </span>
+    <span class="dw-mod-line" data-fdt-strip-modifier-line>
+      <span class="dw-sr">, </span>
       {props.modifier.sentence}
     </span>
   </>
@@ -187,15 +187,15 @@ const RowModifier = (props: { modifier: StripRowModifier }): JSXElement => (
 
 /** One group's header: scent, not controls (never focusable). */
 const GroupHead = (props: { heading: string; icon: StripIconGlyph }): JSXElement => (
-  <div class="ins-group-head">
-    <span class="ins-group-icon" aria-hidden="true">
+  <div class="dw-group-head">
+    <span class="dw-group-icon" aria-hidden="true">
       <GroupGlyph glyph={props.icon} />
     </span>
-    <span class="ins-group-label">{props.heading}</span>
+    <span class="dw-group-label">{props.heading}</span>
   </div>
 );
 
-export function InspectorView(props: InspectorViewProps): JSX.Element {
+export function DetectionWidgetView(props: DetectionWidgetViewProps): JSX.Element {
   /** The pill's tooltip: identity + the cache chip's one-line why. */
   const pillTooltip = (): string | undefined => {
     const why = props.model().cacheTooltip;
@@ -204,9 +204,9 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
 
   return (
     <div
-      class="ins-chrome"
+      class="dw-chrome"
       classList={{
-        'ins-open': props.cardOpen(),
+        'dw-open': props.cardOpen(),
         [MOOD_CLASS[props.mood()]]: true
       }}
       ref={(el) => {
@@ -216,11 +216,11 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
       {/* The report card. Always mounted: hidden states are
        * visibility/opacity, never a display flip. */}
       <section
-        id={INSPECTOR_CARD_ID}
+        id={WIDGET_CARD_ID}
         ref={(el) => {
           props.actions.registerCard(el);
         }}
-        class="ins-card"
+        class="dw-card"
         role="dialog"
         aria-label={CARD_ARIA_LABEL}
         aria-describedby={cardDescriptionIds(props.model())}
@@ -228,22 +228,22 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
       >
         {/* Plain blocks, not header/footer: inside the dialog they would
          * duplicate the host page's banner/contentinfo landmarks. */}
-        <div class="ins-card-head">
-          <div class="ins-titles">
-            <span class="ins-eyebrow">{TOOL_EYEBROW}</span>
-            <div class="ins-titlerow">
-              <h3 class="ins-title">{props.model().identity}</h3>
+        <div class="dw-card-head">
+          <div class="dw-titles">
+            <span class="dw-eyebrow">{TOOL_EYEBROW}</span>
+            <div class="dw-titlerow">
+              <h3 class="dw-title">{props.model().identity}</h3>
             </div>
             <Show when={props.model().cacheChip}>
               {(chip) => (
-                <div class="ins-chiprow">
+                <div class="dw-chiprow">
                   <span
-                    class={`ins-cache ins-cache-${chip().state}`}
+                    class={`dw-cache dw-cache-${chip().state}`}
                     title={props.model().cacheTooltip ?? undefined}
                   >
-                    <span class="ins-cache-text">{chip().text}</span>
+                    <span class="dw-cache-text">{chip().text}</span>
                     <Show when={chip().stamp !== null}>
-                      <span class="ins-cache-stamp">{` · ${chip().stamp ?? ''}`}</span>
+                      <span class="dw-cache-stamp">{` · ${chip().stamp ?? ''}`}</span>
                     </Show>
                   </span>
                 </div>
@@ -252,7 +252,7 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
           </div>
           <button
             type="button"
-            class="ins-close"
+            class="dw-close"
             title="Close the report"
             aria-label="Close the report card"
             onClick={() => {
@@ -265,13 +265,13 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
 
         {/* The single scroll region holds no control, so it is its own tab
          * stop: keyboard users can scroll it. */}
-        <div class="ins-card-body" tabIndex={0}>
+        <div class="dw-card-body" tabIndex={0}>
           {/* The pending/failed body copies (no grouped rows in these). */}
           <Show when={props.model().stateCopy !== null}>
-            <div class="ins-state">
-              <span class="ins-state-title">{props.model().stateCopy?.title}</span>
+            <div class="dw-state">
+              <span class="dw-state-title">{props.model().stateCopy?.title}</span>
               <Show when={props.model().stateCopy?.hint !== ''}>
-                <span class="ins-state-hint">{props.model().stateCopy?.hint}</span>
+                <span class="dw-state-hint">{props.model().stateCopy?.hint}</span>
               </Show>
             </div>
           </Show>
@@ -281,13 +281,13 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
           </Show>
           <For each={props.model().groups}>
             {(group) => (
-              <div class="ins-group">
+              <div class="dw-group">
                 <GroupHead heading={group.heading} icon={group.icon} />
-                <div class="ins-group-rows">
+                <div class="dw-group-rows">
                   <For each={group.rows}>
                     {(row) => (
                       <div
-                        class="ins-row"
+                        class="dw-row"
                         // A modified row already shows its sentence; the tooltip would
                         // repeat it as the row's accessible description.
                         title={
@@ -296,9 +296,9 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
                             : undefined
                         }
                       >
-                        <span class={`ins-chip ins-chip-${row.chipState}`}>{row.label}</span>
+                        <span class={`dw-chip dw-chip-${row.chipState}`}>{row.label}</span>
                         <Show when={row.count !== null && row.unit !== null}>
-                          <span class="ins-value">
+                          <span class="dw-value">
                             {String(row.count)} {row.unit}
                           </span>
                         </Show>
@@ -320,7 +320,7 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
           </For>
         </div>
 
-        <div class="ins-card-foot">
+        <div class="dw-card-foot">
           <span>{props.model().footer}</span>
         </div>
       </section>
@@ -330,13 +330,13 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
        * beat; the sr-label stem keeps the accessible name sentence-shaped. */}
       <button
         type="button"
-        class="ins-pill"
+        class="dw-pill"
         ref={(el) => {
           props.actions.registerPill(el);
         }}
         title={pillTooltip()}
         aria-haspopup="dialog"
-        aria-controls={INSPECTOR_CARD_ID}
+        aria-controls={WIDGET_CARD_ID}
         aria-expanded={props.cardOpen()}
         onClick={(event) => {
           // The activation gate: only user input opens the card. Script-
@@ -351,11 +351,11 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
           props.actions.openCard({ detail: event.detail });
         }}
       >
-        <span class="ins-sr">{PILL_LABEL_STEM}</span>
-        <span class="ins-mark" aria-hidden="true">
+        <span class="dw-sr">{PILL_LABEL_STEM}</span>
+        <span class="dw-mark" aria-hidden="true">
           <StrokeIcon paths={PRESENT_ICON_PATHS} />
         </span>
-        <span class="ins-identity">
+        <span class="dw-identity">
           {/* Rewritten page: the identity and the hint are spoken as one run
            * (an sr-only piece of its own would gain a stray space before the
            * comma in Chromium's name), so the shown identity is hidden from
@@ -364,7 +364,7 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
             {(spoken) => (
               <>
                 <span aria-hidden="true">{props.model().identity}</span>
-                <span class="ins-sr" data-fdt-strip-pill-builder-spoken>
+                <span class="dw-sr" data-fdt-strip-pill-builder-spoken>
                   {spoken()}
                 </span>
               </>
@@ -374,27 +374,23 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
         {/* The in-tab change's glyph after the version: a shape, not colour alone. */}
         <Show when={props.model().builderPill}>
           {(kind) => (
-            <span class="ins-pill-builder" data-fdt-strip-pill-builder={kind()} aria-hidden="true">
+            <span class="dw-pill-builder" data-fdt-strip-pill-builder={kind()} aria-hidden="true">
               <GroupGlyph glyph={MODIFIER_ICONS[kind()]} />
             </span>
           )}
         </Show>
         {/* A RUCSS test's glyph beside it (both show when both apply). */}
         <Show when={props.model().rucssTestLine !== null}>
-          <span
-            class="ins-pill-builder ins-pill-rucss"
-            data-fdt-strip-pill-rucss
-            aria-hidden="true"
-          >
+          <span class="dw-pill-builder dw-pill-rucss" data-fdt-strip-pill-rucss aria-hidden="true">
             <GroupGlyph glyph={RUCSS_TEST_ICON} />
           </span>
         </Show>
         <Show when={props.model().cacheChip}>
           {(chip) => (
-            <span class={`ins-cache ins-cache-${chip().state}`}>
-              <span class="ins-cache-text">{chip().text}</span>
+            <span class={`dw-cache dw-cache-${chip().state}`}>
+              <span class="dw-cache-text">{chip().text}</span>
               <Show when={chip().stamp !== null}>
-                <span class="ins-cache-stamp">{` · ${chip().stamp ?? ''}`}</span>
+                <span class="dw-cache-stamp">{` · ${chip().stamp ?? ''}`}</span>
               </Show>
             </span>
           )}

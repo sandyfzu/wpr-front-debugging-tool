@@ -205,13 +205,13 @@ async function openServed(
 
 /** Open the card from the pill with the keyboard; resolves once the card is settled. */
 async function openCardByKeyboard(page: Page): Promise<void> {
-  const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+  const pill = page.locator(`${STRIP_HOST} .dw-pill`);
   await expect(pill).toContainText('WPR', { timeout: 15_000 });
   // The pass must have answered (identity carries a version) before opening.
   await expect(pill).toContainText(/WPR \d/, { timeout: 15_000 });
   await pill.focus();
   await page.keyboard.press('Enter');
-  await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+  await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
   await settle(page);
 }
 
@@ -256,7 +256,7 @@ interface MeasuredContrast {
  */
 async function builderContrast(
   page: Page,
-  selector = '.ins-builder-title, .ins-builder-hint, .ins-mod, .ins-mod-line'
+  selector = '.dw-builder-title, .dw-builder-hint, .dw-mod, .dw-mod-line'
 ): Promise<MeasuredContrast[]> {
   return await page.evaluate(
     ({ host, selector }) => {
@@ -327,13 +327,13 @@ async function builderLayout(page: Page): Promise<BuilderLayout> {
   return await page.evaluate((host) => {
     const root = document.querySelector(host)?.shadowRoot;
     if (root === undefined || root === null) throw new Error('no strip');
-    const card = root.querySelector<HTMLElement>('.ins-card');
-    const body = root.querySelector<HTMLElement>('.ins-card-body');
-    const clip = root.querySelector<HTMLElement>('.ins-builder-hints');
+    const card = root.querySelector<HTMLElement>('.dw-card');
+    const body = root.querySelector<HTMLElement>('.dw-card-body');
+    const clip = root.querySelector<HTMLElement>('.dw-builder-hints');
     if (card === null || body === null || clip === null) throw new Error('no builder line');
     const cardBox = card.getBoundingClientRect();
     const clipBox = clip.getBoundingClientRect();
-    const hints = Array.from(root.querySelectorAll<HTMLElement>('.ins-builder-hint'));
+    const hints = Array.from(root.querySelectorAll<HTMLElement>('.dw-builder-hint'));
     // The strip's own share of the document's horizontal overflow: the host
     // theme's overflow (if any) is not ours, so measure with and without it.
     const overflow = (): number =>
@@ -359,7 +359,7 @@ async function builderLayout(page: Page): Promise<BuilderLayout> {
           inside: own.left >= clipBox.left - 0.5 && own.right <= clipBox.right + 0.5
         };
       }),
-      sentencesInside: Array.from(root.querySelectorAll<HTMLElement>('.ins-mod-line')).every(
+      sentencesInside: Array.from(root.querySelectorAll<HTMLElement>('.dw-mod-line')).every(
         (line) => {
           const box = line.getBoundingClientRect();
           return box.left >= cardBox.left - 0.5 && box.right <= cardBox.right + 0.5;
@@ -434,11 +434,11 @@ async function pillLayout(page: Page): Promise<PillLayout> {
     if (root === undefined || root === null) throw new Error('no strip');
     const part = (selector: string): HTMLElement | null =>
       root.querySelector<HTMLElement>(selector);
-    const pill = part('.ins-pill');
-    const identity = part('.ins-pill .ins-identity');
-    const chip = part('.ins-pill .ins-cache');
-    const chipText = part('.ins-pill .ins-cache-text');
-    const stamp = part('.ins-pill .ins-cache-stamp');
+    const pill = part('.dw-pill');
+    const identity = part('.dw-pill .dw-identity');
+    const chip = part('.dw-pill .dw-cache');
+    const chipText = part('.dw-pill .dw-cache-text');
+    const stamp = part('.dw-pill .dw-cache-stamp');
     const glyph = part('[data-fdt-strip-pill-builder]');
     if (pill === null || identity === null || chip === null || chipText === null) {
       throw new Error('no pill identity/chip');
@@ -548,16 +548,16 @@ test.describe('strip builder line + modifiers', () => {
         await expect(dialog).toBeFocused();
         await expect(dialog).toHaveAccessibleDescription(DESCRIPTION);
         // Tab reaches the scroll region that holds the line (after the close control).
-        const scroller = page.locator(`${STRIP_HOST} .ins-card-body`);
+        const scroller = page.locator(`${STRIP_HOST} .dw-card-body`);
         await page.keyboard.press('Tab');
-        await expect(page.locator(`${STRIP_HOST} .ins-close`)).toBeFocused();
+        await expect(page.locator(`${STRIP_HOST} .dw-close`)).toBeFocused();
         await page.keyboard.press('Tab');
         await expect(scroller).toBeFocused();
         await expect(scroller.locator('[data-fdt-strip-builder]')).toHaveCount(1);
 
         const line = page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`);
         await expect(line).toBeVisible();
-        await expect(line.locator('.ins-builder-title')).toHaveText(TITLE);
+        await expect(line.locator('.dw-builder-title')).toHaveText(TITLE);
         const hints = line.locator('[data-fdt-strip-builder-hint]');
         await expect(hints).toHaveCount(HINTS.length);
         for (const [index, hint] of HINTS.entries()) {
@@ -566,8 +566,8 @@ test.describe('strip builder line + modifiers', () => {
         await expect(line).not.toContainText('·');
 
         for (const { label, kind, chip, sentence } of ROWS) {
-          const row = page.locator(`${STRIP_HOST} .ins-row`, {
-            has: page.locator('.ins-chip', { hasText: new RegExp(`^${label}$`) })
+          const row = page.locator(`${STRIP_HOST} .dw-row`, {
+            has: page.locator('.dw-chip', { hasText: new RegExp(`^${label}$`) })
           });
           const badge = row.locator('[data-fdt-strip-modifier]');
           await expect(badge, label).toHaveAttribute('data-fdt-strip-modifier', kind);
@@ -578,9 +578,9 @@ test.describe('strip builder line + modifiers', () => {
           await expect(sentenceLine, label).toBeVisible();
           await expect(sentenceLine, label).toHaveText(`, ${sentence}`);
           // The served chip stays (WP Rocket served all three on /fdt/).
-          await expect(row.locator('.ins-chip'), label).toHaveClass(/ins-chip-ok/);
+          await expect(row.locator('.dw-chip'), label).toHaveClass(/dw-chip-ok/);
           // Turned off: the count of the rewritten page gives way to the modifier.
-          await expect(row.locator('.ins-value'), label).toHaveCount(kind === 'off' ? 0 : 1);
+          await expect(row.locator('.dw-value'), label).toHaveCount(kind === 'off' ? 0 : 1);
         }
 
         // Assistive tech never hears the dot.
@@ -638,7 +638,7 @@ test.describe('strip builder line + modifiers', () => {
           const shots = process.env['FDT_SHOTS_DIR'];
           if (shots !== undefined && shots !== '') {
             mkdirSync(shots, { recursive: true });
-            await page.locator(`${STRIP_HOST} .ins-card`).screenshot({
+            await page.locator(`${STRIP_HOST} .dw-card`).screenshot({
               path: join(shots, `strip-${colorScheme}-${String(width)}.png`)
             });
           }
@@ -723,7 +723,7 @@ test.describe('strip builder line + modifiers', () => {
           expect(layout.glyphAfterIdentity, at).toBe(true);
           // The overflow probe re-showed the host: let any restyle settle first.
           await settle(page);
-          const measured = await builderContrast(page, '.ins-pill-builder');
+          const measured = await builderContrast(page, '.dw-pill-builder');
           console.log(`[pill contrast] ${at} ${JSON.stringify(measured)}`);
           expect(measured, at).toHaveLength(1);
           for (const entry of measured) {
@@ -732,15 +732,15 @@ test.describe('strip builder line + modifiers', () => {
           const shots = process.env['FDT_SHOTS_DIR'];
           if (shots !== undefined && shots !== '') {
             mkdirSync(shots, { recursive: true });
-            await page.locator(`${STRIP_HOST} .ins-pill`).screenshot({
+            await page.locator(`${STRIP_HOST} .dw-pill`).screenshot({
               path: join(shots, `pill-${colorScheme}-${String(width)}.png`)
             });
           }
         }
         // Hovered, the pill's fill steps up a layer: the glyph keeps its contrast.
-        await page.locator(`${STRIP_HOST} .ins-pill`).hover();
+        await page.locator(`${STRIP_HOST} .dw-pill`).hover();
         await settle(page);
-        const hovered = await builderContrast(page, '.ins-pill-builder');
+        const hovered = await builderContrast(page, '.dw-pill-builder');
         console.log(`[pill contrast] ${colorScheme} hovered ${JSON.stringify(hovered)}`);
         for (const entry of hovered) {
           expect(entry.ratio, `${colorScheme} hovered pill glyph`).toBeGreaterThanOrEqual(
@@ -755,7 +755,7 @@ test.describe('strip builder line + modifiers', () => {
         expect(
           await page.evaluate((host) => {
             const root = document.querySelector(host)?.shadowRoot;
-            const id = root?.querySelector('.ins-pill')?.getAttribute('aria-controls') ?? '';
+            const id = root?.querySelector('.dw-pill')?.getAttribute('aria-controls') ?? '';
             return root?.getElementById(id)?.getAttribute('role') ?? null;
           }, STRIP_HOST)
         ).toBe('dialog');
@@ -790,9 +790,9 @@ test.describe('strip builder line + modifiers', () => {
           );
           try {
             await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
-            const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+            const pill = page.locator(`${STRIP_HOST} .dw-pill`);
             await expect(pill, variant).toContainText(UNKNOWN_IDENTITY, { timeout: 15_000 });
-            await expect(pill.locator('.ins-cache-text'), variant).toHaveText(pillCase.chip);
+            await expect(pill.locator('.dw-cache-text'), variant).toHaveText(pillCase.chip);
             await expect(page.locator(PILL_GLYPH), variant).toHaveCount(rewritten ? 1 : 0);
             for (const width of WIDTHS) {
               await page.setViewportSize({ width, height: 900 });
@@ -837,10 +837,10 @@ test.describe('strip builder line + modifiers', () => {
       expect(await answeredPillName(page)).not.toContain('Exclusion Builder');
       await expect(page.locator(PILL_GLYPH)).toHaveCount(0);
       await openCardByKeyboard(page);
-      await expect(page.locator(`${STRIP_HOST} .ins-row`).first()).toBeVisible();
+      await expect(page.locator(`${STRIP_HOST} .dw-row`).first()).toBeVisible();
       await expect(page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`)).toHaveCount(0);
       await expect(page.locator(`${STRIP_HOST} [data-fdt-strip-modifier]`)).toHaveCount(0);
-      await expect(page.locator(`${STRIP_HOST} .ins-card`)).not.toContainText('Exclusion Builder');
+      await expect(page.locator(`${STRIP_HOST} .dw-card`)).not.toContainText('Exclusion Builder');
       await expect(page.locator(`${STRIP_HOST} [role="dialog"]`)).not.toHaveAttribute(
         'aria-describedby'
       );
@@ -863,7 +863,7 @@ test.describe('strip builder line + modifiers', () => {
     let body = writeBuilderMarker(served, NOTE);
     const { page, url } = await openServed(extension, 'fresh', () => body);
     const line = page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`);
-    const title = page.locator(`${STRIP_HOST} .ins-title`);
+    const title = page.locator(`${STRIP_HOST} .dw-title`);
     try {
       await expect(page.locator(PILL_GLYPH)).toBeVisible({ timeout: 15_000 });
       expect(hasPillHint(await answeredPillName(page))).toBe(true);
@@ -877,7 +877,7 @@ test.describe('strip builder line + modifiers', () => {
         NOTE
       );
       await page.reload();
-      await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toContainText(`WPR ${bumped}`, {
+      await expect(page.locator(`${STRIP_HOST} .dw-pill`)).toContainText(`WPR ${bumped}`, {
         timeout: 15_000
       });
       await expect(page.locator(PILL_GLYPH)).toBeVisible();
@@ -890,7 +890,7 @@ test.describe('strip builder line + modifiers', () => {
       // A reload that serves WP Rocket's own page again: no marker, no line.
       body = served;
       await page.reload();
-      await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toContainText(`WPR ${version}`, {
+      await expect(page.locator(`${STRIP_HOST} .dw-pill`)).toContainText(`WPR ${version}`, {
         timeout: 15_000
       });
       await expect(page.locator(PILL_GLYPH)).toHaveCount(0);

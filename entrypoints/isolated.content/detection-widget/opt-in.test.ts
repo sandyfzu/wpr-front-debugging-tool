@@ -24,8 +24,8 @@ import {
   resetRenders,
   settle
 } from '../../../components/injected-ui/deferred-mount.testing';
-import { INSPECTOR_UI_NAME } from './strip-state';
-import { setupInspectorWidget } from './index';
+import { WIDGET_UI_NAME } from './strip-state';
+import { setupDetectionWidget } from './index';
 
 vi.mock(
   '../../../components/injected-ui/mount',
@@ -39,7 +39,7 @@ vi.mock('wxt/utils/content-script-ui/shadow-root', async (importOriginal) => {
 });
 
 const ORIGIN = window.location.origin;
-const hosts = (): number => document.querySelectorAll(INSPECTOR_UI_NAME).length;
+const hosts = (): number => document.querySelectorAll(WIDGET_UI_NAME).length;
 
 let ctx: ContentScriptContext;
 let seq = 0;
@@ -56,7 +56,7 @@ beforeEach(() => {
   // No page-data hub runs here: the widget logs its documented failure copy.
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
   seq += 1;
-  ctx = new ContentScriptContext(`inspector-opt-in-${String(seq)}`);
+  ctx = new ContentScriptContext(`widget-opt-in-${String(seq)}`);
 });
 
 afterEach(() => {
@@ -104,7 +104,7 @@ describe('boot: default option × per-origin entry', () => {
   it.each(cases)('default %s, entry %s → %i host(s)', async (defaultOn, entry, expected) => {
     await setDefault(defaultOn);
     if (entry !== undefined) await setEntry(entry);
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await (expected === 1 ? expectHosts(1) : expectSteadyHosts(0));
   });
 });
@@ -130,7 +130,7 @@ function holdBootRead(store: { getValue: () => Promise<unknown> }): () => void {
 describe('boot read vs racing writes and failures', () => {
   it('an entry write racing the boot read wins over the stale read', async () => {
     const release = holdBootRead(detectionWidgetSitesStore);
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await settle();
     await setEntry(false);
     release();
@@ -139,7 +139,7 @@ describe('boot read vs racing writes and failures', () => {
 
   it('an options write racing the boot read wins over the stale read', async () => {
     const release = holdBootRead(optionsStore);
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await settle();
     await setDefault(false);
     release();
@@ -148,7 +148,7 @@ describe('boot read vs racing writes and failures', () => {
 
   it('a failed options read keeps the entry read: a later option write alone mounts', async () => {
     vi.spyOn(optionsStore, 'getValue').mockRejectedValueOnce(new Error('options read'));
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await expectSteadyHosts(0);
     await setDefault(true);
     await expectHosts(1);
@@ -157,7 +157,7 @@ describe('boot read vs racing writes and failures', () => {
   it('a failed entry read keeps the options read: a later entry write alone decides', async () => {
     await setDefault(false);
     vi.spyOn(detectionWidgetSitesStore, 'getValue').mockRejectedValueOnce(new Error('sites read'));
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await expectSteadyHosts(0);
     await setEntry(true);
     await expectHosts(1);
@@ -166,7 +166,7 @@ describe('boot read vs racing writes and failures', () => {
   it('both reads failing stays hidden until both inputs are written', async () => {
     vi.spyOn(optionsStore, 'getValue').mockRejectedValueOnce(new Error('options read'));
     vi.spyOn(detectionWidgetSitesStore, 'getValue').mockRejectedValueOnce(new Error('sites read'));
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await expectSteadyHosts(0);
     await setDefault(true);
     await expectSteadyHosts(0);
@@ -177,7 +177,7 @@ describe('boot read vs racing writes and failures', () => {
 
 describe('live default option flips (no reload)', () => {
   it('mount/hide an entryless page as the option flips', async () => {
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await expectHosts(1);
     renders[0]?.resolve();
     await setDefault(false);
@@ -190,7 +190,7 @@ describe('live default option flips (no reload)', () => {
 
   it('never move a page whose origin has an entry (precedence holds both ways)', async () => {
     await setEntry(true);
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await expectHosts(1);
     await setDefault(false);
     await expectSteadyHosts(1);
@@ -201,7 +201,7 @@ describe('live default option flips (no reload)', () => {
   });
 
   it('an unrelated options write (appearance) neither remounts nor re-reads', async () => {
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await expectHosts(1);
     await mutateOptions((options) => ({ ...options, appearance: 'dark' }));
     await expectSteadyHosts(1);
@@ -210,7 +210,7 @@ describe('live default option flips (no reload)', () => {
 
   it('a corrupt options write degrades to the documented default (on)', async () => {
     await setDefault(false);
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await expectSteadyHosts(0);
     await fakeBrowser.storage.sync.set({ options: 'corrupted' });
     await expectHosts(1);
@@ -220,7 +220,7 @@ describe('live default option flips (no reload)', () => {
 describe('the shared toggle flips the visible state live', () => {
   it.each([true, false])('under default %s: hide ↔ show, every flip lands', async (defaultOn) => {
     await setDefault(defaultOn);
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await (defaultOn ? expectHosts(1) : expectSteadyHosts(0));
     await toggleDetectionWidgetSite(ORIGIN);
     await expectHosts(defaultOn ? 0 : 1);
@@ -233,7 +233,7 @@ describe('a disabled origin does no widget work', () => {
   it('no shadow UI, no render, no window listener — only the watches', async () => {
     const listen = vi.spyOn(window, 'addEventListener');
     await setEntry(false);
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await expectSteadyHosts(0);
     expect(createShadowRootUi).not.toHaveBeenCalled();
     expect(renders).toHaveLength(0);
@@ -244,7 +244,7 @@ describe('a disabled origin does no widget work', () => {
 describe('context cleanup', () => {
   it('a dead context follows neither the option nor the entry', async () => {
     await setDefault(false);
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await expectSteadyHosts(0);
     ctx.notifyInvalidated();
     await setDefault(true);
@@ -254,7 +254,7 @@ describe('context cleanup', () => {
   });
 
   it('a mounted widget is removed on invalidation and stays gone across later writes', async () => {
-    setupInspectorWidget(ctx);
+    setupDetectionWidget(ctx);
     await expectHosts(1);
     renders[0]?.resolve();
     await settle();

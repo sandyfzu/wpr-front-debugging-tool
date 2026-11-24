@@ -16,14 +16,14 @@ import type { DragBox } from './drag';
  * The wall-clock span (ms) a re-settle cycle may keep sampling before it
  * concedes. Time, not frames — the motion it waits for is timed in ms, so
  * a frame-counted bound concedes on faster displays: the card's open
- * choreography runs `--ins-enter` = `--motion-slow` = 280 ms, which is
+ * choreography runs `--dw-enter` = `--motion-slow` = 280 ms, which is
  * ~17 frames at 60 Hz but ~34 frames at 120 Hz before the two stability
  * reads even land, exactly where a 32-frame bound gave up. The figure
  * covers the worst realistic motion chain — a 3-leg open→close→open
  * thrash of ≈ 295 ms of continuous box instability per leg (≈ 885 ms
- * measured: the open and reopen legs run `--ins-enter` whole, and on
- * `.ins-open` removal the close-path pill RE-ENTERS — its base
- * `ins-tool-in` animation restarts and runs another full 280 ms entrance,
+ * measured: the open and reopen legs run `--dw-enter` whole, and on
+ * `.dw-open` removal the close-path pill RE-ENTERS — its base
+ * `dw-tool-in` animation restarts and runs another full 280 ms entrance,
  * so the close leg is not the 180 ms exit a leg table would suggest) —
  * plus the two idle stability reads at any realistic pacing (~17 ms per
  * read at 60 Hz, ~8 ms at 120 Hz, ~4 ms at 240 Hz), ≈ 919 ms of honest

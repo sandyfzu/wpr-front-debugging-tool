@@ -244,12 +244,12 @@ test.describe('Delay JS simulation on fixture pages', () => {
     const opened = await openFixturePage(extension, '/simulation/forged-marker.html');
     try {
       expect(await simulationMarkers(opened.page)).toHaveLength(1);
-      const pill = opened.page.locator(`${STRIP_HOST} .ins-pill`);
+      const pill = opened.page.locator(`${STRIP_HOST} .dw-pill`);
       await expect(pill).toBeVisible(RAN);
       await pill.focus();
       await opened.page.keyboard.press('Enter');
-      const row = opened.page.locator(`${STRIP_HOST} .ins-row`, {
-        has: opened.page.locator('.ins-chip', { hasText: /^Delay JS$/ })
+      const row = opened.page.locator(`${STRIP_HOST} .dw-row`, {
+        has: opened.page.locator('.dw-chip', { hasText: /^Delay JS$/ })
       });
       await expect(row.locator('[data-fdt-strip-modifier]')).toHaveAttribute(
         'data-fdt-strip-modifier',

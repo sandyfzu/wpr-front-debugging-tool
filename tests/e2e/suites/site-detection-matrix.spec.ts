@@ -48,7 +48,7 @@ import {
 } from '../helpers/detection-matrix';
 
 /** The widget's shadow-root host. */
-const STRIP_HOST = 'wpr-fdt-inspector';
+const STRIP_HOST = 'wpr-fdt-detection-widget';
 
 /** The WXT storage key under `chrome.storage.sync` for the per-origin widget map. */
 const ORIGINS_KEY = 'detection-widget-sites';
@@ -123,9 +123,9 @@ function parse(expectation: RowExpectation): ParsedExpectation {
 
 /** The strip chip class a status reads as (D-2: unsure states are amber). */
 const CHIP_CLASS: Readonly<Record<ParsedExpectation['status'], string>> = {
-  Active: 'ins-chip-ok',
-  'Not active': 'ins-chip-neutral',
-  Unknown: 'ins-chip-attention'
+  Active: 'dw-chip-ok',
+  'Not active': 'dw-chip-neutral',
+  Unknown: 'dw-chip-attention'
 };
 
 /**
@@ -232,15 +232,15 @@ interface StripRead {
 async function readStripCard(page: Page): Promise<StripRead> {
   return await page.evaluate((host: string): StripRead => {
     const root = document.querySelector(host)?.shadowRoot ?? null;
-    const head = root?.querySelector('.ins-card-head .ins-cache') ?? null;
+    const head = root?.querySelector('.dw-card-head .dw-cache') ?? null;
     return {
-      title: root?.querySelector('.ins-title')?.textContent ?? null,
+      title: root?.querySelector('.dw-title')?.textContent ?? null,
       cacheText: head?.textContent ?? null,
       cacheTooltip: head?.getAttribute('title') ?? null,
-      text: root?.querySelector('.ins-card')?.textContent ?? '',
-      rows: [...(root?.querySelectorAll('.ins-row') ?? [])].map((row) => ({
-        chip: row.querySelector('.ins-chip')?.textContent ?? '',
-        className: row.querySelector('.ins-chip')?.className ?? '',
+      text: root?.querySelector('.dw-card')?.textContent ?? '',
+      rows: [...(root?.querySelectorAll('.dw-row') ?? [])].map((row) => ({
+        chip: row.querySelector('.dw-chip')?.textContent ?? '',
+        className: row.querySelector('.dw-chip')?.className ?? '',
         tooltip: row.getAttribute('title') ?? '',
         bypassWarned: row.querySelector('[data-fdt-strip-modifier="bypass-applied"]') !== null
       }))
@@ -592,15 +592,15 @@ async function runRound(extension: ExtensionDriver, round: MatrixRound): Promise
         async () =>
           await site.page.evaluate(
             (host: string) =>
-              document.querySelector(host)?.shadowRoot?.querySelector('.ins-pill .ins-cache-text')
+              document.querySelector(host)?.shadowRoot?.querySelector('.dw-pill .dw-cache-text')
                 ?.textContent ?? null,
             STRIP_HOST
           ),
         SETTLE
       )
       .toBe(round.cache.chip);
-    await site.page.locator(`${STRIP_HOST} .ins-pill`).click();
-    await expect(site.page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+    await site.page.locator(`${STRIP_HOST} .dw-pill`).click();
+    await expect(site.page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
     const strip = await readStripCard(site.page);
     assertStrip(strip, served, round);
 

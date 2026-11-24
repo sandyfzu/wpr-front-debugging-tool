@@ -22,7 +22,7 @@ import { setupDataHub } from './data-hub';
 import { setupImprovements } from './improvements';
 import { setupKnownConflicts } from './known-conflicts';
 import { setupSideBySide } from './side-by-side';
-import { setupInspectorWidget } from './inspector';
+import { setupDetectionWidget } from './detection-widget';
 import { setupCommandPalette } from './palette';
 import { setupRucssTest } from './rucss-test';
 import { setupStylesheetInventory } from './style-inventory';
@@ -84,7 +84,7 @@ const ISOLATED_WORLD_MODULES: readonly IsolatedWorldModule[] = [
   { name: 'improvements', setup: setupImprovements },
   { name: 'known-conflicts', setup: setupKnownConflicts },
   { name: 'side-by-side', setup: setupSideBySide },
-  { name: 'inspector', setup: setupInspectorWidget },
+  { name: 'detection-widget', setup: setupDetectionWidget },
   { name: 'rucss-test', setup: setupRucssTest },
   { name: 'stylesheet-inventory', setup: setupStylesheetInventory },
   { name: 'beacon-test', setup: setupBeaconTest },

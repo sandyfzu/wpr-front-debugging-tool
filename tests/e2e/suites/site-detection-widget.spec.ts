@@ -26,7 +26,7 @@ import type { Page } from '@playwright/test';
 import { expect, type ExtensionDriver } from '../helpers/extension';
 import { loginAdminPage, openSitePage, siteTest, SITE_URL } from '../helpers/site';
 /** The widget's shadow-root host (D-6's element name). */
-const STRIP_HOST = 'wpr-fdt-inspector';
+const STRIP_HOST = 'wpr-fdt-detection-widget';
 
 /** The WXT storage key under `chrome.storage.sync` for the opt-in map. */
 const ORIGINS_KEY = 'detection-widget-sites';
@@ -147,11 +147,11 @@ const EXPECTED_ROWS: Array<{ label: string; group: string }> = [
 function chipStateFor(state: string): string {
   switch (state) {
     case 'applied':
-      return 'ins-chip-ok';
+      return 'dw-chip-ok';
     case 'collecting':
-      return 'ins-chip-attention';
+      return 'dw-chip-attention';
     default:
-      return 'ins-chip-neutral';
+      return 'dw-chip-neutral';
   }
 }
 
@@ -201,7 +201,7 @@ function expectedChip(detections: SiteDetections, label: string): string {
   const undecided = undecidable[label];
   if (undecided !== undefined) {
     if (detections.wpr.present && !undecided.present && undecided.source === undefined) {
-      return 'ins-chip-attention';
+      return 'dw-chip-attention';
     }
     return chipStateFor(simpleState(undecided.present));
   }
@@ -271,23 +271,23 @@ async function readStrip(page: Page): Promise<StripRead> {
         focusedClass: null
       };
     }
-    const chrome = root.querySelector('.ins-chrome');
-    const pill = root.querySelector('.ins-pill');
-    const card = root.querySelector('.ins-card');
+    const chrome = root.querySelector('.dw-chrome');
+    const pill = root.querySelector('.dw-pill');
+    const card = root.querySelector('.dw-card');
     return {
       mounted: true,
       pillText: pill?.textContent ?? null,
       pillExpanded: pill?.getAttribute('aria-expanded') ?? null,
-      cardOpen: chrome?.classList.contains('ins-open') === true && card !== null,
-      title: root.querySelector('.ins-title')?.textContent ?? null,
-      cacheText: root.querySelector('.ins-card-head .ins-cache')?.textContent ?? null,
-      groups: [...root.querySelectorAll('.ins-group-label')].map((node) => node.textContent),
-      rows: [...root.querySelectorAll('.ins-row')].map((row) => ({
-        row: row.querySelector('.ins-chip')?.textContent ?? '',
-        label: row.querySelector('.ins-chip')?.textContent ?? null,
-        chip: row.querySelector('.ins-chip')?.className ?? null
+      cardOpen: chrome?.classList.contains('dw-open') === true && card !== null,
+      title: root.querySelector('.dw-title')?.textContent ?? null,
+      cacheText: root.querySelector('.dw-card-head .dw-cache')?.textContent ?? null,
+      groups: [...root.querySelectorAll('.dw-group-label')].map((node) => node.textContent),
+      rows: [...root.querySelectorAll('.dw-row')].map((row) => ({
+        row: row.querySelector('.dw-chip')?.textContent ?? '',
+        label: row.querySelector('.dw-chip')?.textContent ?? null,
+        chip: row.querySelector('.dw-chip')?.className ?? null
       })),
-      footer: root.querySelector('.ins-card-foot')?.textContent ?? null,
+      footer: root.querySelector('.dw-card-foot')?.textContent ?? null,
       focusedClass: root.activeElement?.className ?? null
     };
   }, STRIP_HOST);
@@ -407,9 +407,9 @@ interface StripGeometry {
 async function stripGeometry(page: Page): Promise<StripGeometry> {
   return await page.evaluate((host: string): StripGeometry => {
     const root = document.querySelector(host)?.shadowRoot ?? null;
-    const chrome = root?.querySelector('.ins-chrome') ?? null;
-    const cardOpen = chrome?.classList.contains('ins-open') === true;
-    const shape = root?.querySelector<HTMLElement>(cardOpen ? '.ins-card' : '.ins-pill') ?? null;
+    const chrome = root?.querySelector('.dw-chrome') ?? null;
+    const cardOpen = chrome?.classList.contains('dw-open') === true;
+    const shape = root?.querySelector<HTMLElement>(cardOpen ? '.dw-card' : '.dw-pill') ?? null;
     const documentElement = document.documentElement;
     const asBox = (element: HTMLElement): DragScriptBox => {
       const rect = element.getBoundingClientRect();
@@ -431,7 +431,7 @@ async function stripGeometry(page: Page): Promise<StripGeometry> {
         extentWidth: documentElement.scrollWidth,
         extentHeight: documentElement.scrollHeight
       },
-      dragging: chrome?.classList.contains('ins-dragging') === true,
+      dragging: chrome?.classList.contains('dw-dragging') === true,
       cursor: chrome === null ? '' : getComputedStyle(chrome).cursor
     };
   }, STRIP_HOST);
@@ -468,7 +468,7 @@ async function waitForChoreographySettle(page: Page): Promise<void> {
           const root = document.querySelector(host)?.shadowRoot ?? null;
           if (root === null) return 'missing';
           const animated = [
-            ...root.querySelectorAll<HTMLElement>('.ins-chrome, .ins-pill, .ins-card')
+            ...root.querySelectorAll<HTMLElement>('.dw-chrome, .dw-pill, .dw-card')
           ].some((node) => node.getAnimations().length > 0);
           return animated ? 'moving' : 'settled';
         }, STRIP_HOST),
@@ -530,11 +530,11 @@ async function chromeTranslate(page: Page): Promise<{ x: number; y: number }> {
   return await page.evaluate((host: string) => {
     const chrome = document
       .querySelector(host)
-      ?.shadowRoot?.querySelector<HTMLElement>('.ins-chrome');
+      ?.shadowRoot?.querySelector<HTMLElement>('.dw-chrome');
     if (chrome === null || chrome === undefined) throw new Error('the widget chrome is missing');
     return {
-      x: Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-x')) || 0,
-      y: Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-y')) || 0
+      x: Number.parseFloat(chrome.style.getPropertyValue('--dw-drag-x')) || 0,
+      y: Number.parseFloat(chrome.style.getPropertyValue('--dw-drag-y')) || 0
     };
   }, STRIP_HOST);
 }
@@ -570,11 +570,11 @@ async function recordRestoreFrames(page: Page): Promise<void> {
       let left = payload.frames;
       const tick = (): void => {
         const root = document.querySelector(payload.host)?.shadowRoot;
-        const chrome = root?.querySelector<HTMLElement>('.ins-chrome');
-        const pill = root?.querySelector<HTMLElement>('.ins-pill');
+        const chrome = root?.querySelector<HTMLElement>('.dw-chrome');
+        const pill = root?.querySelector<HTMLElement>('.dw-pill');
         if (chrome !== null && chrome !== undefined && pill !== null && pill !== undefined) {
-          const x = Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-x')) || 0;
-          const y = Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-y')) || 0;
+          const x = Number.parseFloat(chrome.style.getPropertyValue('--dw-drag-x')) || 0;
+          const y = Number.parseFloat(chrome.style.getPropertyValue('--dw-drag-y')) || 0;
           const last = seen.at(-1);
           if (last?.x !== x || last.y !== y) {
             // The resting box: the chrome's rect (its translate) plus the
@@ -587,7 +587,7 @@ async function recordRestoreFrames(page: Page): Promise<void> {
               frame: payload.frames - left,
               x,
               y,
-              resettle: chrome.classList.contains('ins-resettle'),
+              resettle: chrome.classList.contains('dw-resettle'),
               air: {
                 left: boxLeft,
                 top: boxTop,
@@ -692,7 +692,7 @@ async function resetAppearance(driver: ExtensionDriver): Promise<void> {
 }
 
 /* The chip's state classes the derivation compares against. */
-const CHIP_CLASSES = ['ins-chip-ok', 'ins-chip-attention', 'ins-chip-neutral'] as const;
+const CHIP_CLASSES = ['dw-chip-ok', 'dw-chip-attention', 'dw-chip-neutral'] as const;
 
 /** The class one rendered row carries, read through its chip's class list. */
 function renderedChipClass(chip: string | null): string | null {
@@ -803,8 +803,8 @@ siteTest.describe('site detection widget', () => {
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
           .toContain('✓ Cached');
 
-        await page.locator(`${STRIP_HOST} .ins-pill`).click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await page.locator(`${STRIP_HOST} .dw-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         // The width contract measures the SETTLED card: the open choreography's
         // spring overshoots scale (a mid-flight rect reads wider than shipped).
         await waitForChoreographySettle(page);
@@ -855,14 +855,14 @@ siteTest.describe('site detection widget', () => {
         // its literal.
         const geometry = await page.evaluate((host: string) => {
           const root = document.querySelector(host)?.shadowRoot ?? null;
-          const card = root?.querySelector<HTMLElement>('.ins-card');
-          const rows = [...(root?.querySelectorAll<HTMLElement>('.ins-row') ?? [])];
+          const card = root?.querySelector<HTMLElement>('.dw-card');
+          const rows = [...(root?.querySelectorAll<HTMLElement>('.dw-row') ?? [])];
           return {
             cardWidth: card?.getBoundingClientRect().width ?? 0,
             viewportWidth: document.documentElement.clientWidth,
             rows: rows.map((row) => {
-              const chip = row.querySelector<HTMLElement>('.ins-chip');
-              const value = row.querySelector<HTMLElement>('.ins-value');
+              const chip = row.querySelector<HTMLElement>('.dw-chip');
+              const value = row.querySelector<HTMLElement>('.dw-value');
               const chipBox = chip?.getBoundingClientRect();
               const valueBox = value?.getBoundingClientRect();
               return {
@@ -966,29 +966,29 @@ siteTest.describe('site detection widget', () => {
             }
             pill.focus();
           },
-          { host: STRIP_HOST, part: '.ins-pill' }
+          { host: STRIP_HOST, part: '.dw-pill' }
         );
-        await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toBeFocused();
+        await expect(page.locator(`${STRIP_HOST} .dw-pill`)).toBeFocused();
         await page.keyboard.press('Enter');
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         expect((await readStrip(page)).pillExpanded, 'aria-expanded rides the pill').toBe('true');
 
         // Reduced motion: the card is machinery-free (the scoped rule beats
         // the token override's 0.01ms global leg).
         expect(
-          await stripPartStyle(page, '.ins-card', 'transitionDuration'),
+          await stripPartStyle(page, '.dw-card', 'transitionDuration'),
           'the card has no reduced-motion transition leg'
         ).toBe('0s');
 
         await page.keyboard.press('Escape');
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeHidden();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeHidden();
         // Focus lands back on the pill (the marker pill regains it).
         await expect
           .poll(async () => (await readStrip(page)).focusedClass, {
             timeout: 5_000,
             intervals: [100]
           })
-          .toContain('ins-pill');
+          .toContain('dw-pill');
       } finally {
         await page.close();
         await clearWidgetOptIn(extension);
@@ -1022,7 +1022,7 @@ siteTest.describe('site detection widget', () => {
           'the resting pill rests 16 px off the bottom edge'
         ).toBeLessThan(2);
 
-        const pillLocator = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pillLocator = page.locator(`${STRIP_HOST} .dw-pill`);
         // The press rides the pill's center (the grab offset = pointer→top-left),
         // so the top-left must follow the pointer's exact travel from there.
         const press = { x: pill.left + pill.width / 2, y: pill.top + pill.height / 2 };
@@ -1094,7 +1094,7 @@ siteTest.describe('site detection widget', () => {
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
           .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Bypass requested/);
         await waitForChoreographySettle(page);
-        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pill = page.locator(`${STRIP_HOST} .dw-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
         if (pillBox === null) throw new Error('the pill is missing a box');
         // First: drag the pill somewhere (the press rides the pill's center,
@@ -1115,7 +1115,7 @@ siteTest.describe('site detection widget', () => {
         // The card opens FROM the dragged anchor: same bottom-right corner
         // (both shapes hand it over inside the chrome).
         await pill.click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         await waitForChoreographySettle(page);
         const opened = await stripGeometry(page);
         const card = opened.shape;
@@ -1150,7 +1150,7 @@ siteTest.describe('site detection widget', () => {
 
         // Escape closes: the pill returns AT the dragged corner, not the resting one.
         await page.keyboard.press('Escape');
-        await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toBeFocused();
+        await expect(page.locator(`${STRIP_HOST} .dw-pill`)).toBeFocused();
         await waitForChoreographySettle(page);
         const returned = await stripGeometry(page);
         const pillAgain = returned.shape;
@@ -1165,7 +1165,7 @@ siteTest.describe('site detection widget', () => {
         ).toBeLessThan(2);
         // And it opens where the pill stands: no snap-back to the resting anchor.
         await pill.click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         await waitForChoreographySettle(page);
         const reopened = await stripGeometry(page);
         const reopenedCard = reopened.shape;
@@ -1196,12 +1196,12 @@ siteTest.describe('site detection widget', () => {
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
           .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Bypass requested/);
         await waitForChoreographySettle(page);
-        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pill = page.locator(`${STRIP_HOST} .dw-pill`);
         // Open, then drag the card by its header: the release's captured click
         // lands on the card root (consumer-less) and leaves the suppression
         // armed — the auditor's one-lost-Enter setup.
         await pill.click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         await waitForChoreographySettle(page);
         const opened = await stripGeometry(page);
         const card = opened.shape;
@@ -1217,10 +1217,10 @@ siteTest.describe('site detection widget', () => {
         // pointer path's suppression flag — the first Enter opens, not the
         // second (SB-D9's no-dead-ends through the keyboard).
         await page.keyboard.press('Escape');
-        await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toBeFocused();
+        await expect(page.locator(`${STRIP_HOST} .dw-pill`)).toBeFocused();
         await waitForChoreographySettle(page);
         await page.keyboard.press('Enter');
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         const reopened = await readStrip(page);
         expect(reopened.cardOpen, 'the first Enter opens the card').toBe(true);
         expect(reopened.pillExpanded, 'aria-expanded rode the keyboard open').toBe('true');
@@ -1242,7 +1242,7 @@ siteTest.describe('site detection widget', () => {
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
           .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Bypass requested/);
         await waitForChoreographySettle(page);
-        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pill = page.locator(`${STRIP_HOST} .dw-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
         if (pillBox === null) throw new Error('the pill is missing a box');
         const before = await stripGeometry(page);
@@ -1312,7 +1312,7 @@ siteTest.describe('site detection widget', () => {
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
           .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Bypass requested/);
         await waitForChoreographySettle(page);
-        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pill = page.locator(`${STRIP_HOST} .dw-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
         if (pillBox === null) throw new Error('the pill is missing a box');
         const grabBox: DragScriptBox = {
@@ -1348,7 +1348,7 @@ siteTest.describe('site detection widget', () => {
         // the engine-side shape of the pointer leaving the window during a
         // quick release (the machine must end by settle — the parked
         // position was already fully inside by every move's clamp).
-        await releaseCapturedPointer(page, '.ins-pill');
+        await releaseCapturedPointer(page, '.dw-pill');
         await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(false);
         // The straggler release (the engine may deliver one late after a
         // capture loss) must find no drag and reposition nothing. It is
@@ -1429,8 +1429,8 @@ siteTest.describe('site detection widget', () => {
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
           .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Bypass requested/);
         await waitForChoreographySettle(page);
-        await page.locator(`${STRIP_HOST} .ins-pill`).click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await page.locator(`${STRIP_HOST} .dw-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         await waitForChoreographySettle(page);
         const opened = await stripGeometry(page);
         const card = opened.shape;
@@ -1451,7 +1451,7 @@ siteTest.describe('site detection widget', () => {
         await page.mouse.down();
         await page.mouse.move(target.x, target.y, { steps: 1 });
         await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(true);
-        await releaseCapturedPointer(page, '.ins-card');
+        await releaseCapturedPointer(page, '.dw-card');
         await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(false);
         await page.mouse.up();
         await waitForChoreographySettle(page);
@@ -1486,7 +1486,7 @@ siteTest.describe('site detection widget', () => {
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
           .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Bypass requested/);
         await waitForChoreographySettle(page);
-        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pill = page.locator(`${STRIP_HOST} .dw-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
         if (pillBox === null) throw new Error('the pill is missing a box');
         const grabBox: DragScriptBox = {
@@ -1550,8 +1550,8 @@ siteTest.describe('site detection widget', () => {
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
           .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Bypass requested/);
         await waitForChoreographySettle(page);
-        await page.locator(`${STRIP_HOST} .ins-pill`).click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await page.locator(`${STRIP_HOST} .dw-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         await waitForChoreographySettle(page);
         const opened = await stripGeometry(page);
         const card = opened.shape;
@@ -1603,7 +1603,7 @@ siteTest.describe('site detection widget', () => {
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
           .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Bypass requested/);
         await waitForChoreographySettle(page);
-        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pill = page.locator(`${STRIP_HOST} .dw-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
         if (pillBox === null) throw new Error('the pill is missing a box');
         // Park left of mid-page so a shrink to 640 Strands it near the edge.
@@ -1630,10 +1630,10 @@ siteTest.describe('site detection widget', () => {
               await page.evaluate((host: string) => {
                 const chrome = document
                   .querySelector(host)
-                  ?.shadowRoot?.querySelector('.ins-chrome');
+                  ?.shadowRoot?.querySelector('.dw-chrome');
                 if (chrome === null || chrome === undefined) return false;
                 return (
-                  chrome.classList.contains('ins-resettle') &&
+                  chrome.classList.contains('dw-resettle') &&
                   chrome
                     .getAnimations()
                     .some((a) => a instanceof CSSTransition && a.effect !== null)
@@ -1648,11 +1648,11 @@ siteTest.describe('site detection widget', () => {
             async () => {
               const read = await page.evaluate((host: string) => {
                 const root = document.querySelector(host)?.shadowRoot ?? null;
-                const chrome = root?.querySelector<HTMLElement>('.ins-chrome') ?? null;
-                const pillNow = root?.querySelector<HTMLElement>('.ins-pill') ?? null;
+                const chrome = root?.querySelector<HTMLElement>('.dw-chrome') ?? null;
+                const pillNow = root?.querySelector<HTMLElement>('.dw-pill') ?? null;
                 if (chrome === null || pillNow === null) return null;
                 const pillRect = pillNow.getBoundingClientRect();
-                const resettle = chrome.classList.contains('ins-resettle');
+                const resettle = chrome.classList.contains('dw-resettle');
                 return {
                   left: pillRect.left,
                   top: pillRect.top,
@@ -1686,12 +1686,12 @@ siteTest.describe('site detection widget', () => {
             async () => {
               const read = await page.evaluate((host: string) => {
                 const root = document.querySelector(host)?.shadowRoot ?? null;
-                const chrome = root?.querySelector<HTMLElement>('.ins-chrome') ?? null;
-                const pillNow = root?.querySelector<HTMLElement>('.ins-pill') ?? null;
+                const chrome = root?.querySelector<HTMLElement>('.dw-chrome') ?? null;
+                const pillNow = root?.querySelector<HTMLElement>('.dw-pill') ?? null;
                 if (chrome === null || pillNow === null) return null;
                 const pillRect = pillNow.getBoundingClientRect();
                 return {
-                  instResettle: chrome.classList.contains('ins-resettle'),
+                  instResettle: chrome.classList.contains('dw-resettle'),
                   running: chrome
                     .getAnimations()
                     .filter((a) => a instanceof CSSTransition)
@@ -1740,7 +1740,7 @@ siteTest.describe('site detection widget', () => {
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
           .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Bypass requested/);
         await waitForChoreographySettle(page);
-        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pill = page.locator(`${STRIP_HOST} .dw-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
         if (pillBox === null) throw new Error('the pill is missing a box');
         // Park near the TOP edge: the open card grows upward from the
@@ -1763,7 +1763,7 @@ siteTest.describe('site detection widget', () => {
         ).toBeLessThanOrEqual(2);
 
         await pill.click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         await waitForChoreographySettle(page);
         const opened = await stripGeometry(page);
         const card = opened.shape;
@@ -1837,8 +1837,8 @@ siteTest.describe('site detection widget', () => {
           .toMatch(/^WP Rocket page analysis: WPR \(unknown version\)✓ Cached/s);
         const pillText = (await readStrip(page)).pillText ?? '';
         expect(pillText, 'the pill never renders a version digit').not.toMatch(/WPR \d/);
-        await page.locator(`${STRIP_HOST} .ins-pill`).click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await page.locator(`${STRIP_HOST} .dw-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         const read = await readStrip(page);
         expect(read.cardOpen, 'the card is open').toBe(true);
         expect(read.title, 'the card carries the same honest identity').toBe(
@@ -1870,7 +1870,7 @@ siteTest.describe('site detection widget', () => {
         await waitForChoreographySettle(page);
         // Commit one drag first so the cancel has a real session position to
         // restore (not the untouched resting anchor).
-        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pill = page.locator(`${STRIP_HOST} .dw-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
         if (pillBox === null) throw new Error('the pill is missing a box');
         await pill.hover();
@@ -1909,7 +1909,7 @@ siteTest.describe('site detection widget', () => {
             }
             pill.focus();
           },
-          { host: STRIP_HOST, part: '.ins-pill' }
+          { host: STRIP_HOST, part: '.dw-pill' }
         );
         await page.keyboard.press('Escape');
         await page.mouse.up();
@@ -1973,7 +1973,7 @@ siteTest.describe('site detection widget', () => {
       try {
         await settleWidget(page);
         // Park far top-left on the wide viewport.
-        await page.locator(`${STRIP_HOST} .ins-pill`).hover();
+        await page.locator(`${STRIP_HOST} .dw-pill`).hover();
         await page.mouse.down();
         await page.mouse.move(2, 2, { steps: 12 });
         await page.mouse.up();
@@ -2014,8 +2014,8 @@ siteTest.describe('site detection widget', () => {
           y: Math.round(wide.y)
         });
         // Opening the card from the clamped corner keeps it inside too.
-        await page.locator(`${STRIP_HOST} .ins-pill`).click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await page.locator(`${STRIP_HOST} .dw-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         await waitForChoreographySettle(page);
         const opened = await stripGeometry(page);
         const card = opened.shape;
@@ -2072,7 +2072,7 @@ siteTest.describe('site detection widget', () => {
         const hash = await page.evaluate(() => window.location.hash);
 
         // Press the pill, sweep across the host copy, release over the link.
-        await page.locator(`${STRIP_HOST} .ins-pill`).hover();
+        await page.locator(`${STRIP_HOST} .dw-pill`).hover();
         await page.mouse.down();
         await page.mouse.move(300, 60, { steps: 12 });
         await page.mouse.move(linkBox.x + 20, linkBox.y + 20, { steps: 8 });
@@ -2237,8 +2237,8 @@ siteTest.describe('site detection widget', () => {
         // Widget → host: mount live, open, drag, close — the host is unchanged.
         await setWidgetEnabled(extension, true);
         await settleWidget(page);
-        await page.locator(`${STRIP_HOST} .ins-pill`).click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await page.locator(`${STRIP_HOST} .dw-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         await waitForChoreographySettle(page);
         const card = (await stripGeometry(page)).shape;
         if (card === null) throw new Error('the open card lost its shape');
@@ -2287,14 +2287,14 @@ siteTest.describe('site detection widget', () => {
               'clip-path'
             ].map((name) => `${name}=${hostStyle.getPropertyValue(name)}`);
             const parts = [
-              '.ins-chrome',
-              '.ins-pill',
-              '.ins-card',
-              '.ins-card-head',
-              '.ins-close',
-              '.ins-card-foot',
-              '.ins-chip',
-              '.ins-group-label'
+              '.dw-chrome',
+              '.dw-pill',
+              '.dw-card',
+              '.dw-card-head',
+              '.dw-close',
+              '.dw-card-foot',
+              '.dw-chip',
+              '.dw-group-label'
             ];
             const partSnapshots = parts.map((selector) => {
               const element = root.querySelector(selector);
@@ -2327,8 +2327,8 @@ siteTest.describe('site detection widget', () => {
           }, STRIP_HOST);
         };
         const widgetClosed = await widgetSnapshot();
-        await page.locator(`${STRIP_HOST} .ins-pill`).click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await page.locator(`${STRIP_HOST} .dw-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         await waitForChoreographySettle(page);
         const widgetOpen = await widgetSnapshot();
         await page.keyboard.press('Escape');
@@ -2344,10 +2344,10 @@ siteTest.describe('site detection widget', () => {
               margin: 11px !important; letter-spacing: 3px !important;
               cursor: crosshair !important; transition: all 9s !important;
               box-sizing: content-box !important; }
-            html body wpr-fdt-inspector, wpr-fdt-inspector[style], wpr-fdt-inspector * {
+            html body wpr-fdt-detection-widget, wpr-fdt-detection-widget[style], wpr-fdt-detection-widget * {
               display: block !important; position: static !important; opacity: 0.1 !important;
               z-index: -1 !important; width: 10px !important; height: 10px !important; }
-            .ins-chrome, .ins-pill, .ins-card, .ins-chip, button, section, div {
+            .dw-chrome, .dw-pill, .dw-card, .dw-chip, button, section, div {
               display: none !important; }
             :root { --surface-2: red; --fg-primary: red; --font-mono: serif; --motion-slow: 9s; }
           `
@@ -2356,8 +2356,8 @@ siteTest.describe('site detection widget', () => {
         expect(await widgetSnapshot(), 'the closed widget is identical under hostile CSS').toEqual(
           widgetClosed
         );
-        await page.locator(`${STRIP_HOST} .ins-pill`).click();
-        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await page.locator(`${STRIP_HOST} .dw-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
         await waitForChoreographySettle(page);
         expect(await widgetSnapshot(), 'the open widget is identical under hostile CSS').toEqual(
           widgetOpen
@@ -2381,7 +2381,7 @@ siteTest.describe('site detection widget', () => {
             .poll(
               async () =>
                 await adminPage.evaluate(
-                  (): boolean => document.querySelector('wpr-fdt-inspector') !== null
+                  (): boolean => document.querySelector('wpr-fdt-detection-widget') !== null
                 ),
               { timeout: 10_000, intervals: [250, 500] }
             )
@@ -2411,21 +2411,21 @@ siteTest.describe('site detection widget', () => {
           )
           .toBe(true);
         const overlap = await adminPage.evaluate((): boolean => {
-          const host = document.querySelector('wpr-fdt-inspector');
-          const ins = host?.shadowRoot?.querySelector('.ins-chrome');
+          const host = document.querySelector('wpr-fdt-detection-widget');
+          const widget = host?.shadowRoot?.querySelector('.dw-chrome');
           const kc = document
             .querySelector('wpr-fdt-known-conflicts')
             ?.shadowRoot?.querySelector('.kc-chrome');
-          if (kc === null || kc === undefined || ins === null || ins === undefined) {
+          if (kc === null || kc === undefined || widget === null || widget === undefined) {
             throw new Error('one widget missing its floating chrome');
           }
           const kcBox = (kc as HTMLElement).getBoundingClientRect();
-          const insBox = (ins as HTMLElement).getBoundingClientRect();
+          const widgetBox = (widget as HTMLElement).getBoundingClientRect();
           return !(
-            kcBox.right < insBox.left ||
-            insBox.right < kcBox.left ||
-            kcBox.bottom < insBox.top ||
-            insBox.bottom < kcBox.top
+            kcBox.right < widgetBox.left ||
+            widgetBox.right < kcBox.left ||
+            kcBox.bottom < widgetBox.top ||
+            widgetBox.bottom < kcBox.top
           );
         });
         expect(overlap, 'the two floating widgets cross no boxes').toBe(false);
@@ -2447,9 +2447,9 @@ siteTest.describe('site detection widget', () => {
         // declares itself and lets the OS scheme flip resolve (Playwright
         // emulates prefers-color-scheme faithfully).
         await page.emulateMedia({ colorScheme: 'dark' });
-        const darkBackground = await stripPartStyle(page, '.ins-pill', 'backgroundColor');
+        const darkBackground = await stripPartStyle(page, '.dw-pill', 'backgroundColor');
         await page.emulateMedia({ colorScheme: 'light' });
-        const lightBackground = await stripPartStyle(page, '.ins-pill', 'backgroundColor');
+        const lightBackground = await stripPartStyle(page, '.dw-pill', 'backgroundColor');
         expect(lightBackground, 'the surface token resolves both OS palettes').not.toBe(
           darkBackground
         );
@@ -2469,7 +2469,7 @@ siteTest.describe('site detection widget', () => {
           });
         }, 'dark');
         await expect
-          .poll(async () => stripPartStyle(page, '.ins-pill', 'backgroundColor'), {
+          .poll(async () => stripPartStyle(page, '.dw-pill', 'backgroundColor'), {
             timeout: 10_000,
             intervals: [250, 500]
           })

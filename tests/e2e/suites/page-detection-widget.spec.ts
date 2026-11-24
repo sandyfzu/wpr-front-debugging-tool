@@ -51,7 +51,7 @@ import {
 } from '../helpers/options';
 
 /** The widget's shadow-root host. */
-const WIDGET_HOST = 'wpr-fdt-inspector';
+const WIDGET_HOST = 'wpr-fdt-detection-widget';
 /** The per-origin override map (sync area). */
 const SITES_KEY = 'detection-widget-sites';
 /** The device-local drag positions (local area). */
@@ -173,8 +173,8 @@ async function togglePerSite(driver: ExtensionDriver, page: Page, tabId: number)
 async function widgetSurfaces(page: Page): Promise<{ pill: string; card: string }> {
   return await page.evaluate((host: string) => {
     const root = document.querySelector(host)?.shadowRoot;
-    const pill = root?.querySelector('.ins-pill');
-    const card = root?.querySelector('.ins-card');
+    const pill = root?.querySelector('.dw-pill');
+    const card = root?.querySelector('.dw-card');
     if (pill === null || pill === undefined || card === null || card === undefined) {
       throw new Error('the widget pill or card is missing');
     }
@@ -192,7 +192,7 @@ async function settleVerdict(page: Page): Promise<void> {
       async () =>
         await page.evaluate(
           (host: string) =>
-            document.querySelector(host)?.shadowRoot?.querySelector('.ins-pill .ins-cache-text')
+            document.querySelector(host)?.shadowRoot?.querySelector('.dw-pill .dw-cache-text')
               ?.textContent ?? null,
           WIDGET_HOST
         ),
@@ -579,8 +579,8 @@ test.describe('on-page detection widget (fixture origins)', () => {
       await page.emulateMedia({ colorScheme: 'dark' });
       await expectWidget(page, true, 'default on');
       await settleVerdict(page);
-      await page.locator(`${WIDGET_HOST} .ins-pill`).click();
-      await expect(page.locator(`${WIDGET_HOST} .ins-card`)).toBeVisible();
+      await page.locator(`${WIDGET_HOST} .dw-pill`).click();
+      await expect(page.locator(`${WIDGET_HOST} .dw-card`)).toBeVisible();
       await stampRealm(page);
 
       // System (no stored choice) follows the OS, both ways.
@@ -604,7 +604,7 @@ test.describe('on-page detection widget (fixture origins)', () => {
       await expectPalette('dark', 'System written live follows OS dark');
       await page.emulateMedia({ colorScheme: 'light' });
       await expectPalette('light', 'System follows the next OS flip');
-      await expect(page.locator(`${WIDGET_HOST} .ins-card`), 'the card stayed open').toBeVisible();
+      await expect(page.locator(`${WIDGET_HOST} .dw-card`), 'the card stayed open').toBeVisible();
       await expectRealmAlive(page);
     } finally {
       await options.close();
@@ -616,8 +616,8 @@ test.describe('on-page detection widget (fixture origins)', () => {
     extension
   }) => {
     const page = await extension.browserContext.newPage();
-    const pill = page.locator(`${WIDGET_HOST} .ins-pill`);
-    const card = page.locator(`${WIDGET_HOST} .ins-card`);
+    const pill = page.locator(`${WIDGET_HOST} .dw-pill`);
+    const card = page.locator(`${WIDGET_HOST} .dw-card`);
     try {
       // Emulated before the navigation: the mount's entrance sees it.
       await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -670,40 +670,40 @@ test.describe('on-page detection widget (fixture origins)', () => {
       );
       expect(detections?.wpr.present, 'the pass found no WP Rocket').toBe(false);
 
-      const pill = page.locator(`${WIDGET_HOST} .ins-pill`);
+      const pill = page.locator(`${WIDGET_HOST} .dw-pill`);
       await expect(pill).toHaveText('WP Rocket page analysis: WPR not found—');
       await expect(pill).toHaveAttribute(
         'title',
         'WPR not found — WP Rocket did not handle this page.'
       );
-      await expect(page.locator(`${WIDGET_HOST} .ins-chrome`)).toHaveClass(/\bins-gray\b/);
+      await expect(page.locator(`${WIDGET_HOST} .dw-chrome`)).toHaveClass(/\bdw-gray\b/);
 
       await pill.click();
-      const card = page.locator(`${WIDGET_HOST} .ins-card`);
+      const card = page.locator(`${WIDGET_HOST} .dw-card`);
       await expect(card).toBeVisible();
-      await expect(card.locator('.ins-title')).toHaveText('WPR not found');
-      const cache = card.locator('.ins-cache');
+      await expect(card.locator('.dw-title')).toHaveText('WPR not found');
+      const cache = card.locator('.dw-cache');
       await expect(cache).toHaveText('—');
-      await expect(cache).toHaveClass(/\bins-cache-neutral\b/);
+      await expect(cache).toHaveClass(/\bdw-cache-neutral\b/);
       await expect(cache).toHaveAttribute('title', 'WP Rocket did not handle this page.');
-      await expect(card.locator('.ins-close')).toHaveAttribute('title', 'Close the report');
-      await expect(card.locator('.ins-card-foot')).toHaveText(/^WPR — · WP — · FDT [\w.-]+$/);
+      await expect(card.locator('.dw-close')).toHaveAttribute('title', 'Close the report');
+      await expect(card.locator('.dw-card-foot')).toHaveText(/^WPR — · WP — · FDT [\w.-]+$/);
       // A ready answer: no loading or failure copy.
-      await expect(card.locator('.ins-state')).toHaveCount(0);
+      await expect(card.locator('.dw-state')).toHaveCount(0);
 
-      const rows = await card.locator('.ins-row').evaluateAll((nodes) =>
+      const rows = await card.locator('.dw-row').evaluateAll((nodes) =>
         nodes.map((row) => ({
-          chip: row.querySelector('.ins-chip')?.className ?? '',
-          value: row.querySelector('.ins-value')?.textContent ?? null,
+          chip: row.querySelector('.dw-chip')?.className ?? '',
+          value: row.querySelector('.dw-value')?.textContent ?? null,
           title: row.getAttribute('title') ?? ''
         }))
       );
       expect(rows.length, 'the registry rows still render, each honest').toBeGreaterThan(0);
       for (const row of rows) {
-        expect(row.chip, `no applied verdict is claimed (${row.title})`).not.toMatch(/ins-chip-ok/);
+        expect(row.chip, `no applied verdict is claimed (${row.title})`).not.toMatch(/dw-chip-ok/);
         // Only the honest absence states: neutral, or attention (unsure).
         expect(row.chip, `an absence chip state (${row.title})`).toMatch(
-          /\bins-chip-(neutral|attention)\b/
+          /\bdw-chip-(neutral|attention)\b/
         );
         // A measured count may show, and on this page it can only be zero.
         if (row.value !== null) {
@@ -729,8 +729,8 @@ test.describe('on-page detection widget (fixture origins)', () => {
       for (const width of [320, 480, 768, 1280]) {
         await page.setViewportSize({ width, height: 640 });
         for (const open of [false, true]) {
-          const pill = page.locator(`${WIDGET_HOST} .ins-pill`);
-          const isOpen = await page.locator(`${WIDGET_HOST} .ins-card`).isVisible();
+          const pill = page.locator(`${WIDGET_HOST} .dw-pill`);
+          const isOpen = await page.locator(`${WIDGET_HOST} .dw-card`).isVisible();
           if (open !== isOpen) {
             if (open) await pill.click();
             else await page.keyboard.press('Escape');
@@ -739,8 +739,8 @@ test.describe('on-page detection widget (fixture origins)', () => {
           const read = await page.evaluate(
             (payload: { host: string; open: boolean }) => {
               const root = document.querySelector(payload.host)?.shadowRoot;
-              const shape = root?.querySelector(payload.open ? '.ins-card' : '.ins-pill');
-              const body = root?.querySelector('.ins-card-body');
+              const shape = root?.querySelector(payload.open ? '.dw-card' : '.dw-pill');
+              const body = root?.querySelector('.dw-card-body');
               if (shape === null || shape === undefined || body === null || body === undefined) {
                 throw new Error('the widget shape is missing');
               }

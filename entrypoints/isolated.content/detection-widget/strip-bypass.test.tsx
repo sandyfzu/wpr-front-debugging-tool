@@ -31,7 +31,7 @@ import {
   type StripCardRow
 } from './strip-state';
 import { BYPASS_APPLIED_ICON, MODIFIER_ICONS } from './icons';
-import { InspectorView } from './ui';
+import { DetectionWidgetView } from './ui';
 
 afterEach(cleanup);
 
@@ -78,7 +78,7 @@ const BYPASS_RENDER = detect('bypass-render.html');
 function renderCard(card: StripCardModel): HTMLElement {
   const noop = (): void => undefined;
   const { container } = render(() => (
-    <InspectorView
+    <DetectionWidgetView
       model={() => card}
       mood={() => 'amber'}
       cardOpen={() => true}
@@ -198,7 +198,7 @@ describe('the rendered widget', () => {
     expect(badge?.getAttribute('aria-hidden')).toBe('true');
     expect(badge?.textContent).toBe(BYPASS_APPLIED_COPY.chip);
     expect(pathsOf(badge)).toEqual(BYPASS_APPLIED_ICON.paths);
-    const row = badge?.closest('.ins-row');
+    const row = badge?.closest('.dw-row');
     expect(row?.querySelector('[data-fdt-strip-modifier-line]')?.textContent).toContain(
       BYPASS_APPLIED_COPY.sentence
     );

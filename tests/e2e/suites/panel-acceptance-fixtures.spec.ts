@@ -532,11 +532,11 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
         }
 
         // The on-page strip: open the card, count the warned rows.
-        const pill = fixture.page.locator(`${STRIP_HOST} .ins-pill`);
+        const pill = fixture.page.locator(`${STRIP_HOST} .dw-pill`);
         await expect(pill).toContainText('WPR');
         await pill.focus();
         await fixture.page.keyboard.press('Enter');
-        await expect(fixture.page.locator(`${STRIP_HOST} .ins-row`).first()).toBeVisible();
+        await expect(fixture.page.locator(`${STRIP_HOST} .dw-row`).first()).toBeVisible();
         const warnedRows = fixture.page.locator(
           `${STRIP_HOST} [data-fdt-strip-modifier="bypass-applied"]`
         );
@@ -557,7 +557,7 @@ test.describe('acceptance over served cache-evidence fixtures (real capture)', (
             .evaluate((region) => region.scrollWidth - region.clientWidth);
           expect(panelOverflow, `${String(width)} px: panel content`).toBe(0);
           const stripOverflow = await fixture.page.evaluate((host: string) => {
-            const body = document.querySelector(host)?.shadowRoot?.querySelector('.ins-card-body');
+            const body = document.querySelector(host)?.shadowRoot?.querySelector('.dw-card-body');
             if (body === null || body === undefined) throw new Error('the strip card is missing');
             const viewport = document.documentElement;
             return {

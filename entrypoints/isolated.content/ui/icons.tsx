@@ -9,7 +9,7 @@
  * installed version), 24 viewBox, `currentColor` strokes with round caps and
  * joins so an icon inherits its container's text color. Feature glyphs live
  * beside the feature that renders them (e.g. `known-conflicts/icons`,
- * `inspector/icons`); this file owns the factory and the shared set.
+ * `detection-widget/icons`); this file owns the factory and the shared set.
  */
 
 import type { JSX } from 'solid-js';

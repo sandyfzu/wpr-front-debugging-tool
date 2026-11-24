@@ -467,13 +467,13 @@ test.describe('RUCSS tester (panel → page → background → mocked service)',
 
     /** The strip's card line count (opened, read, closed). */
     const cardLines = async (): Promise<number> => {
-      await fixture.page.locator(`${STRIP_HOST} .ins-pill`).click();
-      await expect(fixture.page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+      await fixture.page.locator(`${STRIP_HOST} .dw-pill`).click();
+      await expect(fixture.page.locator(`${STRIP_HOST} .dw-card`)).toBeVisible();
       const lines = fixture.page.locator(`${STRIP_HOST} [data-fdt-strip-rucss]`);
       const count = await lines.count();
       if (count > 0) await expect(lines).toHaveText('RUCSS test applied — reload to restore');
       await fixture.page.keyboard.press('Escape');
-      await expect(fixture.page.locator(`${STRIP_HOST} .ins-card`)).toBeHidden();
+      await expect(fixture.page.locator(`${STRIP_HOST} .dw-card`)).toBeHidden();
       return count;
     };
     /** Show a panel route by hash. */

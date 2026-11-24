@@ -41,7 +41,7 @@ const FRAMES = 30;
 
 /** The on-page palette's and the detection widget's shadow hosts. */
 const PALETTE_HOST = 'wpr-fdt-command-palette';
-const WIDGET_HOST = 'wpr-fdt-inspector';
+const WIDGET_HOST = 'wpr-fdt-detection-widget';
 const KC_HOST = 'wpr-fdt-known-conflicts';
 
 /** Fixture pages: one with a focusable control (palette), one plain (widget). */
@@ -253,10 +253,10 @@ test('detection widget: mount, card open and pill return never paint a from fram
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.addInitScript(SAMPLER);
     await page.addInitScript(
-      `window.__fdtMountSamples = window.__fdtSampleShadow(${JSON.stringify(WIDGET_HOST)}, '.ins-pill');`
+      `window.__fdtMountSamples = window.__fdtSampleShadow(${JSON.stringify(WIDGET_HOST)}, '.dw-pill');`
     );
     await page.goto(`${ORIGIN_A}${PLAIN_PAGE}`, { waitUntil: 'load' });
-    const pill = page.locator(`${WIDGET_HOST} .ins-pill`);
+    const pill = page.locator(`${WIDGET_HOST} .dw-pill`);
     await expect(pill).toBeVisible(MOUNT);
     const mount = await page.evaluate(
       () => (window as unknown as { __fdtMountSamples: Promise<FrameSample[]> }).__fdtMountSamples
@@ -264,13 +264,13 @@ test('detection widget: mount, card open and pill return never paint a from fram
     expectStill(mount, 'widget mount');
 
     await pill.focus();
-    const card = await sampleAround(page, WIDGET_HOST, '.ins-card', async () => {
+    const card = await sampleAround(page, WIDGET_HOST, '.dw-card', async () => {
       await page.keyboard.press('Enter');
     });
     expectStill(card, 'card open');
     await expect(page.locator(`${WIDGET_HOST} [role="dialog"]`)).toBeFocused();
 
-    const back = await sampleAround(page, WIDGET_HOST, '.ins-pill', async () => {
+    const back = await sampleAround(page, WIDGET_HOST, '.dw-pill', async () => {
       await page.keyboard.press('Escape');
     });
     expectStill(back, 'pill return');
