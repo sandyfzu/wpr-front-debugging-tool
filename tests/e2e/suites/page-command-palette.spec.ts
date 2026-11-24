@@ -12,7 +12,8 @@
  * - Rows run their shipped mechanisms: the detection-widget toggle writes
  *   the per-origin entry, Side-by-Side opens its overlay, the builder opens
  *   its overlay — and a later open paints above it (top-layer order); the
- *   PageSpeed row opens the analysis tab for this page; the gate row below.
+ *   PageSpeed row opens the analysis tab for this page (no opener, no
+ *   referrer); the gate row below.
  * - Gate-off from the palette: the inline confirm (Cancel focused), then the
  *   gate is stored off, the view leaves the page, the notice names the way
  *   back, and the receiver is gone (the menu send finds no receiver); a
@@ -304,6 +305,14 @@ test.describe('on-page command palette', () => {
       expect(new URL(url.searchParams.get('wpr-sbs') ?? '').origin).toBe(
         new URL(page.url()).origin
       );
+      // Opened with no handle back into the page and no referrer.
+      await analysis.waitForLoadState();
+      expect(
+        await analysis.evaluate(() => ({
+          referrer: document.referrer,
+          opener: window.opener === null ? null : 'set'
+        }))
+      ).toEqual({ referrer: '', opener: null });
       await analysis.close();
     } finally {
       await extension.browserContext.unroute('https://pagespeed.web.dev/**');

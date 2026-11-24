@@ -142,7 +142,6 @@ export function NoticeView(props: NoticeViewProps): JSX.Element {
   return (
     <div
       class="pn-layer"
-      data-fdt-tokens
       ref={(layer) => {
         props.registerLayer(layer);
       }}

@@ -6,8 +6,8 @@
  * carries a secret: the cookie capture keeps names only, and secret-bearing
  * header values (`Set-Cookie`, credentials, tokens, secret URL query
  * values) are withheld by the panel's one redaction rule before they render
- * or copy. That guarantee is this page's display and clipboard only — the
- * captured payload itself still holds the raw header values.
+ * or copy — on top of the capture's own redaction (the background stores
+ * redacted rows only), so the page re-applying it is a second safety net.
  *
  * State matrix (the shell owns loading, fetch errors and render crashes —
  * this body renders only on `ready`/`refreshing`):

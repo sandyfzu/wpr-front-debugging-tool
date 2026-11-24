@@ -42,7 +42,9 @@
  * an outside pointer or focus move dismisses (the library's outside checks
  * read composed paths, so they see through the shadow root), and Escape is
  * handled on the panel itself, since an injected root keeps its key events
- * from the document listener the library's Escape relies on.
+ * from the document listener the library's Escape relies on. The library's
+ * close still writes the host body's inline style (see `host-body-style`),
+ * so a mounted dialog puts back what that write changed.
  */
 import type { JSX } from 'solid-js';
 import { onCleanup, Show } from 'solid-js';
@@ -51,6 +53,7 @@ import X from 'lucide-solid/icons/x';
 import { cn } from '../../utils/cn';
 import { isMacPlatform } from '../../utils/platform';
 import { FOCUS_RING } from './classes';
+import { guardBodyStyleThroughClose } from './host-body-style';
 
 export interface ModalDialogProps {
   /**
@@ -333,6 +336,13 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
             // with the surface. Mounted dialogs add their own Escape there.
             const capture = props.onKeyDownCapture;
             const mounted = props.mount !== undefined;
+            // Registered here, inside the library's layer, so this cleanup
+            // runs before the layer's own (which writes the host body).
+            if (mounted) {
+              onCleanup(() => {
+                guardBodyStyleThroughClose(element.ownerDocument.body);
+              });
+            }
             if (capture === undefined && !mounted) return;
             const onKeyDown = (event: KeyboardEvent): void => {
               if (mounted && event.key === 'Escape') {

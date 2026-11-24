@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DB_ENDPOINT,
   DB_FETCH_TIMEOUT_MS,
+  DB_RESPONSE_MAX_BYTES,
   createKnownConflictsDbUpdater,
   createKnownConflictsServe,
   createKnownConflictsSeedLoader,
@@ -43,9 +44,30 @@ const SAMPLE_ROWS: KnownConflict[] = [
   }
 ];
 
-/** A Response-typed stub over exactly what the updater reads. */
+/**
+ * A Response-typed stub over exactly what the readers use: `json()` (the
+ * packaged seed) and the body stream (the capped endpoint read). The stream
+ * carries the supplier's value as JSON text; a rejecting supplier stands for
+ * a body that is not JSON, so the stream carries truncated JSON.
+ */
 function stubResponse(json: () => Promise<unknown>, ok = true): Response {
-  return { ok, json } as unknown as Response;
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const text = await json().then(
+        (value) => JSON.stringify(value),
+        () => '{"truncated":'
+      );
+      controller.enqueue(new TextEncoder().encode(text));
+      controller.close();
+    }
+  });
+  return { ok, json, headers: new Headers(), body } as unknown as Response;
+}
+
+/** A real response whose body is `bytes` long (declared length optional). */
+function sizedResponse(bytes: number, declare: boolean): Response {
+  const headers = declare ? { 'content-length': String(bytes) } : undefined;
+  return new Response(new Uint8Array(bytes).fill(0x20), { headers });
 }
 
 type PromiseSupplier<T> = () => Promise<T>;
@@ -199,6 +221,47 @@ describe('fetchAndStoreKnownConflicts', () => {
     expect(failureReason(outcome)).toBe('malformed-payload');
     expect(storage.writtenRows).toEqual([]);
     expect(storage.writtenTimestamps).toEqual([]);
+  });
+
+  it.each([
+    ['declared over the cap', true],
+    ['streamed past the cap (no declared length)', false]
+  ])('refuses a body %s as oversize, storage untouched', async (_label, declare) => {
+    const storage = fakeStorage();
+    const deps: UpdateDeps = {
+      fetch: () => Promise.resolve(sizedResponse(DB_RESPONSE_MAX_BYTES + 1, declare)),
+      storage,
+      now: () => 1
+    };
+    const outcome = await fetchAndStoreKnownConflicts(deps);
+    expect(failureReason(outcome)).toBe('oversize-payload');
+    expect(storage.writtenRows).toEqual([]);
+    expect(storage.writtenTimestamps).toEqual([]);
+  });
+
+  it('reports a body that is not UTF-8 text as malformed', async () => {
+    const storage = fakeStorage();
+    const deps: UpdateDeps = {
+      fetch: () => Promise.resolve(new Response(new Uint8Array([0x5b, 0xff, 0x5d]))),
+      storage,
+      now: () => 1
+    };
+    expect(failureReason(await fetchAndStoreKnownConflicts(deps))).toBe('malformed-payload');
+    expect(storage.writtenRows).toEqual([]);
+  });
+
+  it('classifies a body stream that dies mid-read like the transport failure it is', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        throw timeoutAbort();
+      }
+    });
+    const deps: UpdateDeps = {
+      fetch: () => Promise.resolve(new Response(body)),
+      storage: fakeStorage(),
+      now: () => 1
+    };
+    expect(failureReason(await fetchAndStoreKnownConflicts(deps))).toBe('timeout');
   });
 
   it('separates a dead network from a timeout-shaped abort', async () => {

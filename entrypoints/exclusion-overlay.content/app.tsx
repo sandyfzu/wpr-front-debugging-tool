@@ -509,9 +509,6 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   return (
     <div
       class="xo-layer"
-      // Tokens re-declared inside the shadow tree: page `*` rules setting
-      // custom properties reach the host, never this element.
-      data-fdt-tokens
       ref={layer}
       // The page's CSS zoom reaches the overlay through its host: undo it.
       style={props.page.zoom() === 1 ? undefined : { zoom: String(1 / props.page.zoom()) }}

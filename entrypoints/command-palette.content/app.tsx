@@ -109,7 +109,7 @@ export function PaletteApp(props: PaletteAppProps): JSX.Element {
   };
 
   return (
-    <div class="cp-layer" data-fdt-tokens ref={setLayer}>
+    <div class="cp-layer" ref={setLayer}>
       {/* Keyed: the callbacks get plain values, never accessors — the
           library's deferred teardown reads its props after the branch closed. */}
       <Show when={props.open() ? layer() : undefined} keyed>

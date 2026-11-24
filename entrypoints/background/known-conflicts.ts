@@ -15,7 +15,7 @@
  *   storage so every later read works while freshness keeps retrying.
  *
  * Failure modes stay distinct on the log (network outage, timeout, HTTP
- * status, malformed JSON, invalid shape, storage write): one shared
+ * status, malformed JSON, an oversized body, invalid shape, storage write): one shared
  * "couldn't update" reading of the reason previously left failed installs
  * and transient outages indistinguishable, and the single-flight lock is
  * reset unconditionally so a failure can never wedge updates off.
@@ -32,6 +32,7 @@ import { parseKnownConflicts, type DbUpdateResult } from '../../lib/messaging/va
 import { ALARM_ID_UPDATE_KNOWN_CONFLICTS_DB } from '../../lib/wp-rocket/constants';
 import dbSeedUrl from '../../lib/known-conflicts/known-conflicts-db.json?url&no-inline';
 import { fetchFailureKind } from '../../utils/fetch-failure';
+import { readCappedText } from '../../utils/read-capped-text';
 
 const log = createLogger('known-conflicts');
 
@@ -45,6 +46,15 @@ export const DB_ENDPOINT = 'https://apps.wpr-support.com/kc/known-conflicts.json
  */
 export const DB_FETCH_TIMEOUT_MS = 10_000;
 
+/**
+ * The endpoint body's byte ceiling: far above any real database (~80 KB
+ * today), so it never trips on one, while an oversized or endless answer is
+ * cancelled mid-stream instead of being buffered and parsed whole. The row
+ * validator caps characters, not bytes, so this is a transport guard, not a
+ * mirror of the validator's limits.
+ */
+export const DB_RESPONSE_MAX_BYTES = 8 * 1024 * 1024;
+
 /** Why a refresh round trip produced nothing; logged, never guessed. */
 export type UpdateFailureReason =
   /** Transport refused/died before an answer. */
@@ -53,8 +63,10 @@ export type UpdateFailureReason =
   | 'timeout'
   /** Something answered, not with a success status. */
   | 'http-error'
-  /** Something answered, not with parseable JSON. */
+  /** Something answered, not with parseable JSON (or not UTF-8 text). */
   | 'malformed-payload'
+  /** The answer's body passed {@link DB_RESPONSE_MAX_BYTES}. */
+  | 'oversize-payload'
   /** Parseable, not our row shape — storage stays untouched. */
   | 'invalid-payload'
   /** Valid rows, but the storage write itself failed. */
@@ -107,9 +119,28 @@ export async function fetchAndStoreKnownConflicts(deps: UpdateDeps): Promise<Upd
       cause: new RangeError(`Endpoint answered ${String(response.status)}`)
     };
   }
+  let read: Awaited<ReturnType<typeof readCappedText>>;
+  try {
+    read = await readCappedText(response, DB_RESPONSE_MAX_BYTES);
+  } catch (cause) {
+    // The body stream died (or the fetch cap fired) while reading.
+    return { status: 'failed', reason: fetchFailureKind(cause), cause };
+  }
+  if (!read.ok) {
+    const oversize = read.problem === 'oversize';
+    return {
+      status: 'failed',
+      reason: oversize ? 'oversize-payload' : 'malformed-payload',
+      cause: new RangeError(
+        oversize
+          ? `Endpoint body passed ${String(DB_RESPONSE_MAX_BYTES)} bytes`
+          : 'Endpoint body is not UTF-8 text'
+      )
+    };
+  }
   let payload: unknown;
   try {
-    payload = await response.json();
+    payload = JSON.parse(read.text);
   } catch (cause) {
     return { status: 'failed', reason: 'malformed-payload', cause };
   }
