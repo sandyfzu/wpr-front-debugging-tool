@@ -8,6 +8,7 @@
 import type { InterceptionBackendRow } from '../../lib/exclusion-session/backend';
 import { createChromiumInterceptionBackend } from '../../lib/exclusion-session/chromium/backend';
 import { isDebuggerRestrictedUrl } from '../../lib/exclusion-session/chromium/detach-causes';
+import { createInProcessTransformRunner } from '../../lib/exclusion-session/document-pipeline';
 import type { DebuggerPort, TabPresence } from '../../lib/exclusion-session/chromium/port';
 import { createLogger, type Logger } from '../../lib/logger';
 import { isHttpUrl } from '../../utils/urls';
@@ -85,13 +86,20 @@ export function createBrowserDebuggerPort(
 
 /**
  * The Chromium row: the debugger protocol's response-stage `Fetch`
- * interception, selected where the debugger API exists.
+ * interception, selected where the debugger API exists. The engine runs
+ * in-process: a service worker cannot host a `Worker`, so its budget is
+ * checked between pipeline steps.
  */
 export const CHROMIUM_INTERCEPTION_ROW: InterceptionBackendRow = {
   id: 'chromium-debugger',
   isSupported: hasDebuggerApi,
   create(host) {
     const log = createLogger('interception');
-    return createChromiumInterceptionBackend({ port: createBrowserDebuggerPort(log), host, log });
+    return createChromiumInterceptionBackend({
+      port: createBrowserDebuggerPort(log),
+      host,
+      runner: createInProcessTransformRunner(),
+      log
+    });
   }
 };

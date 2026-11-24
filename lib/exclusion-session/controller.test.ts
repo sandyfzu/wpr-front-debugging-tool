@@ -35,6 +35,7 @@ import {
   type ExclusionSessionControllerDeps
 } from './controller';
 import type { DocumentTransformRunner } from './document-transform';
+import { createInProcessTransformRunner } from './document-pipeline';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
 import {
   DeadlineExceededError,
@@ -75,7 +76,8 @@ class FakeBackend implements InterceptionBackend {
   armResult: ArmResult | Error = { armed: true };
   resumeResult: boolean | Error = true;
   disarmError: Error | null = null;
-  runner?: DocumentTransformRunner;
+  /** The row's runner: in-process by default, as the Chromium row picks. */
+  runner: DocumentTransformRunner = createInProcessTransformRunner();
   readonly calls: string[] = [];
 
   arm(tabId: number): Promise<ArmResult> {
@@ -879,6 +881,18 @@ describe('host', () => {
         outcome: { outcome: 'failed', reason: 'engine-failed' },
         cause: new Error('x')
       });
+    await expect(r.host.rewriteDocument(doc())).resolves.toBeNull();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'engine-failed' }
+    });
+    expect(logged(r.log, 'error', /engine failed/)).toBe(true);
+  });
+
+  it('records engine-failed when no backend runs the engine (it never started)', async () => {
+    // No wake re-validation ran, so the stored session still reads active.
+    const r = rig({ noBackend: true });
+    await seedActive();
     await expect(r.host.rewriteDocument(doc())).resolves.toBeNull();
     await flush();
     await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
@@ -1692,8 +1706,8 @@ describe('live-session cap', () => {
 });
 
 describe('defaults', () => {
-  it('runs with the default logger and in-process runner', async () => {
-    const r = rig({ log: undefined, runner: undefined });
+  it('runs with the default logger, through the backend’s runner', async () => {
+    const r = rig({ log: undefined });
     await seedActive();
     await expect(
       r.host.rewriteDocument({
@@ -1934,7 +1948,8 @@ describe('served identity and session effects', () => {
         html: '<p>x</p>',
         outcome: { outcome: 'rewritten', reports: [{ feature: 'nope' } as never] }
       });
-    const r = rig({ runner: lying });
+    const r = rig();
+    r.backend.runner = lying;
     await seedActive();
     const document = {
       ...htmlDoc(`${ORIGIN}/a`, '<p>plain</p>'),

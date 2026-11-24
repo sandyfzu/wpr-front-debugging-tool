@@ -5,7 +5,8 @@
  * runs, respawn after a kill, stale messages, dispose).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { applyPipeline, EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder/pipeline';
+import { applyPipeline } from '../exclusion-builder/pipeline';
+import { EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder/pipeline-steps';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
 import type { DocumentTransformRequest } from './document-transform';
@@ -13,13 +14,15 @@ import type { DocumentSimulationInput } from '../messaging/exclusion-simulation'
 import { simulationInput } from '../messaging/exclusion-simulation.fixtures';
 import {
   createWorkerTransformRunner,
-  handleTransformWorkerMessage,
-  parseTransformWorkerRequest,
   WORKER_GRACE_MS,
   type TransformWorkerMessage,
   type TransformWorkerPort,
   type TransformWorkerRequest
 } from './transform-worker';
+import {
+  handleTransformWorkerMessage,
+  parseTransformWorkerRequest
+} from './transform-worker-handler';
 
 const SET: ExclusionSet = {
   rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['a\\.js'] },

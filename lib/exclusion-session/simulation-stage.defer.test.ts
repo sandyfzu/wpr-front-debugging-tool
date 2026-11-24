@@ -10,7 +10,8 @@ import { describe, expect, it } from 'vitest';
 import { composeSteps } from '../exclusion-builder/pipeline';
 import type { DocumentSimulationInput } from '../messaging/exclusion-simulation';
 import { simulateDeferJs } from '../wp-rocket-simulation/defer-js-forward';
-import { simulationStage, simulationStepIds, wireSimulationReport } from './simulation-stage';
+import { simulationStage, wireSimulationReport } from './simulation-stage';
+import { simulationStepIds } from '../wp-rocket-simulation/spec';
 
 const RUNTIME = 'RocketLazyLoadScripts.run();';
 

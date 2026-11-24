@@ -166,8 +166,8 @@ export interface StreamBackendDeps {
   /** Attach a filter to a request (throws when it cannot). */
   readonly openFilter: (requestId: string) => ResponseStreamFilter;
   readonly log: Logger;
-  /** A preempting engine runner; absent → the controller's in-process one. */
-  readonly runner?: DocumentTransformRunner | undefined;
+  /** The engine runner (the row's worker-hosted, preempting one). */
+  readonly runner: DocumentTransformRunner;
   /** Timer seam; defaults to `setTimeout`. */
   readonly schedule?: ScheduleTimer;
   /** A request's start stamp (monotonic epoch ms, strictly increasing); defaults to the platform's. */

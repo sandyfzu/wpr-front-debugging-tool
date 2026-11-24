@@ -51,7 +51,7 @@ import {
 import { writeSimulationMarker } from '../wp-rocket-simulation/marker-write';
 import { servedByteMeasure } from '../wp-rocket-simulation/served-measure';
 import {
-  SIMULATED_FEATURES,
+  simulationStepIds,
   type SimulatedFeatureId,
   type SimulationCspLimit,
   type SimulationCspUnavailableReason,
@@ -102,17 +102,6 @@ function deferPassInput(simulation: DocumentSimulationInput): DeferJsPassInput {
     lists: { external: lists.external, inline: lists.inline },
     inlineQuoteDelimiter: simulatedVariants(simulation).deferInlineQuoteDelimiter
   };
-}
-
-/**
- * The features a request simulates, in the registry's execution order.
- *
- * @param features The request's features.
- */
-export function simulationStepIds(
-  features: readonly SimulatedFeatureId[]
-): readonly SimulatedFeatureId[] {
-  return SIMULATED_FEATURES.map((feature) => feature.id).filter((id) => features.includes(id));
 }
 
 /** The report of a Delay JS step that serves the page as is, decided without the transform. */

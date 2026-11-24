@@ -215,6 +215,8 @@ function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } 
   const backend = createStreamInterceptionBackend({
     host,
     log,
+    // The host runs documents; the backend only exposes its row's runner.
+    runner: vi.fn(),
     schedule: timers.schedule,
     stamp: () => STARTED_AT,
     wallNow: () => WALL_AT,
@@ -285,7 +287,7 @@ describe('stream backend — the armed-tab gate', () => {
     await expect(h.backend.disarm(TAB)).resolves.toBeUndefined();
   });
 
-  it('exposes the injected runner (absent → undefined)', () => {
+  it('exposes the injected runner', () => {
     const runner = vi.fn();
     const withRunner = createStreamInterceptionBackend({
       host: harness().host,
@@ -294,7 +296,6 @@ describe('stream backend — the armed-tab gate', () => {
       runner
     });
     expect(withRunner.runner).toBe(runner);
-    expect(harness().backend.runner).toBeUndefined();
   });
 
   it('logs and opens nothing when the filter cannot be attached', async () => {

@@ -73,7 +73,11 @@ import type {
   InterceptionGrant,
   InterceptionHost
 } from '../backend';
-import { DOCUMENT_BODY_BYTE_LIMIT, type InterceptedResponseFacts } from '../document-transform';
+import {
+  DOCUMENT_BODY_BYTE_LIMIT,
+  type DocumentTransformRunner,
+  type InterceptedResponseFacts
+} from '../document-transform';
 import { speculationRulesGuardSource } from '../speculation-rules';
 import { createMonotonicStamp } from '../../../utils/monotonic-stamp';
 import { LAZYLOAD_RUNTIME_FILE } from '../../wp-rocket-simulation/simulation-data';
@@ -185,6 +189,8 @@ const REQUEST_PAUSED = 'Fetch.requestPaused';
 export interface ChromiumBackendDeps {
   readonly port: DebuggerPort;
   readonly host: InterceptionHost;
+  /** The engine runner the paused documents run through (the row picks it). */
+  readonly runner: DocumentTransformRunner;
   /** Defaults to the `interception` logger. */
   readonly log?: Logger;
   /** Timer seam for every deadline; defaults to `setTimeout`. */
@@ -830,6 +836,8 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
   });
 
   return {
+    runner: deps.runner,
+
     arm: (tabId, generation, origin) =>
       operation(tabId, CHROMIUM_OPERATION_BUDGETS_MS.arm, (ops) =>
         establish(ops, tabId, generation, origin)
